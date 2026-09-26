@@ -36,7 +36,7 @@ function goPg(id){
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
-    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
+    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker',
     'pg-team':'nb-team','pg-licensing':'nb-licensing','pg-contracts':'nb-contracts',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings',
     'pg-proposals':'nb-proposals',
@@ -50,7 +50,7 @@ function goPg(id){
   if(_mtb)_mtb.classList.add('active');
   else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
   document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog'}[id];
+  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
   if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
@@ -82,6 +82,7 @@ function goPg(id){
   if(id==='pg-licensing')renderLicensing();
   if(id==='pg-contracts'){renderContracts();if(typeof refreshAgreementSignatures==='function')refreshAgreementSignatures();}
   if(id==='pg-timelog')renderTimeLog();
+  if(id==='pg-photos'&&typeof renderPhotosPage==='function')renderPhotosPage();
   if(id==='pg-checklist')renderChecklist();
   if(id==='pg-leads')renderLeadsPage();
   if(id==='pg-qr-leads'){renderQrLeadsPage();_qrLoadSources();}
@@ -129,6 +130,7 @@ function _refreshActivePage(){
   ({
     'pg-dash':()=>run('renderDash'),
     'pg-timelog':()=>run('renderTimeLog'),
+    'pg-photos':()=>run('renderPhotosPage'),
     'pg-money':()=>run('renderMoneyPage'),
     'pg-jobs':()=>run('renderJobsPage'),
     'pg-tracker':()=>run('renderTrackerTab'),

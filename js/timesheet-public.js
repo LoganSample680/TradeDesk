@@ -24,12 +24,43 @@ var clients=[],bids=[],jobs=[],mileage=[],timeEntries=[];
 var _supaUser=null,_contractorUserId=null,_isEmployee=false,_employeeRecord=null;
 var _tsp={token:'',data:null,jobs:{},name:'',busy:false};
 
+// ── THE LINK BELONGS TO THE FIRST DEVICE THAT OPENS IT ───────────────────
+// Owner 2026-09-19: "the link that is shared I need some security on it, only
+// the person who receives it can open it, if it's resent again that person
+// can't see it." He picked trust-on-first-use by number out of three shapes.
+//
+// The server does the deciding (timesheet_claim, 20261027). This side's only
+// job is to say WHICH device is asking, and to say it the same way every
+// time, including after the phone is closed and the link reopened a week
+// later from the same thread. localStorage, same key the app itself uses
+// (_initDeviceId, js/cloud.js), so a boss who also runs TradeDesk on this
+// phone is one device here and not two.
+//
+// No storage at all (a locked-down browser, private mode) is not an error:
+// the page sends nothing, and the server serves it only while the sheet is
+// still unclaimed. That degrades to exactly the old behaviour for the one
+// person it can affect, rather than locking out a boss over a browser
+// setting.
+function _tspDeviceId(){
+  try{
+    let id=localStorage.getItem('zp3_device_id');
+    if(!id){id='dev_'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+            localStorage.setItem('zp3_device_id',id);}
+    return id;
+  }catch(_e){return '';}
+}
+
 // Belt and braces only: _tlReadOnly() above is the guard that matters.
 function _canViewComp(){return false;}
 function bizTz(){return S.bizTz;}
 function _bizTzName(){return S.bizTz;}
 function _geoBizTz(){return S.bizTz;}
-function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// THE FOUR SOURCE PREDICATES ARE NOT COPIED HERE ANY MORE. This file used to
+// carry its own _geoIsOffJobSource and none of the other three, which is
+// exactly how a hand copy fails: the one that was copied stayed right and the
+// three that were not silently answered false, so every drive on a shared
+// timesheet was drawn as time on site. js/geo-sources.js is loaded by
+// timesheet.html ahead of js/timelog.js and owns all four (7.3).
 function _geoShopAddr(){return '';}
 function getOwnerName(){return _tsp.name||'';}
 function getClientById(){return null;}
@@ -58,11 +89,26 @@ function _tlJobClientInfo(jobId){
 }
 // _timeLogRows (js/timelog.js) asks this for the derived rows. The answer is
 // the RPC's, and every row is this one person's.
+// ── ONE PERSON, SO THE PAGE SAYS SO ──────────────────────────────────────
+// A sheet is one person's week by definition, and the RPC never returns
+// employee_user_id: there is nobody else on the page to tell them apart from.
+// js/timelog.js does not know that. Its shop loop drops any row without an
+// employee, so every minute of shop time vanished from a shared timesheet: a
+// week with 13h 30m on it drew 12h 50m and nothing said where the other 40
+// went. Found 2026-09-19 against real rows; it never showed in a test because
+// the spec's fixture invented the field the server does not send.
+//
+// Stamped here rather than added to the RPC: the id is a uuid nobody outside
+// the account has any business holding, and the page has exactly one person
+// to point at. It is an internal key on this page and never drawn.
+const _TSP_UID='sheet-person';
 function _fetchCrewLabor(){
   const d=_tsp.data||{};
-  const name={};
-  (d.time||[]).concat(d.shop||[]).forEach(e=>{if(e&&e.employee_user_id)name[e.employee_user_id]=_tsp.name||'Crew';});
-  return Promise.resolve({name,entries:d.time||[],shopEntries:d.shop||[]});
+  const stamp=e=>Object.assign({},e,{employee_user_id:e.employee_user_id||_TSP_UID});
+  return Promise.resolve({
+    name:{[_TSP_UID]:_tsp.name||'Crew'},
+    entries:(d.time||[]).filter(e=>e&&typeof e==='object').map(stamp),
+    shopEntries:(d.shop||[]).filter(e=>e&&typeof e==='object').map(stamp)});
 }
 
 // ── Supabase, as anon, same constants sign.html uses ────────────────────────
@@ -175,7 +221,7 @@ async function _tspDecide(decision){
   _tsp.busy=true;
   document.querySelectorAll('#tsp-foot button').forEach(b=>{b.disabled=true;});
   try{
-    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null});
+    const{data,error}=await sb.rpc('timesheet_decide',{p_token:_tsp.token,p_decision:decision,p_note:note,p_name:null,p_device:_tspDeviceId()});
     if(error)throw error;
     Object.assign(_tsp.data,data||{},{status:(data&&data.status)||(decision==='approve'?'approved':'rejected')});
     if(decision==='reject'&&!_tsp.data.reject_note)_tsp.data.reject_note=note;
@@ -209,10 +255,15 @@ async function _tspBoot(){
   if(!sb)return _tspState('Could not load','Check your connection and try again.');
   let data=null;
   try{
-    const r=await sb.rpc('timesheet_public',{p_token:token});
+    const r=await sb.rpc('timesheet_public',{p_token:token,p_device:_tspDeviceId()});
     if(r&&r.error)throw r.error;
     data=r&&r.data;
   }catch(_e){return _tspState('Could not load','Check your connection and try again.');}
+  // A refusal is an ANSWER, not a failure, and it gets its own words. "Could
+  // not load" is what a bad signal says, and it would send somebody off
+  // checking their bars over a link that is working exactly as intended.
+  if(data&&data.refused)return _tspState('This link is already open somewhere else',
+    'A timesheet link works on the first phone or computer that opens it. Ask for it to be sent again and this one will work.');
   if(!data||!data.week_start)return _tspState('This timesheet is not here','The link may be old or mistyped.');
   _tsp.data=data;
   _tsp.name=String(data.person_name||'Crew');
@@ -220,7 +271,36 @@ async function _tspBoot(){
   S.bizTz=String(data.biz_tz||'America/Chicago');
   _tsp.jobs={};
   (data.time||[]).forEach(e=>{if(e&&e.job_id!=null&&(e.job_name||e.client_name))_tsp.jobs[String(e.job_id)]={job_name:e.job_name,client_name:e.client_name,addr:e.addr};});
-  timeEntries.length=0;(data.manual||[]).forEach(m=>{if(m&&typeof m==='object')timeEntries.push(m);});
+  // ── AND THE CLOCKS CARRY THE SAME ONE (owner 2026-09-21) ────────────────
+  // "On the link Jack sent his dad it looks like manual time double counted,
+  // why? It didn't on Jack's record."
+  //
+  // Measured on his week of 13-19 September: the app said 42h 27m with 1m of
+  // Manual time, the link said 80h 10m with 37h 37m. The automatic buckets
+  // agreed almost to the minute. The entire gap was the clock being counted a
+  // second time on top of the drives and site time it already contains.
+  //
+  // _tlBlendManual (js/timelog.js) buckets rows by `personUid||acting uid`
+  // before it does anything, and returns early from a bucket with no clock in
+  // it. The rows above are stamped _TSP_UID because the RPC sends no
+  // employee_user_id; these were pushed RAW, carrying the real logged_by_uid
+  // the server does send. So the drives sat under 'sheet-person', the clocks
+  // sat under Jack's uuid, neither bucket held both, and the blend never ran.
+  // It is the same failure the blend's own header describes from the support
+  // view, reached through this page instead.
+  //
+  // An OWNER'S sheet is the same bug wearing the other hat: their clocks come
+  // back with logged_by_uid null, which falls to the acting uid, and this page
+  // has no session so that is the string 'owner'. Two buckets again.
+  //
+  // One person on the page, so one id on every row of theirs, whatever the
+  // server said about it. Same reason the note above gives for stamping the
+  // derived rows, and the same constant, rather than a second idea of who this
+  // sheet belongs to (7.3).
+  timeEntries.length=0;
+  (data.manual||[]).forEach(m=>{
+    if(m&&typeof m==='object')timeEntries.push(Object.assign({},m,{logged_by_uid:_TSP_UID}));
+  });
   document.title=(_tsp.name?_tsp.name+' · ':'')+'Timesheet '+_tspRange(String(data.week_start).slice(0,10));
   _tspHeader();
   await _tspRender();

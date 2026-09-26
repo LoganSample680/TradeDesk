@@ -488,6 +488,11 @@ function _markJobComplete(jobId){
     showToast('Job marked complete 🏁','✅');
     renderJobsPage&&renderJobsPage();
     renderDash&&setTimeout(renderDash,200);
+    // The After shots are the ones everybody forgets, and this is the only
+    // moment the contractor is guaranteed to still be standing on the site.
+    // Silent unless there is a Before set with no After yet, so it can never
+    // become a prompt people learn to dismiss (js/photo-capture.js).
+    if(typeof tdPromptAfterShots==='function')setTimeout(()=>tdPromptAfterShots(jobId),400);
   },{title:'Complete job',yes:'Mark complete',danger:false});
 }
 
@@ -516,6 +521,18 @@ function _isMyTimeEntry(e){
 // reason. timeEntries already tolerates an unmatched job_id gracefully
 // (crew-cost falls back to "Other"), so this rides that same tolerance
 // instead of a new data shape.
+// One door for both punches (7.3). _flushSaveNow is the single tracked entry
+// point for a push (see supaSaveDebounced's note on why a bare
+// supaSaveToCloud here would be invisible to the load guard), so this asks for
+// that and never invents a second one. It is fire-and-forget on purpose: a
+// clock never waits on the network and never fails because of it, exactly like
+// _geoClockPing below.
+function _tlFlushClockPunch(){
+  try{
+    if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+    if(typeof _flushSaveNow==='function')Promise.resolve(_flushSaveNow()).catch(()=>{});
+  }catch(_e){}
+}
 function clockIn(jobId,scopeId,scopeLabel){
   const general=jobId===null;
   const j=general?null:jobs.find(x=>x.id===jobId);
@@ -559,6 +576,17 @@ function clockIn(jobId,scopeId,scopeLabel){
   const entryId=Date.now();
   timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
   saveAll();
+  // ── A PUNCH DOES NOT WAIT TWO SECONDS (owner 2026-09-16) ────────────────
+  // "He said he clocked in at 9am and I don't see his clock in time." saveAll
+  // queues a 2s debounce, and the phone goes back in the pocket in less than
+  // that: his app had ELEVEN SECONDS of foreground that morning and one second
+  // on the next wake. A timer suspended with the app never fires, and the punch
+  // lives only in local storage until something else rescues it.
+  //
+  // Every other edit in the app can afford the debounce, because the person is
+  // still looking at the screen. A clock punch is the one the person walks away
+  // from on purpose, and it is the row the whole day hangs off. It goes now.
+  _tlFlushClockPunch();
   _activeTimer={jobId,jobName,clientName:c?c.name:jobName,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
@@ -602,6 +630,7 @@ function clockOut(saveEntry,silent){
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
+    _tlFlushClockPunch();   // same reasoning as clockIn: the pocket is next
     if(!silent){
       const label=scopeLabel?scopeLabel+', '+jobName:jobName;
       showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
@@ -843,42 +872,23 @@ function deleteTimeEntry(entryId){
   saveAll();
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
-function _openEditTimeEntry(entryId){
-  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
-  if(e.open)return; // still running, clock out first, then edit
-  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
-  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(e.logged_by_name||'')+'</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
-      '<input type="datetime-local" id="tle-start" value="'+toLocalInput(e.start_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
-      '<input type="datetime-local" id="tle-end" value="'+toLocalInput(e.end_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div id="tle-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
-    '</div>'+
-    // Owner 2026-08-31: "add a delete button to the edit button on manual
-    // clock out things". deleteTimeEntry() has existed since the 2026-07-11
-    // bulletproof work but the only way to reach it was a long-press
-    // (js/cloud.js _lpStart), which nobody discovers. Editing an entry is
-    // exactly where somebody realises it should not exist at all.
-    //
-    // On its OWN row, below the pair, with a rule above it. Never a third
-    // column beside Save: the two are one thumb-width apart on a phone and
-    // one of them destroys a payroll record. Ghost styling for the same
-    // reason, so the green Save stays the only thing that reads as the
-    // primary action on this screen (15.1).
-    '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
-      '<button onclick="_deleteTimeEntryFromModal('+entryId+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
-}
+// _openEditTimeEntry was DELETED here (7: deleted, never hidden), and so was
+// _saveEditedTimeEntry below. Both are now _tlEditEntry('manual', id) and
+// _tlSaveEntry('manual', id) in js/timelog.js, which is the SAME function a
+// tracked row goes through (owner 2026-09-14: "can we combine the three dots
+// and the edit in one function").
+//
+// The two used to be separate because a manual clock lives in this file's
+// timeEntries array and a tracked row lives in job_time_entries on the server.
+// That is still true, and it turned out to be the only true part: it is two
+// lines inside one function now, and everything else the copies each carried
+// (the dialog, the words, the validation, the clock) was duplicated rather
+// than different. They had drifted three ways, the worst of which was that
+// this one read and wrote in the DEVICE's timezone while the other used
+// business time, so editing a clock from out of state moved it.
+//
+// _deleteTimeEntryFromModal stays here: it is manual-only by design and it
+// belongs beside deleteTimeEntry, which does the work.
 // Delete from inside the edit modal. Confirms first, through the app's own
 // zConfirm rather than a hand-rolled sheet (7.3), and names the entry being
 // destroyed: "delete this entry" with nothing after it is how somebody deletes
@@ -902,33 +912,6 @@ function _deleteTimeEntryFromModal(entryId){
     if(typeof showToast==='function')showToast('Entry deleted','🗑');
   },{title:'Delete time entry',yes:'Delete',danger:true});
 }
-function _saveEditedTimeEntry(entryId){
-  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
-  const startEl=document.getElementById('tle-start'),endEl=document.getElementById('tle-end');
-  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
-  const errEl=document.getElementById('tle-err');
-  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
-    if(errEl){errEl.textContent='End must be after start.';errEl.style.display='block';}
-    return;
-  }
-  const minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
-  // A single clock session can't legitimately run longer than a day, beyond
-  // that is almost certainly a fat-fingered date, not a real shift. Caught
-  // here so an edit can never silently produce an "impossible" day total.
-  if(minutes>1440){
-    if(errEl){errEl.textContent='That\'s over 24 hours for one entry, check the dates.';errEl.style.display='block';}
-    return;
-  }
-  e.start_time=start.toISOString();e.end_time=end.toISOString();
-  e.minutes=minutes;
-  e.date=dateKey(start);
-  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
-  e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
-  saveAll();
-  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
-  typeof renderTimeLog==='function'&&renderTimeLog();
-}
-
 // "0:07", "12:34", "3h 04:09". One formatter, because the running clock is now
 // painted in two places at once: the app-wide clock banner and the Time Log's
 // "Currently clocked in" card (js/timelog.js _tlTickOpenElapsed). Two hand-rolled
@@ -1818,16 +1801,14 @@ function openJobSheet(clientId){
             '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px">'+
               beforePhotos.map((p,i)=>renderThumb(p,i,'before')).join('')+
             '</div>'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--amber);color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;background:var(--amber-lt)">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'before\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Before</label>'+
+            '<button type="button" onclick="document.querySelectorAll(\'.zmodal-overlay\').forEach(o=>o.remove());tdCaptureForJob('+photoJobId+',\'before\')" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--amber);color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;background:var(--amber-lt);font-family:inherit">+ Before</button>'+
           '</div>'+
           '<div>'+
             '<div style="font-size:11px;font-weight:700;color:var(--green-mid);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">After ('+afterPhotos.length+')</div>'+
             '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px">'+
               afterPhotos.map((p,i)=>renderThumb(p,i,'after')).join('')+
             '</div>'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt)">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'after\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ After</label>'+
+            '<button type="button" onclick="document.querySelectorAll(\'.zmodal-overlay\').forEach(o=>o.remove());tdCaptureForJob('+photoJobId+',\'after\')" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt);font-family:inherit">+ After</button>'+
           '</div>'+
         '</div>'+
         '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">'+
@@ -1837,8 +1818,7 @@ function openJobSheet(clientId){
           '</div>'+
           '<div style="display:flex;gap:6px">'+
             '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional): e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
-            '<label style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap">'+
-              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'progress\',document.getElementById(\'_progLbl-'+photoJobId+'\').value);this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Photo</label>'+
+            '<button type="button" onclick="_jsProgressCapture('+photoJobId+')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap;font-family:inherit">+ Photo</button>'+
           '</div>'+
         '</div>'+
         shareBtn+
@@ -2367,25 +2347,77 @@ function sendOMWText(clientId){
 // the full image loads only in the lightbox. Returns null on ANY failure,
 // callers then upload the original file exactly as before, so a photo can
 // never be lost to a decode error (odd formats, HEIC on old engines, etc.).
+// ── The size ladder (owner 2026-09-22) ──────────────────────────────────────
+// Three files, and the rule that keeps unlimited storage affordable is which
+// one gets served, not how small they are:
+//
+//   thumb  360px   grids, the tray, the album strip          ~20 KB
+//   view  1600px   every screen, the client hub, proposals    ~300 KB
+//   full  native   ONLY when somebody taps "Full size"        ~800 KB
+//
+// Until today the full one did not exist: every shot was resized to 1600 at
+// capture and the original was thrown away, so "pull it up in 4K" was not a
+// setting, it was a photo we no longer had.
+//
+// Storage is the cheap part (about 27 cents a month per contractor per year
+// of shooting). EGRESS is the part that could hurt, so the full file is
+// written with no public url on the row at all: there is nothing to put in an
+// <img src>, which makes serving it by accident impossible rather than merely
+// discouraged. See _pcFullUrl / tdPhotoFullSize.
+//
+// WebP for the full copy: roughly 40% under JPEG at the same quality, decodes
+// everywhere we render (Safari 14+, Chrome, Android), and keeps every pixel
+// the camera captured. JPEG if an engine somehow refuses it, checked by what
+// toBlob actually returns rather than by feature-sniffing.
 async function _compressPhoto(fileOrBlob,opts){
   try{
     const maxEdge=(opts&&opts.maxEdge)||1600,thumbEdge=(opts&&opts.thumbEdge)||360,q=(opts&&opts.quality)||0.82;
+    const wantFull=!(opts&&opts.full===false);
     let bmp;
     // from-image applies EXIF orientation so portrait phone shots don't land sideways.
     try{bmp=await createImageBitmap(fileOrBlob,{imageOrientation:'from-image'});}
     catch(_e){bmp=await createImageBitmap(fileOrBlob);}
-    const draw=edge=>{
+    const draw=(edge,mime,quality)=>{
       const scale=Math.min(1,edge/Math.max(bmp.width,bmp.height));
       const w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale));
       const cv=document.createElement('canvas');cv.width=w;cv.height=h;
       cv.getContext('2d').drawImage(bmp,0,0,w,h);
-      return new Promise(res=>cv.toBlob(res,'image/jpeg',q));
+      return new Promise(res=>cv.toBlob(res,mime||'image/jpeg',quality||q));
     };
     const blob=await draw(maxEdge);
     const thumb=await draw(thumbEdge);
     if(!blob||!thumb||!blob.size||!thumb.size)return null;
-    return{blob,thumb,mime:'image/jpeg',ext:'jpg'};
+    const out={blob,thumb,mime:'image/jpeg',ext:'jpg',w:bmp.width,h:bmp.height};
+    if(wantFull&&Math.max(bmp.width,bmp.height)>maxEdge){
+      // Only worth keeping when there is more picture than the view copy holds.
+      // A 1200px shot IS its own full size, and storing it twice is waste.
+      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.82);
+      let fullMime='image/webp',fullExt='webp';
+      if(!full||!full.size||full.type!=='image/webp'){
+        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.86);
+        fullMime='image/jpeg';fullExt='jpg';
+      }
+      if(full&&full.size){out.full=full;out.fullMime=fullMime;out.fullExt=fullExt;}
+    }
+    return out;
   }catch(_e){return null;}
+}
+// Upload the full-resolution copy beside the view copy. Same non-fatal shape
+// as the thumbnail: a photo is never lost over its archive copy, and a miss
+// just means that one shot has no Full size.
+async function _uploadPhotoFull(fullBlob,mainPath,mime,ext){
+  try{
+    if(!fullBlob)return '';
+    const fullPath=mainPath.replace(/([^/]+)$/,'f-$1').replace(/\.[a-z0-9]+$/i,'.'+(ext||'webp'));
+    let error;
+    for(let _try=0;_try<2;_try++){
+      ({error}=await _supa.storage.from('gallery').upload(fullPath,fullBlob,
+        {contentType:mime||'image/webp',upsert:_try>0,cacheControl:_PHOTO_CACHE}));
+      if(!error)break;
+      await new Promise(r=>setTimeout(r,800));
+    }
+    return error?'':fullPath;
+  }catch(_e){return '';}
 }
 // Immutable-path uploads (every path carries Date.now()) → cache for a year so
 // browsers and the CDN absorb repeat views instead of Supabase egress.
@@ -2411,55 +2443,30 @@ async function _uploadPhotoThumb(thumbBlob,mainPath){
     return{thumbUrl:data?data.publicUrl||'':'',thumbPath};
   }catch(_e){return{thumbUrl:'',thumbPath:''};}
 }
+// One line over the shared writer (js/photo-capture.js). This used to be the
+// only camera in the app and carried its own compress/upload/row-building
+// copy of the sequence; tdSavePhoto is that sequence, now shared with every
+// estimate type, the dashboard quick action and the After prompt (§7.3).
 function addJobPhoto(jobId,input,type,caption){
-  const file=input.files[0];if(!file)return;
-  caption=(caption||'').trim().slice(0,60);
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    const j=jobs.find(x=>x.id===jobId);if(!j)return;
-    if(!j.photos)j.photos=[];
-    j.photos.push({type,data:e.target.result,ts:new Date().toISOString(),caption});
-    saveAll();
-    showToast((type==='before'?'Before':type==='after'?'After':caption||'Progress')+' photo saved','📸');
-    // Upload to gallery storage → push to global photos[] → refresh client hub
-    if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
-      try{
-        // Compress + thumbnail (egress fix). null → upload the original untouched.
-        const _cp=await _compressPhoto(file);
-        const ext=_cp?_cp.ext:(file.name.split('.').pop()||'jpg').toLowerCase();
-        const path=_supaUser.id+'/'+jobId+'/'+type+'-'+Date.now()+'.'+ext;
-        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,{contentType:_cp?_cp.mime:(file.type||'image/jpeg'),upsert:false,cacheControl:_PHOTO_CACHE});
-        if(!error){
-          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
-          const publicUrl=urlData?.publicUrl||'';
-          if(publicUrl){
-            const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
-            const c=clients.find(x=>x.id===j.client_id);
-            const _photoClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,thumbUrl,thumbPath,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
-            saveAll();
-            typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
-          }
-        }else{
-          // Storage offline, mark base64 for retry on reconnect
-          const lastPhoto=j.photos[j.photos.length-1];
-          if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-        }
-      }catch(_e){
-        // Network error, mark for retry
-        const lastPhoto=j.photos[j.photos.length-1];
-        if(lastPhoto&&!lastPhoto.pendingUpload){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-      }
-    }else{
-      // Not connected to Supabase, mark base64 for upload when online
-      const lastPhoto=j.photos[j.photos.length-1];
-      if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
-    }
-  };
-  reader.readAsDataURL(file);
+  const file=input&&input.files&&input.files[0];
+  if(!file)return;
+  const _t=type||'progress';
+  Promise.resolve(tdSavePhoto({file,type:_t,caption,jobId})).then(row=>{
+    if(!row)return;
+    showToast((_t==='before'?'Before':_t==='after'?'After':(row.caption||'Progress'))+' photo saved','📸');
+  });
 }
 // "What we used" entries live on the same job record the photos do. Reopen the
 // sheet after a change, matching the photo buttons' own refresh pattern.
+// The progress label is typed on the job sheet, then carried into the capture
+// sheet as the caption for every shot in that burst, so a five-shot rough-in
+// walk is labelled once rather than five times.
+function _jsProgressCapture(jobId){
+  const el=document.getElementById('_progLbl-'+jobId);
+  const caption=el?el.value:'';
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  tdCaptureForJob(jobId,'progress',caption);
+}
 function addJobSpec(jobId,clientId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const g=id=>document.getElementById(id);
@@ -2483,7 +2490,45 @@ function removeJobSpec(jobId,idx,clientId){
 }
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
+  // How many are stuck on this phone, before the retry (js/photo-capture.js).
+  if(typeof _pcReportPending==='function')_pcReportPending();
+  // The photo outbox (js/photo-capture.js) holds every TrueShot photo still
+  // waiting, full size, and sends it filed wherever it is filed now.
+  if(typeof tdPhotoFlush==='function')tdPhotoFlush();
   let dirty=false;
+  // PHOTOS FILED TO AN ADDRESS, NOT A JOB (Jack, 2026-09-24: four photos at
+  // one house, one came through). tdSavePhoto (js/photo-capture.js) keeps a
+  // photo whose upload failed as a pending row in photos[], and this queue
+  // used to walk jobs[].photos only, so a photo with no job was never tried
+  // again. The row is finished IN PLACE (same id), never pushed as a new one.
+  for(const row of photos){
+    if(!row||!row.pendingUpload||!row.data||row.storagePath)continue;
+    try{
+      const mime=row._uploadMime||'image/jpeg';
+      const b64=String(row.data).split(',')[1]||row.data;
+      const bytes=Uint8Array.from(atob(b64),ch=>ch.charCodeAt(0));
+      const rawBlob=new Blob([bytes],{type:mime});
+      const _cp=await _compressPhoto(rawBlob);
+      const ext=_cp?_cp.ext:(row._uploadExt||'jpg');
+      const scope=row.job_id!=null?('job-'+row.job_id):row.bid_id!=null?('bid-'+row.bid_id):row.client_id!=null?('client-'+row.client_id):'unfiled';
+      const path=_supaUser.id+'/'+scope+'/'+(row.type||'photo')+'-'+Date.now()+'.'+ext;
+      const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:rawBlob,{contentType:_cp?_cp.mime:mime,upsert:false,cacheControl:_PHOTO_CACHE});
+      if(error)continue;
+      const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+      const publicUrl=urlData?.publicUrl||'';
+      if(!publicUrl)continue;
+      const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
+      row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
+      delete row.data;delete row.pendingUpload;delete row._uploadExt;delete row._uploadMime;
+      // Its twin on the job sheet (same shot, same timestamp) is done too, or
+      // the job loop below would upload it a second time.
+      const j=row.job_id!=null?jobs.find(x=>String(x.id)===String(row.job_id)):null;
+      const twin=j&&Array.isArray(j.photos)?j.photos.find(p=>p&&p.pendingUpload&&p.ts===row.uploadedAt):null;
+      if(twin){delete twin.pendingUpload;delete twin._uploadExt;delete twin._uploadMime;}
+      if(row.client_id!=null&&typeof _uploadClientHub==='function')_uploadClientHub(row.client_id).catch(()=>{});
+      dirty=true;
+    }catch(_e){}
+  }
   for(const j of jobs){
     if(!j.photos)continue;
     for(const p of j.photos){

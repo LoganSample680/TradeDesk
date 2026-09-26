@@ -940,7 +940,7 @@ function _confirmReceiptDate(aiDate,statusEl){
   let displayDate=aiDate||'(no date found)';
   try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}}catch(e){}
   div.innerHTML=
-    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong>, correct?</div>'+
+    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' Date read as: <strong>'+displayDate+'</strong>, correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
       '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
       '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+
@@ -1105,6 +1105,13 @@ async function expSave(){
 
 function quickAction(type){
   if(type==='collect'){openCollectModal();return;}
+  // Photo: deliberately asks nothing first. The whole point of the quick
+  // action is that he can be shooting before he has decided whose job this
+  // is; the unfiled tray on this same screen files it after (js/photo-capture.js).
+  if(type==='photo'){
+    if(typeof tdCaptureUnfiled==='function')tdCaptureUnfiled();
+    return;
+  }
   const tk=todayKey();
   const todayJobs=jobs.filter(j=>{
     const d=parseInt(j.days)||1;
@@ -1836,6 +1843,10 @@ function scheduleJob(){
   jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   // Booked. Estimate VISITS are a different milestone than the job being booked.
   try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
+  // Photos shot while writing the estimate become this job's Before set, with
+  // nobody filing anything (js/photo-capture.js). Without this the walkthrough
+  // shots stay stranded on the bid and the hub shows a job with no Before.
+  try{if(typeof tdInheritBidPhotos==='function'&&bidId!=null&&jobs.length)tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);
@@ -2959,7 +2970,7 @@ async function _openJobProfit(){
   // labor either and must not land on a bid.
   const laborByBid={};
   entries.forEach(en=>{
-    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
+    if(_geoIsHeldSource(en.source)||_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -2969,7 +2980,7 @@ async function _openJobProfit(){
   // On-site minutes per bid (drive excluded from on-site calc)
   const onSiteMinByBid={};
   entries.forEach(en=>{
-    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
+    if(_geoIsHeldSource(en.source)||_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -3109,7 +3120,7 @@ async function _fetchCrewLabor(sinceISO){
     // id: the Time Log's Edit button needs to address the actual row to
     // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
     // other _fetchCrewLabor consumer ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];
@@ -3117,7 +3128,13 @@ async function _fetchCrewLabor(sinceISO){
     // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
     // location events" an unpaid stop must sit between. Additive, every
     // other consumer ignores it.
-    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
+    // id and client_key ride along so the Time Log's row menu can attach to a
+    // shop row at all (owner 2026-09-13, on his own rail: the 12:41 shop block
+    // was the one row on the page with no three-dot). _tlRowMenuable refuses a
+    // row with no rawId behind it, correctly, because there would be nothing
+    // for an action to act ON; this select simply never asked for one, so every
+    // shop row in the app has arrived id-less since the rail was built.
+    let sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
     const{data:se}=await sq;
     out.shopEntries=se||[];
@@ -3218,6 +3235,14 @@ async function _crewCostRender(range){
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
     // the overtime flag. Counting a lunch break as either is a payroll error.
+    // NOTHING VOUCHED FOR THIS ROW, so it is shown and never paid: rules 13,
+    // 15 and 18 (js/geo-derive.js). It sat in the wrong place until now,
+    // falling past the drive and place arms into the on-site bucket, so a
+    // held visit was billed to a job as labor even while the Time Log was
+    // correctly refusing to count it. FIRST, before the family predicates,
+    // because 'drive-held' is a member of both and only one of the two
+    // answers decides whether it is paid.
+    if(_geoIsHeldSource(en.source)){e.offMin+=m;return;}
     if(_geoIsOffJobSource(en.source)){e.offMin+=m;return;}
     // A saved-place dwell is trimmed by any manual clock covering it, same rule
     // as the shop below: picking up material FOR a job and clocking that job is

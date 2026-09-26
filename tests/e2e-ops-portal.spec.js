@@ -87,8 +87,13 @@ const SUMMARY = { days: 30, people: 3, accounts: 2, active_days: 40, days_clocke
 // The page builds its client the moment the vendor script defines window.supabase.
 // Intercepting that assignment is the only seam that exists before boot runs, and
 // it keeps the stub inside this spec instead of in shared helpers (§10.3).
-function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE } = {}) {
-  return page.addInitScript(({ roster, summary, by, brief, live }) => {
+function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BRIEF, live = LIVE, invoke = null, liveHang = false, liveError = null } = {}) {
+  return page.addInitScript(({ roster, summary, by, brief, live, invoke, liveHang, liveError }) => {
+    window.__rpcLive = 0;
+    // Every functions.invoke the page makes, recorded, so a test can assert
+    // WHAT it asked for as well as what it did with the answer. The reply is
+    // whatever `invoke` names for that function, defaulting to a plain success.
+    window.__invoked = [];
     let held;
     Object.defineProperty(window, 'supabase', {
       configurable: true,
@@ -103,15 +108,30 @@ function stubRpc(page, { roster = ROSTER, summary = SUMMARY, by = BY, brief = BR
               if (fn === 'ops_summary') return Promise.resolve({ data: [summary], error: null });
               if (fn === 'ops_by_contractor') return Promise.resolve({ data: by, error: null });
               if (fn === 'ops_account_brief') return Promise.resolve({ data: brief, error: null });
-              if (fn === 'ops_live_status') return Promise.resolve({ data: live, error: null });
+              if (fn === 'ops_live_status') {
+                window.__rpcLive++;
+                if (liveHang) return new Promise(() => {});
+                if (liveError) return Promise.resolve({ data: null, error: { message: liveError } });
+                return Promise.resolve({ data: live, error: null });
+              }
               return realRpc(fn, args);
+            };
+            c.functions = {
+              invoke: (fn, opts) => {
+                window.__invoked.push({ fn, body: (opts || {}).body || null });
+                // Read at CALL time, not at setup time, so a test can change
+                // the answer between clicks without rebooting the page.
+                const r = (window.__invokeReply && window.__invokeReply[fn]) || (invoke && invoke[fn]);
+                if (r && r.throw) return Promise.reject(new Error(r.throw));
+                return Promise.resolve(r || { data: { ok: true, days: [{ day: '2026-09-14', wrote: true, time: 9, shop: 3, miles: 5, sweep: true }] }, error: null });
+              }
             };
             return c;
           }
         };
       }
     });
-  }, { roster, summary, by, brief, live });
+  }, { roster, summary, by, brief, live, invoke, liveHang, liveError });
 }
 
 test.describe('Ops portal: the support view, embedded', () => {
@@ -317,6 +337,198 @@ test.describe('Ops portal: the support view, embedded', () => {
       await page.locator('#trade-back').click();
     });
 
+    // ── Rebuild a day (owner 2026-09-15) ──────────────────────────────────
+    // The server derives on every flush, but only for the days the incoming
+    // events are stamped with, so a day that is already wrong is never handed
+    // back to it. This is the door: run the deriver again for one person, one
+    // day, from here, instead of waiting on that person to open the app.
+    test.describe('rebuilding a day', () => {
+      test.beforeEach(async () => {
+        await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await page.evaluate(() => { window.__invoked = []; window.__invokeReply = null; });
+        // The second date box persists across tests in this one page, and a
+        // stale value there would quietly turn a single-day test into a range.
+        await page.locator('#rb-day2').fill('');
+      });
+      test.afterEach(async () => {
+        await page.locator('#biz-back').click();
+        await page.locator('#trade-back').click();
+      });
+
+      test('it rebuilds the person the chips have selected, on the day you picked', async () => {
+        await page.locator('#biz-chips .chip', { hasText: 'Jack' }).click();
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        const calls = await page.evaluate(() => window.__invoked);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].fn).toBe('rebuild-day');
+        // The person from the chips, the business from the page, the day from
+        // the field. Nothing here invents an id.
+        //
+        // AMENDED 2026-09-16: it sends `days`, an array, because the second
+        // date box can make it a range. One day is an array of one, and the
+        // edge function has always taken this shape.
+        expect(calls[0].body).toEqual({
+          contractor_user_id: 'biz-a', employee_user_id: 'u-jack', days: ['2026-09-14'],
+        });
+      });
+
+      // ── A RANGE, BECAUSE A WRONG DAY IS RARELY ALONE (owner 2026-09-16) ──
+      // Every one of a crew member's 24 days changed under the deriver's
+      // current rules. Rebuilding those one date-picker click at a time is a
+      // chore nobody finishes, and the edge function has always accepted up to
+      // ten days in a call. The second box is what finally uses it.
+      test('a second date makes it a range, inclusive of both ends', async () => {
+        await page.locator('#biz-chips .chip', { hasText: 'Jack' }).click();
+        await page.locator('#rb-day').fill('2026-09-12');
+        await page.locator('#rb-day2').fill('2026-09-15');
+        await page.locator('#rb-go').click();
+        const calls = await page.evaluate(() => window.__invoked);
+        expect(calls[0].body.days).toEqual(['2026-09-12', '2026-09-13', '2026-09-14', '2026-09-15']);
+      });
+
+      test('an empty or earlier second date is still just the one day', async () => {
+        for (const second of ['', '2026-09-01']) {
+          await page.evaluate(() => { window.__invoked = []; });
+          await page.locator('#rb-day').fill('2026-09-14');
+          await page.locator('#rb-day2').fill(second);
+          await page.locator('#rb-go').click();
+          const calls = await page.evaluate(() => window.__invoked);
+          expect(calls[0].body.days, String(second)).toEqual(['2026-09-14']);
+        }
+      });
+
+      // The function refuses more than ten, so the page says so before it
+      // spends a call finding out.
+      test('more than ten days is a message, not a call', async () => {
+        await page.locator('#rb-day').fill('2026-09-01');
+        await page.locator('#rb-day2').fill('2026-09-15');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Ten days at a time');
+        expect(await page.evaluate(() => window.__invoked)).toHaveLength(0);
+      });
+
+      // A range that half worked is the case worth reading, so every day gets
+      // its own line rather than one summary number that hides the bad ones.
+      test('a range reports every day, the written and the skipped', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, days: [
+          { day: '2026-09-13', wrote: true, time: 4, shop: 1, miles: 2, sweep: true },
+          { day: '2026-09-14', wrote: false, reason: 'no tape for that day' },
+        ] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-13');
+        await page.locator('#rb-day2').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('2026-09-13: 4 time, 1 shop, 2 mileage');
+        await expect(page.locator('#rb-out')).toContainText('2026-09-14: nothing written, no tape for that day');
+      });
+
+      test('the day defaults to the business day, not this browser\'s', async () => {
+        const want = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago',
+          year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        await expect(page.locator('#rb-day')).toHaveValue(want);
+      });
+
+      test('a rebuild that could not sweep says so instead of claiming it cleaned up', async () => {
+        // The difference is the whole reason for pressing it, so it cannot be
+        // reported as the same thing.
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: true, days: [{ day: '2026-09-14', wrote: true, time: 9, shop: 3, miles: 5, sweep: false }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Nothing retired');
+      });
+
+      // ── THE REBUILD WAKES THE PHONE FIRST (owner 2026-09-18) ──────────
+      // "so how can my rebuild button fire the core motion tape and pull it
+      // in, I thought it did that?" It did not. CoreMotion cannot deliver a
+      // flip to a suspended process, so the flips sit on the phone until
+      // something gives it runtime: Jack had 18 uploaded by lunchtime against
+      // 127 on a full Wednesday, and re-deriving a tenth of a day just
+      // reproduced the wrong answer. rebuild-day sends the same silent push
+      // the cron sends, to that one person, and waits for the flush.
+      //
+      // Whether it worked has to be VISIBLE. A rebuild that could not wake the
+      // phone used only what was already uploaded, and silence would look
+      // exactly like success.
+      test('a woken phone is said out loud, so the rebuild can be trusted', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 1, nudgeNote: '',
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Woke his phone first');
+        await expect(page.locator('#rb-out')).toContainText('Stale rows retired');
+      });
+
+      test('a phone that could not be woken is a warning, never silence', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 0,
+          nudgeNote: 'no device registered',
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Could NOT wake his phone');
+        await expect(page.locator('#rb-out')).toContainText('no device registered');
+        await expect(page.locator('#rb-out'), 'and it says what to do about it')
+          .toContainText('have him open it and press this again');
+      });
+
+      // Rebuilding last month wakes nobody: the backfill reads forward from a
+      // mark and has nothing older to give. Saying "could not wake" there would
+      // be noise about a thing that was never attempted.
+      test('an old day says nothing about the phone at all', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true, nudged: 0,
+          nudgeNote: 'not today',
+          days: [{ day: '2026-08-14', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-08-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        await expect(page.locator('#rb-out')).not.toContainText('wake his phone');
+      });
+
+      // An older function that does not report the field at all must not draw
+      // a scary line: deploy order is not a fact about Jack's phone.
+      test('a response with no nudge field says nothing about it', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day': { data: { ok: true,
+          days: [{ day: '2026-09-18', wrote: true, time: 6, shop: 2, miles: 3, sweep: true }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-18');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Rebuilt');
+        await expect(page.locator('#rb-out')).not.toContainText('wake his phone');
+      });
+
+      test('no day picked is a message, not a call', async () => {
+        await page.locator('#rb-day').fill('');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('Pick a day');
+        expect(await page.evaluate(() => window.__invoked)).toHaveLength(0);
+      });
+
+      test('a refusal from the function is shown, never swallowed as success', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: false, error: 'not an ops admin' }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('not an ops admin');
+        await expect(page.locator('#rb-out')).not.toContainText('Rebuilt');
+      });
+
+      test('a day the deriver refused to write is reported with its reason', async () => {
+        await page.evaluate(() => { window.__invokeReply = { 'rebuild-day':
+          { data: { ok: true, days: [{ day: '2026-09-14', wrote: false, reason: 'no evidence' }] }, error: null } }; });
+        await page.locator('#rb-day').fill('2026-09-14');
+        await page.locator('#rb-go').click();
+        await expect(page.locator('#rb-out')).toContainText('no evidence');
+      });
+
+      test('the control does not bleed off a phone', async () => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const w = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+        expect(w[0]).toBeLessThanOrEqual(w[1] + 1);
+        await page.setViewportSize({ width: 1280, height: 800 });
+      });
+    });
+
     test('a crew chip opens the app as the crew member, not the owner', async () => {
       await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
       await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
@@ -339,7 +551,12 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(secs).toContainText('45.2%');
       await expect(secs).toContainText('$92,400');      // usd
       await expect(secs).toContainText('$5,200');
-      await expect(secs).toContainText('8.3h');         // hours, from 500 minutes
+      // 10.4: this read '8.3h' until 2026-09-14. Owner: "average visit time is
+      // in minutes and can say something like 269 minutes, I want it broken to
+      // minutes then hours and minutes if it goes over 60." One formatter now
+      // says every duration on the page, so 500 minutes reads the way the app
+      // has always said it (_fmtMin, js/jobs.js). Same number, plainer words.
+      await expect(secs).toContainText('8h 20m');       // hours, from 500 minutes
       await expect(secs).toContainText('09.13.26.2');   // text
       await expect(secs).toContainText('21.6');         // num
       // Raw floats never reach the page (the 993.5999999999999 lesson).
@@ -447,6 +664,80 @@ test.describe('Ops portal: the support view, embedded', () => {
       await c.close();
     });
 
+    // ── The lights arrive, and until they do they say so (owner 2026-09-15) ──
+    // "The person status based on app active background or force closed, it
+    // takes forever to show a state and defaults to black." Two separate
+    // faults. The query was one of them (a correlated subquery inside a FILTER
+    // ran once per event row: 10.5s down to 51ms in
+    // 20261016_app_presence_one_watermark.sql). The rest is here.
+    test.describe('before the first answer', () => {
+      test('every light is asked for ONCE, at boot, not once per business', async ({ browser }) => {
+        // app_presence() computes every person however it is asked, so
+        // narrowing it to one account saved nothing and cost a round trip on
+        // every business opened. Opening one is a repaint now.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2);
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await expect(p2.locator('#biz-people .row').first().locator('.dot')).toHaveClass(/dot-/);
+        await p2.locator('#biz-back').click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        // Opened twice, and the count has not moved off its single boot call.
+        expect(await p2.evaluate(() => window.__rpcLive || 0)).toBe(1);
+        await c.close();
+      });
+
+      test('a light with no answer yet reads as still asking, not as nobody reporting', async ({ browser }) => {
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        // The call never answers, which is the state the owner was staring at.
+        await stubRpc(p2, { liveHang: true });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        const first = p2.locator('#biz-people .row').first();
+        await expect(first.locator('.dot')).toHaveClass(/dot-loading/);
+        await expect(first).toContainText('Checking');
+        // And it must not be mistaken for any of the four real answers.
+        await expect(first.locator('.dot')).not.toHaveClass(/dot-unknown/);
+        await expect(first.locator('.dot')).not.toHaveClass(/dot-closed/);
+        await c.close();
+      });
+
+      test('a call that FAILS keeps asking rather than asserting nobody is there', async ({ browser }) => {
+        // A network blip must not be reported as four dead phones.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2, { liveError: 'network is down' });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        await expect(p2.locator('#biz-people .row').first().locator('.dot')).toHaveClass(/dot-loading/);
+        await c.close();
+      });
+
+      test('once the answer lands, a person it did not mention IS unknown', async ({ browser }) => {
+        // The other side of the same distinction: after an answer, silence
+        // about somebody is itself the answer.
+        const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
+        const p2 = await c.newPage();
+        await mockAllExternal(p2);
+        await stubRpc(p2, { live: [] });
+        await p2.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+        await p2.locator('#trades .row', { hasText: 'Plumbing' }).click();
+        await p2.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+        const first = p2.locator('#biz-people .row').first();
+        await expect(first.locator('.dot')).toHaveClass(/dot-unknown/);
+        await expect(first).not.toContainText('Checking');
+        await c.close();
+      });
+    });
+
     test('a person the live call says nothing about stays grey, not green', async ({ browser }) => {
       const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, bypassCSP: true });
       const p2 = await c.newPage();
@@ -481,7 +772,8 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#biz-timing')).toContainText('lead to proposal');
       await expect(page.locator('#biz-timing')).toContainText('writing the proposal');
       // 34 minutes reads as minutes, 4320 as days, never as a raw number.
-      await expect(stages.nth(1)).toContainText('34 min');
+      // '34 min' until 2026-09-14, see the note above: one formatter, one shape.
+      await expect(stages.nth(1)).toContainText('34m');
       await expect(stages.nth(5)).toContainText('3 days');
       await expect(stages.nth(0)).toContainText('22 times');
       // Slowest stage owns the full bar; the fastest is a sliver.
@@ -531,6 +823,15 @@ test.describe('Ops portal: the support view, embedded', () => {
       await expect(page.locator('#tiles .tile').first()).toBeVisible();
       await expect(page.locator('#tiles')).toContainText('512.4');
       await expect(page.locator('#tiles')).toContainText('Businesses');
+      // Owner 2026-09-14: "average visit time is in minutes and can say
+      // something like 269 minutes, I want it broken to minutes then hours and
+      // minutes if it goes over 60." 63 minutes is an hour and three, and 480
+      // is a flat eight hours with no stray '0m' hanging off it.
+      await expect(page.locator('#tiles')).toContainText('1h 3m');   // avg_visit_min 63
+      await expect(page.locator('#tiles')).toContainText('8h');      // avg_day_min 480
+      // The raw minute count never reaches the screen again.
+      await expect(page.locator('#tiles')).not.toContainText('63m');
+      await expect(page.locator('#tiles')).not.toContainText('480');
     });
 
     test('picking a person opens the frame on that person, read only', async () => {
@@ -662,6 +963,38 @@ test.describe('Ops portal: the support view, embedded', () => {
       // ?app=1 matters: the "/" gate reads a query string as "the app, please",
       // so this cannot land on the marketing page.
       await expect(page.locator('#signout')).toBeVisible();     // still there, just not the only door
+    });
+
+    // Owner 2026-09-14, with a screenshot: "the portal view is fucking zoomed in
+    // massively and not scaled to mobile." Nothing had reflowed. The tile grid
+    // was still two-up and every gap and radius was magnified by one factor, so
+    // the page had ZOOMED, and it was scrolled right, which cut the left edge
+    // off every row. A double-tap does that, and nothing put it back.
+    //
+    // This page was the only app-facing screen whose viewport allowed it.
+    // The guard is permanent because the symptom is invisible in CI: a page
+    // that CAN zoom renders identically to one that cannot, right up until a
+    // thumb lands on it (13 step 4).
+    test('the page cannot be zoomed, the same way no other app screen can', async () => {
+      const vp = await page.evaluate(() =>
+        document.querySelector('meta[name=viewport]')?.content || '');
+      expect(vp).toContain('width=device-width');
+      expect(vp).toContain('maximum-scale=1.0');
+      expect(vp).toContain('user-scalable=no');
+      // viewport-fit must survive the edit, or the notch test above starts
+      // passing for the wrong reason.
+      expect(vp).toContain('viewport-fit=cover');
+      // The half the viewport tag cannot do: kill double-tap, and stop iOS
+      // inflating type. Straight off index.html.
+      const t = await page.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).touchAction,
+        body: getComputedStyle(document.body).touchAction,
+        adjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust,
+        ox: getComputedStyle(document.body).overflowX,
+      }));
+      expect(t.html).toBe('pan-y');
+      expect(t.body).toBe('pan-y');
+      expect(t.ox).toBe('hidden');
     });
 
     test('the header clears the notch on a phone', async () => {

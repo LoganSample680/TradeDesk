@@ -377,3 +377,198 @@ test.describe('the arrow answers the touch on the same frame', () => {
     });
   });
 });
+
+// ── ANSWERING A GAP IS A LOCAL WRITE, SO IT PAINTS LOCALLY ─────────────────
+// Owner 2026-09-18: "clicking unaccounted for things in time sheets, clicking
+// the button makes the day rail laggy."
+//
+// Same defect as the drill tap above and NOT the same fix. A drill tap changes
+// which slice is on screen, so _tlRowsCache (the assembled rows) answers it
+// outright. Answering a gap CHANGES the rows: it pushes a manual entry, so the
+// assembled cache is stale by definition and painting from it would redraw the
+// day without the row the tap just made. Everything _timeLogRows builds is in
+// memory except _fetchCrewLabor, three Supabase queries with no cache of its
+// own, so that one call is what the tap was waiting on. It is cached a layer
+// down instead: rebuild the local half fresh, reuse the crew payload already
+// in hand, and revalidate against the server after the paint.
+test.describe('the crew payload is cached so a local write paints at once', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => {};
+      window._supaUser = window._supaUser || { id: 'owner-gap', email: 'o@t.com' };
+      S.bizTz = 'America/Chicago';
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Count the crew fetches a call makes, and make each one slow enough that an
+  // await of it could not possibly be mistaken for a same-task paint.
+  const withCounter = (fn) => page.evaluate(async (src) => {
+    const keep = window._fetchCrewLabor;
+    let hits = 0;
+    window._fetchCrewLabor = async () => {
+      hits++;
+      await new Promise(r => setTimeout(r, 120));
+      return { name: {}, entries: [], shopEntries: [] };
+    };
+    try { const out = await (new Function('return (' + src + ')'))()(); return { hits, out }; }
+    finally { window._fetchCrewLabor = keep; }
+  }, fn.toString());
+
+  test('a plain call fetches the crew, every time', async () => {
+    const r = await withCounter(async () => {
+      await _timeLogRows(null);
+      await _timeLogRows(null);
+      return null;
+    });
+    expect(r.hits).toBe(2);
+  });
+
+  test('crewCached reuses the payload the last plain call left behind', async () => {
+    const r = await withCounter(async () => {
+      await _timeLogRows(null);            // fills the cache
+      await _timeLogRows(null, { crewCached: true });
+      await _timeLogRows(null, { crewCached: true });
+      return null;
+    });
+    expect(r.hits).toBe(1);
+  });
+
+  test('a crewCached call with nothing cached still goes and gets it: never an empty rail', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = window._fetchCrewLabor;
+      let hits = 0;
+      window._fetchCrewLabor = async () => { hits++; return { name: {}, entries: [], shopEntries: [] }; };
+      try {
+        // The option is only honoured when a payload for the SAME window is in
+        // hand, and a different window is the same as none.
+        await _timeLogRows('2026-09-01T00:00:00.000Z');
+        await _timeLogRows(null, { crewCached: true });
+        return hits;
+      } finally { window._fetchCrewLabor = keep; }
+    });
+    expect(r).toBe(2);
+  });
+
+  test('the cached payload is the real one: crew rows still come through', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = window._fetchCrewLabor;
+      const me = _supaUser.id;
+      window._fetchCrewLabor = async () => ({ name: { [me]: 'Me' }, shopEntries: [],
+        entries: [{ id: 'c1', source: 'client', job_id: null, client_key: 'd-c1', dest_place: 'John Doe',
+          arrived_at: '2026-09-01T14:00:00.000Z', departed_at: '2026-09-01T15:00:00.000Z', minutes: 60,
+          employee_user_id: me, contractor_user_id: me }] });
+      try {
+        await _timeLogRows(null);
+        window._fetchCrewLabor = async () => { throw new Error('must not be called'); };
+        const rows = await _timeLogRows(null, { crewCached: true });
+        return rows.filter(x => x.rawId === 'c1' || String(x.id).indexOf('c1') >= 0).length;
+      } finally { window._fetchCrewLabor = keep; }
+    });
+    expect(r).toBe(1);
+  });
+
+  test('answering a gap shows the new row without waiting on the network', async () => {
+    const r = await page.evaluate(async () => {
+      const keepF = window._fetchCrewLabor, keepT = timeEntries.slice();
+      let hits = 0, slow = false;
+      window._fetchCrewLabor = async () => {
+        hits++;
+        // The proof is "faster than the network", so the network is made far
+        // slower than any paint. At 400ms the render itself plus saveAll could
+        // reach the limit on a loaded WebKit runner (407ms, shard 3,
+        // 2026-09-25) without anything having waited on the fetch.
+        if (slow) await new Promise(x => setTimeout(x, 2000));
+        return { name: {}, entries: [], shopEntries: [] };
+      };
+      try {
+        await _timeLogRows(null);          // warm the crew cache
+        slow = true;
+        const before = timeEntries.length;
+        const a = '2026-09-01T14:00:00.000Z', b = '2026-09-01T15:00:00.000Z';
+        const t0 = Date.now();
+        _tlAddUnaccounted(a, b, 'work');
+        // One macrotask. If the paint were still behind _fetchCrewLabor the
+        // 2s stub could not have resolved and the row would not be there.
+        await new Promise(x => setTimeout(x, 0));
+        const rows = await _timeLogRows(null, { crewCached: true });
+        return { added: timeEntries.length - before, ms: Date.now() - t0,
+          landed: rows.some(x => x.startTime === a && x.endTime === b) };
+      } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; }
+    });
+    expect(r.added).toBe(1);
+    expect(r.landed).toBe(true);
+    expect(r.ms).toBeLessThan(2000);
+  });
+
+  // The revalidate is fired but never awaited, and an async function runs to
+  // its first await synchronously, so its fetch is already counted by the time
+  // renderTimeLog resolves. Counting calls therefore cannot separate the two.
+  // What CAN: make the fetch slow and time the render. A render that finished
+  // in a fraction of the stub's delay did not wait for it.
+  test('the paint does not wait for the crew fetch, and the check still happens', async () => {
+    const r = await page.evaluate(async () => {
+      const keepF = window._fetchCrewLabor, keepT = timeEntries.slice();
+      let hits = 0, slow = false;
+      window._fetchCrewLabor = async () => {
+        hits++;
+        if (slow) await new Promise(x => setTimeout(x, 500));
+        return { name: {}, entries: [], shopEntries: [] };
+      };
+      try {
+        // One revalidate at a time is the point of the guard, so a check still
+        // running from the test before this one would make this one a no-op and
+        // the assertion would be measuring the guard, not the revalidate.
+        for (let i = 0; i < 60 && _tlRevalidating; i++) await new Promise(x => setTimeout(x, 50));
+        await renderTimeLog();                 // warms the crew cache, fast stub
+        const base = hits;
+        slow = true;
+        const t0 = Date.now();
+        await renderTimeLog({ crewCached: true });
+        const ms = Date.now() - t0;
+        await new Promise(x => setTimeout(x, 700));
+        return { ms, after: hits - base };
+      } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; }
+    });
+    expect(r.ms).toBeLessThan(500);            // the screen was not behind the fetch
+    expect(r.after).toBeGreaterThanOrEqual(1); // and the server was still checked
+  });
+
+  test('the same render WITHOUT the option is exactly what was slow before', async () => {
+    const r = await page.evaluate(async () => {
+      const keepF = window._fetchCrewLabor, keepT = timeEntries.slice();
+      window._fetchCrewLabor = async () => {
+        await new Promise(x => setTimeout(x, 500));
+        return { name: {}, entries: [], shopEntries: [] };
+      };
+      try {
+        const t0 = Date.now();
+        await renderTimeLog();
+        return Date.now() - t0;
+      } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; }
+    });
+    expect(r).toBeGreaterThanOrEqual(500);
+  });
+
+  test('a crew fetch that throws is still a rendered screen, not a dead one', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = window._fetchCrewLabor;
+      window._fetchCrewLabor = async () => { throw new Error('offline'); };
+      try {
+        await renderTimeLog({ crewCached: true });
+        const el = document.getElementById('tl-list');
+        return { html: !!(el && el.innerHTML.length) };
+      } catch (e) { return { html: false, threw: String(e) }; }
+      finally { window._fetchCrewLabor = keep; }
+    });
+    expect(r.html).toBe(true);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
+});

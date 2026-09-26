@@ -17,19 +17,26 @@ const DATA = {
   status: 'submitted', version: 1, total_min: 1000, submitted_at: '2026-09-05T23:42:00Z',
   approved_at: null, approved_name: null, rejected_at: null, reject_note: null,
   time: [
-    { id: 'a1', employee_user_id: 'jack', job_id: 'j1', arrived_at: '2026-08-25T13:00:00Z', departed_at: '2026-08-25T17:00:00Z', minutes: 240, source: 'geofence', client_key: 'd-1', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
-    { id: 'a2', employee_user_id: 'jack', job_id: null, arrived_at: '2026-08-25T12:40:00Z', departed_at: '2026-08-25T13:00:00Z', minutes: 20, source: 'drive', client_key: 'd-2', dest_place: null },
-    { id: 'a3', employee_user_id: 'jack', job_id: 'j1', arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T21:00:00Z', minutes: 480, source: 'geofence', client_key: 'd-5', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    { id: 'a1', job_id: 'j1', arrived_at: '2026-08-25T13:00:00Z', departed_at: '2026-08-25T17:00:00Z', minutes: 240, source: 'geofence', client_key: 'd-1', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    { id: 'a2', job_id: null, arrived_at: '2026-08-25T12:40:00Z', departed_at: '2026-08-25T13:00:00Z', minutes: 20, source: 'drive', client_key: 'd-2', dest_place: null },
+    { id: 'a3', job_id: 'j1', arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T21:00:00Z', minutes: 480, source: 'geofence', client_key: 'd-5', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
   ],
-  shop: [{ id: 's1', employee_user_id: 'jack', arrived_at: '2026-08-25T12:00:00Z', departed_at: '2026-08-25T12:40:00Z', minutes: 40, client_key: 'd-4' }],
+  shop: [{ id: 's1', arrived_at: '2026-08-25T12:00:00Z', departed_at: '2026-08-25T12:40:00Z', minutes: 40, client_key: 'd-4' }],
   manual: [{ id: 'm1', date: '2026-08-28', start_time: '2026-08-28T12:00:00Z', end_time: '2026-08-28T20:00:00Z', minutes: 480, logged_by_uid: 'jack', logged_by_name: 'Jack Sample', open: false }],
 };
 
 async function openPage(page, data, opts) {
   await mockAllExternal(page);
-  await page.addInitScript(({ data, decideFail }) => {
+  await page.addInitScript(({ data, decideFail, noStorage }) => {
     window.__tsp = { data, calls: [], decideFail };
-  }, { data, decideFail: !!(opts && opts.decideFail) });
+    // A browser that refuses storage (private mode, a locked-down profile).
+    // Installed HERE rather than in the test body because _tspDeviceId runs
+    // at boot, which is long before a test gets a look in (10.5).
+    if (noStorage) {
+      const bang = () => { throw new Error('storage is off'); };
+      try { Object.defineProperty(window, 'localStorage', { get: bang, configurable: true }); } catch (_e) {}
+    }
+  }, { data, decideFail: !!(opts && opts.decideFail), noStorage: !!(opts && opts.noStorage) });
   // Registered AFTER mockAllExternal so it wins: the SDK becomes a shim whose
   // rpc answers from window.__tsp.
   await page.route('**/supabase-js@2*', (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
@@ -64,7 +71,11 @@ test.describe('The public timesheet page', () => {
     expect(r.range).toBe('Aug 23 to 29');
     expect(r.chip).toMatch(/^Submitted Sep 5,/);
     expect(r.title).toContain('Jack Sample');
-    expect(r.rpc).toEqual(['timesheet_public', { p_token: 'tok_abc_1234567890' }]);
+    // p_device joined it 2026-09-19: the link binds to the first device that
+    // opens it, and this side's whole job is naming which device is asking.
+    expect(r.rpc[0]).toBe('timesheet_public');
+    expect(r.rpc[1].p_token).toBe('tok_abc_1234567890');
+    expect(r.rpc[1].p_device).toMatch(/^dev_/);
   });
 
   test('the same week bars the app draws: seven columns, hours on the worked days, a chevron to open them, no Send button, no arrows out of the week', async ({ page }) => {
@@ -80,7 +91,8 @@ test.describe('The public timesheet page', () => {
         arrowsHidden: [...document.querySelectorAll('#tsp-body .tl-monav-btn')].every(b => getComputedStyle(b).visibility === 'hidden'),
         back: document.querySelector('#tsp-body .tl-drill-back'),
         backHidden: !document.querySelector('#tsp-body .tl-drill-back') || getComputedStyle(document.querySelector('#tsp-body .tl-drill-back')).visibility === 'hidden',
-        key: document.querySelector('#tsp-body .tl-wbar-key') && document.querySelector('#tsp-body .tl-wbar-key').textContent,
+        key: document.querySelector('#tsp-body .tl-rail-legend') && document.querySelector('#tsp-body .tl-rail-legend').textContent,
+        under: document.querySelectorAll('#tsp-body .tl-wbar-key').length,
       };
     });
     expect(r.wrap).toBe(true);
@@ -92,7 +104,12 @@ test.describe('The public timesheet page', () => {
     expect(r.hours.join(' | ')).toMatch(/5h/);
     expect(r.arrowsHidden).toBe(true);
     expect(r.backHidden).toBe(true);
+    // The breakdown the boss opens on. It used to be a colour-only key under
+    // the chart; it is now the split bar's legend above it, with the hours on
+    // it, which is what the owner asked the shared link for (2026-09-19).
     expect(r.key).toContain('On site');
+    expect(r.key, 'and how long each bucket took, not just its colour').toMatch(/\dh|\dm/);
+    expect(r.under, 'one legend, not two').toBe(0);
   });
 
   test('tap a day: the rail, read only (no Edit), back to the week', async ({ page }) => {
@@ -291,6 +308,247 @@ test.describe('The public timesheet page', () => {
     expect(r.junk).toEqual([false, false, false]);
     // Navigation only: nothing on the shared page calls a writer.
     r.handlers.forEach((h) => expect(h, h).toMatch(/^_tlDrill(To|Up|Step)\(/));
+  });
+
+  // ── The link belongs to the first device that opens it ─────────────────
+  //
+  // Owner 2026-09-19: "the link that is shared I need some security on it,
+  // only the person who receives it can open it, if it's resent again that
+  // person can't see it." He picked trust-on-first-use out of three shapes.
+  //
+  // The DECIDING is the server's (timesheet_claim, migration 20261027, proven
+  // in SQL). What is proven here is the only part this file owns: that the
+  // page names its device, names the SAME one every time, names it on the
+  // approve too, and has something true to say when the answer is no.
+  test.describe('one device per link', () => {
+    test('every call says which device is asking, and it is one device', async ({ page }) => {
+      await openPage(page, DATA);
+      await page.evaluate(() => _tspDecide('approve'));
+      const r = await page.evaluate(() => ({
+        calls: window.__tsp.calls.map(c => [c[0], c[1].p_device]),
+        stored: localStorage.getItem('zp3_device_id'),
+      }));
+      expect(r.calls.length).toBe(2);
+      expect(r.calls[0][0]).toBe('timesheet_public');
+      expect(r.calls[1][0]).toBe('timesheet_decide');
+      // Approving is the part that costs money, so it carries the claim too.
+      expect(r.calls[1][1], 'the approve names the device as well').toBe(r.calls[0][1]);
+      expect(r.calls[0][1]).toBe(r.stored);
+    });
+
+    // The same key js/cloud.js writes (_initDeviceId), on purpose: a boss who
+    // also runs TradeDesk on this phone must be ONE device here, not two.
+    test('the same phone comes back as the same device, not a new one', async ({ page }) => {
+      await openPage(page, DATA);
+      const first = await page.evaluate(() => window.__tsp.calls[0][1].p_device);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.__tsp && window.__tsp.calls.length > 0);
+      const second = await page.evaluate(() => window.__tsp.calls[0][1].p_device);
+      expect(second).toBe(first);
+    });
+
+    test('refused: the page says what happened and shows nothing of the week', async ({ page }) => {
+      await openPage(page, { refused: 'bound' });
+      const r = await page.evaluate(() => ({
+        title: document.querySelector('.tsp-state-t').textContent.trim(),
+        msg: document.querySelector('.tsp-state-m').textContent.trim(),
+        pageHidden: document.getElementById('tsp-page').hidden,
+        body: (document.getElementById('tsp-body') || {}).innerHTML || '',
+      }));
+      expect(r.title).toMatch(/already open somewhere else/i);
+      // Not "could not load": that is what a bad signal says, and it would
+      // send somebody checking their bars over a link working as intended.
+      expect(r.title).not.toMatch(/could not load/i);
+      expect(r.msg, 'and what to do about it').toMatch(/sent again/i);
+      expect(r.pageHidden, 'no hours leak past the refusal').toBe(true);
+      expect(r.body).not.toContain('tl-wbar');
+    });
+
+    // Private mode, a locked-down profile. The page sends no device, the
+    // server serves it only while the sheet is unclaimed, and nobody is
+    // locked out of their own timesheet over a browser setting.
+    test('a browser with no storage still opens the link', async ({ page }) => {
+      await openPage(page, DATA, { noStorage: true });
+      const r = await page.evaluate(() => ({
+        device: window.__tsp.calls[0][1].p_device,
+        shown: !document.getElementById('tsp-page').hidden,
+      }));
+      expect(r.device).toBe('');
+      expect(r.shown).toBe(true);
+    });
+  });
+
+  // ── The link draws what the app draws, off what the SERVER sends ───────
+  //
+  // Both of these shipped broken and neither had a failing test, for the same
+  // reason: the fixture above used to invent an `employee_user_id` on every
+  // row, a field timesheet_public has never returned. The field is gone from
+  // it now, so these two run against the shape the server actually sends.
+  //
+  // Found 2026-09-19 by pointing the real page at real rows in a real
+  // Postgres: a week with 13h 30m on it drew 12h 50m of "On site", no
+  // Driving, no Shop.
+  test.describe('the numbers are the app\'s numbers', () => {
+    test('a drive is Driving, not time on site', async ({ page }) => {
+      await openPage(page, DATA);
+      const r = await page.evaluate(() => ({
+        // The four predicates js/timelog.js guards on. All four were absent
+        // here, so every guard answered false and every drive fell through to
+        // the on-site bucket. js/geo-sources.js owns them now.
+        fns: ['_geoIsDriveSource', '_geoIsPlaceSource', '_geoIsHeldSource', '_geoIsOffJobSource']
+               .map(n => typeof window[n]),
+        legend: (document.querySelector('#tsp-body .tl-rail-legend') || {}).textContent || '',
+      }));
+      expect(r.fns, 'all four resolve on the shared page').toEqual(['function', 'function', 'function', 'function']);
+      expect(r.legend).toContain('Driving');
+      expect(r.legend).toMatch(/Driving\s*20m/);
+    });
+
+    test('shop time is on the sheet, not dropped on the floor', async ({ page }) => {
+      await openPage(page, DATA);
+      const r = await page.evaluate(() => ({
+        legend: (document.querySelector('#tsp-body .tl-rail-legend') || {}).textContent || '',
+        total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim(),
+      }));
+      // js/timelog.js drops any shop row with no employee on it, and the RPC
+      // sends none. 40m of shop time left the sheet without a word.
+      expect(r.legend).toMatch(/Shop\s*40m/);
+      // 240 + 20 + 480 derived, 40 in the shop, 480 manual: 21h exactly, the
+      // same number this file has asserted since the page shipped. Without
+      // the shop row it is 20h 20m, and nothing on the page would say why.
+      expect(r.total).toBe('21h');
+    });
+  });
+
+  // ── A FULL DAY, EVERY BUCKET (owner 2026-09-19) ────────────────────────
+  //
+  // "It needs to show all the breakdowns, on site, drive times particularly
+  // supply house, all that." A load at the yard, out to the job, over to the
+  // supply house, back, and home: the shape of an actual day rather than the
+  // two rows the fixture above carries.
+  const FULL = Object.assign({}, DATA, {
+    time: [
+      { job_id: null, arrived_at: '2026-08-25T12:10:00Z', departed_at: '2026-08-25T12:35:00Z', minutes: 25, source: 'place-load',   client_key: 'p1', origin_place: null,               dest_place: 'TradeDesk yard' },
+      { job_id: null, arrived_at: '2026-08-25T12:35:00Z', departed_at: '2026-08-25T13:02:00Z', minutes: 27, source: 'drive',        client_key: 'p2', origin_place: 'TradeDesk yard',    dest_place: 'John Doe' },
+      { job_id: 'j1', arrived_at: '2026-08-25T13:02:00Z', departed_at: '2026-08-25T16:30:00Z', minutes: 208, source: 'geofence',    client_key: 'p3', origin_place: null,               dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+      { job_id: null, arrived_at: '2026-08-25T16:30:00Z', departed_at: '2026-08-25T16:48:00Z', minutes: 18, source: 'drive',        client_key: 'p4', origin_place: 'John Doe',          dest_place: 'Ferguson Plumbing Supply' },
+      { job_id: null, arrived_at: '2026-08-25T16:48:00Z', departed_at: '2026-08-25T17:14:00Z', minutes: 26, source: 'place-supply', client_key: 'p5', origin_place: null,               dest_place: 'Ferguson Plumbing Supply' },
+      { job_id: null, arrived_at: '2026-08-25T17:14:00Z', departed_at: '2026-08-25T17:35:00Z', minutes: 21, source: 'drive',        client_key: 'p6', origin_place: 'Ferguson Plumbing Supply', dest_place: 'John Doe' },
+    ],
+    shop: [{ arrived_at: '2026-08-27T13:00:00Z', departed_at: '2026-08-27T14:35:00Z', minutes: 95, client_key: 's1' }],
+    manual: [{ id: 'm1', date: '2026-08-27', start_time: '2026-08-27T14:35:00Z', end_time: '2026-08-27T20:05:00Z', minutes: 330, open: false }],
+  });
+
+  // ── THE CLOCK IS THE BRACKET HERE TOO (owner 2026-09-21) ───────────────
+  //
+  // "On the link Jack sent his dad it looks like manual time double counted,
+  // why? It didn't on Jack's record."
+  //
+  // His week of 13-19 September, measured on both screens: the app said
+  // 42h 27m with 1m of Manual time, the link said 80h 10m with 37h 37m. The
+  // automatic buckets agreed almost to the minute, so the whole 37-hour gap
+  // was one clock counted twice.
+  //
+  // _tlBlendManual buckets by `personUid||acting uid` and returns early from
+  // a bucket with no clock in it. The derived rows are stamped _TSP_UID
+  // because the RPC sends no employee_user_id; the clocks were pushed raw,
+  // carrying the real logged_by_uid the server DOES send. Two buckets, no
+  // blend.
+  //
+  // WHY EVERY FIXTURE ABOVE MISSED IT, which is the more useful half: not one
+  // of them puts a clock and a derived row on the SAME DAY. DATA clocks
+  // 08-28 and derives 08-25 and 08-27; FULL clocks 08-27 14:35 and puts the
+  // shop row before it, touching but never overlapping. A blend with nothing
+  // to absorb cannot tell you whether it ran. These two days overlap on
+  // purpose.
+  const BLEND = Object.assign({}, DATA, {
+    time: [
+      // Inside the clock below: 8:00 to 8:20 and 8:20 to 12:20 Central.
+      { id: 'b1', job_id: null, arrived_at: '2026-08-26T13:00:00Z', departed_at: '2026-08-26T13:20:00Z', minutes: 20, source: 'drive', client_key: 'b-1', origin_place: 'TradeDesk yard', dest_place: 'John Doe' },
+      { id: 'b2', job_id: 'j1', arrived_at: '2026-08-26T13:20:00Z', departed_at: '2026-08-26T17:20:00Z', minutes: 240, source: 'geofence', client_key: 'b-2', dest_place: null, job_name: 'Smith kitchen', client_name: 'John Doe', addr: '1 Main St' },
+    ],
+    shop: [],
+    // 8:00 to 4:00 Central, 480 minutes, holding all 260 above. The uid is the
+    // REAL one the server sends for a crew member, which is the whole point:
+    // a fixture that stamps _TSP_UID itself would agree with the code instead
+    // of testing it, exactly like the shop fixture that invented
+    // employee_user_id and hid the missing shop time for a week.
+    manual: [{ id: 'mb', date: '2026-08-26', start_time: '2026-08-26T13:00:00Z', end_time: '2026-08-26T21:00:00Z', minutes: 480, logged_by_uid: 'jack-real-uuid', logged_by_name: 'Jack Sample', open: false }],
+  });
+
+  test.describe('a clock over a derived day is not counted twice', () => {
+    test('the boss sees the same day the crew member does', async ({ page }) => {
+      await openPage(page, BLEND);
+      const r = await page.evaluate(() => ({
+        legend: [...document.querySelectorAll('#tsp-body .tl-rail-legend .tl-rail-leg')]
+                  .map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+        total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim(),
+      }));
+      const leg = r.legend.join(' | ');
+      // 480 clocked minutes holding 260 derived ones is EIGHT HOURS, not
+      // twelve hours twenty. Twelve twenty is the bug, and it is the shape
+      // the owner was looking at.
+      expect(r.total, 'the clock is the bracket, not an extra shift: ' + leg).toBe('8h');
+      // And the day is still broken down, not flattened into one block: the
+      // drive keeps its own colour and the site time keeps its own.
+      expect(leg).toMatch(/Driving\s*20m/);
+      expect(leg).toMatch(/On site\s*4h/);
+      // The 220 minutes the clock covers and nothing tracked stay GREY. They
+      // become a row reading "Clocked in, nothing tracked" (_tlBlendManual),
+      // which _tlRailKind has always called Manual time because it has no
+      // address and never had one. The week aggregator had no arm for it and
+      // was billing it as on-site job labour, so the rail drew it grey and
+      // the bar above drew the same minutes blue: fixed alongside this.
+      expect(leg).toMatch(/Manual time\s*3h\s*40m/);
+    });
+
+    test("an owner's own sheet blends too, though the server sends no uid", async ({ page }) => {
+      // The same bug wearing the other hat. An owner's clocks come back with
+      // logged_by_uid null, which falls through to the acting uid, and this
+      // page has no session at all so that is the string 'owner'. Two buckets
+      // again, and nothing on the page to hint at it.
+      const OWN = Object.assign({}, BLEND, {
+        manual: [Object.assign({}, BLEND.manual[0], { logged_by_uid: null, logged_by_name: null })],
+      });
+      await openPage(page, OWN);
+      const total = await page.evaluate(() =>
+        document.querySelector('#tsp-body .tl-monav-tot').textContent.trim());
+      expect(total).toBe('8h');
+    });
+  });
+
+  test.describe('a full day, every breakdown', () => {
+    test('the week names every bucket the day spent time in', async ({ page }) => {
+      await openPage(page, FULL);
+      const r = await page.evaluate(() => ({
+        legend: [...document.querySelectorAll('#tsp-body .tl-rail-legend .tl-rail-leg')]
+                  .map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+      }));
+      // Not a list of strings this file made up: the app's own bucket table,
+      // so a renamed or added bucket comes through here without an edit.
+      const want = ['On site', 'Shop', 'Driving', 'Loading', 'Supply', 'Manual time'];
+      want.forEach((w) => expect(r.legend.some(l => l.startsWith(w)), w + ' is on the week').toBe(true));
+      expect(r.legend.find(l => l.startsWith('Supply'))).toMatch(/26m/);
+      expect(r.legend.find(l => l.startsWith('Loading'))).toMatch(/25m/);
+    });
+
+    test('a drive says where it started and where it ended', async ({ page }) => {
+      await openPage(page, FULL);
+      await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+      await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+      const rows = await page.evaluate(() => [...document.querySelectorAll('#tsp-body .tl-rail-row')]
+        .map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+      const txt = rows.join(' | ');
+      // timesheet_public sent dest_place and never origin_place, so every
+      // drive on a shared sheet could only name the far end (migration
+      // 20261027). The app has titled them with both since 2026-09-15.
+      expect(txt).toContain('TradeDesk yard \u2192 John Doe');
+      expect(txt).toContain('John Doe \u2192 Ferguson Plumbing Supply');
+      expect(txt).toContain('Ferguson Plumbing Supply \u2192 John Doe');
+      expect(txt, 'and the supply stop is named as a supply stop').toMatch(/SUPPLY HOUSE/i);
+      expect(txt, 'never the not-saved fallback when both ends are known')
+        .not.toContain('Destination not saved');
+    });
   });
 
   test('layout (§15.3): no bleed, no overlapping controls at 320px and 390px', async ({ page }) => {

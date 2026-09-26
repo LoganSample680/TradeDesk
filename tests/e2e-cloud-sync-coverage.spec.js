@@ -1183,6 +1183,80 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.clearedAfter).toBe(true);
   });
 
+  // ── THE SAFETY NET CANNOT BE EMPTIED BY THE THING IT SURVIVES ────────────
+  // Owner 2026-09-16, on Jack: "he said he clocked in at 9am this morning and
+  // just clocked out, but I don't see his clock in time or his banner."
+  //
+  // zp3_offline_pending is a SNAPSHOT OF MEMORY, written synchronously so a
+  // force-quit inside the debounce window still keeps the row. A cloud load
+  // replaces every array with the server's copy and only drains the blob back
+  // at the very END of the load. Any save that fires inside that window
+  // (applySettings alone reaches saveAll) used to rewrite the blob from arrays
+  // that no longer held the unsynced row, so the only record of it was gone
+  // before the drain ever looked. A punch that never reached the server came
+  // back as a day with no clock on it.
+  test('a save during a cloud load never overwrites the pending blob', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { user: window._supaUser, loaded: _supaCloudLoaded, load: _loadInProgress,
+                      entries: timeEntries.slice(), pend: localStorage.getItem('zp3_offline_pending') };
+      try {
+        window._supaUser = window._supaUser || { id: 'pending-guard-u' };
+        _supaCloudLoaded = true; _loadInProgress = false;
+        // A punch lands and is snapshotted, exactly as clockIn leaves it.
+        timeEntries = saved.entries.concat([{ id: 'punch-1', date: '2026-09-16',
+          start_time: '2026-09-16T13:53:30.000Z', end_time: null, minutes: null, open: true }]);
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const inBlob = (localStorage.getItem('zp3_offline_pending') || '').indexOf('punch-1') >= 0;
+        // Now a load starts: memory is replaced with the server's copy, which
+        // has never seen the punch, and something saves mid-load.
+        _loadInProgress = true;
+        timeEntries = saved.entries.slice();
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const stillInBlob = (localStorage.getItem('zp3_offline_pending') || '').indexOf('punch-1') >= 0;
+        // And the other half, which CI caught when the first fix simply
+        // skipped the write: a row CREATED during the load is still the
+        // person using the app, and must be snapshotted like any other.
+        timeEntries = saved.entries.concat([{ id: 'punch-2', date: '2026-09-16',
+          start_time: '2026-09-16T14:10:00.000Z', end_time: null, minutes: null, open: true }]);
+        supaSaveDebounced();
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        const blob = localStorage.getItem('zp3_offline_pending') || '';
+        return { inBlob, stillInBlob, newRow: blob.indexOf('punch-2') >= 0,
+          oldStillThere: blob.indexOf('punch-1') >= 0 };
+      } finally {
+        window._supaUser = saved.user; _supaCloudLoaded = saved.loaded; _loadInProgress = saved.load;
+        timeEntries = saved.entries;
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        if (saved.pend == null) localStorage.removeItem('zp3_offline_pending');
+        else localStorage.setItem('zp3_offline_pending', saved.pend);
+      }
+    });
+    expect(r.inBlob, 'the punch is snapshotted the moment it happens').toBe(true);
+    expect(r.stillInBlob, 'and a mid-load save cannot erase it').toBe(true);
+    expect(r.newRow, 'a row created DURING the load is still snapshotted').toBe(true);
+    expect(r.oldStillThere, 'without dropping the one the load has not drained yet').toBe(true);
+  });
+
+  // The other half: a punch does not sit in the debounce while the phone goes
+  // back in the pocket. Jack's app had eleven seconds of foreground that
+  // morning and one second on the next wake; a timer suspended with the app
+  // never fires.
+  test('a clock punch asks for the push immediately, it does not wait out the debounce', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { flush: window._flushSaveNow, timer: window._activeTimer };
+      let flushes = 0;
+      try {
+        window._flushSaveNow = async () => { flushes++; };
+        _tlFlushClockPunch();
+        return { flushes, exists: typeof _tlFlushClockPunch === 'function' };
+      } finally { window._flushSaveNow = saved.flush; window._activeTimer = saved.timer; }
+    });
+    expect(r.exists).toBe(true);
+    expect(r.flushes, 'one push, asked for now').toBe(1);
+  });
+
   // ── Wedge guard: a slow/hung save must NOT starve the reconcile backstop ──────
   // Live failure (A→B delete): B's silent reload awaited B's own in-flight save
   // UNBOUNDED while holding _loadInProgress, so every heartbeat tick skipped and B
@@ -2242,4 +2316,137 @@ test.describe('100-writer op channel + rebase', () => {
       expect(fn.indexOf('_refreshActivePage()', pull)).toBeGreaterThan(pull);
     });
   });
+});
+
+// ── A DELETE THAT SAVES ITSELF (owner 2026-09-18) ──────────────────────────
+// "I deleted Blake sample like 4 times over the last week and she keeps coming
+// back." Her row never carried a deleted_at at all: the delete had not failed,
+// it had never been sent.
+//
+// deleteClient and delMileage end their _userDelete callback with
+// _flushSaveNow(), and supaSaveToCloud runs synchronously from there into the
+// sweep. _userDelete records what was deleted by diffing AFTER the callback
+// returns, so the save read an empty delete list, took its no-op fast path, and
+// that path advanced _lastKnownIds past the id. The intent then landed on
+// bookkeeping that no longer had anywhere to apply it, so no later save could
+// sweep it either. Permanent, silent, and identical on every retry.
+test.describe('a delete records its intent before any save can read it', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Run a delete shaped exactly like deleteClient's: mutate, then flush from
+  // inside the callback. Report what the flush SAW when it ran.
+  const run = (opts) => page.evaluate((o) => {
+    const id = String(o.id);
+    clients.push({ id: o.id, name: 'Resurrect Me' });
+    _locallyDeletedIds.td_clients.delete(id);
+    (_lastKnownIds.td_clients || (_lastKnownIds.td_clients = new Set())).add(id);
+    // Stand in for the real save. The only thing under test is WHEN it runs
+    // relative to the diff, so it records the two facts the sweep depends on.
+    const keep = window.supaSaveToCloud;
+    const seen = [];
+    window.supaSaveToCloud = async () => {
+      seen.push({
+        intentRecorded: _locallyDeletedIds.td_clients.has(id),
+        stillKnown: !!(_lastKnownIds.td_clients && _lastKnownIds.td_clients.has(id)),
+        goneFromArray: !clients.some(c => String(c.id) === id),
+      });
+    };
+    try {
+      _userDelete(() => {
+        clients = clients.filter(c => String(c.id) !== id);
+        if (o.throws) throw new Error('mid-delete');
+        if (o.flush) _flushSaveNow();
+      });
+    } catch (e) { /* the throwing case */ }
+    return { seen, intentRecorded: _locallyDeletedIds.td_clients.has(id), keptGate: _userDeleteDepth };
+  }, opts).finally(() => page.evaluate(() => { try { delete window.supaSaveToCloud; } catch (_e) {} }));
+
+  test('the save fires exactly once, and by then the delete is written down', async () => {
+    const r = await run({ id: 991001, flush: true });
+    expect(r.seen.length).toBe(1);
+    expect(r.seen[0].intentRecorded).toBe(true);   // THE bug: this was false
+    expect(r.seen[0].goneFromArray).toBe(true);
+  });
+
+  test('and the id is still in _lastKnownIds when it runs, so the sweep can see it leave', async () => {
+    const r = await run({ id: 991002, flush: true });
+    expect(r.seen[0].stillKnown).toBe(true);
+  });
+
+  test('a delete that flushes nothing still records the intent', async () => {
+    const r = await run({ id: 991003, flush: false });
+    expect(r.seen.length).toBe(0);
+    expect(r.intentRecorded).toBe(true);
+  });
+
+  test('two flushes inside one delete collapse to one save', async () => {
+    const r = await page.evaluate(() => {
+      const id = '991004';
+      clients.push({ id: 991004, name: 'Twice' });
+      _locallyDeletedIds.td_clients.delete(id);
+      const keep = window.supaSaveToCloud;
+      let n = 0;
+      window.supaSaveToCloud = async () => { n++; };
+      try {
+        _userDelete(() => { clients = clients.filter(c => String(c.id) !== id); _flushSaveNow(); _flushSaveNow(); });
+      } finally { window.supaSaveToCloud = keep; }
+      return { n, intent: _locallyDeletedIds.td_clients.has(id) };
+    });
+    expect(r.n).toBe(1);
+    expect(r.intent).toBe(true);
+  });
+
+  // The gate is a counter, not a flag, and it is released in a finally. Both
+  // matter: a delete that throws halfway must still record what it got through,
+  // and must never leave every later save shut out of the cloud.
+  test('a delete that throws still records, and never leaves the gate closed', async () => {
+    const r = await run({ id: 991005, throws: true });
+    expect(r.intentRecorded).toBe(true);
+    expect(r.keptGate).toBe(0);
+  });
+
+  test('a nested delete does not release the gate early', async () => {
+    const r = await page.evaluate(() => {
+      const a = '991006', b = '991007';
+      clients.push({ id: 991006, name: 'Outer' }, { id: 991007, name: 'Inner' });
+      _locallyDeletedIds.td_clients.delete(a); _locallyDeletedIds.td_clients.delete(b);
+      const keep = window.supaSaveToCloud;
+      const seen = [];
+      window.supaSaveToCloud = async () => {
+        seen.push({ a: _locallyDeletedIds.td_clients.has(a), b: _locallyDeletedIds.td_clients.has(b) });
+      };
+      try {
+        _userDelete(() => {
+          clients = clients.filter(c => String(c.id) !== a);
+          _userDelete(() => { clients = clients.filter(c => String(c.id) !== b); _flushSaveNow(); });
+        });
+      } finally { window.supaSaveToCloud = keep; }
+      return { seen, depth: _userDeleteDepth };
+    });
+    // One save, after BOTH deletes are written down. The inner one must not
+    // release it while the outer is still mutating.
+    expect(r.seen.length).toBe(1);
+    expect(r.seen[0]).toEqual({ a: true, b: true });
+    expect(r.depth).toBe(0);
+  });
+
+  test('an ordinary flush outside a delete is untouched', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = window.supaSaveToCloud;
+      let n = 0;
+      window.supaSaveToCloud = async () => { n++; };
+      try { _flushSaveNow(); return n; } finally { window.supaSaveToCloud = keep; }
+    });
+    expect(r).toBe(1);
+  });
+
+  test('no console errors', async () => { await assertNoErrors(page); });
 });

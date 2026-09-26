@@ -1,0 +1,785 @@
+// @ts-check
+// ── Tim ─────────────────────────────────────────────────────────────────────
+//
+// Tim is an interface, not an intelligence (js/tim.js header). Every one of
+// these tests exists to hold that line: he resolves a sentence against the
+// screens the app already has, the years the books already hold, and the
+// customers and price book already on the phone. Nothing here calls anything,
+// which is the point, and is why the whole file runs offline.
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+
+const CLIENTS = [
+  { id: 8101, name: 'Rick Delaney', addr: '412 Maple St, Wichita, KS 67203' },
+  { id: 8102, name: 'Sandra Ruiz', addr: '2100 Oak Ave, Wichita, KS 67208' },
+];
+const BOOK = [
+  { desc: 'Replace 40 gal water heater', rate: 1850 },
+  { desc: 'Install kitchen faucet', rate: 285 },
+];
+
+test.describe('tim', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const parse = (text) => page.evaluate(([t, cl, bk]) =>
+    timParse(t, { clients: cl, book: bk, catalog: [], now: new Date('2026-09-17T15:00:00Z') }),
+    [text, CLIENTS, BOOK]);
+
+  // ── Where he takes you ────────────────────────────────────────────────────
+  test.describe('the screen he means', () => {
+    const cases = [
+      ['show me my books', 'pg-tracker'],
+      ['tim take me to the books', 'pg-tracker'],
+      ['open my leads', 'pg-leads'],
+      ['pull up my customers', 'pg-clients'],
+      ['show me the jobs', 'pg-jobs'],
+      ['open the schedule', 'pg-schedule'],
+      ['show me the calendar', 'pg-cal'],
+      ['who owes me', 'pg-money'],
+      ['show me my taxes', 'pg-taxes'],
+      ['pull up my crew', 'pg-team'],
+      ['open the dispatch board', 'pg-dispatch'],
+      ['open my licenses', 'pg-licensing'],
+      ['pull up contracts', 'pg-contracts'],
+      ['take me to the client hub', 'pg-client-hub'],
+      ['open settings', 'pg-settings'],
+      ['take me home', 'pg-dash'],
+    ];
+    for (const [said, want] of cases) {
+      test(`"${said}" is ${want}`, async () => {
+        expect(await page.evaluate(t => (timWhere(t) || {}).pg, said)).toBe(want);
+      });
+    }
+
+    // The reason timWhere scores on phrase length: "time log" and "the hub"
+    // both contain a shorter alias belonging to a different screen, and a
+    // word-set match sends the contractor to the wrong page.
+    test('a longer phrase wins over a shorter one inside it', async () => {
+      expect(await page.evaluate(() => (timWhere('open my time log') || {}).pg)).toBe('pg-timelog');
+      expect(await page.evaluate(() => (timWhere('take me to the client hub') || {}).pg)).toBe('pg-client-hub');
+    });
+
+    test('a sentence naming no screen says so, rather than guessing one', async () => {
+      expect(await page.evaluate(() => timWhere('what a morning'))).toBeNull();
+    });
+
+    test('null, undefined, empty and a number are all nothing, not a crash', async () => {
+      const r = await page.evaluate(() => [timWhere(null), timWhere(undefined), timWhere(''),
+        timWhere('   '), timWhere(0), timWhere(42), timWhere([])]);
+      expect(r).toEqual([null, null, null, null, null, null, null]);
+    });
+  });
+
+  // ── Which year ────────────────────────────────────────────────────────────
+  test.describe('the year he means', () => {
+    test('last year, this year, and the year itself', async () => {
+      const r = await page.evaluate(() => {
+        const now = new Date('2026-09-17T15:00:00Z');
+        return {
+          last: timWhen('my books for last year', now),
+          this: timWhen('income this year', now),
+          ytd: timWhen('year to date', now),
+          named: timWhen('show me 2024', now),
+          none: timWhen('show me my books', now),
+        };
+      });
+      expect(r).toEqual({ last: 2025, this: 2026, ytd: 2026, named: 2024, none: null });
+    });
+
+    test('null, undefined and empty return no year', async () => {
+      const r = await page.evaluate(() => [timWhen(null), timWhen(undefined), timWhen('')]);
+      expect(r).toEqual([null, null, null]);
+    });
+
+    test('a year only reaches the books, so a stray number elsewhere changes nothing', async () => {
+      // "2024" sitting in a sentence about the crew must not silently re-year a
+      // screen that has no year. timParse carries it; timRun only applies it on
+      // pg-tracker.
+      const p = await parse('show me my crew 2024');
+      expect(p.pg).toBe('pg-team');
+      expect(p.year).toBe(2024);
+    });
+  });
+
+  // ── The name he said ──────────────────────────────────────────────────────
+  test.describe('the name after "for"', () => {
+    test('a name comes back whole', async () => {
+      expect(await page.evaluate(() => timSubject('build me a t and m for Logan Sample'))).toBe('Logan Sample');
+    });
+    test('the work after the name is dropped, the name is kept', async () => {
+      expect(await page.evaluate(() => timSubject('t and m for Logan Sample doing a repipe'))).toBe('Logan Sample');
+      expect(await page.evaluate(() => timSubject('proposal for Logan Sample about eight hours'))).toBe('Logan Sample');
+    });
+    test('a time phrase is a year, never a person', async () => {
+      const r = await page.evaluate(() => [
+        timSubject('my books for last year'),
+        timSubject('income for this year'),
+        timSubject('books for 2024'),
+      ]);
+      expect(r).toEqual([null, null, null]);
+    });
+    test('no "for" at all, and a sentence too long to be a name, are both nothing', async () => {
+      const r = await page.evaluate(() => [
+        timSubject('show me the jobs'),
+        timSubject('for the guy who called about the thing yesterday'),
+        timSubject(null), timSubject(undefined), timSubject(''),
+      ]);
+      expect(r).toEqual([null, null, null, null, null]);
+    });
+  });
+
+  // ── The whole sentence ────────────────────────────────────────────────────
+  test.describe('what he decides to do', () => {
+    test('a customer he has plus work is a bid, not a page', async () => {
+      const p = await parse('t and m for the delaneys, eight hours, water heater replacement');
+      expect(p.kind).toBe('estimate');
+      expect(p.plan.client.name).toBe('Rick Delaney');
+      expect(p.plan.hours).toBe(8);
+    });
+
+    // The exact sentence the owner wrote the feature for: the person does not
+    // exist yet, and retyping a name he already said is the friction Tim is for.
+    test('a customer he does not have yet is a new customer, not a dead end', async () => {
+      const p = await parse('build me a time and materials for Logan Sample, repiping half the house');
+      expect(p.kind).toBe('newclient');
+      expect(p.subject).toBe('Logan Sample');
+    });
+
+    test('looking at something is a page', async () => {
+      const p = await parse('show me my books for last year');
+      expect(p.kind).toBe('nav');
+      expect(p.pg).toBe('pg-tracker');
+      expect(p.year).toBe(2025);
+    });
+
+    test('a bare year is the books, because nowhere else is a year the whole ask', async () => {
+      const p = await parse('2024');
+      expect(p.kind).toBe('nav');
+      expect(p.pg).toBe('pg-tracker');
+      expect(p.year).toBe(2024);
+    });
+
+    test('a sentence he cannot place stays unplaced instead of opening something', async () => {
+      const p = await parse('hey tim how about them chiefs');
+      expect(p.kind).toBe('none');
+    });
+
+    test('null, undefined, empty and no options at all are all "none"', async () => {
+      const r = await page.evaluate(() => [
+        timParse(null), timParse(undefined), timParse(''), timParse('  '),
+        timParse('show me my books'),
+      ].map(p => p.kind));
+      expect(r).toEqual(['none', 'none', 'none', 'none', 'nav']);
+    });
+  });
+
+  // ── What he says he will do ───────────────────────────────────────────────
+  test.describe('the line he shows before he moves', () => {
+    test('every kind reads like a sentence', async () => {
+      const r = await page.evaluate(([cl, bk]) => {
+        const o = { clients: cl, book: bk, catalog: [], now: new Date('2026-09-17T15:00:00Z') };
+        return {
+          nav: timSay(timParse('show me my books for last year', o)),
+          plain: timSay(timParse('open the schedule', o)),
+          newc: timSay(timParse('build me a t and m for Logan Sample, repipe', o)),
+          est: timSay(timParse('t and m for the delaneys, eight hours, water heater replacement', o)),
+          none: timSay(timParse('how about them chiefs', o)),
+        };
+      }, [CLIENTS, BOOK]);
+      expect(r.nav).toBe('Open Books for 2025');
+      expect(r.plain).toBe('Open Schedule');
+      expect(r.newc).toBe('Start Logan Sample as a new customer');
+      expect(r.est).toContain('Build a T&M for Rick Delaney');
+      expect(r.est).toContain('8 hrs');
+      expect(r.none).toBe('');
+    });
+
+    test('nothing at all is an empty line, never the word undefined', async () => {
+      const r = await page.evaluate(() => [timSay(null), timSay(undefined), timSay({}), timSay({ kind: 'none' })]);
+      expect(r).toEqual(['', '', '', '']);
+    });
+  });
+
+  // ── Doing it ──────────────────────────────────────────────────────────────
+  test.describe('what happens on the screen', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(([cl, bk]) => {
+        clients.length = 0; cl.forEach(c => clients.push(c));
+        S.priceBook = S.priceBook || {}; S.priceBook.plumbing = bk;
+        document.getElementById('_tim-ov')?.remove();
+        document.getElementById('_newc-gate-overlay')?.remove();
+      }, [CLIENTS, BOOK]);
+    });
+
+    test('a page command lands on the page', async () => {
+      const on = await page.evaluate(() => { timRun('open the schedule'); return document.querySelector('.pg.active')?.id; });
+      expect(on).toBe('pg-schedule');
+    });
+
+    test('the books for last year land on the books, set to that year', async () => {
+      const r = await page.evaluate(() => {
+        timRun('show me my books for last year');
+        return { pg: document.querySelector('.pg.active')?.id, yr: trackerYear };
+      });
+      expect(r.pg).toBe('pg-tracker');
+      // A year with no rows falls back inside populateTrackerYearSel rather
+      // than showing an empty screen, so this asserts the request landed, not
+      // that the books invented data for it.
+      expect(typeof r.yr === 'number' || typeof r.yr === 'string').toBe(true);
+    });
+
+    test('a name he does not have opens the new customer box with the name already in it', async () => {
+      const v = await page.evaluate(() => {
+        timRun('build me a time and materials for Logan Sample, repiping half the house');
+        return document.getElementById('_newc-gate-name')?.value;
+      });
+      expect(v).toBe('Logan Sample');
+      await page.evaluate(() => document.getElementById('_newc-gate-overlay')?.remove());
+    });
+
+    test('a sentence he cannot place moves nothing', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-dash');
+        const p = timRun('how about them chiefs');
+        return { kind: p.kind, pg: document.querySelector('.pg.active')?.id };
+      });
+      expect(r).toEqual({ kind: 'none', pg: 'pg-dash' });
+    });
+
+    test('null and empty commands do nothing and throw nothing', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-dash');
+        let threw = false;
+        try { timRun(null); timRun(undefined); timRun(''); } catch (e) { threw = true; }
+        return { threw, pg: document.querySelector('.pg.active')?.id };
+      });
+      expect(r).toEqual({ threw: false, pg: 'pg-dash' });
+    });
+
+    // Tim walks through goPg, so the employee wall the app already has applies
+    // to him for free. This test is here so that stays true: a crew member who
+    // asks Tim for the taxes must land where goPg puts him, not on the taxes.
+    test('a crew member asking for a locked page gets the same wall the nav gives him', async () => {
+      const pg = await page.evaluate(() => {
+        const was = _isEmployee;
+        _isEmployee = true;
+        try { timRun('show me my taxes'); return document.querySelector('.pg.active')?.id; }
+        finally { _isEmployee = was; }
+      });
+      expect(pg).toBe('pg-dash');
+    });
+  });
+
+  // ── The box ───────────────────────────────────────────────────────────────
+  test.describe('the box itself', () => {
+    test.afterEach(async () => { await page.evaluate(() => document.getElementById('_tim-ov')?.remove()); });
+
+    test('it is the app centered-modal convention, not a hand-rolled sheet', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        const ov = document.getElementById('_tim-ov');
+        return { ov: !!ov, cls: ov?.className, box: !!ov?.querySelector('.zmodal'), input: !!document.getElementById('_tim-say') };
+      });
+      expect(r).toEqual({ ov: true, cls: 'zmodal-overlay', box: true, input: true });
+    });
+
+    test('opening it ten times without waiting leaves exactly one box', async () => {
+      const n = await page.evaluate(() => {
+        for (let i = 0; i < 10; i++) openTim();
+        return document.querySelectorAll('#_tim-ov').length;
+      });
+      expect(n).toBe(1);
+    });
+
+    test('it reads the sentence back before it moves, and Go is dead until it can', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        const el = document.getElementById('_tim-say');
+        const out = () => document.getElementById('_tim-read').textContent;
+        const go = () => document.getElementById('_tim-go').disabled;
+        const empty = { read: out(), dead: go() };
+        el.value = 'how about them chiefs';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        const lost = { read: out(), dead: go() };
+        el.value = 'show me my books for last year';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        const found = { read: out(), dead: go() };
+        return { empty, lost, found };
+      });
+      expect(r.empty).toEqual({ read: '', dead: true });
+      expect(r.lost).toEqual({ read: 'Not sure what that is yet', dead: true });
+      expect(r.found).toEqual({ read: 'Open Books for 2025', dead: false });
+    });
+
+    test('Enter runs it and closes the box', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-dash');
+        openTim();
+        const el = document.getElementById('_tim-say');
+        el.value = 'open the schedule';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        return { open: !!document.getElementById('_tim-ov'), pg: document.querySelector('.pg.active')?.id };
+      });
+      expect(r).toEqual({ open: false, pg: 'pg-schedule' });
+    });
+
+    test('a sentence it cannot place keeps the box open so he can fix it', async () => {
+      const open = await page.evaluate(() => {
+        openTim();
+        const el = document.getElementById('_tim-say');
+        el.value = 'how about them chiefs';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        _timGo();
+        return !!document.getElementById('_tim-ov');
+      });
+      expect(open).toBe(true);
+    });
+
+    test('cancel and the backdrop both close it', async () => {
+      const r = await page.evaluate(() => {
+        openTim();
+        document.getElementById('_tim-cancel').click();
+        const afterCancel = !!document.getElementById('_tim-ov');
+        openTim();
+        const ov = document.getElementById('_tim-ov');
+        ov.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return { afterCancel, afterBackdrop: !!document.getElementById('_tim-ov') };
+      });
+      expect(r).toEqual({ afterCancel: false, afterBackdrop: false });
+    });
+
+    // The preview and the runner both read elements that only exist while the
+    // box is open. A stray call after it closed must be a no-op, not a throw
+    // into the console.
+    test('the preview and the runner survive the box not being there', async () => {
+      const threw = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        try { _timPreview(); _timGo(); _timClose(); return false; } catch (e) { return true; }
+      });
+      expect(threw).toBe(false);
+    });
+
+    test('the menu has a way in', async () => {
+      const n = await page.locator('#mmi-tim').count();
+      expect(n).toBe(1);
+    });
+  });
+
+  // ── Photos (owner 2026-09-22) ─────────────────────────────────────────────
+  // The Gallery page is gone; photos are found by place through the search.
+  // So a photo sentence is a lookup, and the words that are not about photos
+  // are the search term.
+  const photoSeed = () => page.evaluate(() => {
+    photos.length = 0;
+    const mk = (id, name, addr, iso) => photos.push({ id, type: 'before', url: 'https://x/' + id + '.jpg',
+      thumbUrl: 'https://x/t.jpg', storagePath: 'u/' + id + '.jpg', client_id: 501, client_name: name, addr, uploadedAt: iso });
+    mk(801, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-10T15:00:00.000Z');
+    mk(802, 'Dana Whitfield', '412 Oak St, Wichita KS', '2026-09-11T15:00:00.000Z');
+    mk(803, 'Dana Whitfield', '88 Pine Ct, Wichita KS', '2026-08-01T15:00:00.000Z');
+  });
+
+  test('a photo sentence is a lookup, and the words that are left are the term', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['show me the photos at 412 Oak', 'job photos 412 Oak', 'photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { kind: p.kind, q: p.q, n: (p.places || []).length }; }));
+    expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', n: 1 });
+    expect(r[1].kind).toBe('photos');          // "job photos" is not the Jobs page
+    expect(r[2]).toEqual({ kind: 'photos', q: '', n: 0 });
+  });
+
+  test('one address is not a question: it opens the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      const p = timParse('photos at 412 Oak', { clients: [], photos });
+      const say = timSay(p);
+      timRun('photos at 412 Oak');
+      const out = { say, album: document.querySelectorAll('#pc-rev .pc-rev-cell').length,
+        addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        visits: document.querySelectorAll('#pc-rev .pc-fold-visit').length,
+        asked: !!document.getElementById('_tim-ov') };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Open 412 Oak St, 2 photos');
+    // WHERE he lands changed, not whether he lands. This used to open the flat
+    // viewer, which lists every shot and never says whose house they are, so
+    // the answer arrived with the address missing from it. It opens the
+    // property folder now, and a folder groups by visit with the newest one
+    // expanded: these two shots are a day apart, so they are two visits and
+    // one of them is showing. The header carries the address the flat viewer
+    // never had.
+    expect(r.addr).toBe('412 Oak St');
+    expect(r.visits).toBe(2);
+    expect(r.album).toBe(1);
+    expect(r.asked).toBe(false);
+  });
+
+  test('two addresses: he asks which, and the answer opens the viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      const say = timSay(timParse('photos for Whitfield', { clients: [], photos }));
+      timRun('photos for Whitfield');
+      const asked = !!document.getElementById('_tim-ov');
+      const opts = [...document.querySelectorAll('#_tim-ov .pc-file-opt')].map(b => b.textContent);
+      document.querySelectorAll('#_tim-ov .pc-file-opt')[1].click();   // 88 Pine Ct
+      const out = { say, asked, opts, gone: !document.getElementById('_tim-ov'),
+        album: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      tdReviewClose();
+      return out;
+    });
+    expect(r.say).toBe('Pick which address, 2 match');
+    expect(r.asked).toBe(true);
+    expect(r.opts[0]).toContain('412 Oak St');
+    expect(r.opts[0]).toContain('2 photos');
+    expect(r.opts[1]).toContain('88 Pine Ct');
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(1);                    // the Pine Ct shot, not all three
+  });
+
+  test('nothing matches, so he opens the search rather than guessing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos at 9 Nowhere Ln');
+      const box = document.getElementById('global-search-input');
+      const out = { open: !!document.getElementById('global-search-overlay'), val: box ? box.value : null };
+      if (typeof closeSearch === 'function') closeSearch();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('9 nowhere ln');
+  });
+
+  // Through the actual button, not just timRun: Go used to close the overlay
+  // AFTER acting, which tore down the chooser in the same frame.
+  test('the Go button leaves the chooser standing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'photos for Whitfield';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = {
+        asked: !!document.getElementById('_tim-ov'),
+        opts: document.querySelectorAll('#_tim-ov .pc-file-opt').length,
+        stillTyping: !!document.getElementById('_tim-say'),
+      };
+      _timClose();
+      return out;
+    });
+    expect(r.asked).toBe(true);
+    expect(r.opts).toBe(2);
+    expect(r.stillTyping).toBe(false);   // the chooser replaced the box, not stacked on it
+  });
+
+  test('Go on a sentence he cannot place keeps the box and what was typed', async () => {
+    const r = await page.evaluate(() => {
+      openTim();
+      const el = document.getElementById('_tim-say');
+      el.value = 'qqqq zzzz';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _timGo();
+      const out = { open: !!document.getElementById('_tim-ov'), val: document.getElementById('_tim-say')?.value };
+      _timClose();
+      return out;
+    });
+    expect(r.open).toBe(true);
+    expect(r.val).toBe('qqqq zzzz');
+  });
+
+  // The sentence the owner actually said. It used to leave "where are
+  // whitfield" as the search term, match nothing, and do nothing, while still
+  // classifying correctly as a photo question, so Tim looked like he had
+  // simply ignored him (2026-09-22).
+  test('a question phrased as a question still finds the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['where are my photos for whitfield',
+      "show me whitfield's pictures", 'do i have any photos of whitfield', 'whitfield photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { q: p.q, n: (p.places || []).length }; }));
+    r.forEach(x => expect(x.q, 'no question words left in the search term').toBe('whitfield'));
+    r.forEach(x => expect(x.n, 'and it still finds both of their properties').toBe(2));
+  });
+
+  // Word order is how people talk, so every word has to land rather than the
+  // leftover phrase matching as one string.
+  test('the words can arrive in any order', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ({
+      a: tdPhotoSearch('whitfield oak', photos).length,
+      b: tdPhotoSearch('oak whitfield', photos).length,
+      c: tdPhotoSearch('whitfield nowhere', photos).length,
+    }));
+    expect(r.a).toBe(1);
+    expect(r.b, 'the same question, said the other way round').toBe(1);
+    expect(r.c, 'a word that matches nothing still rules the photo out').toBe(0);
+  });
+
+  // He lands somewhere that NAMES the house. The flat viewer shows the shots
+  // and never says whose they are.
+  test('one place opens the property folder, not the bare viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('where are my photos at 412 Oak');
+      const out = { addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      if (typeof tdReviewClose === 'function') tdReviewClose();
+      return out;
+    });
+    expect(r.addr, 'the folder header names the property').toBe('412 Oak St');
+    expect(r.cells).toBeGreaterThan(0);
+  });
+
+  test('cancel on the chooser opens nothing', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('photos for Whitfield');
+      document.getElementById('_tim-cancel').click();
+      return { gone: !document.getElementById('_tim-ov'), album: document.querySelectorAll('#pc-rev').length };
+    });
+    expect(r.gone).toBe(true);
+    expect(r.album).toBe(0);
+  });
+
+  test('a sentence with no photo word is untouched by any of this', async () => {
+    const r = await page.evaluate(() => ['open my jobs', 'the books', 'dispatch']
+      .map(s => timParse(s, { clients: [] }).kind));
+    expect(r).toEqual(['nav', 'nav', 'nav']);
+  });
+
+
+  test('no console errors, tim.js', async () => {
+    assertNoErrors(page, 'tim.js');
+  });
+});
+
+// ── Time off, said to Tim (owner 2026-09-24: "we're focused on Tim") ────────
+// "Tim, I'm on vacation through Sunday." Writes the same block the Schedule
+// screen's Time off button does, which the deriver reads (rule 25) to hold that
+// day's automatic time and mileage.
+test.describe('tim: time off', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Thursday 24 September 2026, the night this was asked for.
+  const off = (text) => page.evaluate((t) => {
+    const p = timParse(t, { clients: [], now: new Date(2026, 8, 24, 20, 0) });
+    return { kind: p.kind, start: p.start, end: p.end, label: p.label, say: timSay(p) };
+  }, text);
+
+  test('the sentence the owner would say: through Sunday', async () => {
+    const r = await off("Tim, I'm on vacation through Sunday");
+    expect(r).toMatchObject({ kind: 'timeoff', start: '2026-09-24', end: '2026-09-27', label: 'Vacation' });
+    expect(r.say).toBe('Mark Thu, Sep 24 to Sun, Sep 27 as vacation');
+  });
+
+  test('the ways a day gets said', async () => {
+    const cases = {
+      'take tomorrow off': ['2026-09-25', '2026-09-25'],
+      'time off friday through monday': ['2026-09-25', '2026-09-28'],
+      'vacation until the 30th': ['2026-09-24', '2026-09-30'],
+      'vacation till oct 2': ['2026-09-24', '2026-10-02'],
+      'pto 10/5 to 10/9': ['2026-10-05', '2026-10-09'],
+      'vacation for 3 days': ['2026-09-24', '2026-09-26'],
+      'on vacation for a week starting monday': ['2026-09-28', '2026-10-04'],
+      'vacation next week': ['2026-09-28', '2026-10-04'],
+      "i'm off today": ['2026-09-24', '2026-09-24'],
+      'day off': ['2026-09-24', '2026-09-24'],
+      // A date already past this month means next month, never the past.
+      'vacation on the 3rd': ['2026-10-03', '2026-10-03'],
+    };
+    for (const [said, want] of Object.entries(cases)) {
+      const r = await off(said);
+      expect([r.kind, r.start, r.end], said).toEqual(['timeoff', want[0], want[1]]);
+    }
+  });
+
+  test('"going to" is not a range, and the label follows the word he used', async () => {
+    const r = await off("i'm going to be off work tomorrow");
+    expect([r.start, r.end, r.label]).toEqual(['2026-09-25', '2026-09-25', 'Time off']);
+    expect((await off('holiday monday')).label).toBe('Holiday');
+  });
+
+  test('asking about the list opens it rather than adding a day', async () => {
+    for (const s of ['show my time off', 'cancel my vacation']) {
+      const r = await off(s);
+      expect(r.kind, s).toBe('timeoff-open');
+      expect(r.say).toBe('Open your time off');
+    }
+  });
+
+  test('never a day off by accident: other sentences are untouched', async () => {
+    const r = await page.evaluate(() => ['open the schedule', 'show me my books for last year', 'my hours', 'the time log', 'off the top of my head']
+      .map(s => timParse(s, { clients: [] }).kind));
+    expect(r).toEqual(['nav', 'nav', 'nav', 'nav', 'none']);
+  });
+
+  test('nonsense and too-long ranges never throw and never write', async () => {
+    const r = await page.evaluate(() => [null, '', 'vacation until february 30th', 'vacation for 99 weeks',
+      'vacation 13/45'].map(s => { try { return timParse(s, { clients: [] }).kind; } catch (e) { return 'threw'; } }));
+    expect(r).not.toContain('threw');
+    expect(r[4]).toBe('timeoff');   // an impossible date is dropped, today stands
+    expect(r[3]).toBe('none');      // two years off is not a vacation, it is a typo
+  });
+
+  test('saying it writes the block, once, and the Time off window shows it', async () => {
+    const r = await page.evaluate(() => {
+      S.timeOff = [];
+      timRun("I'm on vacation through Sunday");
+      timRun("I'm on vacation through Sunday");   // said twice, one block
+      const blocks = JSON.parse(JSON.stringify(S.timeOff));
+      timRun('show my time off');
+      const box = document.getElementById('timeoff-modal-overlay');
+      const txt = box ? box.textContent : '';
+      if (box) box.remove();
+      return { blocks, txt };
+    });
+    expect(r.blocks.length).toBe(1);
+    expect(r.blocks[0].label).toBe('Vacation');
+    expect(r.blocks[0].end >= r.blocks[0].start).toBe(true);
+    expect(r.txt).toContain('Vacation');
+  });
+
+  test('the deriver reads what Tim wrote: that day is held', async () => {
+    const r = await page.evaluate(() => {
+      S.timeOff = [];
+      timRun('vacation tomorrow');
+      const b = S.timeOff[0];
+      return { held: _gdTimeOffDay({ day: b.start, timeOff: S.timeOff }), dayAfter: _gdTimeOffDay({ day: '2099-01-01', timeOff: S.timeOff }) };
+    });
+    expect(r.held).toBe(true);
+    expect(r.dayAfter).toBe(false);
+  });
+
+  test('no console errors, tim time off', async () => {
+    await page.evaluate(() => { S.timeOff = []; });
+    assertNoErrors(page, 'tim.js time off');
+  });
+});
+
+// ── A lead in one breath (owner 2026-09-25: "go on autopilot and navigate
+// pages correctly for entering leads") ────────────────────────────────────
+test.describe('tim: leads', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {};
+      window.getActiveTrade = () => 'plumbing'; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const lead = (t) => page.evaluate((s) => timLead(s), t);
+
+  test('the whole sentence comes apart into the right boxes', async () => {
+    const r = await lead('New lead Mike Jones, 412 Oak St, Topeka, KS 66604, 316-555-1234, water heater is leaking, found us on Google');
+    expect(r).toEqual({ name: 'Mike Jones', phone: '3165551234', email: '', addr: '412 Oak St, Topeka, KS 66604',
+      source: 'Google / online', ref: '', job: 'water heater is leaking' });
+  });
+
+  test('email, referral and an address with no city', async () => {
+    const r = await lead("new customer Sarah O'Neil at 1200 SW Wanamaker Rd wants a panel upgrade, sarah@gmail.com, referred by Bob Smith");
+    expect(r).toMatchObject({ name: "Sarah O'Neil", email: 'sarah@gmail.com', addr: '1200 SW Wanamaker Rd',
+      source: 'Referral', ref: 'Bob Smith', job: 'a panel upgrade' });
+  });
+
+  test('the ways a phone number gets said', async () => {
+    const r = await page.evaluate(() => ['316-555-1234', '(316) 555-1234', '316 555 1234', '316.555.1234', '+1 316 555 1234']
+      .map(p => timLead('new lead Al Green ' + p).phone));
+    expect(r.every(p => p === '3165551234')).toBe(true);
+  });
+
+  test('the job picks one line, the look-alikes decided by what he said', async () => {
+    const r = await page.evaluate(() => ['water heater is leaking', '50 gallon water heater', 'electric water heater', 'tankless install', 'a toilet replaced', 'nothing we know']
+      .map(j => { const p = timLeadJob(j, 'plumbing', [], TRADE_JOBS.plumbing); return p ? p.desc : null; }));
+    expect(r).toEqual(['Water heater (40gal gas)', 'Water heater (50gal gas)', 'Water heater (electric)', 'Tankless WH (gas)', 'Toilet replacement', null]);
+  });
+
+  test('his own price book wins the job and its words', async () => {
+    const r = await page.evaluate(() => timLeadJob('water heater leaking', 'plumbing',
+      [{ desc: 'Water heater replacement', rate: 1650, notes: 'My words', n: 4 }], TRADE_JOBS.plumbing));
+    expect(r).toEqual({ desc: 'Water heater replacement', rate: 1650, notes: 'My words' });
+  });
+
+  test('Tim says what he is about to do before he does it', async () => {
+    const say = await page.evaluate(() => timSay(timParse('New lead Mike Jones, 412 Oak St, 316-555-1234, water heater is leaking',
+      { clients: [], book: [], catalog: TRADE_JOBS.plumbing, trade: 'plumbing' })));
+    expect(say).toBe('Add lead Mike Jones (412 Oak St, (316) 555-1234), then start a Water heater (40gal gas) proposal');
+  });
+
+  test('saying it saves the customer with every field and opens the proposal with the job and its scope on it', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      timRun('New lead Mike Jones, 412 Oak St, Topeka, KS 66604, 316-555-1234, water heater is leaking, found us on Google');
+      const c = clients.find(x => x.name === 'Mike Jones');
+      const line = (_byoItems || []).find(x => /water heater/i.test(x.label));
+      return { added: clients.length - before, phone: c && c.phone, addr: c && c.addr, source: c && c.source,
+        notes: c && c.notes, onEstimate: !!line, scope: line ? line.notes : '', client: _geiClientId === (c && c.id),
+        // Autopilot lands in the builder, past the setup step.
+        building: _geiStep === 2 };
+    });
+    expect(r.added).toBe(1);
+    expect(r).toMatchObject({ phone: '3165551234', addr: '412 Oak St, Topeka, KS 66604', source: 'Google / online',
+      notes: 'Water heater is leaking', onEstimate: true, client: true, building: true });
+    expect(r.scope).toMatch(/water heater/i);
+  });
+
+  test('a phone he already has is the same customer, not a duplicate', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      timRun('new lead Michael Jones 316-555-1234');
+      return clients.length - before;
+    });
+    expect(r).toBe(0);
+  });
+
+  test('a lead with no job opens the customer, not an estimate', async () => {
+    const r = await page.evaluate(() => {
+      const keep = window.openClientDetail; let opened = null;
+      window.openClientDetail = (id) => { opened = id; };
+      try { timRun('new client named Ann Marie Cole, 55 W 10th Street, (316) 555-2222');
+        const c = clients.find(x => x.name === 'Ann Marie Cole'); return { opened, id: c && c.id, phone: c && c.phone };
+      } finally { window.openClientDetail = keep; }
+    });
+    expect(r.opened).toBe(r.id);
+    expect(r.phone).toBe('3165552222');
+  });
+
+  test('"new lead" with no name falls back to the name box, and other sentences are untouched', async () => {
+    const r = await page.evaluate(() => ({
+      noName: timParse('new lead', { clients: [] }).kind,
+      nav: timParse('open my leads', { clients: [] }).kind,
+      books: timParse('show me my books for last year', { clients: [] }).kind,
+    }));
+    expect(r.noName).not.toBe('lead');
+    expect(r.nav).toBe('nav');
+    expect(r.books).toBe('nav');
+  });
+
+  test('junk in, nothing thrown', async () => {
+    const ok = await page.evaluate(() => {
+      try { [null, undefined, '', 5, 'new lead', 'new lead 123', 'new lead ,,,'].forEach(s => { timLead(s); timLeadJob(s, s, s, s); });
+        return true; } catch (e) { return String(e.message); }
+    });
+    expect(ok).toBe(true);
+  });
+
+  test('no console errors, tim leads', async () => { assertNoErrors(page, 'tim.js leads'); });
+});

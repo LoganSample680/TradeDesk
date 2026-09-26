@@ -34,7 +34,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
-import { daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { centralDayKey, daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { railCardFor } from "../_shared/live-card.mjs";
+import { pushLiveCard } from "../_shared/live-push.ts";
+import { makeRoute } from "../_shared/route-cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -110,6 +113,26 @@ type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: str
   // The radio ledger (20260915_geo_radio_ledger): a session change and why.
   session?: string; on?: boolean; accuracy?: string; reason?: string; trigger?: string; source?: string };
 type RadioDetail = { on: boolean; accuracy: string | null; reason: string; trigger: string; source: string };
+// ── HOW A FLIP REACHED US, KEPT (owner 2026-09-23) ─────────────────────────
+// "I want to see on time shit within 10 seconds 100% of the time."
+//
+// A motion row's lateness has two halves that need different fixes: the phone
+// not KNOWING yet (CoreMotion had not handed it over) and the phone knowing and
+// not SENDING. The plugin has always said which: `deliveredAtMs` is when the
+// live stream handed the flip over, and `hist` marks one the backfill
+// recovered. Both were dropped here, so every late flip looked the same. Kept
+// now, bounded, and nothing reads them but the measurement.
+function motionDetail(e: any): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  if (e.hist === true) out.hist = true;
+  if (typeof e.deliveredAtMs === "number" && isFinite(e.deliveredAtMs) && e.deliveredAtMs > 0) {
+    out.deliveredAtMs = Math.round(e.deliveredAtMs);
+  }
+  if (typeof e.prevKind === "string" && e.prevKind) out.prevKind = e.prevKind.slice(0, 16);
+  if (typeof e.seq === "number" && isFinite(e.seq) && e.seq > 0) out.seq = Math.round(e.seq);
+  return Object.keys(out).length ? out : null;
+}
+
 // One radio row's detail, bounded. A session name doubles as the row's
 // region_id so the dedupe index (employee, type, ts, region_id) tells two
 // sessions changing in the same millisecond apart, and so a reader can
@@ -192,7 +215,33 @@ Deno.serve(async (req) => {
           ? String(e.session || "").slice(0, 60)
           : String(e.regionId || "").slice(0, 60),
         arrivalTs: typeof e.arrivalTs === "number" ? Math.round(e.arrivalTs) : null,
-        detail: e.type === "radio" ? radioDetail(e) : null,
+        // A PUSH-PING'S AGE IS THE ONLY THING THAT MAKES IT READABLE, and this
+        // line threw it away (owner 2026-09-18, on Jack's day). silentPush
+        // (TdGeoPlugin.swift) measures the cached location against the
+        // CLLocation's OWN timestamp and puts staleMs on the row when it is
+        // over five minutes old, plus blind when it had to buy a burst. Both
+        // died here: every type but radio got a null detail, so 1,060
+        // push-pings over ten days reached the server with no age at all and
+        // the deriver had no way to tell a five-second position from a
+        // five-hour one. It refused all of them, which is why a parked day
+        // has no positions in it even though the phone reported one every
+        // thirty minutes.
+        // ── AND NOT ONLY A PUSH-PING (owner 2026-09-19) ─────────────────
+        // This was scoped to push-ping because it was the only event that
+        // measured its own age. Every positioned event does now
+        // (TdGeoPlugin.event), so every one of them gets to keep it: a `fix`
+        // built from a significant-change wake's last-known position is the
+        // same stale coordinate wearing a type the deriver trusts.
+        detail: e.type === "radio"
+          ? radioDetail(e)
+          : e.type === "motion"
+          ? motionDetail(e)
+          : (typeof e.staleMs === "number" || e.blind === true
+            ? {
+              ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
+              ...(e.blind === true ? { blind: true } : {}),
+            }
+            : null),
         // What the coprocessor actually said: onFoot / still / driving. The
         // native plugin has always sent it and this function has always
         // dropped it, so the server could see that a transition happened and
@@ -550,9 +599,14 @@ Deno.serve(async (req) => {
     // that throws is reported rather than failing the flush: the events are
     // already stored, the next trigger derives again, and the phone's own
     // rebuild is still behind all of it.
+    // One road, one lookup. The resolver and its cache key live in
+    // ../_shared/route-cache.ts because rebuild-day needs the identical thing,
+    // and two copies of a key is two places for it to drift from the phone's.
+    const route = makeRoute(svc, cid);
+
     const derivedDays = [];
     for (const day of daysToDerive(evs, Date.now())) {
-      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day)); }
+      try { derivedDays.push(await deriveDayServer(svc, cid, uid, day, Date.now(), route)); }
       catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
     }
     derived = derivedDays.filter((d) => d.wrote).length;
@@ -561,6 +615,35 @@ Deno.serve(async (req) => {
         console.error("derive-day", { uid, day: d.day, reason: d.reason });
       }
     }
+
+    // ── AND THE LOCK SCREEN LEARNS, WITH THE APP ON ANY SCREEN AT ALL ─────
+    // Owner 2026-09-16: "live activities, if I'm in the ops portal it doesn't
+    // update live when I go to drive, how can we make live activities
+    // bulletproof?"
+    //
+    // The card used to move only when the phone's own derive ran, and a derive
+    // is refused while a support view is open (js/geo-track.js), so the ops
+    // portal froze it. This derive just ran on the server and already knows
+    // the answer, so it says so. Same fact, same rule (live-card.mjs), no
+    // dependence on which screen anybody is looking at, or on the app being
+    // open at all.
+    //
+    // TODAY ONLY, and only when the derive actually reached a verdict. A day
+    // that returned before deriving carries no `open` key, and that is "we do
+    // not know", which must never be read as "no card": ending a live card
+    // because a backfill of last Tuesday told us nothing would be worse than
+    // the bug this fixes.
+    try {
+      const today = centralDayKey(Date.now());
+      const d = derivedDays.find((x) => x.day === today && "open" in x);
+      if (d) {
+        const card = railCardFor({ open: d.open, pending: d.driving }, {});
+        const note = await pushLiveCard(svc, uid, card);
+        if (note !== "unchanged" && note !== "no live card" && note !== "nothing to end") {
+          console.log("[live-push]", { uid, day: today, event: card.event, note });
+        }
+      }
+    } catch (e) { console.error("[live-push] " + String(e).slice(0, 200)); }
 
     // Fleet & Team liveness for free: the newest fix stamps the device row.
     const newest = [...evs].reverse().find((e) => e.lat != null);

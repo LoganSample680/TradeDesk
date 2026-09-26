@@ -256,27 +256,40 @@ test.describe('team: deleting an entry survived the table', () => {
   });
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'rail delete'); });
 
-  test('the 3-second hold moved onto the rail row', async ({ page }) => {
+  // AMENDED 2026-09-13 (10.4). This asserted the 3-second hold survived the
+  // table's removal, on manual rows only. The hold is gone entirely now: it
+  // was invisible, absent for VoiceOver, and wired to the one kind of row
+  // nobody needed it on. The three-dot menu replaces it, and the CLAIM this
+  // test protects is unchanged and now stronger: removing the table did not
+  // remove the ability to act on a row, and an automatic row is no longer the
+  // dead end it used to be.
+  test('the hold is gone and every row carries the menu instead', async ({ page }) => {
     const r = await page.evaluate(() => {
       const manual = { rawId: 91, source: 'manual', personUid: null,
         personName: 'Logan Sample', clientName: 'Riverside', minutes: 60,
         startTime: '2026-08-27T13:00:00Z', endTime: '2026-08-27T14:00:00Z' };
       const auto = { rawId: 92, source: 'auto', rawSource: 'client',
-        personUid: 'crew-jose', personName: 'Jose Ramirez', clientName: 'X', minutes: 60,
+        personUid: null, personName: 'Logan Sample', clientName: 'X', minutes: 60,
         startTime: '2026-08-27T13:00:00Z', endTime: '2026-08-27T14:00:00Z' };
       const grab = h => { const d = document.createElement('div'); d.innerHTML = h;
-        const li = d.querySelector('li'); return { id: li.getAttribute('data-lp-id'),
-          type: li.getAttribute('data-lp-type'), label: li.getAttribute('data-lp-label') }; };
+        const li = d.querySelector('li'), b = li.querySelector('.tl-rail-more');
+        return { lp: li.getAttribute('data-lp-id'),
+                 id: b && b.getAttribute('data-row-id'),
+                 src: b && b.getAttribute('data-row-src'),
+                 label: b && b.getAttribute('data-row-label') }; };
       return { manual: grab(_tlRailRow(manual)), auto: grab(_tlRailRow(auto)) };
     });
-    // _tlRow carried the only delete gesture in the app for a time entry.
-    // Removing the table it lived on must not remove the ability (§7.2).
+    // The gesture is deleted, not orphaned (§7.1).
+    expect(r.manual.lp).toBe(null);
+    expect(r.auto.lp).toBe(null);
+    // The manual row keeps everything it had, through a control people can see.
     expect(r.manual.id).toBe('91');
-    expect(r.manual.type).toBe('timelog');
+    expect(r.manual.src).toBe('manual');
     expect(r.manual.label).toContain('Riverside');
-    // Same _tlCanEdit gate it always had: not on a GPS row, and not on
-    // somebody else's, unless this viewer has payroll permission.
-    expect(r.auto.id).toBe(null);
+    // And the automatic row, which the hold never reached, can be answered now.
+    // The deriver is sure where he was and has no idea why.
+    expect(r.auto.id).toBe('92');
+    expect(r.auto.src).toBe('auto');
   });
 });
 

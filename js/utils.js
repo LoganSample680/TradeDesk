@@ -41,6 +41,26 @@ const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// WHAT A BID ROW SAYS WHERE A PRICE WOULD GO.
+//
+// A time-and-materials RATE SHEET (b.tmRateOnly, js/generic-estimate.js) has no
+// contract total by design, so b.amount is 0 and every list that printed
+// fmt(b.amount) printed "$0" next to a real signed agreement. It says the rate
+// instead, which is the number that bid actually carries. One helper because
+// three lists show the same row (the client hub, the dashboard money feed, and
+// the dashboard bid list) and they must never disagree about what a bid is
+// worth.
+function bidAmountLabel(b,fmtFn){
+  const f=fmtFn||(typeof fmt==='function'?fmt:(n=>'$'+(Number(n)||0).toLocaleString('en-US')));
+  if(!b)return f(0);
+  if(b.isTM&&b.tmRateOnly){
+    const r=Number(b.tmRatePerMan)||0;
+    const cap=Number(b.tmNteCap)||0;
+    return r>0?(f(r)+'/hr'+(cap>0?' · NTE '+f(cap):'')):(cap>0?'NTE '+f(cap):'T&M rate');
+  }
+  if(b.isTM&&b.tmNteCap)return 'Est. '+f(b.amount)+' / NTE '+f(b.tmNteCap);
+  return f(b.amount);
+}
 // THE RATE FOR A GIVEN YEAR, not "the rate".
 //
 // This used to be S.irsRate||.725: one stored number with no year attached, so
@@ -84,6 +104,7 @@ function stageAvatar(stage){
     active:'background:var(--green-lt);color:#2D5A14',
     balance_due:'background:#FEE8E8;color:#A32D2D',
     paid:'background:var(--bg2);color:var(--text3)',
+    work_done:'background:var(--green-lt);color:#2D5A14',
   };
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
@@ -143,7 +164,17 @@ function zConfirm(msg, onYes, opts={}){
   const yesLabel=opts.yes||'Yes';
   const noLabel=opts.no||'Cancel';
   const danger=opts.danger!==false;
+  // ── THE SAFE ANSWER UNDER THE THUMB (owner 2026-09-18) ──────────────────
+  // "No keep it should be on the right not left". Opt-in, not a new default:
+  // ~57 sites build a .zmodal and every other one of them keeps the order it
+  // has always had (§15.2, no drastic visual change without a yes). It is for
+  // the dialogs where the wrong tap costs something real, and the one that
+  // asked for it is the supply run's Personal door, where a mis-tap deletes a
+  // man's hours.
+  const safeRight=opts.safeRight===true;
   const onNo=opts.onNo||null; // optional callback when user taps No/Cancel
+  const _zNo=()=>'<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">'+noLabel+'</button>';
+  const _zYes=()=>'<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'">'+yesLabel+'</button>';
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.innerHTML=
@@ -151,8 +182,8 @@ function zConfirm(msg, onYes, opts={}){
       '<div class="zmodal-title">'+title+'</div>'+
       '<div class="zmodal-msg">'+msg+'</div>'+
       '<div class="zmodal-btns">'+
-        '<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">'+noLabel+'</button>'+
-        '<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'">'+yesLabel+'</button>'+
+        (safeRight?_zYes():_zNo())+
+        (safeRight?_zNo():_zYes())+
       '</div>'+
     '</div>';
   document.body.appendChild(overlay);

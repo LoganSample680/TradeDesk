@@ -34,15 +34,38 @@ const CLIENT = { lat: 39.0123292, lon: -95.7464936 };
 // A plain day: sat at the shop, drove to a client, worked, drove back.
 const DEPART = at(7, 48), ARRIVE = at(7, 58), LEAVE = at(12, 27), HOME = at(12, 38);
 
+// Jittered for the same reason `sit` is, and here the duplication was exact in
+// a second way: the drive out and the drive back interpolate the same two
+// points over the same 30 steps, so step i of one is byte-equal to step 29-i of
+// the other. Nobody retraces a road to the centimetre.
+// Keyed on the reading's own instant, so two readings taken at different times
+// are never byte-equal however close together they sit, and the fixture cannot
+// accidentally collide two points the way an index-keyed version did at the
+// seam between a drive's last step and the dwell it opens.
+const jitter = (v, ts, k) => v + (((Math.round(ts / 1000) * (k === 'lat' ? 2654435761 : 40503)) % 977) - 488) * 1e-9;
 const line = (a, b, t1, t2, n) => Array.from({ length: n }, (_, i) => ({
   ts: Math.round(t1 + (t2 - t1) * i / (n - 1)),
   type: 'fix',
-  lat: a.lat + (b.lat - a.lat) * i / (n - 1),
-  lon: a.lon + (b.lon - a.lon) * i / (n - 1),
+  lat: jitter(a.lat + (b.lat - a.lat) * i / (n - 1), t1 + (t2 - t1) * i / (n - 1), 'lat'),
+  lon: jitter(a.lon + (b.lon - a.lon) * i / (n - 1), t1 + (t2 - t1) * i / (n - 1), 'lon'),
   kind: null,
 }));
+// A PARKED PHONE JITTERS, and the fixture has to as well (2026-09-18). This
+// used to emit `lat: p.lat` unchanged, so the six morning readings at the shop
+// and the eight afternoon ones after he drove back were byte-equal: the same
+// double, to all seventeen digits, hours and a round trip apart. No GPS does
+// that. Two readings of a phone sitting perfectly still still differ in the low
+// bits, which is the entire premise the replay guard rests on, and a fixture
+// that says otherwise is asserting something false about the world. It went
+// unnoticed while the guard only looked back two hours; a day-wide window made
+// the afternoon at the shop look like the morning's reading played again.
+//
+// Deterministic, and about a centimetre: far below any fence, far above the
+// float equality the guard tests.
 const sit = (p, t1, t2, n) => Array.from({ length: n }, (_, i) => ({
-  ts: Math.round(t1 + (t2 - t1) * i / (n - 1)), type: 'fix', lat: p.lat, lon: p.lon, kind: null,
+  ts: Math.round(t1 + (t2 - t1) * i / (n - 1)), type: 'fix',
+  lat: jitter(p.lat, t1 + (t2 - t1) * i / (n - 1), 'lat'),
+  lon: jitter(p.lon, t1 + (t2 - t1) * i / (n - 1), 'lon'), kind: null,
 }));
 
 const EVENTS = [
@@ -50,11 +73,11 @@ const EVENTS = [
   { ts: DEPART, type: 'motion', kind: 'automotive', lat: null, lon: null },
   ...line(SHOP, CLIENT, DEPART, ARRIVE, 30),
   { ts: ARRIVE, type: 'motion', kind: 'walking', lat: null, lon: null },
-  ...sit(CLIENT, ARRIVE, LEAVE, 40),
+  ...sit(CLIENT, ARRIVE + 1000, LEAVE, 40),
   { ts: LEAVE, type: 'motion', kind: 'automotive', lat: null, lon: null },
   ...line(CLIENT, SHOP, LEAVE, HOME, 30),
   { ts: HOME, type: 'motion', kind: 'still', lat: null, lon: null },
-  ...sit(SHOP, HOME, at(14, 0), 8),
+  ...sit(SHOP, HOME + 1000, at(14, 0), 8),
 ].sort((a, b) => a.ts - b.ts).map((e) => ({ ...e, ts: iso(e.ts) }));
 
 const FENCES = [
@@ -96,6 +119,95 @@ const TABLES = {
   zj_data: [{ settings: JSON.stringify({ workHours: { start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] } }) }],
   __fences: FENCES,
 };
+
+// A day with a tape over it and nothing on it: he never got in the truck. No
+// journeys, so no legs and no bounded dwell, which is what rule 19 leaves
+// behind on a weekend it refuses to vouch for. The motion row is what makes
+// tapeCovers true, so this is an EMPTY day rather than an unreported one.
+const quietTables = () => ({
+  ...TABLES,
+  geo_events: [
+    { ts: iso(at(6, 30)), type: 'motion', kind: 'still', lat: null, lon: null },
+    ...sit(SHOP, at(6, 30), at(14, 0), 20).map((e) => ({ ...e, ts: iso(e.ts) })),
+  ],
+});
+
+// ── THE DERIVER READS EVIDENCE, NEVER THE LEDGER (owner 2026-09-21) ────────
+//
+// "did we kill his battery today?" Jack's engine went into a park arm/exit
+// loop and wrote 21,491 `radio` rows in a day, one for every line that touched
+// the GPS receiver. The deriver has never USED one: there is no branch for
+// that type and freshFix refuses it. It still paid for them, because the read
+// was unfiltered and this function re-reads the whole day on every flush. His
+// day reached about 25,000 events and his timesheet stopped gaining rows at
+// 11:25am, through a 1:58pm drive whose motion flips reached the server in one
+// second.
+test.describe('the geo_events read asks only for what it can use', () => {
+  // A client that records the filters instead of ignoring them.
+  const spySvc = (tables, rpcLog, seen) => {
+    const q = (rows, tbl) => {
+      const o = {
+        select: () => o, eq: () => o, is: () => o, gte: () => o, lt: () => o,
+        in: (col, vals) => { if (tbl === 'geo_events') seen.push({ col, vals }); return o; },
+        order: () => o,
+        maybeSingle: async () => ({ data: rows[0] === undefined ? null : rows[0] }),
+        range: async (f, t) => ({ data: rows.slice(f, t + 1) }),
+        then: (res, rej) => Promise.resolve({ data: rows }).then(res, rej),
+      };
+      return o;
+    };
+    return {
+      from: (t) => q(tables[t] || [], t),
+      rpc: async (name, args) => {
+        rpcLog.push({ name, args });
+        if (name === 'geo_fences_for') return { data: tables.__fences || [] };
+        return { error: null, data: null };
+      },
+    };
+  };
+
+  test('it filters geo_events by type, and the ledger is not in the list', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const seen = [];
+    await deriveDayServer(spySvc(TABLES, [], seen), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(seen.length, 'the read is filtered at the query, not after').toBe(1);
+    expect(seen[0].col).toBe('type');
+    const v = seen[0].vals;
+    // Everything the loop can actually use.
+    for (const t of ['motion', 'regionEnter', 'regionExit', 'visit', 'push-ping',
+      'clock-in', 'clock-out', 'app-active', 'app-background', 'app-terminate',
+      'app-relaunch', 'fix']) expect(v, t).toContain(t);
+    // And nothing it cannot. `radio` is the one that buried Jack's day; the
+    // rest are the same kind of thing and would do the same.
+    for (const t of ['radio', 'heartbeat', 'sampling', 'wake-drop',
+      'wake-zombie-closed', 'wake-stop-stuck']) expect(v, t).not.toContain(t);
+  });
+
+  test('the list is DERIVED from the two that already decide it', async () => {
+    // Not a third hand-written copy. A type added to the trigger set or the
+    // fresh-fix set is read from that moment, and a diagnostic nobody has
+    // invented yet costs nothing by default. That is what makes this a fix
+    // rather than a patch (7.3).
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(ROOT, 'supabase/functions/_shared/derive-day.mjs'), 'utf8');
+    expect(src).toContain('const READ_TYPES = [...new Set([...TRIGGER_TYPES, ...FRESH_FIX_TYPES])]');
+    expect(src).toContain('.in("type", READ_TYPES)');
+  });
+
+  test('a day buried in ledger rows still derives, because it never reads them', async () => {
+    // The fixture the fake would have handed over unfiltered. Here the filter
+    // is honoured, so the day is the same day it always was.
+    const { deriveDayServer } = await import(SHARED);
+    const junk = Array.from({ length: 5000 }, (_, i) => ({
+      ts: iso(at(9, 0) + i * 100), type: 'radio', kind: null, lat: null, lon: null,
+    }));
+    const seen = [], rpc = [];
+    const tables = { ...TABLES, geo_events: [...TABLES.geo_events, ...junk] };
+    const r = await deriveDayServer(spySvc(tables, rpc, seen), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote, r.reason).toBe(true);
+    expect(r.legs, 'out and back, exactly as with no junk at all').toBe(2);
+  });
+});
 
 test.describe('the deriver on the server', () => {
   test('the shared copy is generated from js/geo-derive.js, never edited beside it', () => {
@@ -149,6 +261,161 @@ test.describe('the deriver on the server', () => {
     expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(false);
   });
 
+  // ── The one door that may retire a row (owner 2026-09-15) ────────────────
+  // "I want Jack to wake up to a clean record of today." A rebuild is somebody
+  // looking at a day, deciding it is wrong and asking for it again; the rows
+  // that need removing are there BECAUSE an earlier derive changed its mind,
+  // and only a sweep removes them. The rule above is not relaxed, it is given
+  // the same test the phone applies: absence of evidence is evidence of
+  // absence only where there is evidence.
+  test.describe('a rebuild may sweep, and only on evidence', () => {
+    test('asking for it, with a tape covering the day, sweeps', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(true);
+      expect([r.sweep, r.sweepAsked, r.tapeCovers]).toEqual([true, true, true]);
+    });
+
+    test('not asking for it is the ingest path, unchanged', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      for (const opts of [undefined, null, {}, { sweep: false }, { sweep: 0 }]) {
+        const rpc = [];
+        await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, opts);
+        expect(rpc.find((c) => c.name === 'geo_replace_day').args.p_sweep).toBe(false);
+      }
+    });
+
+    // ── NO ANSWER, NO SWEEP (owner 2026-09-18, on Jack) ───────────────────
+    // His morning: rule 14 wrote a traced leg from the shop to an unsaved end
+    // at 08:11:03, the row that carries the Save this address path. He moved
+    // the truck at 08:27:07, and the derive eight seconds after the tape
+    // flipped back to still found the chain's last journey still OPEN. Rule 14
+    // correctly withheld the leg, the withheld set went to geo_replace_day with
+    // the sweep on, and the RPC retired the good row and its drive.
+    //
+    // It matters more on THIS path than on the phone: a person pressed the
+    // button and the rebuild asks to sweep by default, so pressing Rebuild on
+    // a day somebody is still driving would repeat the deletion on demand.
+    // AMENDED 2026-09-18, hours after it was written. It asserted
+    //   expect(write.args.p_sweep).toBe(false);
+    // and turning the sweep off for the whole day proved far too blunt: one
+    // unresolved chain at the END left every stale row from every earlier
+    // derive standing, and on THIS path a person is pressing a button, so each
+    // press stacked more beside them. That is what the owner was looking at
+    // when he said a rebuilt day was "all duplicative". Bounded now instead.
+    test('a day still mid-drive sweeps what it can describe, and stops there', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      // Jack's shape: the last flip is into the truck and nothing closes it.
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(stillDrivingTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'it still writes: withholding is not skipping').toBeTruthy();
+      expect(write.args.p_sweep, 'the settled part of the day is swept').toBe(true);
+      expect(write.args.p_sweep_until, 'and it stops where the day stops being known').toBeTruthy();
+      expect(r.sweepAsked).toBe(true);
+      expect(r.tapeCovers).toBe(true);
+    });
+
+    // ── AN EMPTY DAY IS AN ANSWER, AND A REBUILD HAS TO BE ABLE TO SAY IT ──
+    // (owner 2026-09-21, on Jack's Sunday)
+    //
+    // Rule 19 derives a weekend that vouches for nothing as NO ROWS, which is
+    // the point of it. The rows already on that day were written before the
+    // rule existed, so a rebuild is the only thing that can take them off, and
+    // deriveDayServer used to return "nothing to add" before it ever called
+    // the writer. He pressed Rebuild and got both stale rows back.
+    //
+    // The day that most needs clearing must not be the one day that cannot
+    // clear itself. An empty derive that MAY retire now writes, carrying empty
+    // arrays, and the sweep inside geo_replace_day is what does the work. An
+    // empty derive that may not retire still skips, because there a write
+    // really is a round trip for nothing.
+    test('a rebuild of a day that derives to nothing still sweeps it', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(quietTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'the writer is reached, which is the whole fix').toBeTruthy();
+      expect(write.args.p_sweep).toBe(true);
+      expect(write.args.p_time, 'nothing to add, said out loud').toEqual([]);
+      expect(write.args.p_shop).toEqual([]);
+      expect(write.args.p_miles).toEqual([]);
+      expect(r.wrote).toBe(true);
+      expect([r.time, r.shop, r.miles]).toEqual([0, 0, 0]);
+    });
+
+    test('the same empty day on the ingest path writes nothing at all', async () => {
+      // Unchanged, and it has to stay unchanged: this caller may not retire,
+      // so an empty write would be a round trip that changes nothing.
+      const { deriveDayServer } = await import(SHARED);
+      for (const opts of [undefined, { sweep: false }]) {
+        const rpc = [];
+        const r = await deriveDayServer(fakeSvc(quietTables(), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, opts);
+        expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeFalsy();
+        expect(r.wrote).toBe(false);
+        expect(r.reason).toBe('nothing to add');
+        expect(r.sweep, 'and it says why it could not sweep').toBe(false);
+      }
+    });
+
+    test('an empty day with no tape covering it is still refused', async () => {
+      // "No evidence" outranks everything: a day nobody uploaded is not an
+      // empty day, and asking for a sweep cannot turn it into one.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc({ ...quietTables(), geo_events: [] }, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeFalsy();
+      expect(r.wrote).toBe(false);
+      expect(r.reason).toBe('no evidence');
+    });
+
+    test('a settled day has no boundary at all: the whole day is known', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write.args.p_sweep).toBe(true);
+      expect(write.args.p_sweep_until, 'null means sweep all of it').toBeNull();
+    });
+
+    test('the same day, once it parks, sweeps with no boundary', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const w = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(w.args.p_sweep).toBe(true);
+      expect(w.args.p_sweep_until).toBeNull();
+      expect(r.sweep).toBe(true);
+    });
+
+    test('no motion tape covering the day: it writes, and retires nothing', async () => {
+      // The rows are still worth adding; what the server cannot do on this
+      // evidence is say what did NOT happen. Reported rather than silent, so a
+      // rebuild that could not clean up does not look like one that did.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const noTape = { ...TABLES, geo_events: TABLES.geo_events.filter((e) => e.type !== 'motion') };
+      const r = await deriveDayServer(fakeSvc(noTape, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      if (write) expect(write.args.p_sweep).toBe(false);
+      expect(r.tapeCovers === true).toBe(false);
+      expect(r.sweep === true).toBe(false);
+    });
+
+    test('a day that writes nothing never reaches the writer at all', async () => {
+      // Which is what stops a sweep from running against an empty derive: the
+      // two guards above the write already refuse, so there is no call to make
+      // a delete-everything out of.
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const bare = { geo_events: [], location_pings: [], td_time_entries: [], zj_data: [], __fences: FENCES };
+      const r = await deriveDayServer(fakeSvc(bare, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+      expect(r.wrote).toBe(false);
+      expect(rpc.find((c) => c.name === 'geo_replace_day')).toBeUndefined();
+    });
+  });
+
   test('a day nobody has uploaded is not an empty day', async () => {
     const { deriveDayServer } = await import(SHARED);
     const rpc = [];
@@ -172,6 +439,42 @@ test.describe('the deriver on the server', () => {
       })));
     const rpc = [];
     const r = await deriveDayServer(fakeSvc({ ...TABLES, geo_events: liar }, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote).toBe(true);
+    const w = rpc.find((c) => c.name === 'geo_replace_day').args;
+    expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
+  });
+
+  // ── AND A `fix` THAT SAYS IT IS STALE IS NOT A FIX EITHER ─────────────
+  // Owner 2026-09-19, on Jack's 18 September. The rule above was right about
+  // motion and fence rows and wrong to stop there: iOS hands
+  // didUpdateLocations its LAST KNOWN position on a significant-change wake,
+  // and the plugin stamped that with the wall clock, so 11 copies of the shop
+  // coordinate he locked at 07:39 arrived as `fix` rows all morning while he
+  // stood at a job site 768 ft away. TdGeoPlugin.event() measures every
+  // position against the CLLocation's own timestamp now and marks it, and the
+  // server reads that mark off the row's detail exactly as it always has for
+  // a push-ping. This is the ops portal's Rebuild button, so it is the one
+  // that has to agree with the phone.
+  test('a fix that carries an age over the line is refused like a stale ping', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const liar = EVENTS.concat(
+      Array.from({ length: 12 }, (_, i) => ({
+        ts: iso(at(6, 30) + i * 60000), type: 'fix', lat: CLIENT.lat, lon: CLIENT.lon,
+        detail: { staleMs: 4 * 3600000 },
+      })));
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc({ ...TABLES, geo_events: liar }, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.wrote).toBe(true);
+    const w = rpc.find((c) => c.name === 'geo_replace_day').args;
+    expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
+  });
+
+  test('a fix with no age at all is still fresh, so no history re-grades', async () => {
+    // Every row written before that build carries no detail. They must read
+    // exactly as they always did.
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
     expect(r.wrote).toBe(true);
     const w = rpc.find((c) => c.name === 'geo_replace_day').args;
     expect(w.p_miles.map((m) => m.from_name)).toEqual(['TradeDesk shop', 'John Doe']);
@@ -208,5 +511,251 @@ test.describe('the deriver on the server', () => {
     expect((dst.end - dst.start) / 3600000, 'the 25-hour day').toBe(25);
     expect(centralDayKey(centralDayBounds(DAY).start)).toBe(DAY);
     expect(centralDayKey(centralDayBounds(DAY).end - 1)).toBe(DAY);
+  });
+});
+
+// The ops portal explains an un-swept rebuild, and until 2026-09-18 there was
+// only one reason it could happen, so the page stated it as a fact. The
+// no-answer guard added a second, and the owner was told the server had no
+// motion tape for Jack's day when it had plenty: the day was simply still
+// mid-drive. The flags have to say which.
+// STILL DRIVING MEANS THE TRUCK IS STILL MOVING (2026-09-18, second pass).
+// Dropping the `still` flips used to be enough to leave a day mid-drive, because
+// a journey the tape never closed stayed open by default. It does not any more:
+// a missing flip stopped being read as evidence of a departure, so the journey
+// ends where the FIXES say the truck parked, and this fixture's trailing
+// readings sit at the yard from 12:38. That change is the point (Jack's whole
+// afternoon was being discarded by the old reading), so a genuinely unresolved
+// day now has to be genuinely unresolved: no still flips AND no settled
+// readings at the end, which is a phone in a moving truck when the day runs out.
+const stillDrivingTables = () => {
+  const cut = at(12, 38);
+  return { ...TABLES, geo_events: TABLES.geo_events
+    .filter((e) => !(e.type === 'motion' && e.kind === 'still'))
+    .filter((e) => !(e.type === 'fix' && Date.parse(e.ts) >= cut)) };
+};
+
+test.describe('an un-swept rebuild reports WHICH guard stopped it', () => {
+  // AMENDED the same day it was written: pending no longer STOPS the sweep, it
+  // BOUNDS it. So it is not a reason nothing was retired any more; it is a note
+  // about where the retiring stopped.
+  test('mid-drive: pending true, tape present, and the sweep is bounded not blocked', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(stillDrivingTables(), []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(true);
+    expect(r.tapeCovers, 'the tape is there: blaming it would be the wrong answer').toBe(true);
+    expect(r.sweep).toBe(true);
+    expect(r.sweepUntil).toBeTruthy();
+  });
+
+  // Strip the tape entirely and it never reaches a write at all: the
+  // no-evidence guard turns it round first, with a reason and no flags. The
+  // portal prints that reason through its own "Nothing written" branch, so
+  // rbWhyNoSweep is never asked about this case.
+  test('no tape at all: turned round before the write, with a reason', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const noTape = { ...TABLES, geo_events: TABLES.geo_events.filter((e) => e.type !== 'motion') };
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(noTape, rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.wrote).toBe(false);
+    expect(typeof r.reason).toBe('string');
+    expect(r.sweep === true).toBe(false);
+    expect(r.pending === true, 'and it must not be blamed on a drive either').toBe(false);
+  });
+
+  test('a clean day reports neither', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.pending).toBe(false);
+    expect(r.tapeCovers).toBe(true);
+    expect(r.sweep).toBe(true);
+  });
+});
+
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX, SERVER SIDE (owner 2026-09-18) ───
+// The twin of the guard in _geoFixLogPush, and it has to exist on both sides:
+// that one protects the phone's own log, this is what the ops portal's Rebuild
+// button derives from, and a rebuild is exactly when somebody has decided a day
+// is wrong and wants it done again.
+//
+// Jack's real numbers: one fix taken at 07:39:07 while he stood in the shop
+// arrived FIFTEEN times out of thirty-seven, the last at 12:42, hours after he
+// had parked 767 ft away, identical to fourteen decimal places every time.
+// ── A MEMBERSHIP GOES STALE; A PARKED PHONE DOES NOT (owner 2026-09-18) ────
+//
+// Jack's 18 September. iOS reported him entering the shop region at 07:35:15
+// and leaving it at 13:21:57, and it was entitled to: he parked 768 ft away,
+// outside the deriver's 600 ft circle and well inside whatever radius the OS
+// was watching. Rule 15 lets a CLOSED crossing pair beat the fix, so for five
+// and a half hours every dwell was named "shop" while his own phone reported,
+// every thirty minutes, a position 726 to 899 ft away that never moved.
+//
+// Rule 15 is still right about its own case: the OS boundary is wider, so at
+// the instant of a crossing the fix is still out on the road and must not name
+// the arrival (his 15 September, where it fired 0.4 miles out). The difference
+// is not distance, it is whether the phone SETTLED. Mid-drive the fixes are
+// strung along a road; parked, they sit on top of each other for hours.
+//
+// Driven on the full-day fixture above, because that one derives a real day:
+// out to a client, a long stay, and back.
+test.describe('a stale region membership loses to a parked phone', () => {
+  // The crossing pair the phone never closed on time: it claims he was inside
+  // the shop region for the whole of the day, including the hours the fixes
+  // put him at John Doe's.
+  const pinned = (rows) => ({ ...TABLES, geo_events: TABLES.geo_events.concat(rows) });
+  const PAIR = [
+    { ts: iso(at(7, 30)), type: 'regionEnter', kind: null, lat: null, lon: null, region_id: 'shop' },
+    { ts: iso(at(13, 0)), type: 'regionExit', kind: null, lat: null, lon: null, region_id: 'shop' },
+  ];
+
+  test('the control: the day without the crossing pair', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(TABLES, rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(w.args.p_time.find((t) => t.source === 'client'), 'he visits John Doe').toBeTruthy();
+  });
+
+  test('the four hours at the client stay at the client', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(w, 'the day still writes').toBeTruthy();
+    const visit = w.args.p_time.find((t) => t.source === 'client');
+    expect(visit, 'a crossing the phone forgot to close does not move him to the shop').toBeTruthy();
+    expect(Number(visit.minutes), 'and it is the whole stay, not a sliver').toBeGreaterThan(120);
+  });
+
+  test('the shop rows are still the shop: the membership keeps its job', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const w = rpc.find((c) => c.name === 'geo_replace_day');
+    expect((w.args.p_shop || []).length, 'the morning and evening at the yard survive').toBeGreaterThan(0);
+  });
+
+  test('both drives survive: a pinned membership does not eat the legs', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(pinned(PAIR), rpc), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.legs, 'out and back, exactly as without the pair').toBe(2);
+  });
+});
+
+test.describe('the server drops a replayed cached fix', () => {
+  const SHOP_CACHED = { lat: 39.04565625037153, lon: -95.71510278822348 };
+  const LOT = { lat: 39.04445524882554, lon: -95.7129015768892 };
+
+  // His shape: real fixes at the shop, he drives off, and the cached shop
+  // coordinate keeps arriving all morning while he sits in a car park.
+  const jackish = (rows) => ({ ...TABLES, location_pings: [],
+    geo_events: TABLES.geo_events.filter((e) => e.type !== 'fix').concat(rows) });
+  const fixAt = (h, m, at) => ({ ts: iso(at(h, m)), type: 'fix', kind: null,
+    lat: at === null ? null : undefined, lon: undefined });
+
+  const run = async (fixRows) => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(jackish(fixRows), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    return r;
+  };
+  const F = (h, m, p) => ({ ts: iso(at(h, m)), type: 'fix', kind: null, lat: p.lat, lon: p.lon });
+
+  test('fifteen arrivals of one coordinate count once', async () => {
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT)];
+    for (const h of [8, 9, 10, 11, 12]) { rows.push(F(h, 4, SHOP_CACHED)); rows.push(F(h, 30, LOT)); }
+    const r = await run(rows);
+    expect(r.fixesSeen).toBe(12);
+    // AMENDED 2026-09-18, and the old number is why. This asserted FOUR, on
+    // the reasoning that "a cached value that survives two hours of being the
+    // only thing said about a place has earned the benefit of the doubt": 8:04
+    // and 9:04 fell inside two hours of the real 7:39 reading and were
+    // dropped, 10:04 had aged out of the window and was kept, and that kept
+    // copy became the new anchor for 11:04 and 12:04.
+    //
+    // Jack's day proved the benefit of the doubt unearned. His phone re-sent
+    // the 07:39 shop fix on the 30-minute push cycle at 10:00, 10:31, 11:03,
+    // 11:33, 12:00, 12:22 and 12:29, and the gaps between the copies the scan
+    // could still see were wider than two hours, so copy after copy read as
+    // new and 08:00 to 13:12 put him back at a shop he left at 07:53. Waiting
+    // does not make a cached coordinate fresh. Five arrivals after he left,
+    // five drops.
+    expect(r.fixesDropped).toBe(5);
+  });
+
+  test('a phone that never moved keeps every reading: that is not a replay', async () => {
+    const rows = [];
+    for (let i = 0; i < 12; i++) rows.push(F(8 + Math.floor(i / 2), (i % 2) * 30, SHOP_CACHED));
+    const r = await run(rows);
+    expect(r.fixesDropped, 'standing still and saying so twelve times is honest').toBe(0);
+  });
+
+  test('a genuinely different reading at the same place is kept', async () => {
+    const r = await run([
+      F(7, 39, SHOP_CACHED), F(7, 58, LOT),
+      F(9, 30, { lat: 39.045656251, lon: -95.715102789 }),   // really back, really measured
+    ]);
+    expect(r.fixesDropped).toBe(0);
+  });
+
+  // AMENDED 2026-09-18 with the test above. This was 'past the two-hour window
+  // it is allowed through again' and asserted 0 drops for a copy three hours
+  // later. The window is the day now, so three hours later on the same day is
+  // still the same cache talking.
+  test('later the same day is still the same cache: it stays out', async () => {
+    const r = await run([F(6, 0, SHOP_CACHED), F(6, 5, LOT), F(9, 0, SHOP_CACHED)]);
+    expect(r.fixesDropped).toBe(1);
+  });
+
+  // Jack's actual afternoon, which is the case the two-hour window let through.
+  // Nothing real is said about where he is between 09:03 and 12:36; the only
+  // thing arriving is the 07:39 shop coordinate on the push cycle. Every one of
+  // those has to go, or the day plants him at the shop for three and a half
+  // hours he spent in a car park.
+  test("the 30-minute push cycle re-sending one coordinate is dropped every time", async () => {
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT), F(9, 3, LOT)];
+    for (const [h, m] of [[10, 0], [10, 31], [11, 3], [11, 33], [12, 0], [12, 22], [12, 29]]) {
+      rows.push(F(h, m, SHOP_CACHED));
+    }
+    const r = await run(rows);
+    expect(r.fixesDropped, 'all seven, not just the first two').toBe(7);
+  });
+
+  // The boundary the day-wide window must not cross.
+  test('the same coordinate on the next day is a new fix, not a replay', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const rows = [F(7, 39, SHOP_CACHED), F(7, 58, LOT),
+      { ts: iso(at(23, 30) + 3 * 3600_000), type: 'fix', kind: null, ...SHOP_CACHED }];
+    const r = await deriveDayServer(fakeSvc(jackish(rows), rpc), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.fixesDropped, 'yesterday cannot silence today').toBe(0);
+  });
+
+  // The other half of the wire spec's cost guard, on the side that actually
+  // fell over: this scan runs once per kept fix per fix, so formatting a day
+  // key inside it turned Jack's 630-fix rebuild into ~400,000 Intl
+  // constructions and the edge function timed out.
+  test('the scan does not format a date per entry', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rows = Array.from({ length: 600 }, (_, i) => ({
+      ts: iso(at(7, 0) + i * 30000), type: 'fix', kind: null,
+      lat: 39.04 + i * 1e-5, lon: -95.71 - i * 1e-5,
+    }));
+    const Real = Intl.DateTimeFormat;
+    let made = 0;
+    Intl.DateTimeFormat = function (...a) { made++; return new Real(...a); };
+    Intl.DateTimeFormat.supportedLocalesOf = Real.supportedLocalesOf;
+    try { await deriveDayServer(fakeSvc(jackish(rows), []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true }); }
+    finally { Intl.DateTimeFormat = Real; }
+    expect(made, 'bounds once per day, not once per entry').toBeLessThan(2000);
+  });
+
+  test('a clean day reports the count and drops nothing', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
+    expect(r.fixesDropped).toBe(0);
+    expect(r.fixesSeen).toBeGreaterThan(0);
   });
 });

@@ -55,25 +55,29 @@ test.describe('Realtime sync, render coverage', () => {
     }
   });
 
-  // ── 3. _applyRealtimeRecord calls renderGallery ───────────────────────────
-  test('_applyRealtimeRecord calls renderGallery when photos table changes', async () => {
-    const called = await page.evaluate(() => {
+  // ── 3. a photo arriving from another device repaints where photos live ───
+  // It used to repaint the Gallery page. That page is gone (owner 2026-09-22)
+  // and photos now live on the client record, which _renderAllPages already
+  // repaints when it is the open page.
+  test('_applyRealtimeRecord repaints after a photos-table change', async () => {
+    const r = await page.evaluate(() => {
       if (typeof _applyRealtimeRecord !== 'function') return null;
-      let galleryCalled = false;
-      const orig = typeof renderGallery === 'function' ? renderGallery : null;
-      window.renderGallery = () => { galleryCalled = true; if (orig) orig(); };
+      let painted = 0;
+      const orig = window.renderDash;
+      window.renderDash = () => { painted++; };
       _applyRealtimeRecord('td_photos', {
         eventType: 'INSERT',
         new: { id: 'rt-test-photo-2', user_id: 'u', data: { id: 'rt-test-photo-2', url: 'https://example.com/y.jpg', storagePath: 'u/rt-test-photo-2.jpg', type: 'job', uploadedAt: new Date().toISOString() }, deleted_at: null },
         old: null,
       });
-      if (orig) window.renderGallery = orig; else delete window.renderGallery;
-      return galleryCalled;
+      window.renderDash = orig;
+      return { painted, landed: photos.some(p => String(p.id) === 'rt-test-photo-2') };
     });
-    if (called !== null) {
-      expect(called, 'renderGallery must be called by _applyRealtimeRecord').toBe(true);
+    if (r !== null) {
+      expect(r.landed, 'the row must reach memory').toBe(true);
+      expect(r.painted, 'a photos change must repaint').toBeGreaterThanOrEqual(1);
     }
-    assertNoErrors(page, 'renderGallery called by _applyRealtimeRecord');
+    assertNoErrors(page, 'photos realtime repaint');
   });
 
   // ── 4. _applyRealtimeRecord calls renderLicensing ────────────────────────

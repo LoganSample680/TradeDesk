@@ -82,7 +82,156 @@ export function daysToDerive(evs, nowMs) {
 // (_GEO_FRESH_FIX_TYPES, js/geo-track.js). A motion or fence row carries the
 // LAST KNOWN position, which after a wake can be a mile stale, and one of those
 // in the trace once read a 3-mile drive as 6.1.
-const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out"];
+// AMENDED 2026-09-18, on Jack's day, and the reason the old list was right in
+// September and wrong now is worth keeping.
+//
+// It held "fix", "clock-in", "clock-out" because on 2026-09-03 a push-ping
+// carried the plugin's cached location with no age on it, and one sitting 343
+// ft from where the owner stood produced phantom fence crossings and a refused
+// write. True then. Since 2026-09-09 silentPush measures that cache against the
+// CLLocation's OWN timestamp and says so, and a cache older than five minutes
+// buys a four-second burst to replace itself. The exclusion outlived its reason.
+//
+// What it cost, measured on Jack's 18 September: his phone reported a correct
+// position every thirty minutes all morning, on push-ping and visit rows, and
+// the deriver discarded every one. What it kept instead was the `fix` stream,
+// which is the one that lies: TdGeoPlugin's event() stamps ts with Date() and
+// drops the location's own timestamp, so a buffered old reading arrives looking
+// current. At 12:22:46 both rows landed in the same instant, the push-ping at
+// his actual job site and the `fix` 724 ft away at a shop he had left at 07:53.
+// We trusted the wrong one by rule.
+//
+//   visit      ALWAYS. This is not a cache at all: CLVisit is iOS's own report
+//              of a place a person stopped, with its own arrival and departure
+//              timestamps. It is the best position evidence in the system and
+//              it was never being read.
+//   push-ping  UNLESS it says it is stale. An unmarked one is natively
+//              verified under five minutes old, which is better than a `fix`
+//              can claim, because a `fix` carries no age whatsoever.
+//   wake-drop  STILL NO. It takes mgr().location with no age measured at all
+//              (wakeDrop, TdGeoPlugin.swift). Same defect as `fix` and without
+//              the replay guard's protection, so it stays out.
+//
+// The legacy caveat, stated rather than hidden: staleMs was dropped at ingest
+// until this same commit, so rows written before it carry no age and are read
+// as fresh. The blind burst means a stale cache is followed by a real fix
+// seconds later anyway, and the replay guard strips exact repeats, so the worst
+// case is one soft point beside a good one rather than a day at the wrong
+// address.
+// AMENDED 2026-09-19: the note above said a `fix` carries no age "whatsoever"
+// and waved it through for want of anything better to ask. It carries one now.
+// TdGeoPlugin.event() measures every position it builds against the
+// CLLocation's own timestamp and marks it over five minutes old, so the age
+// test that always governed a push-ping governs every type here. A row with no
+// age is fresh, which is every row written before that build, so no history
+// re-grades on this line alone.
+const FRESH_FIX_TYPES = ["fix", "clock-in", "clock-out", "visit"];
+
+// ── THE DERIVER READS EVIDENCE, NEVER THE DIAGNOSTIC LEDGER ────────────────
+// (owner 2026-09-21, on Jack's phone)
+//
+// geo_events carries two different things. Evidence: motion flips, fence
+// crossings, lifecycle events, positions. And a LEDGER: `radio` (a row at
+// every line that touches the GPS receiver), `heartbeat`, `sampling`, the
+// `wake-*` rows. The ledger exists so a person can be shown why their battery
+// went, and the deriver has never read a single one of them: the loop below
+// has no branch for any of those types and freshFix refuses them.
+//
+// It still PAID for them, because the read was unfiltered and this function
+// re-reads the whole day on every flush. Jack's engine went into a park
+// arm/exit loop and wrote 21,491 radio rows in one day; his day reached about
+// 25,000 events, and his timesheet stopped gaining rows at 11:25am and never
+// moved again, through a 1:58pm drive whose motion flips reached the server
+// in one second.
+//
+// So the read is narrowed to the types this function can actually use. Built
+// from the two lists that already decide that, never a third hand-written
+// one: a type added to either is read from that moment, and a diagnostic
+// nobody has invented yet costs nothing by default. That is the part that
+// makes this a fix rather than a patch.
+const READ_TYPES = [...new Set([...TRIGGER_TYPES, ...FRESH_FIX_TYPES])];
+function freshFix(e) {
+  if (!FRESH_FIX_TYPES.includes(e.type) && e.type !== "push-ping") return false;
+  const d = e.detail;
+  const stale = d && typeof d === "object" ? Number(d.staleMs) : NaN;
+  return !(stale > 0);
+}
+
+// ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
+// The twin of the guard in _geoFixLogPush (js/geo-track.js), and it has to
+// exist on BOTH sides: that one protects the phone's own log, this one is what
+// the ops portal's Rebuild button derives from, and the rebuild is exactly the
+// moment somebody has decided a day is wrong and wants it done again.
+//
+// Jack's 18 September: one fix taken at 07:39:07 while he stood in the shop,
+//
+//     39.04565625037153, -95.71510278822348
+//
+// arrived FIFTEEN times out of his thirty-seven, the last at 12:42, hours after
+// he had parked 767 ft away. Identical to fourteen decimal places every time,
+// which two real fixes never are: even a parked phone's consecutive readings
+// differ in the low bits. It is one CLLocation handed out again on every wake,
+// and TdGeoPlugin's event() stamps ts with Date() and drops the location's own
+// timestamp, so nothing downstream can see its age.
+//
+// Narrow on purpose, and the phone's version learned this the hard way from two
+// tests: a phone parked somewhere all morning reports the same place over and
+// over and those repeats are real evidence, both of coverage and of not having
+// left. So the rule is only a coordinate that comes back AFTER the phone has
+// been seen somewhere else. Standing still and saying so twice is honest.
+//
+// THE WINDOW IS THE DAY, not two hours. Two hours was the first cut and it is
+// what let Jack's day go wrong a second time. His first replay burst spanned 47
+// minutes, which two hours covers comfortably. The rest of the day was not a
+// burst: the 07:39 shop fix came back on the 30-minute push cycle at 10:00,
+// 10:31, 11:03, 11:33, 12:00, 12:22 and 12:29, each one more than two hours
+// after the last copy the scan could still see, so each one read as new and
+// 08:00 to 13:12 put him back at a shop he had left at 07:53.
+//
+// A cached coordinate does not go stale by waiting. Going quiet for three hours
+// is what a cache does while the phone sleeps. The day is the honest boundary:
+// it is the unit the deriver works in, and yesterday's cache describes nothing
+// this day needs.
+//
+// Scanning the kept list is still enough. The guard drops a coordinate only
+// when that coordinate is already in the list, so the FIRST appearance of one
+// is never the one dropped, and the first appearance is all the scan has to
+// find.
+const REPLAY_SCAN = 2000;
+// THE DAY IS COMPARED AS A NUMBER, not as a key, and that is not a style
+// choice. The first cut of this called centralDayKey(k.ts) inside the inner
+// scan. centralDayKey builds a fresh Intl.DateTimeFormat and runs
+// formatToParts on every call, which is among the most expensive things in the
+// language, and the scan runs once per kept fix per fix. Jack's day holds about
+// 630, so a rebuild asked for something near 400,000 Intl constructions and the
+// edge function ran out of wall clock: "edge function returned a non-2xx status
+// code", on the first rebuild after it shipped.
+//
+// `sorted` is ascending, so the day only ever moves forward. One pair of bounds
+// per distinct day, cached, and the scan stays arithmetic.
+function dropReplayedFixes(sorted) {
+  const kept = [];
+  let lo = Infinity, hi = -Infinity;
+  for (const f of sorted) {
+    if (!(f.ts >= lo && f.ts < hi)) {
+      const b = centralDayBounds(centralDayKey(f.ts));
+      lo = b ? b.start : -Infinity;
+      hi = b ? b.end : Infinity;
+    }
+    const last = kept[kept.length - 1];
+    if (last && (last.lat !== f.lat || last.lng !== f.lng)) {
+      let replay = false;
+      for (let i = kept.length - 1, seen = 0; i >= 0 && seen < REPLAY_SCAN; i--, seen++) {
+        const k = kept[i];
+        if (!(k.ts >= lo)) break;               // yesterday, and the list is in order
+        if (k.lat === f.lat && k.lng === f.lng) { replay = true; break; }
+      }
+      if (replay) continue;
+    }
+    kept.push(f);
+  }
+  return kept;
+}
 const PAGE = 1000, MAX_PAGES = 12;
 
 async function pageAll(build) {
@@ -100,7 +249,82 @@ async function pageAll(build) {
 // held? }: enough for the caller to log why a day produced nothing without
 // having to guess.
 // One person, one Central day, end to end.
-export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
+// ── THE ROAD, BEFORE THE ROWS ARE WRITTEN (owner 2026-09-14) ───────────────
+//
+// "I want this build to finally write the correct mileage", and "server side
+// first, phone second."
+//
+// A derived leg leaves geoDeriveRows with whatever the breadcrumbs measured,
+// which off the phone is a straight line between however few fixes rode a
+// wake: his 14 September drive was four fixes and 2.4 miles for a trip Apple
+// routes at 3.2. This is where that gets fixed, before geo_replace_day sees
+// the rows, so the number is right the moment the drive closes rather than
+// whenever he next opens the app.
+//
+// `route` is injected rather than imported so this file stays plumbing and the
+// caller owns the credentials and the cache (ingest-geo/index.ts). Passing
+// nothing is the old behaviour exactly.
+//
+// THE COORDINATES ARE THE TRAP. Ask with the fence CROSSING points and Apple
+// answers honestly for a shorter trip: 2.7 against the 3.2 the same pair of
+// real addresses returns, because a geofence trips a few hundred feet short at
+// both ends. Half a mile on a three mile trip. fromCoord and toCoord off the
+// row are the addresses; the event coordinates are not.
+const ROUTE_MAX_LEGS = 12;
+
+async function routeRows(rows, route) {
+  if (typeof route !== "function" || !Array.isArray(rows)) return 0;
+  let asked = 0;
+  for (const m of rows) {
+    if (asked >= ROUTE_MAX_LEGS) break;
+    try {
+      // A ROUTE NEEDS TWO ADDRESSES (rule 14). A traced leg has an end nobody
+      // saved, and routing between its coordinates would hand it exactly the
+      // inferred number it exists not to have.
+      if (!m || m.addressUnknown) continue;
+      const f = m.fromCoord, t = m.toCoord;
+      if (!f || !t || !isFinite(Number(f.lat)) || !isFinite(Number(t.lat))) continue;
+      asked++;
+      const r = await route(f, t);
+      if (!r || !(Number(r.miles) > 0)) continue;
+      m.routeMiles = Number(r.miles);
+      // The road is an INFERENCE and `path` is EVIDENCE. They do not share a
+      // field: the map draws the observed trace solid and this one dashed, and
+      // collapsing them would let a router quietly overwrite breadcrumbs.
+      if (Array.isArray(r.path) && r.path.length >= 2) m.routePath = r.path;
+      // Never shrink. A trace that measured more than the road is a trace of a
+      // longer drive than the road, which is the detour case, and the road is
+      // not evidence that it did not happen.
+      if (Number(r.miles) > (Number(m.miles) || 0)) {
+        m.miles = Number(r.miles);
+        m.calc_method = "derived-routed";
+      }
+    } catch { /* one leg cannot take the day down */ }
+  }
+  return asked;
+}
+
+// ── THE OPEN ROW RIDES OUT WITH THE REST (owner 2026-09-18) ────────────────
+// geoDeriveRows returns the open dwell in its own array so a writer has to opt
+// in knowingly: its range is unbounded and geo_replace_day had to learn that
+// shape first (20261024). The same helper exists on the phone
+// (_geoWithOpen, js/geo-track.js) and does the same thing, so the two writers
+// cannot drift on which rows they send. `_table` is the deriver saying which
+// table the row belongs to, and is stripped because the RPC takes two arrays.
+function withOpen(rows, tbl) {
+  const base = Array.isArray(rows?.[tbl]) ? rows[tbl] : [];
+  const open = Array.isArray(rows?.open) ? rows.open.filter((r) => r && r._table === tbl) : [];
+  if (!open.length) return base;
+  return base.concat(open.map((r) => { const o = { ...r }; delete o._table; return o; }));
+}
+
+export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), route = null, opts = null) {
+  // `opts.sweep` is the ONE door through which a server derive may retire a
+  // row, and it is only ever opened by a person asking for this day to be
+  // rebuilt (rebuild-day/index.ts). See the p_sweep note at the top of this
+  // file for why the ingest path may never do it, and the guard further down
+  // for what has to be true even here.
+  const wantSweep = !!(opts && opts.sweep);
   const b = centralDayBounds(day);
   if (!b) return { day, wrote: false, reason: "bad day" };
   const fromIso = new Date(b.start - TWO_HOURS).toISOString();
@@ -111,8 +335,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
   // this day's arrival, and the flip that opened it is on the other side.
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
     pageAll((f, t) => svc.from("geo_events")
-      .select("ts,type,kind,lat,lon")
-      .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+      .select("ts,type,kind,lat,lon,region_id,detail")
+      .eq("employee_user_id", uid).in("type", READ_TYPES)
+      .gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     pageAll((f, t) => svc.from("location_pings")
       .select("ts,lat,lon,accuracy")
@@ -126,12 +351,20 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
   const tape = [];
   const fixes = [];
   const appEvents = [];
+  // Rule 15: the OS's own fence crossings. Deliberately NOT a fix source (a
+  // region row carries the plugin's last-known position, the very thing rule
+  // 15 exists to stop trusting); only the edge and the region id are read,
+  // and those are exact.
+  const regions = [];
   for (const e of evRows) {
     const ts = Date.parse(e.ts);
     if (!(ts > 0)) continue;
     if (e.type === "motion" && e.kind) tape.push({ ts, kind: String(e.kind) });
+    else if (e.type === "regionEnter" || e.type === "regionExit") {
+      if (e.region_id) regions.push({ ts, id: String(e.region_id), enter: e.type === "regionEnter" });
+    }
     else if (String(e.type).startsWith("app-")) appEvents.push({ ts, kind: String(e.type).slice(4) });
-    if (FRESH_FIX_TYPES.includes(e.type) && e.lat != null && e.lon != null) {
+    if (freshFix(e) && e.lat != null && e.lon != null) {
       fixes.push({ ts, lat: Number(e.lat), lng: Number(e.lon), acc: null });
     }
   }
@@ -142,8 +375,15 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
     }
   }
   fixes.sort((a, b2) => a.ts - b2.ts);
+  // After the sort, because a replay is only recognisable in time order.
+  const fixesSeen = fixes.length;
+  const liveFixes = dropReplayedFixes(fixes);
+  const fixesDropped = fixesSeen - liveFixes.length;
+  fixes.length = 0;
+  for (const f of liveFixes) fixes.push(f);
   tape.sort((a, b2) => a.ts - b2.ts);
   appEvents.sort((a, b2) => a.ts - b2.ts);
+  regions.sort((a, b2) => a.ts - b2.ts);
 
   // NOTHING TO GO ON IS NOT AN EMPTY DAY. The phone refuses to derive a day
   // its tape does not cover (js/geo-track.js), and the server has strictly
@@ -163,19 +403,62 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
     clientId: f.client_id ?? undefined,
     jobId: f.job_id ?? undefined,
     scheduled: f.scheduled ?? undefined,
+    // ── RULE 13'S OTHER TWO WITNESSES ────────────────────────────────────
+    // `personal` shipped with the family flag (20261003) and was added to
+    // geo_fences_for without ever being mapped HERE, so the server counted a
+    // visit to a family address as work while the phone held it: the same day
+    // derived two different ways depending on which side got there first.
+    // `onBooks` (20261006) is its reprieve and has to travel with it.
+    // Neither may be dropped: this mapping is the whole contract between the
+    // SQL fence list and the deriver's shape.
+    personal: f.personal ?? undefined,
+    onBooks: f.on_books ?? undefined,
+    // Rule 20: the place this person reports to. A leg between it and their
+    // own house is the commute, and writes nothing.
+    commute: f.commute === true || undefined,
   }));
 
   // This person's closed manual clocks touching the day (rule 13). The owner's
   // own rows carry logged_by_uid null; a crew member's carry their uid, which
   // is the same test _geoDeriveClocks makes.
   const clocks = [];
+  // Rule 19: the same punches, ALL of them, as minutes after their own local
+  // midnight, so the deriver can learn when this person actually works. The
+  // Central maths lives here rather than there on purpose: a DST day is 23 or
+  // 25 hours long and a modulo against the clock would be wrong twice a year.
+  const clockHistory = [];
+  // centralOffset shifts an instant to its Central wall clock, so the
+  // remainder against a day IS the minutes since local midnight. This line
+  // called a `centralParts` that never existed in this module and threw a
+  // ReferenceError on every server derive (owner 2026-09-15, from the ops
+  // rebuilder). Nothing here executes in a browser, so no offline shard could
+  // have caught it; scripts/ci/derive-day-smoke.mjs now runs it for real.
+  const centralMs = (ms) => ms + centralOffset(ms);
+  const minOfDay = (ms) => Math.round(((centralMs(ms) % 86400_000) + 86400_000) % 86400_000 / 60000);
   for (const r of (Array.isArray(clockRes?.data) ? clockRes.data : [])) {
     const d = r?.data || {};
-    if (d.open || !d.start_time || !d.end_time) continue;
+    // An OPEN clock counts, bounded by now and by the day (owner 2026-09-16:
+    // "why did Jack mark Laurie Schonfeldt as personal? while on a clock in?"
+    // Because a mid-day derive saw no clock at all: it took closed ones only,
+    // and his was still running). Same change as _geoDeriveClocks, so the two
+    // halves of the one deriver cannot disagree about what a clock is.
+    if (!d.start_time) continue;
+    if (!d.end_time && !d.open) continue;
     const owner = d.logged_by_uid ? String(d.logged_by_uid) === uid : uid === cid;
     if (!owner) continue;
-    const s = Date.parse(d.start_time), e = Date.parse(d.end_time);
-    if (s > 0 && e > s && e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    const s = Date.parse(d.start_time);
+    const e = d.end_time ? Date.parse(d.end_time) : Math.min(nowMs, b.end);
+    if (!(s > 0 && e > s)) continue;
+    if (e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    // Rule 19 learns from FINISHED days only: an open clock has no out time to
+    // learn from, and guessing one from `now` would teach the window whatever
+    // time of day the derive happened to run.
+    if (!d.end_time) continue;
+    const inMin = minOfDay(s), outMin = minOfDay(e);
+    // A clock that ran past midnight ends "before" it began in minutes-of-day.
+    // Its OUT time says nothing about when this person's day closes, so only
+    // the in time is kept, by pushing the out to the end of its own day.
+    clockHistory.push({ day: centralDayKey(s), inMin, outMin: outMin > inMin ? outMin : 24 * 60 });
   }
 
   let workHours = { start: "06:00", end: "20:00", days: [1, 2, 3, 4, 5, 6] };
@@ -190,37 +473,160 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now()) {
       days: Array.isArray(w.days) && w.days.length ? w.days.map(Number) : [1, 2, 3, 4, 5, 6],
     };
   } catch { /* defaults stand */ }
+  // Rule 25: the account's Time off blocks (Settings, js/settings.js). Read
+  // from the same settings row as the working hours, so the phone and the
+  // server hold the same days.
+  let timeOff = [];
+  try {
+    const raw = cfgRes?.data?.settings;
+    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(s?.timeOff)) timeOff = s.timeOff;
+  } catch { /* none */ }
 
   const res = geoDeriveDay({
     day, dayStart: b.start, dayEnd: b.end, personId: uid,
-    tape, fixes, appEvents, fences, nowMs, clocks, workHours,
+    // Rule 20 is crew-only (owner 2026-09-16: "for a business owner it does,
+    // but for Jack it doesn't"). On this side the question is already
+    // answered by the two ids the caller passed: the contractor deriving
+    // their own day has uid === cid, anybody else is crew on their account.
+    crew: String(uid) !== String(cid),
+    tape, fixes, appEvents, regions, fences, nowMs, clocks, clockHistory, workHours, timeOff,
   });
+
+  // ── WHEN A REBUILD MAY RETIRE A ROW (owner 2026-09-15) ──────────────────
+  // "I want Jack to wake up to a clean record of today."
+  //
+  // The standing rule is that the SERVER may add and never retire, because
+  // what it sees is whatever has been flushed, and a stretch nobody uploaded
+  // yet looks exactly like a stretch that did not happen. That is right for
+  // ingest and it stays right: the ingest path passes no opts and sweeps
+  // nothing.
+  //
+  // A rebuild is a different act. Somebody looked at a day, decided it was
+  // wrong, and asked for it to be done again; the rows that need removing are
+  // there BECAUSE an earlier derive changed its mind, and only a sweep
+  // removes them. So the rule is not relaxed, it is given the same test the
+  // phone applies before it sweeps (tapeCovers, js/geo-track.js): absence of
+  // evidence is evidence of absence only where there is evidence.
+  //
+  // Ownership needs no test here and needs one on the phone: CoreMotion
+  // history belongs to the device, so a shift change mid-day mixes two
+  // people's tapes into one log. These rows carry employee_user_id from the
+  // sender, so the tape read here is already one person's.
+  //
+  // A sweep against an empty derive would be a delete-everything with extra
+  // steps. The two guards below already refuse to write at all in that case,
+  // which is what stops it.
+  //
+  // tapeCovers is the one computed above for the no-evidence guard, which asks
+  // the same question for the same reason and must not be asked twice in two
+  // ways.
+  // ── AND IT RETIRES ONLY WHAT IT HAS AN ANSWER FOR ────────────────────────
+  // The phone's twin of this grew and then shrank on the same day, and the two
+  // must not drift. It started as `&& !res.pending`: a chain still mid-drive
+  // withholds its traced leg (rule 14) and the withheld set was going to a
+  // SWEEPING write, which retired the good row it had just declined to re-send.
+  //
+  // The blast radius was wrong. One unresolved chain at the end of a day turned
+  // the sweep off for the WHOLE day, and on this path that is worse than on the
+  // phone, because a person pressed a button: Jack's rebuild added rows beside
+  // every stale one instead of replacing them, which is exactly what the owner
+  // was looking at when he said "its all duplicative".
+  //
+  // Same rule, with a boundary. p_sweep_until is the instant past which this
+  // derive has no answer; before it, a sweep is as safe as it ever was.
+  const sweep = wantSweep && tapeCovers;
+  const sweepUntil = (res.pending && Number(res.pending.startTs) > 0)
+    ? new Date(Number(res.pending.startTs)).toISOString() : null;
 
   // MISSING EVIDENCE IS NOT AN EMPTY DAY, the second half of it: drives that
   // are plainly on the tape and resolve to nowhere at all mean the fixes have
   // not arrived, not that the truck teleported. Same guard the phone makes.
+  // ── THE OPEN DWELL RIDES OUT OF HERE (owner 2026-09-16) ────────────────
+  // "Live activities, if I'm in the ops portal it doesn't update live when I
+  // go to drive." The lock screen is drawn from this one fact, and until now
+  // only the phone ever saw it, so the card could only move while the app was
+  // on a screen that was allowed to derive. It is returned on EVERY path
+  // below, including the ones that write nothing: "nothing to add" is exactly
+  // the shape of a man who has been standing at John Doe's for four hours,
+  // and it is still the truth the card needs.
+  const openCard = res.open
+    ? { name: String(res.open.name || ""), kind: String(res.open.kind || ""),
+        sinceTs: Number(res.open.sinceTs) || 0, atHome: !!res.open.atHome,
+        counts: res.open.counts !== false,
+        fence: res.open.fence ? { addr: String(res.open.fence.addr || "") } : null }
+    : null;
+
+  // ── AND THE DRIVE RIDES OUT BESIDE IT (owner 2026-09-21) ───────────────
+  // One card now, and it mirrors the day rail, so the lock screen needs both
+  // halves of the rail's live row: the dwell he is standing in AND the chain
+  // he is still driving. Only the phone could ever see the drive before this,
+  // and the phone is asleep for most of every drive, which is exactly when
+  // the card matters. Narrowed to what railCardFor reads, nothing more.
+  //
+  // NOT called `pending`: the success return already carries `pending` as a
+  // boolean, and the ops portal reads it to say which guard stopped a sweep.
+  const drivingCard = res.pending
+    ? { startTs: Number(res.pending.startTs) || 0,
+        origin: res.pending.origin ? { name: String(res.pending.origin.name || "") } : null }
+    : null;
+
   const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
-  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved" };
+  if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
   const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
-  // Nothing to add, and this call may never retire: a write would be a no-op
-  // with a round trip attached.
-  if (nothing) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length };
+  // ── AN EMPTY DAY IS AN ANSWER, WHEN THIS CALL MAY SWEEP (owner 2026-09-21) ─
+  // This used to return unconditionally, and the comment on it said why:
+  // "nothing to add, and this call may never retire, so a write would be a
+  // no-op with a round trip attached." That was true while ingest was the only
+  // caller. It stopped being true when a rebuild got the sweep, and nobody
+  // moved the line.
+  //
+  // Rule 19 then made it bite. Jack's Sunday derives to NOTHING on purpose (a
+  // weekend vouches for nothing on its own), so the rows sitting on it from
+  // before the rule are exactly what a rebuild exists to remove, and this line
+  // returned "nothing to add" before the writer was ever called. He pressed
+  // Rebuild and got the two stale rows back, unchanged. The day that most
+  // needs clearing was the one day that could never clear itself.
+  //
+  // So: an empty derive still goes to geo_replace_day when this call is
+  // allowed to retire, carrying empty arrays, and the sweep does the work. A
+  // call that may NOT retire still returns here, because for that one a write
+  // really is a no-op with a round trip attached. What a person wrote,
+  // corrected or answered is protected inside the RPC, not by this line.
+  if (nothing && !sweep) return { day, wrote: false, reason: "nothing to add", dwells: res.dwells.length, legs: res.legs.length, open: openCard, driving: drivingCard, fixesSeen, fixesDropped, sweep, sweepAsked: wantSweep, tapeCovers };
+
+  // Before the write, not after: geo_replace_day is the only writer and a
+  // second pass to correct a number it just stored would be the reconciler
+  // CLAUDE.md 17 exists to forbid.
+  const routed = await routeRows(rows.td_mileage, route);
 
   const { error } = await svc.rpc("geo_replace_day", {
     p_contractor: cid, p_employee: uid, p_day: day,
     p_day_start: new Date(b.start).toISOString(),
     p_day_end: new Date(b.end).toISOString(),
-    p_time: rows.job_time_entries, p_shop: rows.shop_time_entries, p_miles: rows.td_mileage,
-    p_sweep: false,
+    p_time: withOpen(rows, "job_time_entries"), p_shop: withOpen(rows, "shop_time_entries"), p_miles: rows.td_mileage,
+    p_sweep: sweep, p_sweep_until: sweepUntil,
   });
-  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message };
+  if (error) return { day, wrote: false, reason: "geo_replace_day: " + error.message, open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   return {
-    day, wrote: true,
+    day, wrote: true, open: openCard, driving: drivingCard,
     dwells: res.dwells.length, legs: res.legs.length,
     time: rows.job_time_entries.length, shop: rows.shop_time_entries.length,
-    miles: rows.td_mileage.length, held: rows.held.length,
+    miles: rows.td_mileage.length, held: rows.held.length, routed,
+    // What this call was allowed to do, so a rebuild that could not sweep
+    // says so instead of looking like one that did.
+    // pending rides out so the caller can say WHICH guard stopped the sweep.
+    // The ops portal explained every un-swept rebuild as "no motion tape covers
+    // that day", which was the only reason there had ever been; since the
+    // no-answer guard above there are two, and the owner was handed the wrong
+    // one on Jack's morning (2026-09-18).
+    sweep, sweepAsked: wantSweep, tapeCovers, pending: !!res.pending, sweepUntil,
+    // How much of the evidence was one CLLocation pretending to be many. Worth
+    // saying: on Jack's day it was 15 of 37, and a rebuild that silently ate
+    // them is how the wrong answer kept being confirmed.
+    fixesSeen, fixesDropped,
   };
 }

@@ -51,8 +51,27 @@
   // no app-code fix: every site using ResizeObserver (directly or via a
   // library) sees it. Filtered at capture, same as the MapKit outage filter
   // above, so it never re-pages the hot lane.
-  var _BENIGN_BROWSER_NOISE = /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
+  //
+  // NOT anchored, and that is the whole of hotfix 223. The original was
+  // /^ResizeObserver loop .../ which only ever matched the browser's BARE
+  // message on the window 'error' path. The same notification also arrives
+  // here through the console.error wrapper below, because js/e2e.js has its
+  // own window 'error' listener that prefixes the text with
+  // "[TradeDesk JS Error] [file:line] " before logging it. Against that string
+  // the ^ anchor can never match, so the noise walked straight past a filter
+  // written specifically to stop it and re-paged the hot lane (error_log 64,
+  // 65, now 223).
+  //
+  // Matching the wording wherever it appears is still narrow: the two exact
+  // ResizeObserver sentences are not text any app message would contain by
+  // accident, and nothing else is suppressed.
+  var _BENIGN_BROWSER_NOISE = /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
   function _isBenignBrowserNoise(msg) { try { return _BENIGN_BROWSER_NOISE.test(String(msg || '')); } catch (_e) { return false; } }
+  // Shared with js/e2e.js's global error handler, which loads after this file.
+  // §7.3: one definition of what counts as benign browser noise, not two that
+  // drift. That handler uses it to skip the red toast AND the console.error,
+  // so the noise is never generated rather than generated and then filtered.
+  window._tdIsBenignBrowserNoise = _isBenignBrowserNoise;
   function _logError(kind, message, stack, ctx) {
     try {
       if (!_ready()) return;
@@ -159,7 +178,7 @@
   // ── Interaction telemetry (batched, aggregated server-side) ──────────────────
   var _batch = [];
   function _track(type, page, value, label, ctl) {
-    try { if (!_ready()) return; _batch.push({ event: type, ctx: (page != null ? page : (label || _page())), value: (typeof value === 'number' ? value : null), ctl: (ctl || null) }); if (_batch.length >= 60) _flush(); } catch (_e) {}
+    try { if (!_ready()) return; _batch.push({ event: type, ctx: (page != null ? page : (label || _page())), value: (typeof value === 'number' ? value : null), ctl: (ctl || null) }); if (_batch.length >= 60) _flush(); else _saveCurrent(); } catch (_e) {}
     // The page event IS the visit boundary, so the dwell clock rolls here and
     // no call site has to remember to do it. js/navigation.js already fires
     // _obs.track('page', id) on every goPg, which is the one and only way a
@@ -220,8 +239,78 @@
   // 2026-09-10, the three highest-volume were the test harness. The harness
   // sets this; nothing else ever does, and the default is a real person.
   var _source = 'app';
+  // ── A RESTART MUST NOT EAT THE LAST TAPS (owner 2026-09-24) ──────────────
+  // Jack's 23 September: he opened a row's menu at about 4:20:26, a "not
+  // work" answer reached the server at 4:20:27, and the tap that sent it is
+  // nowhere in this table. The batch went out on its 30 s tick at about the
+  // same moment, his login failed to refresh at 4:20:32, and the app booted a
+  // new session at 4:20:42. Whatever was tapped between the tick and the
+  // reboot lived only in this closure's memory, and died with it.
+  //
+  // So the batch is written down as it grows and every send stays on disk
+  // until the function answers. A payload is only ever resent by the same
+  // login that made it: the edge function stamps the rows from the JWT it is
+  // called with, and another account's taps must never be filed under yours.
+  var _PEND_KEY = 'zp3_obs_pending', _CUR_KEY = 'zp3_obs_current', _PEND_MAX = 10;
+  function _uid() { try { return (_supaUser && _supaUser.id) || null; } catch (_e) { return null; } }
+  function _ls() { try { return (typeof localStorage !== 'undefined' && localStorage) ? localStorage : null; } catch (_e) { return null; } }
+  function _lsRead(k) { try { var s = _ls(); var v = s ? JSON.parse(s.getItem(k) || 'null') : null; return v; } catch (_e) { return null; } }
+  function _lsWrite(k, v) { try { var s = _ls(); if (!s) return; if (v == null) s.removeItem(k); else s.setItem(k, JSON.stringify(v)); } catch (_e) {} }
+  // Recover FIRST: this page's first tap would otherwise overwrite the last
+  // page's unsent batch before anything had read it.
+  function _saveCurrent() { _recover(); _lsWrite(_CUR_KEY, _batch.length ? { uid: _uid(), sid: _sid, v: _ver(), src: _source, events: _batch } : null); }
+  function _pendList() { var l = _lsRead(_PEND_KEY); return Array.isArray(l) ? l : []; }
+  function _sendKept(item) {
+    try {
+      if (!item || !item.payload) return;
+      if (typeof opsReadOnly === 'function' && opsReadOnly()) return;
+      if (!_ready() || item.uid !== _uid()) return;
+      _supa.functions.invoke('ingest-telemetry', { body: item.payload }).then(function (r) {
+        try {
+          if (r && r.error) return;
+          _lsWrite(_PEND_KEY, _pendList().filter(function (x) { return x && x.k !== item.k; }));
+        } catch (_x) {}
+      }, function () {});
+    } catch (_e) {}
+  }
+  function _keep(payload) {
+    var item = { k: _sid + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6), uid: _uid(), payload: payload };
+    var l = _pendList(); l.push(item);
+    // Bounded: a phone that cannot reach the function for days keeps its most
+    // recent sends, not an ever-growing pile.
+    _lsWrite(_PEND_KEY, l.slice(-_PEND_MAX));
+    return item;
+  }
+  // Once per page, as soon as there is a login to send as: the previous
+  // session's unsent batch becomes a send of its own, and anything still on
+  // disk goes again. A payload for another login is dropped, never sent.
+  var _recovered = false;
+  function _recover() {
+    if (_recovered || !_ready()) return;
+    _recovered = true;
+    try {
+      var me = _uid(), cur = _lsRead(_CUR_KEY);
+      if (cur && cur.sid !== _sid && Array.isArray(cur.events) && cur.events.length && cur.uid === me) {
+        var l = _pendList();
+        l.push({ k: cur.sid + '-recovered', uid: cur.uid,
+                 payload: { session_id: cur.sid, app_version: cur.v || _ver(), source: cur.src || 'app', events: cur.events } });
+        _lsWrite(_PEND_KEY, l.slice(-_PEND_MAX));
+      }
+      if (cur && cur.sid !== _sid) _lsWrite(_CUR_KEY, null);
+      var keep = _pendList().filter(function (x) { return x && x.uid === me && x.payload; });
+      _lsWrite(_PEND_KEY, keep);
+      keep.forEach(_sendKept);
+    } catch (_e) {}
+  }
   function _flush() {
-    try { if (!_ready() || !_batch.length) return; var events = _batch.splice(0, _batch.length); _send({ session_id: _sid, app_version: _ver(), source: _source, events: events }); } catch (_e) {}
+    try {
+      if (!_ready()) return;
+      _recover();
+      if (!_batch.length) return;
+      var events = _batch.splice(0, _batch.length);
+      _saveCurrent();
+      _sendKept(_keep({ session_id: _sid, app_version: _ver(), source: _source, events: events }));
+    } catch (_e) {}
   }
   try {
     document.addEventListener('click', function (e) {

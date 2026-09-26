@@ -299,12 +299,73 @@ job is giving Cloudflare Pages a stable alias that never changes with dev
 branch names: `https://uat.tradedesk-cyp.pages.dev`. The TestFlight beta shell
 points at this URL, so it must stay alive and stably named forever.
 
-- **Rolling to UAT** (only when the owner asks): fast-forward `uat` to the dev
-  branch tip, add one empty deploy commit WITHOUT `[CF-Pages-Skip]` so
-  Cloudflare builds, push. `git checkout -B uat <dev-branch> && git commit
-  --allow-empty -m "UAT deploy" && git push -u origin uat --force-with-lease`.
+**UAT IS SHARED, AND A ROLL IS ADDITIVE** (owner 2026-09-14, restated here
+2026-09-21 because this section still said the opposite).
+
+Several sessions roll to this one branch and more than one feature is usually
+sitting on it waiting to be tried, so a roll puts your work NEXT TO theirs. It
+never decides on their behalf that their testing is finished.
+
+- **Rolling to UAT** (only when the owner asks) is one command:
+  ```
+  bash scripts/uat-roll.sh <dev-branch>     # default: the current branch
+  ```
+  It merges rather than replacing, auto-resolves the version-stamp conflict
+  that happens on literally every roll (`version.json`, `sw.js`, `js/cloud.js`),
+  adds the empty deploy commit WITHOUT `[CF-Pages-Skip]` so Cloudflare builds,
+  and pushes without force. Do not hand-roll these steps: the script stops and
+  asks on a real conflict between two sessions, and it tells the stamp apart
+  from real code by reading the conflict hunks rather than trusting the
+  filename. That is the part that is easy to get wrong by hand.
+- **The roll must never DELETE what is already on `uat`** (found 2026-09-23,
+  owner: "I bet it has"). It had. The stamp resolver used `git checkout
+  --theirs`, which swaps in the whole file: the conflict HUNKS were only the
+  version line, but every other change git had already auto-merged into
+  `js/cloud.js` went with it. An audit of all 53 roll merges found it had
+  deleted the Tim session's sign-out privacy fix once and the county
+  property sync call once, silently both times. Two fixes, both in the script:
+  the stamp is now resolved inside the conflict markers only, and after the
+  merge and BEFORE the push the roll checks that no line `uat` added since
+  the branches last met has disappeared, stopping and naming the lines if one
+  has. `UAT_ROLL_ALLOW_DROP=1` lets a deliberate loss through. **This is also
+  why hand-rolling is banned:** both losses came from a merge done by hand or
+  by a resolver nobody had read, and the gate only runs inside the script.
+- **Never `--force` a push to `uat`, and never `checkout -B uat <branch>`.**
+  That pair is a branch REPLACEMENT, and until 2026-09-21 this section called
+  it a "fast-forward" and gave it as the command. Measured that day: running it
+  as written would have dropped 32 commits from `uat` that existed on no other
+  integration branch, including another session's geo/mileage and save-address
+  work and all of `tests/flow/save-address-flow.spec.js`. Nothing would have
+  errored. The feature would just have vanished from the beta, with no message,
+  for whoever was testing it on their phone.
+- **`--force-with-lease` does not protect against this.** It only asks whether
+  the remote moved since YOUR last fetch, so a session that fetched a moment
+  ago passes the lease while still dropping thirty commits. CONTAINMENT is the
+  real check, and it already runs in two places: `scripts/uat-guard.sh`
+  (pre-push, installed by `scripts/install-hooks.sh`) and
+  `.github/workflows/uat-guard.yml`, which both assert that whatever `uat`
+  pointed at before is still an ancestor of what it points at now. A
+  merge-based roll satisfies that by construction. A fresh clone has no hooks,
+  which is why the workflow exists as well.
+- **A rejected push is the system working**, not an obstacle to get around. It
+  means somebody rolled while you were rolling. Run the script again and the
+  merge picks up their work.
+- The ONE place a force is right is the recovery `uat-guard.yml` prints after a
+  bad push has already landed: there you check out the DROPPED sha, merge your
+  branch onto it and force, because `uat` has to move backwards to pick the
+  lost commits back up. That is restoring work, not replacing it.
+- **`uat` only ever receives. It never gives.** Never merge `uat` back into a
+  dev branch or into `main`: it carries other sessions' unmerged work, and
+  pulling it into your branch drags their features into your PR. Each feature
+  reaches `main` only through its own reviewed PR (§14.1.1).
+- **To try one feature on its own, use that branch's Pages preview URL**, which
+  every push already builds. `uat` is only special because the TestFlight shell
+  points at it, so spend it on what has to be on a phone.
 - **Never open a PR from `uat`**, and never develop on it. All work stays on
   the dev branch; `uat` only ever receives what the dev branch already has.
+- Resetting `uat` back to `main` is the one destructive operation, and it needs
+  an explicit owner ask naming it, because it discards whatever is still under
+  test.
 - Production is untouched by any of this: `main` still only moves via approved
   PR merge (§14.1.1), and the UAT roll is a separate, explicit owner ask.
 - One shared Supabase serves dev/UAT/production (owner decision 2026-08-07):
@@ -312,6 +373,7 @@ points at this URL, so it must stay alive and stably named forever.
   CODE is gated by the merge to `main`. Therefore migrations must stay
   additive (never rename/drop what production code still reads), and new code
   must never rewrite existing records into shapes production can't read.
+
 
 ### 3.2 Minimum iOS Builds (owner rule, 2026-08-09)
 
@@ -1915,3 +1977,99 @@ supposed to be. That design is gone. The rule now:
   to `tests/e2e-geo-derive.spec.js`, and the boot rebuild repairs history.
   `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
   come back.
+
+### 17.1 On Time Is Measured Every Workday (owner rule 2026-09-23)
+
+Owner: *"I want to see on time shit within 10 seconds 100% of the time."* The
+goal is every motion flip on the server within 10 seconds of happening, for
+every user, during working hours. It is measured, not guessed.
+
+- **One definition:** `scripts/ops/on-time-report.sql`. Read-only, one row per
+  person per Central day, 6am to 6pm, last seven days. Change the definition
+  there and nowhere else, and say so in the report when you do.
+- **A routine runs it at 7pm Central, Monday to Saturday**, into the session
+  that owns geo work. The report to the owner is short: each person's % within
+  10s today against the week, the biggest cause of the misses, and ONE proposed
+  fix. Nothing gets built until the owner says go; this is a loop run together.
+- **Find the cause in the data before proposing a fix.** `late_on_open` means
+  the phone held the flip until someone opened the app; `recovered` means the
+  native backfill found it. A fix must name which bucket it moves.
+- A day that gets worse is reported the same way as a day that gets better.
+
+---
+
+## 18. Metrics Are Data: One Definition, Many Mouths (owner rule 2026-09-17)
+
+`ops_account_brief` shipped with its metrics written out twice, once in the SQL
+that computed them and once in the page that labelled and formatted them, so
+adding "how many change orders" meant editing both, in agreement, forever.
+`ops_metric_defs()` ended that: every metric is named ONCE with its section,
+label and format (`int`, `pct`, `usd`, `num`, `hours`, `mins`, `text`, `date`,
+`ago`). It is already granted to `authenticated`, not gated on ops admin.
+
+That registry now has two readers, the ops portal and Tim, and this section
+exists so it keeps having exactly one author.
+
+- **Never hardcode a metric key, label or format in JS.** Not in
+  `js/ops-view.js`, not in `js/tim.js`, not in a new file. Read
+  `ops_metric_defs()`, cache it, and format off the `fmt` column. The moment a
+  reader hardcodes "close rate is a percent," the registry stops being the
+  definition and it is two places again.
+- **Adding a metric is a value in the brief plus a row in the registry.** Never
+  a page change. If a change to a metric requires touching a rendering file,
+  the change is wrong.
+- **A new RPC Tim should answer from gets its registry row in the SAME
+  commit**, exactly like tests ship with features (§5.1). An RPC with no row is
+  a number nobody can name.
+
+### 18.1 One query, two gates, two mouths
+
+The per-contractor ops RPCs (`funnel_by_contractor`, `money_by_contractor`,
+`ops_by_contractor`, `usage_by_contractor`, `control_usage_by_contractor`)
+already compute per-business exactly what a contractor wants to know about
+themselves. They are reused by SCOPE, never by duplication.
+
+- **Scope with one helper, never a copied predicate.** `ops_scope_uid()`
+  returns null for an ops admin and `auth.uid()` for everybody else; each
+  function carries the same single predicate. These are `security definer`, so
+  that predicate is the only thing between one contractor and the whole
+  platform's revenue. A `tim_*` sibling that re-implements the aggregation is
+  banned (§7.3): two copies of a funnel drift, and then the number Tim says out
+  loud disagrees with the number the ops portal shows.
+- **Account scope is not permission scope.** Landing on your own row says
+  nothing about whether this PERSON may see it. Money answers still pass
+  through `crew_perm` / `has_team_perm`. Two gates, different jobs, both
+  required.
+- **Three layers, and the top two never import each other.** The scoped RPCs,
+  then one thin numbers module that returns plain values and no markup, then
+  the mouths: `js/ops-view.js` draws tables for one person on a desktop,
+  `js/tim.js` says a sentence on a phone. Merging the mouths into one file
+  ships cross-account rendering code to every contractor's device and makes an
+  ops tweak able to break Tim.
+
+### 18.2 Tim is an interface, not an intelligence (owner rule 2026-09-17)
+
+`js/tim.js` resolves a sentence against things the app already holds: a screen
+in its own nav table, a year in the books, a customer in the customer list, a
+service in the price book, a metric in the registry above. String matching, so
+it runs with no signal, costs nothing per command, and nothing said to Tim
+leaves the phone. That last part is a promise made to a real customer, not a
+preference.
+
+- **Tim knows the trade, as data, in one place (owner 2026-09-25, reversing
+  the 2026-09-17 line "Tim owns no trade knowledge"): "Tim should know trade
+  knowledge ... filling in the gaps contractors miss."** It lives in
+  `js/trade-knowledge.js`: per job, the professional scope text and the
+  commonly missed items. Tim, the spoken estimate and the estimate builder's
+  "Usually goes with this" card all read that one table; nobody grows a private
+  copy. Still no model and no network. Missed items are OFFERED, never added
+  silently, and PRICES STAY HIS: the library's rate is a starting point and the
+  price book wins the moment he has priced the item.
+- **Every sentence Tim could not place gets logged.** That miss list is the
+  vocabulary roadmap, written by real contractors instead of guessed. It is how
+  he gets smarter without a model.
+- **Tim asks who is on the job before he asks anything about money**, so a rate
+  is a consequence of the crew rather than a field. Cost per person
+  (`pay_type` / `pay_rate` on `team_members`) is already per-person and already
+  gated behind `_canViewComp()`. The BILL rate per person is a separate number
+  from what you pay them and the two must never be conflated.

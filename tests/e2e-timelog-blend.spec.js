@@ -101,7 +101,7 @@ test.describe('manual clock over a derived day', () => {
     expect(clock.blended).toBe(564);
     // The 36 minutes nothing itemised are now a Job site rather than sitting
     // unnamed on the clock (2026-09-04). Same minutes, named row.
-    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(36);
+    expect(clock.min + r.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.min, 0)).toBe(36);
     // And the day totals the clock, not the clock plus the fences.
     const total = r.reduce((s, x) => s + (x.unpaid ? 0 : x.min), 0);
     expect(total).toBe(600);
@@ -120,13 +120,17 @@ test.describe('manual clock over a derived day', () => {
     // fence is the 121 that remain. This is the exact case the owner named on
     // 2026-09-04, so those 121 minutes now say what they are instead of
     // reading as anonymous Manual time.
-    const site = r.find(x => x.raw === 'site');
+    const site = r.find(x => x.raw === 'clock-span');
     expect(site, 'the untracked client in the middle').toBeTruthy();
     expect(site.min).toBe(121);
-    expect(site.kind).toBe('site');
-    // Renamed 2026-09-04: "rather than unsaved job site do we say Unsaved
-    // Address." Half of these are a supply house or a gate.
-    expect(site.name).toBe('Unsaved address');
+    // AMENDED 2026-09-16 (10.4). It was kind 'site' named "Unsaved address".
+    // It is Manual time now and carries no name, because this row has never
+    // known an address: all it knows is that the clock was running and nothing
+    // tracked the stretch. Owner 2026-09-16, reading Jack's rail, took the
+    // shop at 1:27 followed by "Unsaved address" at 1:57 for a lost drive. He
+    // had not moved. Not one total changes; only the claim does.
+    expect(site.kind).toBe('off');
+    expect(site.name).toBe('');
     expect(clock.min).toBe(0);
     // The drive before the clock is its own paid row, untouched by the blend.
     const drive = r.find(x => x.raw === 'drive');
@@ -143,7 +147,7 @@ test.describe('manual clock over a derived day', () => {
     const clock = r.find(x => x.src === 'manual');
     expect(clock.blended).toBe(60);
     // The two hours of clock the fence did not reach are a Job site now.
-    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(120);
+    expect(clock.min + r.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.min, 0)).toBe(120);
     const total = r.reduce((s, x) => s + x.min, 0);
     expect(total).toBe(120 + 120);
   });
@@ -160,7 +164,7 @@ test.describe('manual clock over a derived day', () => {
     // fence in its middle, so each leaves a free hour either side of it. The
     // point of this test is that neither clock reaches into the other, and
     // that is what the split proves.
-    const sites = r.filter(x => x.raw === 'site');
+    const sites = r.filter(x => x.raw === 'clock-span');
     expect(sites.map(x => [x.t, x.min])).toEqual([
       ['12:00-13:00', 60], ['14:00-15:00', 60],
       ['18:00-19:00', 60], ['20:00-21:00', 60],
@@ -228,6 +232,48 @@ test.describe('manual clock over a derived day', () => {
     expect(r.cleared).toBe('none');
   });
 
+  // ── HIS 10h43m AT THE SHOP (owner 2026-09-13) ──────────────────────────
+  // "Says I arrived 10:14, why is it still going and counting?" Because an
+  // open dwell has no departure, so this row is now minus the arrival with no
+  // ceiling, and he had not left the house since that morning.
+  //
+  // The day-end work the night before stopped the Home card and the open
+  // banner and left this row alone, on the reasoning that the rail draws the
+  // day's shape and the row was labelled "not counted". He found it within
+  // hours. A number that size on a timesheet reads as a claim whatever the
+  // caption says.
+  test('home with the workday over: the rail stops drawing the live row, and only then', async () => {
+    const r = await page.evaluate(async () => {
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor, keepD = window._geoOpenDwell;
+      window.timeEntries = [];
+      window._fetchCrewLabor = async () => ({ name: {}, entries: [], shopEntries: [] });
+      const dayStart = _geoDayBounds(_geoDayKeyOf(Date.now(), 'America/Chicago')).start;
+      const since = Math.max(dayStart + 60000, Date.now() - 10 * 3600000 - 43 * 60000);
+      const mk = (over) => Object.assign({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+        sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'h',
+        atHome: true, counts: false, fence: { addr: '2015 SW Randolph Ave' } }, over || {});
+      const live = async (d) => { window._geoOpenDwell = d;
+        return (await _timeLogRows(null)).filter(x => x.live); };
+      try {
+        return {
+          // His case: at his own address, the workday over.
+          over: (await live(mk())).length,
+          // Home at lunch, workday still open: the rail still draws it.
+          midday: (await live(mk({ counts: true }))).map(x => [x.clientName, x.detail]),
+          // A customer's address never takes this rule, at any hour, counted
+          // or not: that one is a real question about a real visit.
+          client: (await live(mk({ atHome: false, kind: 'client', name: 'John Doe' })))
+            .map(x => [x.clientName, x.detail]),
+        };
+      } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; window._geoOpenDwell = keepD; }
+    });
+    expect(r.over, 'nothing is drawn once he is home and the day is done').toBe(0);
+    expect(r.midday.length).toBe(1);
+    expect(r.midday[0][1]).toBe('On site now');
+    expect(r.client.length).toBe(1);
+    expect(r.client[0]).toEqual(['John Doe', 'Here now, not counted']);
+  });
+
   test('the reader is two passes and nothing else', async () => {
     // What the blend is allowed to do is the whole reader now: no round trip
     // withdrawal, no gap absorption, no duplicate drop, no repair pass.
@@ -237,8 +283,20 @@ test.describe('manual clock over a derived day', () => {
   });
 
   // Rule 13 on the rail: a held visit is a question in no total; a dismissed
-  // one is not a row at all.
-  test('a held visit is unpaid and says so; a dismissed one is gone', async () => {
+  // one is a row nothing draws.
+  //
+  // AMENDED 2026-09-16. This used to assert the dismissed visit produced no
+  // row at all, and that was correct for what it could see: the rail does not
+  // draw it and no total counts it. It was wrong about the mechanism, and the
+  // mechanism is what broke Jack's day. A row that is absent from `rows` is a
+  // hole, and under a manual clock _tlBlendManual fills holes with paid time,
+  // so his answered-Personal stop at Laurie Schonfeldt came back as 68 paid
+  // minutes of "manual time". The row now EXISTS and carries `dismissed`,
+  // which is the same shape a personal gap answer has always had
+  // (_tlIsPersonalGap): every span-aware pass sees the stretch covered, and
+  // _tlDayRailHtml is the only thing that drops it. Unpaid and undrawn are
+  // still asserted below, so nothing this test was protecting has moved.
+  test('a held visit is unpaid and says so; a dismissed one is covered but never drawn', async () => {
     const r = await page.evaluate(async () => {
       const saved = window._fetchCrewLabor;
       try {
@@ -250,7 +308,9 @@ test.describe('manual clock over a derived day', () => {
         const rows = await _timeLogRows(null);
         const byId = id => rows.find(x => x.rawId === id);
         return { held: byId('h1') && { unpaid: byId('h1').unpaid, detail: byId('h1').detail, kind: _tlRailKind(byId('h1')) },
-                 dismissed: !!byId('d1'), paid: _tlPaidMin(rows) };
+                 dis: byId('d1') && { unpaid: byId('d1').unpaid, dismissed: !!byId('d1').dismissed },
+                 rail: _tlDayRailHtml(rows.filter(x => x.date === '2026-08-23')),
+                 paid: _tlPaidMin(rows) };
       } finally { window._fetchCrewLabor = saved; }
     });
     // unpaid stays: a held visit is still in no total, which is the whole
@@ -259,9 +319,399 @@ test.describe('manual clock over a derived day', () => {
     // which is not manual and is not a verdict, and it used to send him to the
     // Home screen for the answer that now sits on the row.
     expect(r.held).toEqual({ unpaid: true, detail: 'Not counted until you answer', kind: 'held' });
-    expect(r.dismissed).toBe(false);
+    // It is there, so the blend can never mistake it for an empty stretch.
+    expect(r.dis).toEqual({ unpaid: true, dismissed: true });
+    // AMENDED AGAIN 2026-09-16, same day, second half of the same report:
+    // "he didn't mean to hit personal." It used to be drawn nowhere, and that
+    // is what made a one-tap answer permanent: no row, no control on it, no
+    // way back. It draws now, grey, in no total, carrying the one chip that
+    // undoes the tap. "Not counted" is still asserted above; "invisible" was
+    // never the requirement, it was the bug.
+    expect(r.rail).toContain('data-kind="personal"');
     expect(r.paid).toBe(120);
   });
 
+  // ── HIS ANSWER SURVIVES HIS OWN CLOCK (owner 2026-09-16) ─────────────────
+  //
+  // "Also why is Laurie Schonfeldt sitting as manual time?" Jack answered that
+  // stop Personal at 1:34pm. His clock ran anyway, so the reader dropped the
+  // row, found 68 minutes of clock that nothing explained, and billed them
+  // back as a paid untracked row. The answer took the stop off the rail and
+  // left the pay on the day. This is the permanent guard: a dismissed stretch
+  // under a clock is COVERED, so no filler row is ever written over it.
+  test('a stop answered Personal is not re-billed by the clock that brackets it', async () => {
+    const entries = [
+      row('p1', 'dismissed', T(7, 59), T(9, 7), { dest_place: 'Laurie Schonfeldt' }),
+      row('l1', 'drive', T(9, 7), T(9, 30), { dest_place: 'John Doe' }),
+      row('c1', 'client', T(9, 30), T(16, 0), { dest_place: 'John Doe' }),
+    ];
+    const rows = await render(entries, [], [[T(7, 54), T(16, 39)]]);
+    const hm = t => t.slice(11, 16);
+    const span = hm(T(7, 59)) + '-' + hm(T(9, 7));
+    // Nothing invented over the personal stretch.
+    expect(rows.filter(r => r.raw === 'clock-span' && r.t.slice(0, 5) < hm(T(9, 7)) && r.t.slice(6) > hm(T(7, 59)))).toEqual([]);
+    // The stop itself is present, unpaid, and carries the dismissed flag.
+    const p = rows.find(r => r.t === span);
+    expect(p && { min: p.min, unpaid: p.unpaid, name: p.name }).toEqual({ min: 68, unpaid: true, name: 'Laurie Schonfeldt' });
+  });
+
+  // The undo itself. It is the only way back from a one-tap answer, and it
+  // goes through the SAME door the Home card's answers do (_visitHoldAnswer,
+  // 'working'), so one definition of what an answer means serves both (7.3).
+  test('an answered-Personal row of your own offers It was work', async () => {
+    const r = await page.evaluate(() => {
+      const mine = { id: 'x', rawId: 'row-uuid', source: 'auto', rawSource: 'dismissed', dismissed: true,
+        unpaid: true, minutes: 68, date: '2026-09-01', personUid: _supaUser.id, clientName: 'Laurie Schonfeldt',
+        detail: 'Personal (not counted)', startTime: '2026-09-01T13:00:00.000Z', endTime: '2026-09-01T14:08:00.000Z' };
+      const theirs = Object.assign({}, mine, { id: 'y', rawId: 'row-2', personUid: 'someone-else' });
+      return { mine: _tlDayRailHtml([mine]), theirs: _tlDayRailHtml([theirs]) };
+    });
+    expect(r.mine).toContain('It was work');
+    expect(r.mine).toContain("_visitHoldAnswer('row-uuid','working')");
+    // Never on somebody else's row: answering for another person is not a
+    // thing a shared timesheet gets to do, the same gate the Working/Personal
+    // chips already carry.
+    expect(r.theirs).not.toContain('It was work');
+    // And it is still in no total either way.
+    expect(r.mine).toContain('data-kind="personal"');
+  });
+
+  // ── THE VIEWER IS NOT THE PERSON (owner report 2026-09-14) ──────────────
+  //
+  // Every test above stamps the automatic rows with the SAME uid the session
+  // is signed in as, so the null-uid clock and the fences always landed in
+  // one bucket and the blend always ran. That is the fixture agreeing with
+  // the code, which is the exact failure the 2026-09-01 note at the top of
+  // _tlBlendManual warned about, one layer up.
+  //
+  // Read a day that belongs to somebody else (the support view: the login is
+  // the owner's, the account on screen is Jack's) and the two came apart. His
+  // clock carries logged_by_uid null and folded under the VIEWER; his drives
+  // and visits carry his own uid and folded under HIM; the bucket with his
+  // rows in it had no clock, so the blend returned before it did anything.
+  // 509 clocked minutes then counted in full on top of the 479 minutes of
+  // driving and site time they already contain.
+  //
+  // His real 14 September, to the minute.
+  test('a day read through the support view still blends: the clock is the bracket, not an extra shift', async () => {
+    const JACK = '987ebc83-1567-49e1-9dd3-b89b0cf9121b';
+    const r = await page.evaluate(async ([JACK, DAY, DAY_START]) => {
+      const T = (h, m) => new Date(DAY_START + h * 3600000 + m * 60000).toISOString();
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor;
+      const keepU = window._supaUser, keepB = window._OPS_BOOT, keepV = window._opsView;
+      const mk = (id, source, a, b, dest) => ({ id, source, job_id: null, client_key: 'd-' + id,
+        employee_user_id: JACK, contractor_user_id: JACK, arrived_at: a, departed_at: b,
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), dest_place: dest || null });
+      const entries = [
+        mk('l1', 'drive', T(7, 24), T(7, 48), 'JS Solutions shop'),
+        mk('l2', 'drive', T(7, 59), T(8, 14), 'Bill Lorson'),
+        mk('d1', 'client', T(8, 14), T(9, 22), 'Bill Lorson'),
+        mk('l3', 'drive', T(9, 22), T(9, 42), 'JS Solutions shop'),
+        mk('l4', 'drive', T(9, 55), T(10, 10)),
+        mk('s0', 'unsaved', T(10, 10), T(10, 39)),
+        mk('l5', 'drive', T(10, 39), T(11, 20), 'Bill Lorson'),
+        mk('d2', 'client', T(11, 20), T(15, 43), 'Bill Lorson'),
+      ];
+      const shop = [mk('sh1', 'shop', T(7, 48), T(7, 59)), mk('sh2', 'shop', T(9, 42), T(9, 55))];
+      // The login is the owner; the account being read is Jack's.
+      window._supaUser = { id: 'viewer-owner-uid', email: 'o@t.com' };
+      window._OPS_BOOT = true; window._opsView = { target: JACK };
+      // Exactly how the table holds an employee's clock: no logged_by_uid.
+      window.timeEntries = [{ id: 901, job_id: null, date: DAY, start_time: T(7, 44), end_time: T(16, 13),
+        minutes: 509, logged_by_uid: null, logged_by_name: 'Jack Schonfeldt', open: false }];
+      window._fetchCrewLabor = async () => ({ name: { [JACK]: 'Jack Schonfeldt' }, entries, shopEntries: shop });
+      try {
+        const rows = (await _timeLogRows(null)).filter(x => x.date === DAY);
+        const clock = rows.find(x => x.source === 'manual');
+        return {
+          acting: _tlActingUid(),
+          uids: Array.from(new Set(rows.map(x => String(x.personUid || '')))).sort(),
+          blended: clock ? clock.blendedMin || 0 : -1,
+          clockMin: clock ? clock.minutes : -1,
+          site: rows.filter(x => x.rawSource === 'clock-span').reduce((n, x) => n + x.minutes, 0),
+          paid: rows.reduce((n, x) => n + (x.unpaid ? 0 : x.minutes), 0),
+        };
+      } finally {
+        window.timeEntries = keepT; window._fetchCrewLabor = keepF;
+        window._supaUser = keepU; window._OPS_BOOT = keepB; window._opsView = keepV;
+      }
+    }, [JACK, DAY, DAY_START]);
+    // The identity the page buckets under is the BUSINESS on screen, never
+    // the login. This is the assertion that actually fails without the fix.
+    expect(r.acting).toBe(JACK);
+    // And nothing folded under the viewer: his clock carries no uid, so it
+    // has to land on him.
+    expect(r.uids).toEqual(['', JACK]);
+    // 07:44 to 15:43 is covered end to end by his own rows, so the clock
+    // hands over 479 of its 509 minutes.
+    expect(r.blended).toBe(479);
+    // The 30 minutes after his last row and before he clocked out are the
+    // remainder, named rather than left on the clock (2026-09-04).
+    expect(r.clockMin + r.site).toBe(30);
+    // THE WHOLE POINT. 499 minutes of tracked rows plus the 30 the clock
+    // still explains. Not 988, which is what a clock that never blended
+    // gives: 509 + 479 counted twice over the same afternoon.
+    expect(r.paid).toBe(529);
+  });
+
+  // HIS ACTUAL DAY, ROW FOR ROW OUT OF THE TABLES, duplicate included.
+  // The owner opened it and the Time Log read 19h06m. That is the clock plus
+  // every automatic row with nothing subtracted anywhere.
+  //
+  // THE ANSWER IS THE FENCES, NOT THE CLOCK (owner 2026-09-01: "the fences
+  // are what happened; the clock adds nothing"). His rows start twenty
+  // minutes before he clocked in and run to 15:43 while he clocked out at
+  // 16:13, so what they cover already exceeds the clock: the remainder floors
+  // at zero and the day is the automatic total. A day that comes out at the
+  // CLOCK here would be just as wrong in the other direction.
+  test('Jack\'s 14 September through the support view: the day is his rows, not his rows plus his clock', async () => {
+    const JACK = '987ebc83-1567-49e1-9dd3-b89b0cf9121b';
+    const D = '2026-09-14';
+    const r = await page.evaluate(async ([JACK, D]) => {
+      const keepT = timeEntries.slice(), keepF = window._fetchCrewLabor;
+      const keepU = window._supaUser, keepB = window._OPS_BOOT, keepV = window._opsView;
+      const mk = (key, source, a, b, min, dest) => ({ id: key, source, job_id: null, client_key: key,
+        employee_user_id: JACK, contractor_user_id: JACK,
+        arrived_at: D + 'T' + a + 'Z', departed_at: D + 'T' + b + 'Z', minutes: min,
+        dest_place: dest || null });
+      const entries = [
+        mk('j-mu17spln', 'drive', '12:24:03.226', '12:48:00.805', 24, 'JS Solutions shop'),
+        mk('j-mu1925w4', 'drive', '12:59:23.859', '13:14:01.076', 15, 'Bill Lorson'),
+        // The duplicate, exactly as the table holds it: one physical stop
+        // under two keys, because one derive run split the journey there and
+        // a later one did not. Left in on purpose. The blend has to be right
+        // about the day even while the rows under it are wrong.
+        mk('j-mu1925w4:s0', 'client', '13:14:01.076', '14:22:44.957', 69, 'Bill Lorson'),
+        mk('d-j-mu1925w4', 'client', '13:14:01.076', '14:22:44.957', 69, 'Bill Lorson'),
+        mk('j-mu1c1crh', 'drive', '14:22:44.957', '14:42:25.106', 20, 'JS Solutions shop'),
+        mk('j-mu1d7p2e:0', 'drive', '14:55:40.454', '15:10:09.800', 14, null),
+        mk('j-mu1d7p2e:s0', 'unsaved', '15:10:09.800', '15:39:49.184', 30, null),
+        mk('j-mu1d7p2e:1', 'drive', '15:39:49.184', '16:20:26.286', 41, 'Bill Lorson'),
+        mk('d-j-mu1ffssg', 'client', '16:20:26.286', '20:43:12.679', 263, 'Bill Lorson'),
+      ];
+      const shop = [
+        mk('d-j-mu17x5hf', 'shop', '12:48:00.805', '12:59:23.860', 11),
+        mk('d-j-mu1c1crh', 'shop', '14:42:25.107', '14:55:40.454', 13),
+      ];
+      window._supaUser = { id: 'viewer-owner-uid', email: 'o@t.com' };
+      window._OPS_BOOT = true; window._opsView = { target: JACK };
+      window.timeEntries = [{ id: 1789389874109, job_id: null, date: D,
+        start_time: D + 'T12:44:34.110Z', end_time: D + 'T21:13:31.312Z',
+        minutes: 509, logged_by_uid: null, logged_by_name: 'Jack Schonfeldt', open: false }];
+      window._fetchCrewLabor = async () => ({ name: { [JACK]: 'Jack Schonfeldt' }, entries, shopEntries: shop });
+      try {
+        const rows = (await _timeLogRows(null)).filter(x => x.date === D);
+        const clock = rows.find(x => x.source === 'manual');
+        return {
+          autoSum: entries.concat(shop).reduce((n, e) => n + e.minutes, 0),
+          clockMin: clock ? clock.minutes : -1,
+          blended: clock ? clock.blendedMin || 0 : -1,
+          paid: rows.reduce((n, x) => n + (x.unpaid ? 0 : x.minutes), 0),
+        };
+      } finally {
+        window.timeEntries = keepT; window._fetchCrewLabor = keepF;
+        window._supaUser = keepU; window._OPS_BOOT = keepB; window._opsView = keepV;
+      }
+    }, [JACK, D]);
+    // The rows on the table, as they stand, duplicate and all.
+    expect(r.autoSum).toBe(569);
+    // The clock hands over everything it can and keeps nothing: his rows
+    // already cover more of it than it has minutes.
+    expect(r.clockMin).toBe(0);
+    // The day is what the phone watched. NOT 569 + 509 = 1078, which is what
+    // a blend that never ran produces, and not 509 either.
+    expect(r.paid).toBe(r.autoSum);
+    expect(r.paid).toBe(569);
+    expect(r.paid).not.toBe(569 + 509);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'blend'); });
+});
+
+
+// ── ONE DWELL, ONE ROW (owner 2026-09-18) ─────────────────────────────────
+//
+// A dwell with no departure yet is stored now, so the ops portal and Crew Cost
+// can see who is on site without this phone being open. This screen already
+// had the same fact and a better version of it: the live row built from
+// window._geoOpenDwell, which ticks and says "On site now". Letting the stored
+// row through as well would draw the same dwell twice, once live and once as a
+// dead 0m row, and a NaN duration if anything tried to measure it.
+test.describe('the stored open row never doubles the live one', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.supaLoadFromCloud = async () => {};
+      window._supaUser = window._supaUser || { id: 'owner-open', email: 'o@t.com' };
+      S.bizTz = 'America/Chicago'; S.bname = 'JS Solutions';
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  const draw = (entries, shop) => page.evaluate(async ([entries, shop, DAY]) => {
+    const me = _supaUser.id;
+    const keepF = window._fetchCrewLabor, keepT = timeEntries.slice(), keepO = window._geoOpenDwell;
+    window._geoOpenDwell = null;              // the live row is its own test
+    window.timeEntries = [];
+    window._fetchCrewLabor = async () => ({ name: { [me]: 'Me' },
+      entries: entries.map(e => ({ ...e, employee_user_id: me, contractor_user_id: me })),
+      shopEntries: shop.map(e => ({ ...e, employee_user_id: me, contractor_user_id: me })) });
+    try {
+      const rows = (await _timeLogRows(null)).filter(r => r.date === DAY);
+      const total = rows.reduce((s, x) => s + (Number(x.minutes) || 0), 0);
+      return { n: rows.length, keys: rows.map(r => r.clientKey), total, finite: Number.isFinite(total) };
+    } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; window._geoOpenDwell = keepO; }
+  }, [entries, shop, DAY]);
+
+  test('a job row with no departure draws nothing, so the dwell is not doubled', async () => {
+    const r = await draw([
+      row('l1', 'drive', T(8, 0), T(8, 20), { dest_place: 'John Doe' }),
+      { id: 'o1', source: 'open', job_id: null, client_key: 'd-o1', dest_place: 'John Doe',
+        arrived_at: T(8, 20), departed_at: null, minutes: null },
+    ], []);
+    expect(r.n, 'only the closed row is drawn').toBe(1);
+    expect(r.keys).toEqual(['d-l1']);
+  });
+
+  test('a shop row with no departure is skipped too', async () => {
+    const r = await draw([], [{ id: 'o2', client_key: 'd-o2', arrived_at: T(9, 0), departed_at: null, minutes: null }]);
+    expect(r.n).toBe(0);
+  });
+
+  test('a null departure never becomes NaN minutes', async () => {
+    // Worse than a missing row: nobody can tell what a NaN was supposed to be.
+    const r = await draw([{ id: 'o3', source: 'open', job_id: null, client_key: 'd-o3',
+      dest_place: null, arrived_at: T(10, 0), departed_at: null, minutes: null }], []);
+    expect(r.finite).toBe(true);
+    expect(r.total).toBe(0);
+    expect(r.n).toBe(0);
+  });
+});
+
+
+// ── SOMEBODY ELSE'S OPEN DWELL (owner 2026-09-21) ─────────────────────────
+//
+// The rule above is right about the VIEWER and wrong about everyone else.
+// window._geoOpenDwell is device-local, so the live row it builds only ever
+// knows where the person holding this phone is. Jack sat at the shop 2h44m,
+// clocked in, and the rail under his badge showed no start time at all: his
+// open row was stored correctly and then dropped by a guard written to stop
+// the viewer's own dwell being drawn twice. There is no second copy of a crew
+// member's dwell, so there is nothing to double: it draws.
+test.describe("somebody else's open dwell draws", () => {
+  let page;
+  const ME = 'owner-other', THEM = 'jack-other';
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(([ME]) => {
+      window.supaLoadFromCloud = async () => {};
+      window._supaUser = { id: ME, email: 'o@t.com' };
+      S.bizTz = 'America/Chicago'; S.bname = 'Plumbing Solutions by JS';
+    }, [ME]);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Today, because an open dwell only means "right now". Both ends are built
+  // from the PAGE's clock, never the runner's (§5.2.2).
+  //
+  // AND THE HOUR NEVER DECIDES THE RESULT. The first cut of this asked for a
+  // dwell 164 minutes old; the midnight job runs at 00:20, where 164 minutes
+  // ago is YESTERDAY, so the row was correctly not drawn and the test failed
+  // on a fixture rather than on the code. `ago` is clamped to what is left of
+  // the business day and the assertions read the clamped number back, so the
+  // case under test ("somebody else is on site right now") is the same case at
+  // every hour. `raw` opts out, for the one test whose whole point is a stale
+  // arrival from an earlier day.
+  const draw = (entries, shop) => page.evaluate(async ([entries, shop, THEM, ME]) => {
+    const keepF = window._fetchCrewLabor, keepT = timeEntries.slice(), keepO = window._geoOpenDwell;
+    window._geoOpenDwell = null;              // the live row is its own test
+    window.timeEntries = [];
+    const today = _bizDateStr(new Date());
+    const isToday = (ago) => _bizDateStr(new Date(Date.now() - ago * 60000)) === today;
+    const clampAgo = (want) => {
+      if (isToday(want)) return want;
+      let lo = 0, hi = want;
+      while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (isToday(mid)) lo = mid; else hi = mid - 1; }
+      return lo;
+    };
+    const used = {};
+    const stamp = (e) => {
+      const a = e.raw ? e.agoMin : clampAgo(e.agoMin);
+      const b = e.agoMinEnd == null ? null : Math.max(0, a - (e.agoMin - e.agoMinEnd));
+      used[e.id] = a;
+      return { ...e, contractor_user_id: ME,
+        arrived_at: new Date(Date.now() - a * 60000).toISOString(),
+        departed_at: b == null ? null : new Date(Date.now() - b * 60000).toISOString() };
+    };
+    window._fetchCrewLabor = async () => ({ name: { [ME]: 'Me', [THEM]: 'Jack' },
+      entries: entries.map(stamp), shopEntries: shop.map(stamp) });
+    try {
+      const rows = (await _timeLogRows(null)).filter(r => r.date === today);
+      return { used, rows: rows.map(r => ({ who: r.personUid, name: r.clientName, live: !!r.live,
+        minutes: r.minutes, start: r.startTime, detail: r.detail })),
+        finite: rows.every(r => Number.isFinite(Number(r.minutes))) };
+    } finally { window._fetchCrewLabor = keepF; window.timeEntries = keepT; window._geoOpenDwell = keepO; }
+  }, [entries, shop, THEM, ME]);
+
+  test("a crew member's open shop row draws, live, with a real start time", async () => {
+    const r = await draw([], [{ id: 'k1', employee_user_id: THEM, client_key: 'd-k1',
+      departed_at: null, minutes: null, agoMin: 164 }]);
+    expect(r.rows.length, 'exactly one row, not none and not two').toBe(1);
+    const row = r.rows[0];
+    expect(row.who).toBe(THEM);
+    expect(row.live, 'live, so the rail prints "7:27 AM -" and no duration').toBe(true);
+    expect(row.detail).toBe('On site now');
+    expect(row.start, 'the start time the owner went looking for').toBeTruthy();
+    // Running to now, not the 0 a stored open row carries.
+    expect(row.minutes).toBeGreaterThanOrEqual(r.used.k1 - 1);
+    expect(row.minutes).toBeLessThanOrEqual(r.used.k1 + 1);
+    expect(r.finite).toBe(true);
+  });
+
+  test("the viewer's OWN open shop row still draws nothing", async () => {
+    // Unchanged rule: the live row from _geoOpenDwell owns this one, and two
+    // copies of the same dwell is the double-count the guard exists for.
+    const r = await draw([], [{ id: 'k2', employee_user_id: ME, client_key: 'd-k2',
+      departed_at: null, minutes: null, agoMin: 60 }]);
+    expect(r.rows.length).toBe(0);
+  });
+
+  test("a crew member's open job dwell draws under its own name", async () => {
+    const r = await draw([{ id: 'k3', source: 'open', job_id: null, employee_user_id: THEM,
+      client_key: 'd-k3', dest_place: 'John Doe (2950 SW McClure Rd)',
+      departed_at: null, minutes: null, agoMin: 95 }], []);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].name).toBe('John Doe (2950 SW McClure Rd)');
+    expect(r.rows[0].live).toBe(true);
+    expect(r.rows[0].minutes).toBeGreaterThanOrEqual(r.used.k3 - 1);
+    expect(r.rows[0].minutes).toBeLessThanOrEqual(r.used.k3 + 1);
+  });
+
+  test('an open row left over from an earlier day draws nothing', async () => {
+    // A dwell nobody ever closed is not "right now", and running it to the
+    // current minute would put yesterday's arrival against today's clock.
+    const r = await draw([], [{ id: 'k4', employee_user_id: THEM, client_key: 'd-k4',
+      departed_at: null, minutes: null, agoMin: 26 * 60, raw: true }]);
+    expect(r.rows.length).toBe(0);
+  });
+
+  test('a closed crew row is untouched by any of this', async () => {
+    const r = await draw([], [{ id: 'k5', employee_user_id: THEM, client_key: 'd-k5',
+      minutes: 30, agoMin: 120, agoMinEnd: 90 }]);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].live).toBe(false);
+    expect(r.rows[0].minutes).toBe(30);
+    expect(r.rows[0].detail).toBe('Shop time');
+  });
+
+  test('no console errors', async () => { assertNoErrors(page, 'other-open'); });
 });

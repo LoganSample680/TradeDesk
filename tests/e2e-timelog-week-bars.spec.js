@@ -269,13 +269,23 @@ test.describe('week bars: markup', () => {
       expect(r.filter(c => c.go).length).toBe(5);
     });
 
-    test('the key under the chart lists only the buckets on it, from _TL_BUCKETS', async ({ page }) => {
+    // WAS: the key sat UNDER the chart, colours only. The week grew a split
+    // bar with hours above the chart (owner 2026-09-19, asked of the shared
+    // link: "does it include the breakdown of where time went"), which names
+    // the same buckets and says how long each one took. Two legends four
+    // inches apart is the duplicate 15.1 bans, so the colour-only one went
+    // and the claim moved to the one that survived. Still read from
+    // _TL_BUCKETS, which is the part that mattered.
+    test('the legend above the chart lists only the buckets on it, from _TL_BUCKETS', async ({ page }) => {
       const r = await page.evaluate(() => ({
-        key: [...document.querySelectorAll('.tl-wbar-key span')].map(s => s.textContent.trim()),
+        key: [...document.querySelectorAll('.tl-rail-legend .tl-rail-leg')]
+               .map(s => s.textContent.trim()),
         all: _TL_BUCKETS.map(b => b.label),
+        under: document.querySelectorAll('.tl-wbar-key').length,
       }));
       expect(r.key.length).toBeGreaterThan(0);
-      r.key.forEach(k => expect(r.all).toContain(k));
+      r.key.forEach(k => expect(r.all.some(l => k.startsWith(l))).toBe(true));
+      expect(r.under, 'and the chart no longer repeats it underneath').toBe(0);
     });
 
     test('the zoom comes out of the column you tapped, and coming back rings it', async ({ page }) => {

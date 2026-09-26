@@ -119,6 +119,7 @@ function _renderDashSetupTodo(){
   _geoRefreshPermCache();
   _motionRefreshPermCache();
   _notifyRefreshPermCache();
+  _liveActRefreshCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -210,6 +211,16 @@ function _renderDashSetupTodo(){
         ?'Motion access is off, so drive start/stop times may run a little softer. Takes two taps in your phone settings.'
         :'Times exactly when a drive starts and stops, using the motion coprocessor already running on your phone.',
       cta:_motionPermState()==='denied'?'Fix it':'Allow'},
+    // Live Activities: skippable, and it only ever appears for somebody who
+    // has switched it OFF (see _liveActDone). Nothing about tracking depends
+    // on it, which is why the copy sells what he loses rather than warning
+    // about something breaking: the card on the lock screen and in the
+    // Dynamic Island that says a drive is running, without unlocking the
+    // phone. Same Settings deep link as motion and location.
+    {id:'liveact',done:_liveActDone(),icon:'🔓',
+      title:'Get the lock screen card back',
+      sub:'Live Activities are switched off for TradeDesk, so drives and job time show nothing on your lock screen or in the Dynamic Island. Takes two taps in your phone settings.',
+      cta:'Fix it'},
     // Notifications: skippable (Apple 4.5.4, see _notifyPermDone). The copy
     // leads with the silent-failure problem because that is the whole point:
     // tracking stopping is invisible until payroll, and this is the only
@@ -433,6 +444,27 @@ function _paintDashVisitHold(el,rows){
         '</div>').join('');
   _dashHoldSync();
 }
+// The mileage half of the answer above. A time row's client_key is the leg's
+// id ('j-...') or that leg's dwell ('d-j-...'), so one strip of the 'd-' finds
+// the leg either way. Nothing is invented here: it only ever takes a personal
+// flag OFF, and only for the leg the answered row belongs to.
+function _visitAnswerUnpersonal(key){
+  try{
+    const leg=String(key||'').replace(/^d-/,'');
+    if(!leg||!Array.isArray(window.mileage))return 0;
+    let n=0;
+    mileage.forEach(m=>{
+      if(!m||!m.personal)return;
+      if(String(m.id)!==leg&&String(m.supplyRunKey||'')!==leg)return;
+      delete m.personal;m.noReceipt=true;n++;
+    });
+    if(n){
+      if(typeof saveAll==='function')saveAll();
+      try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
+    }
+    return n;
+  }catch(_e){return 0;}
+}
 async function _visitHoldAnswer(id,mode){
   const m=(mode==='working')?'working':'personal';
   const row=(_visitHoldCache.rows||[]).find(r=>r&&String(r.id)===String(id))||null;
@@ -443,6 +475,22 @@ async function _visitHoldAnswer(id,mode){
   try{
     if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
       if(error)throw error;}
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-18) ───────────────
+    // "how do we have personal rows and neenans going to a fucking onsite"
+    //
+    // The mileage half of a trip has its own door (resolveSupplyRun, and its
+    // 'unpersonal' way back), and this one never spoke to it. So his Neenans
+    // run ended the day marked personal in mileage and, after he answered the
+    // rows Working, paid work on the timesheet: one trip, two stories, which
+    // is the exact thing the 2026-09-16 note says was fixed for the other
+    // door and was only ever fixed in that direction.
+    //
+    // Answering a row Working clears the matching leg's personal flag, the
+    // same way resolveSupplyRun('unpersonal') does, and leaves noReceipt set
+    // because he has still answered the receipt question. Local and immediate:
+    // the row is already gone off the card, and the mileage must not disagree
+    // with it for as long as a round trip to the server.
+    if(m==='working'&&row&&row.client_key)_visitAnswerUnpersonal(String(row.client_key));
     if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
     try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered(row&&row.client_key);}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
@@ -450,6 +498,35 @@ async function _visitHoldAnswer(id,mode){
     _visitHoldCache={at:0,rows:[],uid:null};
     if(typeof showToast==='function')showToast('Could not save that answer, try again');
     if(el)_renderDashVisitHold();
+  }
+}
+// ── The same answer, for the other table (owner 2026-09-13) ────────────────
+// "There are times he could go to his dads shop and it not be work related,
+// just visiting his old man." That row is a shop dwell, and a shop dwell is
+// not in job_time_entries, so _visitHoldAnswer above could never reach it.
+//
+// Deliberately NOT a mode flag on that function. The two tables express "this
+// did not count" differently, because they are shaped differently: a job row
+// becomes source='dismissed' and stays on the log as an answered row, while
+// shop_time_entries has no source column and can only be soft deleted. Same
+// door, same words to the person, two different sentences underneath, and the
+// server owns both (geo_answer_shop, 20261013, which also stamps fixed_at so
+// the next rebuild cannot hand the dwell back).
+//
+// No card to repaint, unlike the held-visit version: a shop row is never a
+// question on the Home screen, it is only ever answered from the row itself.
+// So this refreshes the Time Log and nothing else.
+async function _shopHoldAnswer(id,mode){
+  const m=(mode==='working')?'working':'personal';
+  try{
+    if(window._supa){const{error}=await _supa.rpc('geo_answer_shop',{p_id:String(id),p_mode:m});
+      if(error)throw error;}
+    if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    return true;
+  }catch(_e){
+    if(typeof showToast==='function')showToast('Could not save that answer, try again');
+    return false;
   }
 }
 // Store accordion toggle. Takes the clicked header, not an id: a store's
@@ -526,6 +603,11 @@ function _geoNatProblem(){
   return null;
 }
 function _geoPermDone(){
+  // Not read yet is not "off" (Jack, 2026-09-24): the cache is null until the
+  // first async read lands, and counting that as 'prompt' put "Turn on
+  // location" on every boot of a phone tracking fine. _geoRefreshPermCache
+  // re-renders the checklist once the answer is in.
+  if(_geoPermCache===null)return true;
   const s=_geoPermState();
   if(_geoNatProblem())return false;
   return s==='granted'||s==='unsupported';
@@ -650,6 +732,9 @@ function _geoRefreshPermCache(){
       // rather than once-per-foreground.
       try{_geoNotifyBreak();}catch(_e){}
       _renderDashSetupTodo();
+      // The banner stays quiet on native until iOS answers (js/geo-track.js
+      // _geoPermissionBanner), so the answer is what paints it.
+      try{if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();}catch(_e){}
     }).catch(()=>{});
   }catch(_e){}
 }
@@ -674,6 +759,65 @@ function _motionPermDone(){const s=_motionPermState();return s==='granted'||s===
 // absence of one.
 function _motionReport(){
   try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+}
+// ── Live Activities: the lock-screen card, and whether it can draw ───────
+// Owner 2026-09-13, after a crew member's telemetry: forty "disabled in
+// Settings" toasts in twenty-five minutes of driving, and no Dynamic Island
+// and no lock screen card the whole time. The toast is gone (js/live-
+// activity.js) because it fired while he was at the wheel and was gone before
+// he could act on it. This is where it asks instead, next to the three other
+// permissions the app already asks for here.
+//
+// Same cache-then-render shape as motion above, backed by TdLive.isSupported.
+// Three answers and only one of them is worth a card:
+//   supported:false  an iPhone older than 16.1, or no native shell at all.
+//                    Nothing anybody can do, so it counts as done and is
+//                    never mentioned, exactly how motion treats 'unsupported'.
+//   enabled:false    the switch is off for TradeDesk in Settings. This is the
+//                    one a person can fix, and the only one that draws.
+//   enabled:true     working.
+let _liveActCache=null;
+function _liveActState(){return _liveActCache||'unsupported';}
+// Unsupported is DONE, not skipped: a card nobody can act on is nagging.
+function _liveActDone(){const s=_liveActState();return s!=='off';}
+function _liveActRefreshCache(){
+  // The LOOKUP is inside the try too, not just the call. _liveActPlugin reads
+  // window.Capacitor and calls registerPlugin on it, which is somebody else's
+  // code running during boot; if it throws, this function is on the render
+  // path and would take the whole setup checklist down with it.
+  let P=null;
+  try{P=(typeof _liveActPlugin==='function')?_liveActPlugin():null;}catch(_e){P=null;}
+  // ONLY WHEN THE CARD ITSELF WOULD CHANGE, which is not what motion and
+  // location do above, and the difference is deliberate.
+  //
+  // Those two re-render on every state transition because every one of their
+  // states writes different copy onto a card that is always there. This one
+  // has a single visible state: switched off. null, 'unsupported' and 'on'
+  // all draw exactly nothing, so re-rendering as the probe settles from one
+  // invisible state to another is a paint nobody can see.
+  //
+  // It is not merely wasteful. _renderDashSetupTodo re-primes the location
+  // cache on every paint, and that can WRITE a permission row; an extra paint
+  // early in boot put a derived row (one guessed before iOS answered) into a
+  // table keyed on (user_id, device_id), where it overwrites the real answer.
+  // Caught by 'the foreground re-report waits for the native read instead of
+  // racing it' the moment this was added.
+  const settle=(st)=>{
+    if(st===_liveActCache)return;
+    const was=_liveActDone();
+    _liveActCache=st;
+    if(_liveActDone()!==was)_renderDashSetupTodo();
+  };
+  if(!P||typeof P.isSupported!=='function'){
+    // Deferred, not a synchronous stomp, for the same reason motion's is:
+    // a caller that pins the cache then renders in the same tick must see
+    // its own value honored for that render.
+    Promise.resolve().then(()=>settle('unsupported'));
+    return;
+  }
+  try{
+    P.isSupported().then(r=>settle(!(r&&r.supported)?'unsupported':(r.enabled?'on':'off'))).catch(()=>{});
+  }catch(_e){}
 }
 function _motionRefreshPermCache(){
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
@@ -845,6 +989,16 @@ function _setupTodoGo(id){
     if(typeof Td.motionSince==='function'){
       Td.motionSince({}).then(()=>{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}).catch(()=>{});
     }
+    return;
+  }
+  if(id==='liveact'){
+    // There is no script that can re-enable Live Activities, the same way
+    // there is none for a denied location: it is a switch in Settings, so
+    // this goes straight there rather than being a dead button. Re-check on
+    // the way back so the card clears the moment they flip it.
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
+    setTimeout(()=>{if(typeof _liveActRefreshCache==='function')_liveActRefreshCache();},1200);
     return;
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
@@ -1214,7 +1368,20 @@ function renderDash(){
     // I've been here down to the minute on the on-site banner"). The deriver
     // reports the open dwell (js/geo-track.js _geoOpenDwellPublish); this
     // card shows it with the arrival stamp and a figure that ticks.
-    const _openDwell=(!_onClock&&!_driving&&window._geoOpenDwell&&window._geoOpenDwell.sinceTs>0)?window._geoOpenDwell:null;
+    // ...UNLESS THE DAY IS OVER AND THIS IS HIS OWN HOUSE (owner 2026-09-12:
+    // "how does a day with automatic drives end? Right now they can't").
+    // The deriver's `counts` is the answer (rule 14, now asking rule 17 as
+    // well): at his own address past the end of the workday it is false, and
+    // a banner counting the evening up is the day refusing to end. Only the
+    // two together suppress it: not counting at a CLIENT is still worth
+    // showing, and being home at noon is still the workday.
+    const _odw=window._geoOpenDwell;
+    // AND ON A TIME OFF DAY (owner 2026-09-24, rule 25: "still counting his
+    // hours even after the vacation fix"). The deriver only says false away
+    // from home for a day off, and a figure ticking up at the rental is the
+    // same refusal to stop that the evening at home was.
+    const _odwHome=!!(_odw&&_odw.counts===false);
+    const _openDwell=(!_onClock&&!_driving&&_odw&&_odw.sinceTs>0&&!_odwHome)?_odw:null;
     // Styles hoisted OUT of the live branch: the optimistic snapshot card
     // below needs the same keyframes before any live state exists.
     if(!document.getElementById('_td-nearby-anim-style')){
@@ -1528,6 +1695,12 @@ function renderDash(){
   else _updateNavBadges(); // fast badge-only update when on home or other pages
   window._pwaUpdateBadge&&window._pwaUpdateBadge();
   renderContractsDash&&renderContractsDash();
+
+  // Unfiled photos: shot from the Photo quick action with nobody attached yet.
+  // Rendered from the same array the hub reads, so filing one here is the same
+  // write the capture sheet would have made (js/photo-capture.js).
+  const _unfiledHost=document.getElementById('dash-unfiled-host');
+  if(_unfiledHost)_unfiledHost.innerHTML=(typeof tdUnfiledTrayHTML==='function')?tdUnfiledTrayHTML():'';
 
   setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
   _dashApplySkeletons();
@@ -3847,7 +4020,8 @@ function renderProposalsPage(){
     const proj=b.addr||b.type||'-';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
+    const amt=(b.isTM&&b.tmRateOnly)?bidAmountLabel(b,fmt)
+      :b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
     const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
@@ -3918,7 +4092,8 @@ function renderEstimatesPage(){
   const rows=filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'-';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
+    const amt=(b.isTM&&b.tmRateOnly)?bidAmountLabel(b,fmt)
+      :b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+

@@ -472,6 +472,12 @@ let _mapkitReady=false;
 // (localhost, 127.0.0.1, the flow-test bridge) mapkit.init throws an origin-mismatch
 // console.error: which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
 const _mapkitAuthorizedOrigin=/(?:^|\.)tradedeskpro\.app$/.test(location.hostname)||/\.pages\.dev$/.test(location.hostname);
+// The token, for look-around.html's frame: Look Around needs MapKit's modular
+// bundle, which cannot share a window with the full one this page loads, so
+// it runs in a frame and asks for the token here rather than keeping a second
+// copy of it. Empty on an origin the token is not locked to, which is also
+// the frame's signal to load nothing.
+function _tdMapkitToken(){return _mapkitAuthorizedOrigin?_MAPKIT_TOKEN:'';}
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
   if(!_mapkitAuthorizedOrigin)return; // unauthorized origin, skip init so MapKit never throws
@@ -1159,9 +1165,18 @@ function pendingSupplyRuns(){
     // When the visit happened: the earliest clock any of its legs carries.
     // The card shows date and time only (owner 2026-08-17: no miles, no legs).
     const at=rows.map(m=>m.startedIso||m.created_at).filter(Boolean).sort()[0]||'';
-    return {key:k,date:k.split('|')[0]||'',name:k.split('|').slice(1).join('|')||'Store',at,
+    // THE KEY NO LONGER SPELLS THESE (owner 2026-09-20). It used to be
+    // `day|store` and this split it back apart; it is the visit's own id now,
+    // so the day comes off the row that holds it and the store's name rides
+    // on the row as supplyRunName. A row written under the old key still
+    // answers: the fallback reads it exactly as this always did.
+    const old=k.indexOf('|')>=0?k.split('|'):null;
+    const named=rows.find(m=>m&&m.supplyRunName);
+    return {key:k,
+      date:(rows.find(m=>m&&m.date)||{}).date||(old?old[0]:'')||'',
+      name:(named&&named.supplyRunName)||(old?old.slice(1).join('|'):'')||'Store',at,
       miles:rows.reduce((s,m)=>s+(m.miles||0),0),count:rows.length,rows};
-  }).sort((a,b)=>b.date.localeCompare(a.date));
+  }).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 }
 // One accordion per STORE (owner 2026-08-17): if a store has more than one
 // unanswered visit, they nest under a single card instead of piling up as
@@ -1197,15 +1212,73 @@ function _supplyRunSettleByKeys(keys){
   });
   return n;
 }
-// The three doors. 'personal' deletes the held rows outright. 'noreceipt'
-// commits as business carrying a noReceipt flag (the disclaimer was shown
-// before calling this). 'receipt' commits and links the expense that
-// proved it.
+// ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-16) ───────────────────
+// "Personal should remove the mileage and the timesheet will then have a
+// personal hole and exclude itself from time."
+//
+// Personal only ever reached the MILEAGE row. Jack's Neenans run came off his
+// deductible miles and left forty-four minutes of drive and dwell sitting on
+// his timesheet as paid work, so the app told him two different stories about
+// one trip. geo_answer_supply_run (20261020) is the door for the time half,
+// and it is the same shape as every other answer: source 'dismissed' plus
+// answered_at, which the reader draws as a grey Personal row in no total.
+//
+// The "hole" he described is a ROW that says what it is, not a blank. A blank
+// is what _tlBlendManual fills back in with paid time under a running clock,
+// which is the exact bug his 15 September had.
+//
+// ── AND THE FAILURE IS NOT SWALLOWED ANY MORE (owner 2026-09-20) ─────────
+// This used to say fire and forget, on the reasoning that "a failed call
+// leaves the time rows saying what the deriver said, which is the safe way to
+// be wrong." That stopped being true the moment the RPC took ownership of
+// BOTH books (20261028): a failed call now leaves the whole answer unwritten
+// on the server while this device sits there showing it as answered, and the
+// next sync or the next device puts the question straight back. Which is
+// exactly what he saw: "Home Depot runs aren't staying personal."
+//
+// Still not awaited, because the card must come off the screen on the tap.
+// But a failure now says so, and puts the run back where he can answer it
+// again, rather than leaving him to discover it hours later on the dashboard.
+function _supplyRunAnswerTime(key,mode){
+  try{
+    if(!key||!window._supa||typeof opsReadOnly==='function'&&opsReadOnly())return;
+    Promise.resolve(_supa.rpc('geo_answer_supply_run',{p_key:String(key),p_mode:mode}))
+      .then(r=>{
+        if(r&&r.error)throw r.error;
+        try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+      })
+      .catch(()=>{
+        try{if(typeof showToast==='function')showToast('That answer did not save, try it again');}catch(_e){}
+        try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+      });
+  }catch(_e){}
+}
+// The doors. 'personal' takes the run off BOTH books. 'noreceipt' commits as
+// business carrying a noReceipt flag (the disclaimer was shown before calling
+// this). 'receipt' commits and links the expense that proved it. 'unpersonal'
+// is the way back from a mis-tap, which is the whole reason it exists: Jack
+// meant no receipt and hit Personal, and until today there was no control
+// anywhere that could undo it (owner 2026-09-16: "he made a human mistake").
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
     const n=_supplyRunSettleByKeys(new Set([key]));
     if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
+    _supplyRunAnswerTime(key,'personal');
     return n;
+  }
+  if(mode==='unpersonal'){
+    // Back to exactly where a "no receipt" answer would have left it: on the
+    // books, no receipt attached, hours restored. Not back to HELD: he has
+    // answered the receipt question, and asking it again is the app refusing
+    // to believe him.
+    let u=0;
+    (mileage||[]).forEach(m=>{
+      if(!m||m.supplyRunKey!==key||!m.personal)return;
+      delete m.personal;m.noReceipt=true;u++;
+    });
+    if(u){saveAll();typeof renderDash==='function'&&renderDash();try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}}
+    _supplyRunAnswerTime(key,'working');
+    return u;
   }
   let n=0;
   (mileage||[]).forEach(m=>{
@@ -1233,15 +1306,60 @@ function _supplyRunSweep(){
   if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}}
   return n;
 }
+// What this run costs him if he says personal, read off the legs themselves so
+// the warning names real numbers instead of a category.
+function _supplyRunCost(key){
+  let mi=0,mins=0,n=0;
+  (mileage||[]).forEach(m=>{
+    if(!m||String(m.supplyRunKey||'')!==String(key))return;
+    n++;
+    const a=Number(m.miles);if(isFinite(a))mi+=a;
+    const b=Number(m.mins);if(isFinite(b))mins+=b;
+  });
+  return {legs:n,miles:Math.round(mi*10)/10,mins:Math.round(mins)};
+}
+// ── THE FEAR BELONGS ON THE DESTRUCTIVE DOOR (owner 2026-09-18) ────────────
+//
+// "I think personal needs to be the most scary looking thing"
+//
+// It was the other way round, and the control log shows what that cost. At
+// 16:54:45 Jack tapped _supplyRunNoReceipt, then a dialog button, then
+// _supplyRunPersonal. No receipt is the harmless answer and it was the only
+// one carrying a warning ("The IRS may disallow..."), while Personal, which
+// takes the miles AND the hours off the books in one tap, had no confirm at
+// all. He hit the scary one, backed out, and took the door that looked safe.
+//
+// So the confirm moves to Personal and says what it actually does, with this
+// run's own numbers in it. No receipt keeps its tax note, because that note is
+// true, but it is no longer the red button: it is the ordinary business answer.
+//
+// AND THE LAST LINE IS HONEST. The owner's draft ended "taking this off
+// personal will not allow you to add back later". It does: resolveSupplyRun's
+// 'unpersonal' door exists for exactly this mis-tap and was built on his own
+// instruction (2026-09-16, "he made a human mistake"). A threat the app does
+// not honour teaches people to hide mistakes instead of undoing them, so the
+// warning is heavy about the consequence and straight about the way back.
 function _supplyRunPersonal(k){
-  resolveSupplyRun(decodeURIComponent(k),'personal');
-  if(typeof showToast==='function')showToast('Cleared, kept off the books','🚗');
+  const key=decodeURIComponent(k);
+  const c=_supplyRunCost(key);
+  const bits=[];
+  if(c.miles>0)bits.push(c.miles+' mi');
+  if(c.mins>0)bits.push(typeof _fmtMin==='function'?_fmtMin(c.mins):(c.mins+'m'));
+  const what=bits.length?bits.join(' and '):'the miles and the time';
+  zConfirm('<b>'+what+'</b> gets DELETED from your timesheet and from your mileage.<br><br>'+
+           'You do not get paid for that time, and nothing will ever prompt you to put it back.<br><br>'+
+           'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
+    ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
+    {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',
+     danger:true,safeRight:true});
 }
 function _supplyRunNoReceipt(k){
-  // Owner copy (2026-08-17): one plain line, not a tax lecture.
+  // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
+  // red button (2026-09-18): this is the ordinary answer, and dressing it as
+  // the dangerous one is what pushed him onto Personal.
   zConfirm('Save this run as business without a receipt?\n\nThe IRS may disallow the mileage and the expense if no receipt is provided.',
     ()=>{resolveSupplyRun(decodeURIComponent(k),'noreceipt');if(typeof showToast==='function')showToast('Logged as business, no receipt on file','⚠️');},
-    {title:'No receipt',yes:'Save as business'});
+    {title:'No receipt',yes:'Save as business',danger:false});
 }
 // Scan door: the existing quick-expense modal (it carries the receipt
 // scanner). The run key rides INSIDE the modal as a hidden field, never a
@@ -1539,6 +1657,86 @@ async function _poiAt(coord){
   }catch(_e){}
   return null;
 }
+// ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ────────────────────────
+// "Is there any way for an unsaved address that pulls itself in automatically
+// and attempts to look up the business ... having the business name in the
+// day rail would be killer."
+//
+// The same _poiAt the Save button already asks, asked once per spot when the
+// rail first draws the stop, and remembered. It NAMES the row and nothing
+// else: an unsaved stop still counts toward nothing until it is saved (owner
+// 2026-09-08, "only things with addresses saved should update any totals"),
+// so a guess from Apple can never move a number.
+//
+// Keyed by the spot rounded to about 11 m, not by the row: the same Home Depot
+// is one lookup however many times he goes, and a re-derive that re-keys the
+// row costs nothing. A spot Apple could not name is remembered as such for a
+// day, so the rail never asks the same question on every paint. Per device,
+// in localStorage, because it is a convenience and never a record.
+const _STOP_NAME_KEY='zp3_stop_names',_STOP_NAME_MAX=400,_STOP_NAME_MISS_MS=24*3600000;
+let _stopNames=null,_stopNameTimer=null;
+const _stopNameBusy=new Set(),_stopNameQueue=[];
+function _stopNamesLoad(){
+  if(_stopNames)return _stopNames;
+  try{_stopNames=JSON.parse(localStorage.getItem(_STOP_NAME_KEY)||'{}');}catch(_e){_stopNames=null;}
+  if(!_stopNames||typeof _stopNames!=='object'||Array.isArray(_stopNames))_stopNames={};
+  return _stopNames;
+}
+function _stopNamesSave(){
+  try{
+    const keep=Object.entries(_stopNamesLoad()).filter(e=>e[1]&&typeof e[1]==='object')
+      .sort((a,b)=>(b[1].ts||0)-(a[1].ts||0)).slice(0,_STOP_NAME_MAX);
+    _stopNames=Object.fromEntries(keep);
+    localStorage.setItem(_STOP_NAME_KEY,JSON.stringify(_stopNames));
+  }catch(_e){}
+}
+function _stopNameKey(c){return Number(c.lat).toFixed(4)+','+Number(c.lng).toFixed(4);}
+// The one door to Apple, so a test can stand in for it. undefined means "cannot
+// ask right now" (MapKit not loaded on this origin), which is not a miss and
+// must not be remembered as one.
+function _stopNameLookup(c){
+  if(!_mapkitReady)return undefined;
+  return _poiAt({lat:c.lat,lng:c.lng});
+}
+// Synchronous for the painter: the answer it already has, or null while it
+// asks. {name, addr}; either may be ''.
+function _stopNameFor(clientKey,day){
+  try{
+    const c=_mileStopCoord(clientKey,day);
+    if(!c||!isFinite(c.lat)||!isFinite(c.lng))return null;
+    const k=_stopNameKey(c);
+    const hit=_stopNamesLoad()[k];
+    if(hit&&(hit.name||hit.addr))return {name:String(hit.name||''),addr:String(hit.addr||'')};
+    if(hit&&Date.now()-(Number(hit.ts)||0)<_STOP_NAME_MISS_MS)return null;
+    if(!_stopNameBusy.has(k)){
+      _stopNameBusy.add(k);_stopNameQueue.push({k,c});
+      if(!_stopNameTimer)_stopNameTimer=setTimeout(_stopNameDrain,60);
+    }
+  }catch(_e){}
+  return null;
+}
+async function _stopNameDrain(){
+  _stopNameTimer=null;
+  let found=false;
+  while(_stopNameQueue.length){
+    const {k,c}=_stopNameQueue.shift();
+    let p;
+    try{p=await _stopNameLookup(c);}catch(_e){p=null;}
+    _stopNameBusy.delete(k);
+    if(p===undefined)continue;
+    const name=(p&&p.name)?String(p.name):'',addr=(p&&p.addr)?String(p.addr):'';
+    _stopNamesLoad()[k]={name,addr,ts:Date.now()};
+    if(name||addr)found=true;
+  }
+  _stopNamesSave();
+  // One repaint for the whole batch, from rows already in hand.
+  if(found){
+    try{
+      if(document.getElementById('pg-timelog')?.classList.contains('active')&&typeof renderTimeLog==='function')
+        renderTimeLog({cached:true});
+    }catch(_e){}
+  }
+}
 // Apple's POI categories mapped onto the kinds a contractor cares about.
 //
 // A SUGGESTION ONLY. This prefills the kind dropdown when they save a new place
@@ -1557,6 +1755,61 @@ function _poiPlaceKind(category){
 // via: optional waypoints ({lat,lng}) the route must pass through, in order.
 // The deriver hands it the breadcrumbs of a thin trace so the router
 // measures the road the truck took, not the fastest one it would suggest.
+// ── THE LINE, NOT JUST THE NUMBER (owner 2026-09-13) ───────────────────────
+// MapKit hands back a full route and this file used to keep the distance and
+// throw the geometry away. Where the phone was force-closed there is a hole in
+// the breadcrumbs, and the map drew one straight line across it: the mileage
+// was already routed and correct (_geoTraceComplete sends a gapped trace to
+// the router), but the picture said the truck drove through the middle of
+// town. This reads the road back out so the hole can be drawn as the road.
+//
+// Defensive about shape on purpose. MapKit JS has moved the geometry around
+// between versions and index.html pins "5.x.x", so a build that renames this
+// must degrade to no line rather than throw inside a directions callback.
+function _routePolyline(route){
+  try{
+    const pl=route&&route.polyline;
+    const raw=(pl&&(pl.points||pl.coordinates))||route&&route.path||null;
+    if(!Array.isArray(raw))return [];
+    const out=[];
+    for(const c of raw){
+      if(!c)continue;
+      const la=Number(c.latitude!=null?c.latitude:(Array.isArray(c)?c[0]:NaN));
+      const ln=Number(c.longitude!=null?c.longitude:(Array.isArray(c)?c[1]:NaN));
+      if(isFinite(la)&&isFinite(ln))out.push([la,ln]);
+    }
+    return out;
+  }catch(_e){return [];}
+}
+
+// A HOLE WORTH DRAWING. Not every skipped breadcrumb is a gap: the receiver
+// duty-cycles, a tunnel eats a minute, and drawing a dashed guess over those
+// would call ordinary GPS an outage. A force-close is minutes AND miles, so
+// both have to be true before the router is asked.
+const _MILE_GAP_MS=90*1000;
+const _MILE_GAP_FT=1320;        // a quarter mile
+function _mileGaps(r){
+  const out=[];
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    for(let i=1;i<p.length;i++){
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      // The third slot is the fix's ms. A path written without it cannot be
+      // judged on time, so distance alone decides.
+      const at=Number(a[2]),bt=Number(b[2]);
+      const dt=(isFinite(at)&&isFinite(bt)&&bt>at)?(bt-at):0;
+      const ft=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+      const timeOk=dt?dt>=_MILE_GAP_MS:true;
+      if(timeOk&&ft>=_MILE_GAP_FT)out.push({i,from:{lat:alat,lng:alon},to:{lat:blat,lng:blon},ft,ms:dt});
+    }
+  }catch(_e){}
+  return out;
+}
+
 async function _routeDistance(fromCoords,toCoords,via){
   const stops=[fromCoords].concat(Array.isArray(via)?via.filter(v=>v&&isFinite(v.lat)&&isFinite(v.lng)):[],[toCoords]);
   // MapKit Directions, primary. MapKit JS routes one origin to one
@@ -1573,12 +1826,17 @@ async function _routeDistance(fromCoords,toCoords,via){
         },(err,data)=>{
           if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
           const r=data.routes[0];
-          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0});
+          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0,path:_routePolyline(r)});
         });
       });
       const parts=await Promise.all(stops.slice(1).map((b,i)=>seg(stops[i],b)));
       const m=parts.reduce((t,p)=>t+p.m,0),s=parts.reduce((t,p)=>t+p.s,0);
-      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60)};
+      // The drawn line, concatenated across waypoints in the same order the
+      // distance was summed. Callers that only want a number ignore it; the
+      // route map uses it to draw the stretch the phone never watched.
+      const path=[];
+      parts.forEach(pt=>{ if(Array.isArray(pt.path)) pt.path.forEach(c=>path.push(c)); });
+      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60),path};
     }catch(e){}
   }
   // Fallback: Valhalla + OSRM in parallel
@@ -2162,8 +2420,14 @@ async function _reverseGeocode(lat,lon){
         });
       });
       if(p){
+        // THE NAME WAS ALWAYS IN THE ANSWER AND WAS BEING THROWN AWAY. Apple's
+        // reverse lookup names the business standing on a commercial pin, and
+        // that is the single fact that tells a supply counter apart from a
+        // customer's house. Additive: every existing caller reads street/city/
+        // state/zip/addr and is untouched.
         const out={street:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||'',
-          city:p.locality||'',state:p.administrativeAreaCode||'',zip:p.postCode||''};
+          city:p.locality||'',state:p.administrativeAreaCode||'',zip:p.postCode||'',
+          name:(p.name&&p.name!==p.fullThoroughfare)?String(p.name):''};
         if(out.street||out.city)return Object.assign(out,{addr:join(out)});
         // A pin in the middle of a field has no street to give. Apple's own
         // one-line answer still beats nothing, and the parser reads it.
@@ -2761,7 +3025,12 @@ function _milRenderTripList(shown,yr){
       const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
         :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
         :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'
+        :(r.personal?('<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'+
+            // THE WAY BACK, ON THE ROW (owner 2026-09-16). Jack meant no
+            // receipt and hit Personal, twice, and no control anywhere could
+            // undo it: the card is gone once answered and the row only said
+            // what had happened to it. A mis-tap should cost ten seconds.
+            (r.supplyRunKey?'<button type="button" class="tl-rail-chip" style="margin-top:4px" onclick="event.stopPropagation();resolveSupplyRun(\''+escHtml(String(r.supplyRunKey))+'\',\'unpersonal\')">It was work</button>':''))
         :(r.pendingPurpose?'<div style="font-size:10px;font-weight:700;color:var(--amber)">Work or personal? · not counted yet</div>':''))));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
@@ -2997,18 +3266,157 @@ function openMileageRoute(id){
         gps+'Logged '+_mi+' mi</div>')+
     _trNote+
     _csNote+
+    // Filled in only if a routed stretch actually gets drawn. It lives in the
+    // modal rather than in the map's own hint because the fallback plot writes
+    // its own hint line and would drop it, and this sentence is the difference
+    // between a picture and a claim on a tax record.
+    '<div id="_mil-route-fillnote"></div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
+  const _kit=(typeof tdAppleHardware==='function')?tdAppleHardware():false;
+  const _st=tdMapState();
+  const _draw=(paths)=>{
+    try{
+      tdMapRender(Object.assign({
+        body:document.getElementById('_mil-route-body'),
+        pts,
+        style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
+        st:_st,hostId:'_mil-route-canvas',height:300,
+        allowKit:_kit,
+      }, paths?{paths}:{path:r.path}));
+    }catch(_e){}
+  };
+  // Paint what was actually watched FIRST, every time. The routed fill is a
+  // network round trip and the map must never wait on one to appear (8.3: a
+  // waiting surface gets content now and repaints once, never a delay).
+  _draw(null);
+  // ── THE HOLE, DRAWN AS THE ROAD (owner 2026-09-13) ──────────────────────
+  // "If app is force closed, should the route call MapKit and route out what
+  // the most direct way would be and that's our mileage route on the map? I
+  // think so."
+  //
+  // The MILEAGE already works that way: a gapped trace fails
+  // _geoTraceComplete, so the router's distance wins and the row is stamped
+  // derived-routed. Only the LINE was still lying, drawing one straight edge
+  // across a stretch the truck spent on real roads.
+  //
+  // Fetched when the map opens rather than stored on the row (owner's call):
+  // nothing new is written and nothing new syncs, and a drive row stays the
+  // size it is. The cost is that it needs a connection to draw, which is why
+  // the observed trace is already on screen before this runs and a failure
+  // here simply leaves it as it was.
+  _mileRouteFill(r).then(paths=>{
+    // The overlay is only worth a repaint if something came back, and only if
+    // this map is still the one on screen.
+    if(!paths||!paths.length)return;
+    // Still the map on screen? The OVERLAY is the test, not the canvas: the
+    // fallback plot (every non-Apple device, and CI) never creates an element
+    // with the host id, so keying on that skipped the repaint everywhere the
+    // tiles are not licensed. Caught in the step 0.5 screenshot.
+    if(!document.getElementById('_mil-route-ov'))return;
+    _draw(paths);
+    const note=document.getElementById('_mil-route-fillnote');
+    if(note)note.innerHTML='<div style="display:flex;align-items:center;gap:7px;font-size:11px;'+
+      'color:var(--text3);line-height:1.5;margin-bottom:12px">'+
+      '<span style="flex:0 0 22px;height:0;border-top:3px dashed '+_MILE_FILL_COLOR+';border-radius:2px"></span>'+
+      '<span>Dashed is routed, not recorded. The app was closed here, so the phone logged no position and this is the road between the two points it did see.</span></div>';
+  }).catch(()=>{});
+}
+
+// ── THE DASHED STRETCH HAS MILES ON IT (owner 2026-09-14) ──────────────────
+//
+// "the routed version with dashes traced the right roads but only logged a
+// fraction of the trace, seems were missing the dashed line to run its
+// mileage route through mapkits."
+//
+// He was right and it was one discarded value. This asked the router for
+// every hole in the trace, kept the ROAD it came back with, drew it dashed,
+// and threw the DISTANCE away. So the picture knew the truck had driven a
+// real road across the hole and the number still counted the straight line
+// over it. His 14 September: four fixes for a six-minute drive, a map drawn
+// on the right streets, and 2.4 miles logged for a 3.4 mile trip.
+//
+// ONE function answers both now, so the line and the number can never
+// disagree about the same drive (7.3):
+//   • every edge the phone actually WATCHED keeps its real breadcrumb length,
+//     because that is evidence and no router improves on it
+//   • every hole is billed at the road the router found, which is the same
+//     road already being drawn dashed
+//   • a hole the router cannot answer keeps its straight edge, exactly as
+//     before, so a dead network can never shrink a trip
+//
+// The fallback routers matter here more than anywhere else in the app.
+// MapKit returns a line AND a distance; Valhalla and OSRM are asked with
+// overview=false and return a distance only. So off Apple hardware the
+// dashed line cannot be drawn and THE MILES STILL COME BACK. Fixing the
+// number is not gated on being able to draw it.
+const _MILE_TRACE_COLOR='#2D5DA8';
+const _MILE_FILL_COLOR='#B45309';
+async function _mileGapFill(r){
+  const out={miles:0,watched:0,fills:[],asked:0,filled:0,gaps:0};
   try{
-    tdMapRender({
-      body:document.getElementById('_mil-route-body'),
-      pts,
-      path:r.path,
-      style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
-      st:tdMapState(),hostId:'_mil-route-canvas',height:300,
-      allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
-    });
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return out;
+    const gaps=(typeof _mileGaps==='function')?_mileGaps(r):[];
+    out.gaps=gaps.length;
+    const holes=new Set(gaps.map(g=>g.i));
+    // The watched edges, at their real length. A gap edge is skipped here and
+    // priced below, so nothing is ever counted twice.
+    let ft=0;
+    for(let i=1;i<p.length;i++){
+      if(holes.has(i))continue;
+      const a=p[i-1],b=p[i];
+      if(!Array.isArray(a)||!Array.isArray(b))continue;
+      const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+      if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+      ft+=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+    }
+    out.watched=ft/5280;
+    out.miles=out.watched;
+    if(typeof _routeDistance!=='function'){out.miles=Math.round(out.miles*10)/10;return out;}
+    for(const g of gaps){
+      out.asked++;
+      const got=await Promise.race([
+        _routeDistance(g.from,g.to,[]),
+        new Promise(res=>setTimeout(()=>res(null),(typeof _GEO_ROUTE_TIMEOUT_MS!=='undefined'&&_GEO_ROUTE_TIMEOUT_MS)||8000))
+      ]).catch(()=>null);
+      const mi=(got&&Number(got.miles)>0)?Number(got.miles):0;
+      const line=(got&&Array.isArray(got.path)&&got.path.length>=2)?got.path:null;
+      if(mi>0){out.miles+=mi;out.filled++;}
+      else out.miles+=(Number(g.ft)||0)/5280;
+      if(line)out.fills.push({i:g.i,path:line});
+    }
+    out.miles=Math.round(out.miles*10)/10;
   }catch(_e){}
+  return out;
+}
+// Solid for what the phone watched, dashed for what the router filled in.
+// Returns null when there is nothing to fill or nothing came back, and the
+// caller then leaves the plain trace alone.
+async function _mileRouteFill(r){
+  try{
+    const p=r&&r.path;
+    if(!Array.isArray(p)||p.length<2)return null;
+    const got=await _mileGapFill(r);
+    const fills=got.fills;
+    if(!fills.length)return null;
+    // The observed trace, cut at every gap that was filled, so a dashed road
+    // never runs underneath a solid line claiming the same stretch.
+    const cut=new Set(fills.map(f=>f.i));
+    const out=[];
+    let run=[p[0]];
+    for(let i=1;i<p.length;i++){
+      if(cut.has(i)){
+        if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+        run=[p[i]];
+        continue;
+      }
+      run.push(p[i]);
+    }
+    if(run.length>=2)out.push({path:run,color:_MILE_TRACE_COLOR,width:4});
+    fills.forEach(f=>out.push({path:f.path,color:_MILE_FILL_COLOR,width:4,opacity:.9,dash:[7,6]}));
+    return out;
+  }catch(_e){return null;}
 }
 // ── ONE TRIP NUMBER, TWO SCREENS (owner 2026-09-08) ─────────────────────────
 // "list trip numbers on timesheet and on mileage log." The day's trips in
@@ -3027,9 +3435,45 @@ function _mileTripNumbers(dayKey,rows){
 }
 function _mileTripNumberForLeg(dayKey,clientKey){
   if(!clientKey)return null;
-  const key=String(clientKey).replace(/:\d+$/,'');
   const nos=_mileTripNumbers(dayKey);
-  return nos['leg:'+key]||null;
+  const ls=_mileLegSeg(clientKey,dayKey);
+  if(ls)return nos['leg:'+String(ls.leg.legKey!=null?ls.leg.legKey:ls.leg.id)]||null;
+  return nos['leg:'+String(clientKey).replace(/:\d+$/,'')]||null;
+}
+// ── AND WHICH DRIVE OF THAT TRIP IT IS (owner 2026-09-18) ─────────────────
+//
+// "the drive numbers on time sheet are off trip 1 is repeated 3 times"
+//
+// _mileTripLegForLeg was DELETED 2026-09-19 (§7). It added "· drive 2 of 3"
+// to a trip number, written on 2026-09-18 to explain why three plainly
+// different drives all read TRIP 1. The owner said at the time that was the
+// wrong fix, and he was right: they were three separate drives, and the chain
+// was wrongly collapsing them into one leg. That is fixed in the deriver (a
+// work-length stop closes the chain), so each drive carries its own trip
+// number and there is nothing left to explain. _mileTripNumberForLeg, below,
+// is what the rail asks again.
+// ── WHICH LEG A DRIVE ROW BELONGS TO, AND WHICH SEGMENT OF IT ──────────────
+// One place knows how a time row's key relates to a mileage leg, because two
+// screens ask (the rail's title and its trip number, js/timelog.js; the trip
+// number above). The deriver keys a drive row by the journey that started it
+// (js/geo-derive.js, the identity rule), which for a leg that never split IS
+// the leg's own key and for one that did is listed on the leg as segKeys.
+//
+// The ':N' arm is not a second answer, it is the same answer for a day nobody
+// can re-derive: the tape is seven days long, so a row written under the old
+// shape keeps it forever and still has to draw.
+function _mileLegSeg(clientKey,dayKey){
+  const key=String(clientKey||'');
+  if(!key||typeof mileage==='undefined'||!Array.isArray(mileage))return null;
+  const on=x=>x&&(!dayKey||x.date===dayKey);
+  let leg=mileage.find(x=>on(x)&&Array.isArray(x.segKeys)&&x.segKeys.indexOf(key)>=0);
+  if(leg)return {leg,ix:leg.segKeys.indexOf(key),split:true};
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===key);
+  if(leg)return {leg,ix:0,split:false};
+  const m=/^(.*):(\d+)$/.exec(key);
+  if(!m)return null;
+  leg=mileage.find(x=>on(x)&&String(x.legKey!=null?x.legKey:x.id)===m[1]);
+  return leg?{leg,ix:Number(m[2]),split:true}:null;
 }
 // ── SAVE THIS ADDRESS → the new-lead form (owner 2026-09-08) ─────────────────
 // "save this address should popup the enter lead." Not a bare address field:
@@ -3050,19 +3494,361 @@ let _mileAddressPending=null;
 // Save button and the Time Log rail's both do nothing but RESOLVE A
 // COORDINATE and call this, so the flow can only ever change in both places
 // at once.
-async function _mileSaveAddressAt(lat,lng,pend){
-  const la=Number(lat),ln=Number(lng);
-  if(!isFinite(la)||!isFinite(ln))return false;
-  _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
+// ── WHAT IS STANDING AT THIS PIN (owner 2026-09-16) ─────────────────────────
+// "For save address I guess we need to make it smart enough to know and ask is
+//  this a Supply House or a Lead/Client."
+//
+// Asking blind was better than assuming, but it still made him read a raw
+// coordinate and decide. Apple already knows: its reverse lookup names the
+// business on a commercial pin, and _reverseGeocode was discarding that name
+// before anyone saw it. Where the reverse lookup comes back with a bare
+// street address, the forward search gets a second go at the same spot,
+// because a search for "3210 S Kansas Ave, Topeka" returns Neenans Co and a
+// reverse lookup of a parking-lot coordinate sometimes does not.
+//
+// The keyword list is a SUGGESTION and is worded as one on screen. It orders
+// the two buttons and pre-picks nothing that cannot be changed in one tap,
+// which is the whole reason this asks at all instead of guessing (openPlaceModal
+// carries the same lesson in its own words: a wrong kind decides how that
+// stop's trips deduct).
+const _MILE_SUPPLY_WORDS=['supply','supplies','plumbing','electric','hardware','lumber',
+  'building','depot','menards','lowes','ace ','ferguson','winsupply','winnelson','grainger',
+  'sherwin','paint','wholesale','distribut','rental','hvac','pipe','steel','concrete',
+  'ready mix','fastenal','johnstone','reece','hajoca','sonepar','rexel','graybar','tractor',
+  'auto parts','napa','warehouse','lighting','flooring','roofing','mill','yard'];
+// THREE ANSWERS, NOT TWO, AND THE THIRD ONE IS "I DO NOT KNOW".
+//
+// The keyword list reads a name like "Ferguson Plumbing Supply" and is right.
+// It reads "Neenans Co", the actual case that started this, and is wrong: that
+// is a plumbing supply counter and the name says nothing at all. Forcing a
+// side there would put a confident wrong answer in front of him, which is the
+// failure this whole prompt exists to stop.
+//
+// So a name that matches leads with Supply house, a pin with no business on it
+// at all leads with Lead or client (a street address with nothing standing on
+// it is a house), and a named business the list cannot place is shown BY NAME
+// with both answers offered evenly. Knowing it is "Neenans Co" rather than
+// 39.0106, -95.6811 is most of the value even when the kind is still his call.
+function _mileGuessKind(name){
+  const n=String(name||'').trim();
+  if(!n)return 'client';
+  const l=' '+n.toLowerCase()+' ';
+  return _MILE_SUPPLY_WORDS.some(w=>l.indexOf(w)>=0)?'supply':'';
+}
+async function _mileWhatIsHere(lat,lng){
+  let parts={street:'',city:'',state:'',zip:'',addr:'',name:''};
+  try{parts=await _reverseGeocode(lat,lng)||parts;}catch(_e){}
+  let name=String(parts.name||'');
+  if(!name&&parts.street){
+    // Second chance at the same spot, biased to it, and only a hit that is
+    // actually AT the pin counts: a search can drift to a similarly named
+    // street across town.
+    try{
+      const hits=await _geocodeAddress([parts.street,parts.city,parts.state].filter(Boolean).join(', '),5,lat,lng);
+      const near=(hits||[]).find(h=>h&&h.name&&Math.abs(h.lat-lat)<0.0025&&Math.abs(h.lon-lng)<0.0032);
+      if(near)name=String(near.name);
+    }catch(_e){}
+  }
+  const guess=_mileGuessKind(name);
+  return {parts,name,guess,supply:guess==='supply'};
+}
+// ── NOT EVERY ADDRESS IS A CUSTOMER (owner 2026-09-16) ──────────────────────
+// "The code to save a address steered Jack wrong, he clicked save address for a
+//  plumbing place and it dropped it as a lead, go look at neenans co, that's
+//  supposed to be a supply house not a lead."
+//
+// It did, and it had no other option: this went straight to the new-lead form
+// for every address on the log. Half of these were never customers. Jack tapped
+// Save on a stop at Neenans Co, a plumbing supply counter, and the app made him
+// a sales lead out of it, then enriched him off Zillow as a single family home.
+//
+// A wrong kind is not cosmetic here, which openPlaceModal already says in its
+// own words: it decides how that stop's trips deduct and which bucket the
+// mileage report puts them in. A supply run is held for its receipt; a client
+// visit is not. Guessing "client" for everything got that wrong every time
+// somebody stopped at a counter.
+//
+// So it ASKS, once, in two taps instead of one, and then hands off to the form
+// that already exists for whichever he picked. Nothing here is a new form: the
+// client arm is the same openNewClient it always was, and the place arm is
+// openPlaceModal, the app's own place form, which already takes a coordinate
+// and already refuses to save without a real type (7.3).
+function _mileSaveAskKind(la,ln){
+  document.getElementById('_mile-kind-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_mile-kind-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  // ── THE BOX IS BUILT ONCE AND FILLED IN, NEVER REBUILT ────────────────────
+  // (owner 2026-09-20, on a clip of himself tapping Save this address: "see
+  // how the screen jumps up a bit? Needs to be perfectly smooth.")
+  //
+  // This used to paint the whole overlay twice, once with a placeholder and
+  // again when the reverse lookup landed, and both paints went through
+  // ov.innerHTML. Two separate things jumped, and both are in his clip:
+  //
+  // 1. Assigning ov.innerHTML REPLACES the .zmodal element, so its
+  //    td-modal-in entrance (.24s scale/slide, index.html) ran a SECOND time
+  //    a few hundred milliseconds after the box had already settled. The
+  //    modal animated itself in twice.
+  // 2. The two text lines changed length between the paints, and the overlay
+  //    centres its child with margin:auto (.zmodal-overlay>*), so a taller
+  //    box moves UP by half the difference. That is the jump he pointed at.
+  //
+  // So the shell is built once and only the slots inside it change. The two
+  // lines the lookup fills reserve their worst case (two lines each) and the
+  // name line holds the app's own .td-skel shimmer while the lookup is out,
+  // which is what 8.4 requires of an async slot and what the old "Looking up
+  // this address…" string was standing in for.
+  ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">What is this address?</div>'+
+    '<div id="_mile-kind-sub" style="font-size:14px;font-weight:700;color:var(--text);'+
+      'line-height:1.35;min-height:38px;margin-bottom:4px;display:flex;align-items:center">'+
+      '<div class="td-skel" style="height:12px;width:62%"></div></div>'+
+    '<div id="_mile-kind-why" style="font-size:12px;color:var(--text3);'+
+      'line-height:1.4;min-height:34px;margin-bottom:18px"></div>'+
+    '<div id="_mile-kind-acts" style="display:flex;flex-direction:column;gap:10px"></div>'+
+    '</div>';
+  const subEl=ov.querySelector('#_mile-kind-sub');
+  const whyEl=ov.querySelector('#_mile-kind-why');
+  const acts=ov.querySelector('#_mile-kind-acts');
+  const mk=(label,fn)=>{
+    const b=document.createElement('button');
+    b.type='button';b.className='btn';b.textContent=label;b.onclick=fn;
+    acts.appendChild(b);return b;
+  };
+  // ── NEITHER ANSWER IS EVER THE HEAVY BUTTON (owner 2026-09-16) ──────────
+  // "One problem with screenshot it leads click customer heavy, want them to
+  //  look at it twice to ensure it's right."
+  //
+  // He is right and it undoes the point of asking. A filled primary button is
+  // the app telling you where to tap, and this prompt exists precisely
+  // because the app's guess is the thing that was wrong: it made Neenans Co,
+  // a plumbing supply counter, into a sales lead. A crew member in a hurry
+  // taps the dark one and we are back to guessing, with his fingerprint on
+  // it. So the guess ORDERS the two and says itself in words, and both look
+  // identical, which is what makes him read them.
+  const client=mk('Lead or client',()=>_mileSaveKind('client'));
+  const supply=mk('Supply house',()=>_mileSaveKind('supply'));
+  mk('Somewhere else (shop, office, other)',()=>_mileSaveKind('place'));
+  mk('Cancel',()=>ov.remove());
+  const paint=(found)=>{
+    const nm=found&&found.name?found.name:'';
+    const g=found?found.guess:'';
+    // Only once the lookup has answered: until then the shimmer stands where
+    // the name will land, so the line never changes height under it.
+    if(found)subEl.textContent=nm||(found.parts&&found.parts.addr)||'';
+    whyEl.textContent=(nm&&g==='supply'?'That reads like a supply house to us. Check it before you pick.'
+      :g==='client'?'No business at this pin, so it looks like a customer. Check it before you pick.'
+      :nm?'The map found that name but not what it is. Which one?'
+        :'A supply house is a place, so its trips wait for a receipt. A client is somebody you quote and invoice.');
+    // The guess orders them, per the rule above. A MOVE, not a rebuild: the
+    // same two elements change places, so a finger already down on one is
+    // still on the button it touched rather than on a fresh node that just
+    // appeared in that slot.
+    if(g==='supply'&&acts.firstChild!==supply)acts.insertBefore(supply,client);
+  };
+  paint(null);
+  document.body.appendChild(ov);
+  // Painted first, filled in when the lookup lands, so a slow or offline
+  // geocoder costs nothing: the buttons are live from the moment it opens.
+  _mileWhatIsHere(la,ln).then(found=>{
+    if(!document.getElementById('_mile-kind-ov'))return;
+    _mileAddressPending=Object.assign({},_mileAddressPending||{},{found});
+    paint(found);
+  }).catch(()=>{
+    // A lookup that never answers must not leave a shimmer running forever
+    // where a name was promised. Nothing is known, so it says nothing and
+    // offers both answers evenly, which is the honest version of this prompt.
+    try{if(document.getElementById('_mile-kind-ov'))paint({name:'',parts:{},guess:''});}catch(_e){}
+  });
+}
+// The two arms. _mileAddressPending is already set before the chooser opens, so
+// whichever he picks, the save re-derives the same day (_mileAddressSaved).
+async function _mileSaveKind(kind){
+  document.getElementById('_mile-kind-ov')?.remove();
+  const p=_mileAddressPending;
+  if(!p)return false;
+  const found=p.found||null;
+  if(kind==='place'||kind==='supply'){
+    // No goPg: the place form is a modal that opens over whatever page you are
+    // on, which is exactly how the dashboard and the Places list already call
+    // it. Navigating first was my addition and there is no 'pg-places' to
+    // navigate to; assertNoErrors caught it on the first run (7.3, again).
+    //
+    // 'supply' pre-picks the type and 'place' deliberately does not. That is
+    // not a contradiction of the 2026-08-31 rule ("dont want to pre fill
+    // things in"): the rule is against a DEFAULT nobody chose, and the whole
+    // point of this prompt is that he chose. Somewhere else leaves the picker
+    // empty exactly as before.
+    if(typeof openPlaceModal==='function')openPlaceModal(null,p.lat,p.lng,kind==='supply'?'supply':'');
+    // The name the map gave us, so he confirms instead of typing.
+    if(found&&found.name){
+      const n=document.getElementById('place-name');
+      if(n&&!n.value)n.value=found.name;
+    }
+    return true;
+  }
   // Apple Maps hands back the four fields already separated (_reverseGeocode,
   // above), which is what this form has four boxes for.
-  let parts={street:'',city:'',state:'',zip:''};
-  try{parts=await _reverseGeocode(la,ln)||parts;}catch(_e){}
+  let parts=(found&&found.parts)||{street:'',city:'',state:'',zip:''};
+  if(!parts.street){try{parts=await _reverseGeocode(p.lat,p.lng)||parts;}catch(_e){}}
+  // ── SOMEBODY HE ALREADY HAS, OR SOMEBODY NEW (owner 2026-09-19) ────────
+  // "add in a option for a picker on time sheet save address where we can
+  // pick a client or add new."
+  //
+  // This arm went straight to a NEW customer, which is right the first time
+  // somebody is quoted and wrong every time after. A second visit to a
+  // customer already on the books, a landlord's second rental, a job site
+  // for a builder he works for every week: all of them made a duplicate
+  // record, and the fence landed on the duplicate rather than on the person
+  // whose jobs and proposals rule 13 reads.
+  //
+  // So the pin asks WHOSE it is first. Picking somebody files the pin as a
+  // property on that record (_mileFileAddressOn), which is the same property
+  // card the client detail page draws, and the day re-derives against it.
+  // Add new is the old path, unchanged, one tap away.
+  _mileSaveAskWho(parts);
+  return true;
+}
+// Free of a geocode, deliberately: the pin IS the coordinate, so filing it on
+// a customer needs no round trip and works with no signal. The address string
+// is what the reverse lookup already gave the chooser.
+function _mileAddrLine(parts){
+  const p=parts||{};
+  return [p.street,p.city,[p.state,p.zip].filter(Boolean).join(' ')].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+}
+function _mileSaveAskWho(parts){
+  document.getElementById('_mile-who-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_mile-who-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const line=_mileAddrLine(parts);
+  _mileAddressPending=Object.assign({},_mileAddressPending||{},{parts,addrLine:line});
+  ov.innerHTML='<div class="zmodal" style="max-width:380px">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Whose address is this?</div>'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">'+escHtml(line||'This stop')+'</div>'+
+    '<input id="_mile-who-q" type="text" inputmode="search" placeholder="Search your customers" '+
+      'oninput="_mileWhoRender()" style="width:100%;box-sizing:border-box;padding:10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;font-size:14px;margin-bottom:10px">'+
+    '<div id="_mile-who-hits" style="max-height:44vh;overflow:auto;-webkit-overflow-scrolling:touch"></div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">'+
+    '<button class="btn" onclick="_mileWhoNew()">Add a new customer</button>'+
+    '<button class="btn" onclick="document.getElementById(\'_mile-who-ov\')?.remove()">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  _mileWhoRender();
+  setTimeout(()=>{try{document.getElementById('_mile-who-q')?.focus();}catch(_e){}},60);
+}
+// The same predicate the new-client gate uses, so "who do I have" means one
+// thing in this app (§7.3). The subtitle says how many properties they already
+// have, because that is the number this is about to add to.
+function _mileWhoRender(){
+  const box=document.getElementById('_mile-who-hits');
+  if(!box)return;
+  const q=(document.getElementById('_mile-who-q')?.value||'');
+  const hits=(typeof _newcGateMatches==='function')?_newcGateMatches(q):[];
+  if(!hits.length){
+    box.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 2px">'+
+      (q.trim()?'Nobody by that name yet.':'No customers yet.')+'</div>';
+    return;
+  }
+  box.innerHTML=hits.map(c=>{
+    const props=(typeof _newcGateProps==='function')?_newcGateProps(c):[];
+    const sub=props.length?(props.length+' propert'+(props.length===1?'y':'ies')):'No address yet';
+    // Root cause: JSON.stringify(id) wraps the value in literal " characters,
+    // and this attribute is itself double-quoted (onclick="..."). Unescaped,
+    // the first " JSON.stringify writes ends the attribute right there, and
+    // WebKit compiles whatever text the HTML parser left inside it as the
+    // click handler's body: "_mileWhoPick(" alone, a syntax error that only
+    // surfaces when the button is actually tapped, sourced at the page's own
+    // URL rather than this file (owner report 2026-09-20, from the app: "[:1]
+    // SyntaxError: Unexpected token '}'"). escHtml turns those quotes into
+    // &quot; so the attribute parses whole. Every other picker in this app
+    // already does this (generic-estimate.js, proposals.js); this one line
+    // was the one that didn't, and it shipped with no test that ever clicked
+    // the real button to catch it (every _mileWhoPick test in
+    // e2e-mileage-traced.spec.js calls the function directly).
+    return '<button onclick="_mileWhoPick('+escHtml(JSON.stringify(String(c.id)))+')" '+
+      'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);'+
+      'border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="display:block;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name||'Customer')+'</span>'+
+        '<span style="display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>'+
+      '</span></button>';
+  }).join('');
+}
+function _mileWhoNew(){
+  document.getElementById('_mile-who-ov')?.remove();
+  _mileOpenNewClientForm();
+}
+// Files the pin on a customer already on the books. The FIRST address a
+// customer has is their primary, because a record with no address and one
+// property card would read as a customer he never gave an address to;
+// everything after is a property card beside it, exactly as the client detail
+// page adds one (saveAddClientAddress, js/clients.js).
+async function _mileWhoPick(id){
+  document.getElementById('_mile-who-ov')?.remove();
+  const p=_mileAddressPending;
+  // By STRING, deliberately: the id arrives out of an onclick attribute, and
+  // getClientById compares with === against a numeric record id, so the
+  // obvious call silently finds nobody and the pin goes nowhere. Every other
+  // picker in this app emits the id unquoted and relies on it being a number;
+  // this one does not have to care what it is.
+  const c=(typeof clients!=='undefined'&&Array.isArray(clients))
+    ?clients.find(x=>x&&String(x.id)===String(id)):null;
+  if(!p||!c)return false;
+  const addr=p.addrLine||_mileAddrLine(p.parts);
+  if(!addr)return false;
+  const found=p.found||null;
+  if(!c.addr){
+    c.addr=addr;c.lat=p.lat;c.lon=p.lng;c.geoAddr=addr;
+  }else{
+    if(!Array.isArray(c.extraAddresses))c.extraAddresses=[];
+    // Already filed, by an earlier tap or an earlier day: keep one card.
+    const had=c.extraAddresses.find(a=>a&&a.addr===addr)||(c.addr===addr?{}:null);
+    if(!had)c.extraAddresses.push({label:(found&&found.name)||'Additional property',
+      addr,lat:p.lat,lon:p.lng,geoAddr:addr});
+    else if(had.addr&&had.lat==null){had.lat=p.lat;had.lon=p.lng;had.geoAddr=addr;}
+  }
+  try{if(typeof saveAll==='function')saveAll();}catch(_e){}
+  // The address just FILED, not the record's primary. On a day too old to
+  // re-derive, _mileNameUnsaved writes client.addr onto the row, and for a
+  // landlord's second rental the primary is the wrong house. Same function,
+  // same one path, handed the property this pin actually is.
+  // The OTHER demand-driven trigger, alongside saveClient (js/clients.js). An
+  // address filed onto an existing client from the day rail never went through
+  // the new-lead form, so nothing else ever asks the county about it, and the
+  // property card for that address would sit empty forever. One lookup, for the
+  // address actually filed, not the client's primary: on a landlord's second
+  // rental those are different houses.
+  if(typeof _lookupPropertyData==='function'){
+    const _pp=(typeof _parseAddrParts==='function')?_parseAddrParts(addr):null;
+    if(_pp&&_pp.street)_lookupPropertyData(c.id,_pp);
+  }
+  await _mileAddressSaved({name:c.name,addr,clientId:c.id});
+  return true;
+}
+function _mileOpenNewClientForm(){
+  const p=_mileAddressPending;
+  if(!p)return false;
+  const parts=p.parts||{street:'',city:'',state:'',zip:''};
+  const found=p.found||null;
   try{if(typeof goPg==='function')goPg('pg-clients');}catch(_e){}
   if(typeof openNewClient==='function')openNewClient();
   const set=(fid,v)=>{const el=document.getElementById(fid);if(el&&v)el.value=v;};
   set('cf-street',parts.street);set('cf-city',parts.city);set('cf-state',parts.state);set('cf-zip',parts.zip);
+  // A business name from the map is a better starting point than a blank box,
+  // and the owner's "the name is his to give" still holds: it is a prefilled
+  // field he can clear, not a decision.
+  if(found&&found.name)set('cf-name',found.name);
   try{if(typeof _updateAddrComputed==='function')_updateAddrComputed();}catch(_e){}
+  return true;
+}
+async function _mileSaveAddressAt(lat,lng,pend){
+  const la=Number(lat),ln=Number(lng);
+  if(!isFinite(la)||!isFinite(ln))return false;
+  _mileAddressPending=Object.assign({which:'to'},pend||{},{lat:la,lng:ln});
+  _mileSaveAskKind(la,ln);
   return true;
 }
 // Door one: an end of a row in the mileage log.
@@ -3082,41 +3868,178 @@ async function _mileSaveAddress(id,which){
 // fact the mileage log shows as "Unsaved address", so it gets the same
 // button, and neither screen owns the behaviour.
 //
-// A rail stop carries its leg id with ':sN' on it (js/geo-derive.js writes
-// both), which names the trip it belongs to AND which of that trip's stops
-// this is, so the coordinate comes straight off the leg's viaStops. No new
-// lookup, no second source of truth: the leg the mileage log is already
-// drawing is the leg this reads.
+// A rail stop is an ARRIVAL, so it carries the id of the drive that ended
+// there (js/geo-derive.js, the identity rule) and the leg lists the same key
+// beside the coordinate on viaStops. Matching on the key rather than counting
+// positions is the point: a leg drops an interior segment too short to be a
+// drive, and the count would then open the lead form at the wrong stop.
+// No new lookup, no second source of truth: the leg the mileage log is
+// already drawing is the leg this reads.
+// ── WHERE A RAIL STOP ACTUALLY IS ────────────────────────────────────────
+// Split out of _mileSaveStopAddress 2026-09-20 so the RAIL can ask the same
+// question before it draws the button. A chip that resolves to nothing is a
+// dead control, and three of them were logged in one minute (error_log 202,
+// 203, 204, again as 207-209 on the next version) while the owner sat there
+// tapping: "I'm hitting save this address and it's a dead button."
+//
+// A stop reaches this by one of three shapes, and the old code knew two:
+//
+//   1. An INTERIOR stop of a collapsed leg. The deriver lists it on viaStops
+//      with its own key, which is what the first arm matches.
+//   2. The legacy ':sN' key, from a day too old to re-derive.
+//   3. The leg's own DESTINATION, keyed 'd-' + the leg id, which is the
+//      identity rule every dwell row follows (js/geo-derive.js) and by far
+//      the commonest shape on the rail: any drive that simply ENDED
+//      somewhere nobody saved. It is not on viaStops (nothing was collapsed
+//      through) and it carries no ':sN', so it fell past both arms into
+//      `return false` and the chip did nothing, silently, for ever.
+//
+// Its coordinate is the leg's toCoord, which is the same coordinate door one
+// already hands to the same function for `which:'to'` (_mileSaveAddress), so
+// this is the existing answer reached by the other key rather than a second
+// idea of where the stop is (7.3).
+//
+// Returns null when the stop cannot be placed at all, which is a real state:
+// a drive with both ends unsaved writes no mileage leg (rules 18 and 20), so
+// there is no row anywhere holding a coordinate for it. The rail asks first
+// and draws no chip, instead of offering one that cannot work.
+function _mileStopCoord(clientKey,day){
+  const key=String(clientKey||'');
+  if(!key)return null;
+  const list=(typeof mileage!=='undefined'?mileage:[]);
+  const on=x=>x&&(!day||x.date===day);
+  const out=(r,c)=>(r&&c&&c.lat!=null&&(c.lng!=null||c.lon!=null))
+    ?{lat:c.lat,lng:c.lng!=null?c.lng:c.lon,legKey:r.legKey||r.id,date:r.date}:null;
+  // 1. An interior stop, named on the leg that collapsed through it.
+  let r=list.find(x=>on(x)&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>v&&v.key===key));
+  if(r)return out(r,r.viaStops.find(v=>v&&v.key===key));
+  // 2. The leg's own destination: 'd-' + the leg id.
+  const d=/^d-(.+)$/.exec(key);
+  if(d){
+    r=list.find(x=>on(x)&&String(x.legKey||x.id)===d[1]);
+    if(r)return out(r,r.toCoord);
+  }
+  // 3. The legacy ':sN' shape. Position is all there is, so position it is.
+  const m=/^(.*):s(\d+)$/.exec(key);
+  if(!m)return null;
+  const ix=Number(m[2]);
+  r=list.find(x=>on(x)&&String(x.legKey||x.id)===m[1]);
+  if(!r)return null;
+  // viaCoord is the same stop on an older row written before the array
+  // existed, so a day nobody has re-derived yet still answers its first
+  // stop instead of doing nothing.
+  return out(r,(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null);
+}
 async function _mileSaveStopAddress(clientKey,day){
-  const m=/^(.*):s(\d+)$/.exec(String(clientKey||''));
-  if(!m)return false;
-  const legKey=m[1],ix=Number(m[2]);
-  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>x&&String(x.legKey||x.id)===legKey&&(!day||x.date===day));
-  if(!r)return false;
-  // viaStops is the answer; viaCoord is the same stop on an older row
-  // written before the array existed, so a day nobody has re-derived yet
-  // still answers its first stop instead of doing nothing.
-  const c=(Array.isArray(r.viaStops)&&r.viaStops[ix])||(ix===0&&r.viaCoord)||null;
+  const c=_mileStopCoord(clientKey,day);
   if(!c)return false;
   // WHICH stop, not just which leg: the fallback below names one rail row and
-  // a leg can carry several.
-  return _mileSaveAddressAt(c.lat,c.lng!=null?c.lng:c.lon,{legKey:r.legKey||r.id,day:r.date,which:'to',stop:ix});
+  // a leg can carry several. The row's own key rides along so naming it never
+  // has to rebuild one.
+  return _mileSaveAddressAt(c.lat,c.lng,{legKey:c.legKey,day:c.date,which:'to',stopKey:String(clientKey||'')});
 }
 // Called by saveClient once the new client's address has been geocoded (so
 // the fence exists). Re-derives the traced day; the real leg lands under the
 // same journey id and the traced row is replaced by geo_replace_day.
+// Called by BOTH arms of the chooser: saveClient hands a client, savePlace
+// hands a place. All this needs from either is an address, so it takes either.
+// ── A SAVE IS FINISHED EVEN IF THE APP IS NOT (owner 2026-09-24) ─────────
+// Jack's 23 September, 4:20 pm: the customer record landed at 4:20:17, then
+// his login failed to refresh at 4:20:32 and the app rebooted at 4:20:42,
+// and the rest of this chain died in memory with the old page. The time row
+// was never named, so it still read "Unsaved address" and he went back into
+// its menu, which is where the stop became Personal. The chain is written
+// down before it starts and replayed on the next boot until it completes.
+const _MILE_SAVE_KEY='zp3_mile_save_pending';
+const _MILE_SAVE_MAX_AGE_MS=6*3600000;
+function _mileSavePendingWrite(p,client){
+  try{
+    localStorage.setItem(_MILE_SAVE_KEY,JSON.stringify({
+      uid:(window._supaUser&&_supaUser.id)||null,at:Date.now(),
+      p:{stopKey:p.stopKey||'',day:p.day||'',legKey:p.legKey||'',which:p.which||'to',
+         lat:Number(p.lat),lng:Number(p.lng)},
+      client:{id:client.id!=null?client.id:null,name:String(client.name||''),addr:String(client.addr||'')}
+    }));
+  }catch(_e){}
+}
+function _mileSavePendingClear(){try{localStorage.removeItem(_MILE_SAVE_KEY);}catch(_e){}}
+// Boot. A save another login started is not this login's to finish, and a
+// save from long ago is history, not a pending action: both are dropped.
+async function _mileResumeAddressSave(){
+  let s=null;
+  try{s=JSON.parse(localStorage.getItem(_MILE_SAVE_KEY)||'null');}catch(_e){s=null;}
+  if(!s||!s.p||!s.client){_mileSavePendingClear();return false;}
+  const me=(window._supaUser&&_supaUser.id)||null;
+  if(!me||s.uid!==me||!(Date.now()-Number(s.at)<_MILE_SAVE_MAX_AGE_MS)){_mileSavePendingClear();return false;}
+  if(!s.client.addr){_mileSavePendingClear();return false;}
+  _mileAddressPending=Object.assign({},s.p);
+  return _mileAddressSaved(s.client);
+}
 async function _mileAddressSaved(client){
   const p=_mileAddressPending;
   if(!p||!client||!client.addr)return false;
   _mileAddressPending=null;
+  _mileSavePendingWrite(p,client);
   try{
-    if(typeof _geoDeriveDayNow==='function')await _geoDeriveDayNow(p.day,null);
+    // ── THE ROW IS NAMED FIRST (owner 2026-09-24) ────────────────────────
+    // The name is what the person is waiting to see, and it is one write. The
+    // re-derive behind it can take several seconds against the tape and the
+    // server, and until 2026-09-24 the naming waited for it, which is the
+    // window Jack's reboot fell into. A derive that resolves the stop writes
+    // the same name under the same key, so going first costs nothing.
+    await _mileTellTheRail(p,client);
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
+    const derived=(typeof _geoDeriveDayNow==='function')?await _geoDeriveDayNow(p.day,null):null;
     // A day the deriver could not rebuild leaves the row exactly as it was,
     // so ask the row itself whether the answer landed rather than trusting
     // the derive to have run. This also covers the day it DID rebuild and
     // still could not reach the end, which is the same problem for the
     // person looking at it.
     if(_mileStillUnsaved(p))await _mileNameUnsaved(p,client);
+    // ── AND THE RAIL IS TOLD EITHER WAY (owner 2026-09-21) ───────────────
+    // "I just saved this top address as Logan Sample and guess what, it
+    // didn't update."
+    //
+    // It did not, and the branch above is why. _mileNameUnsaved is the only
+    // thing that ever named the rail's rows, and it runs ONLY when the derive
+    // could not resolve the stop. On a phone with a CoreMotion tape the
+    // derive DOES resolve it, names the mileage leg, and returns; the
+    // timesheet row keeps source 'unsaved' and a null dest_place and there is
+    // nothing left to tell it. His 10:48 stop, measured: the leg's `to`
+    // became "6800 SW Tenth Ave" at 23:57:21 and the time row was never
+    // touched at all.
+    //
+    // The flow test could not see it because a CI runner has no tape, so the
+    // derive always bails there and the save always takes the other branch.
+    // An offline test even asserts this one is correct ("a day that DID
+    // rebuild is left entirely alone"), and it WAS, until the phone stopped
+    // writing time rows on 2026-09-19.
+    //
+    // So telling the rail is no longer a consolation for a failed derive. It
+    // is what saving an address means, and it happens on both branches.
+    // Nothing here stamps fixed_at, for the reason _mileNameStopRow already
+    // gives at length: a rebuild must stay free to correct these rows.
+    //
+    // Already told once, before the derive. Told AGAIN only when the derive
+    // actually rebuilt the day, since that is the only thing that can have
+    // rewritten the row in between; a day it refused changed nothing.
+    if(derived)await _mileTellTheRail(p,client);
+    // AND TELL THE SCREEN HE IS LOOKING AT (owner 2026-09-20: "adding people
+    // in the day rail didn't update in real time"). The save was landing: the
+    // derive ran, the row changed in the database, and the Time Log went on
+    // drawing "Unsaved address" until something else happened to repaint it.
+    // The rail is where he tapped Save from, so it is the screen that owes
+    // him the answer. Same door the supply-run answer already uses
+    // (_supplyRunAnswerTime), not a second refresh path (7.3).
+    //
+    // `true` is the no-debounce arm (owner 2026-09-20: "the onsite didn't
+    // immediately flip to the name I assigned, I want that"). The 2.5s wait
+    // is there to coalesce a realtime burst; this is one tap whose whole
+    // point is the name appearing, and the derive it follows has already
+    // landed on the server.
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
+    try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
+    _mileSavePendingClear();
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
   }catch(_e){}
@@ -3168,29 +4091,244 @@ async function _mileNameUnsaved(p,client){
   // things with addresses saved should update any totals").
   if(!r.unsavedFrom&&!r.unsavedTo&&!r.unsavedVia)delete r.addressUnknown;
   r.fixedAt=new Date().toISOString();
+  // ── ONE PLACE, EVERY END OF IT (owner 2026-09-20) ────────────────────────
+  // "If I save an unsaved address the day rail and mileage SHALL populate and
+  // update in real time."
+  //
+  // This named the ONE leg the Save button was about, which is the leg that
+  // ARRIVED. A stop has two sides: the flow test caught it on a day that ran
+  // shop -> stop -> elsewhere, where the row above the stop took the name and
+  // the row below it still read "Unsaved address ->", and its miles stayed
+  // uncountable because addressUnknown never came off.
+  //
+  // A place is a place whichever direction you were going, so every unsaved
+  // end standing at the same coordinate on that day is the same place and
+  // gets the same name. Matched on the coordinate rather than on leg order:
+  // the deriver writes the dwell's own position into both legs, so they agree
+  // exactly, and a position cannot be knocked out of step by a leg the
+  // deriver dropped.
+  // Includes r itself: the drive that ARRIVED carries the stop as its own
+  // dest_place, and the rail draws a drive from both its ends, so leaving it
+  // out left "Shop -> Unsaved address" sitting above a stop that had just
+  // been named.
+  _mileNameSameStop(r,p,addr,nm);
   try{saveAll();_flushSaveNow();}catch(_e){}
-  await _mileNameStopRow(p,client);
   try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+  try{if(typeof renderMileage==='function')renderMileage();}catch(_e){}
   return true;
 }
-// The Time Log rail's own row for that same stop. The deriver writes it with
-// no name on purpose (an unsaved stop is never given one) and keeps it out of
-// every total; naming it is the same answer `geo_answer_visit` records for a
-// held visit, so it lands in the same shape: the client's name, source
-// 'client', and the fixed_at stamp that makes it a person's answer.
+// ── WHAT THE RAIL IS TOLD, WHOEVER NAMED THE BOOK ─────────────────────────
+// The pin is p.lat/p.lng: the coordinate the Save button resolved before any
+// of this ran, so it is the same answer whether the deriver named the legs or
+// _mileNameUnsaved did. Every leg on that day standing at the pin has its own
+// rail row, and a drive's row carries BOTH ends, so which end is at the pin
+// decides which column is written.
+//
+// ONLY FROM THE RAIL, which `stopKey` is the mark of. A Save pressed on the
+// MILEAGE LOG names a leg end and nothing else: that screen has no rail row in
+// hand and writing one from it would be a second author for a row the deriver
+// owns. That rule has its own test.
+async function _mileTellTheRail(p,client){
+  if(!p||!p.stopKey)return false;
+  const nm=String((client&&(client.name||client.addr))||'').trim();
+  if(!nm)return false;
+  const lat=Number(p.lat),lng=Number(p.lng);
+  const hits=[];
+  if(isFinite(lat)&&isFinite(lng)){
+    const pin={lat,lng};
+    (typeof mileage!=='undefined'&&Array.isArray(mileage)?mileage:[]).forEach(x=>{
+      if(!x||(p.day&&x.date!==p.day))return;
+      if(_mileSameSpot(pin,x.toCoord))hits.push({row:x,which:'to'});
+      else if(_mileSameSpot(pin,x.fromCoord))hits.push({row:x,which:'from'});
+    });
+  }
+  if(hits.length)await _mileNameTimeEnds(hits,nm);
+  await _mileNameStopRow(p,client);
+  return true;
+}
+// The coordinate of the end just named on `r`, which is the pin every other
+// row has to be compared against.
+function _mileNamedEndCoord(r,p){
+  if(!r)return null;
+  const c=(p&&p.which==='from')?r.fromCoord
+    :(Array.isArray(r.viaStops)&&r.viaStops.length&&p&&p.which!=='to')?r.viaStops[0]
+    :r.toCoord;
+  const lat=Number(c&&(c.lat!=null?c.lat:c.latitude));
+  const lng=Number(c&&(c.lng!=null?c.lng:c.lon));
+  return (isFinite(lat)&&isFinite(lng))?{lat,lng}:null;
+}
+// ~180ft. The two ends of one stop carry the SAME written coordinate, so this
+// only has to survive a rounding difference, not decide whether two nearby
+// places are one. Deliberately tighter than any fence radius for that reason.
+const _MILE_SAME_STOP_DEG=0.0005;
+function _mileSameSpot(a,b){
+  if(!a||!b)return false;
+  const lat=Number(b.lat!=null?b.lat:b.latitude),lng=Number(b.lng!=null?b.lng:b.lon);
+  return isFinite(lat)&&isFinite(lng)&&
+    Math.abs(a.lat-lat)<=_MILE_SAME_STOP_DEG&&Math.abs(a.lng-lng)<=_MILE_SAME_STOP_DEG;
+}
+// Every OTHER unsaved end on that day standing at the same pin. Returns what
+// it named, so the time rows can be told the same thing.
+function _mileNameSameStop(r,p,addr,nm){
+  const pin=_mileNamedEndCoord(r,p);
+  if(!pin)return [];
+  const day=r.date,out=[];
+  (typeof mileage!=='undefined'&&Array.isArray(mileage)?mileage:[]).forEach(x=>{
+    if(!x||x===r||x.date!==day||!x.addressUnknown)return;
+    let hit='';
+    if(x.unsavedFrom&&_mileSameSpot(pin,x.fromCoord)){
+      x.from=addr||nm;x.from_name=nm;x.unsavedFrom=false;hit='from';
+    }else if(x.unsavedTo&&_mileSameSpot(pin,x.toCoord)){
+      x.to=addr||nm;x.to_name=nm;x.unsavedTo=false;hit='to';
+    }else if(x.unsavedVia&&Array.isArray(x.viaStops)&&x.viaStops.some(v=>_mileSameSpot(pin,v))){
+      x.via_name=nm;x.via_addr=addr;x.unsavedVia=false;hit='via';
+    }
+    if(!hit)return;
+    // Same rule as the row above: the miles only count once NOTHING on the
+    // leg is still nameless.
+    if(!x.unsavedFrom&&!x.unsavedTo&&!x.unsavedVia)delete x.addressUnknown;
+    x.fixedAt=new Date().toISOString();
+    out.push({row:x,which:hit});
+  });
+  return out;
+}
+// The rail's own row for each of those legs, so the screen agrees with the
+// book. A drive's row is keyed by its leg id and carries BOTH ends, so which
+// end was named decides which column is written.
+async function _mileNameTimeEnds(list,nm){
+  try{
+    if(!window._supa||!window._supaUser||!nm)return false;
+    const jobs=[];
+    (list||[]).forEach(h=>{
+      const key=String((h.row&&(h.row.legKey||h.row.id))||'');
+      if(!key||h.which==='via')return;
+      const patch=h.which==='from'?{origin_place:nm}:{dest_place:nm};
+      jobs.push(Promise.resolve(_supa.from('job_time_entries').update(patch)
+        .eq('employee_user_id',_supaUser.id).eq('client_key',key)).catch(()=>null));
+    });
+    if(jobs.length)await Promise.all(jobs);
+    return true;
+  }catch(_e){return false;}
+}
+// The Time Log rail's own row for that same stop, on a day nothing can
+// rebuild. The deriver writes the row with no name on purpose (an unsaved
+// stop is never given one) and keeps it out of every total; once the address
+// is a client, a day with tape left re-derives and the deriver names it
+// itself, under the same key, because the stop and the visit are the same
+// arrival. This is for the day past the tape's seven, where that will never
+// happen: it writes the name onto the row that is already there.
+//
+// NO fixed_at, and that is the whole point (owner 2026-09-14: "saving an
+// address is creating a CLIENT, not hand-correcting a row"). The stamp used
+// to be how this work survived a rebuild, and it is what made Jack's 13:14
+// stop permanent: the sweep skips a stamped row, so when the deriver settled
+// on 13:24:58 and wrote the arrival under its own key, the 13:14 guess could
+// not be retired and sat on top of both the drive and the visit. The key is
+// the protection now. A stamp here would also freeze the row's TIMES, since
+// geo_replace_day reads a fixed row's own span back over the derive, so the
+// one thing a rebuild is for could never reach it.
 async function _mileNameStopRow(p,client){
-  if(p.stop==null||!window._supa||!window._supaUser)return false;
+  // The rail row's own key, exactly as it was read off the row. Rebuilding it
+  // from a leg id and a position is how a key shape gets a second author.
+  const key=p&&p.stopKey?String(p.stopKey):'';
+  if(!key||!window._supa||!window._supaUser)return false;
   const nm=String(client.name||client.addr||'').trim();
   if(!nm)return false;
   try{
     const{error}=await _supa.from('job_time_entries')
-      .update({dest_place:nm,source:'client',fixed_at:new Date().toISOString()})
+      .update({dest_place:nm,source:'client'})
       .eq('employee_user_id',_supaUser.id)
-      .eq('client_key',String(p.legKey)+':s'+p.stop);
+      .eq('client_key',key);
     if(error)return false;
   }catch(_e){return false;}
-  try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+  try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e){}
   return true;
+}
+// ── CORRECTING AN ADDRESS CORRECTS WHAT IT ALREADY WROTE (owner 2026-09-22)
+// "If you edit the address make the change there to."
+//
+// Jack put Pepe Miranda in at 6912 SW 17th St; the house is 6908. Fixing the
+// client record moved the pin and the property facts and left four days of
+// work still saying 6912, because a row's place text is a SNAPSHOT: the
+// deriver writes origin_place, dest_place and the mileage leg's from/to at
+// derive time and nothing reads the client record again. Only a day still
+// inside the tape's seven would ever have re-derived its way to the new
+// street, and the days that matter are older than that.
+//
+// This is NOT a reconciler and not a second opinion about the day (17). It
+// decides nothing: it takes one label a person just changed and writes the
+// new spelling everywhere the old one is stored, which is the same job
+// _mileNameTimeEnds does when an unsaved stop is finally given a name, in the
+// same shape. The times, the ids, the miles and the coordinates are untouched.
+//
+// Matched on the EXACT old name, never a fuzzy street match: the name the
+// deriver wrote is "Pepe Miranda (6912 SW 17th St)", and a row that says
+// something else (a client renamed since) is describing a different label and
+// is left alone rather than guessed at.
+function _mileRenamePlaceLocal(oldName,newName,oldAddr,newAddr){
+  const rows=(typeof mileage!=='undefined'&&Array.isArray(mileage))?mileage:[];
+  const on=String(oldName||'').trim(),nn=String(newName||'').trim();
+  const oa=String(oldAddr||'').trim(),na=String(newAddr||'').trim();
+  const nameMoved=!!(on&&nn&&on!==nn),addrMoved=!!(oa&&na&&oa!==na);
+  if(!nameMoved&&!addrMoved)return 0;
+  let n=0;
+  rows.forEach(r=>{
+    if(!r)return;
+    let hit=false;
+    // The leg's ends carry the ADDRESS (l.from.addr, geo-derive.js), which is
+    // what the mileage log prints and what an IRS export has to be right about.
+    if(addrMoved){
+      if(String(r.from||'').trim()===oa){r.from=na;hit=true;}
+      if(String(r.to||'').trim()===oa){r.to=na;hit=true;}
+    }
+    // from_name / to_name / segEnds carry the FENCE name, which is what the
+    // rail titles a drive with.
+    if(nameMoved){
+      if(String(r.from_name||'').trim()===on){r.from_name=nn;hit=true;}
+      if(String(r.to_name||'').trim()===on){r.to_name=nn;hit=true;}
+      // client_name is the DESTINATION fence's name again (geo-derive.js), the
+      // third place one label is stored on a leg and the one this pass missed
+      // on its first outing: two of Jack's rows still read 6912 in the client
+      // column after both ends had been corrected.
+      if(String(r.client_name||'').trim()===on){r.client_name=nn;hit=true;}
+      if(Array.isArray(r.segEnds))r.segEnds.forEach(se=>{
+        if(!se)return;
+        if(String(se.from||'').trim()===on){se.from=nn;hit=true;}
+        if(String(se.to||'').trim()===on){se.to=nn;hit=true;}
+      });
+    }
+    if(hit)n++;
+  });
+  return n;
+}
+// The rail's own rows, which live server-side. Scoped to the account and left
+// to RLS beyond that: the contractor's policy covers every row under his
+// business, which is the login that fixes a customer's address.
+async function _mileRenamePlaceRows(oldName,newName){
+  const on=String(oldName||'').trim(),nn=String(newName||'').trim();
+  if(!on||!nn||on===nn)return false;
+  if(!window._supa||!window._supaUser)return false;
+  const cid=(typeof _geoCid==='function')?_geoCid():_supaUser.id;
+  try{
+    await Promise.all([
+      Promise.resolve(_supa.from('job_time_entries').update({origin_place:nn})
+        .eq('contractor_user_id',cid).eq('origin_place',on)).catch(()=>null),
+      Promise.resolve(_supa.from('job_time_entries').update({dest_place:nn})
+        .eq('contractor_user_id',cid).eq('dest_place',on)).catch(()=>null)
+    ]);
+  }catch(_e){return false;}
+  return true;
+}
+async function _mileRenamePlace(oldName,newName,oldAddr,newAddr){
+  const n=_mileRenamePlaceLocal(oldName,newName,oldAddr,newAddr);
+  if(n){
+    try{saveAll();}catch(_e){}
+    try{if(typeof _flushSaveNow==='function')_flushSaveNow();}catch(_e){}
+    try{if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();}catch(_e){}
+  }
+  const ok=await _mileRenamePlaceRows(oldName,newName);
+  if(n||ok){try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e){}}
+  return n;
 }
 function openMileageEdit(id){
   // Ids arrive quoted from the inline handler (_milIdArg); a numeric id still

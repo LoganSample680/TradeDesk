@@ -188,6 +188,78 @@ const STATE_DEPOSIT_CAP={
   WY:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
 };
 
+// ── WHAT A HOME IMPROVEMENT CONTRACT MUST SAY ABOUT PRICE ──────────────────
+//
+// Owner 2026-09-17: a time-and-materials proposal should be able to carry
+// nothing but a scope and a signature, "but those should only be required in
+// the states that require it."
+//
+// So this is the list of states that require something, and nowhere else.
+// Kansas is not in it, and neither are 21 other states that have no home
+// improvement contract statute at all. The full survey, with the operative
+// phrase and the confidence level for every state, is in
+// docs/home-improvement-price-rules.md.
+//
+// 'block'  the state's regulator is on record that a time-and-materials home
+//          improvement contract is not permitted. California only: B&P
+//          7159(d)(5) and 7159.5(a)(1) require a dollars-and-cents contract
+//          amount, CSLB says contractors "are not allowed to use 'time and
+//          materials' or 'cost plus' contracts", and violating 7159.5 is a
+//          misdemeanor.
+// 'cap'    a total dollar figure is required, and a guaranteed maximum
+//          satisfies it. Two of these write the cap into the statute
+//          themselves: Pennsylvania wants the initial estimate, a ceiling of
+//          10% above it, and the total potential cost in actual dollars
+//          (73 P.S. 517.7(a)(8)(ii)); Virginia wants "a cap that the total
+//          dollar amount cannot exceed".
+// 'warn'   the arithmetic of the state's wording cannot be satisfied by an
+//          open-ended T&M, but no board, AG opinion or case has said so. Say
+//          it out loud, never block. Getting this wrong the other way would
+//          stop a man working legally in his own state.
+//
+// A correction worth keeping: a widely repeated list names California,
+// Illinois, Massachusetts, Nevada, Pennsylvania and Tennessee as the six
+// "dollars and cents" states. Four of the six are wrong. Tennessee's "agreed
+// upon consideration" is the LOOSEST wording in the survey, which is why it is
+// absent here.
+const STATE_PRICE_RULE = {
+  CA:{rule:'block', statute:'B&P 7159(d)(5)', note:'California requires a contract amount in dollars and cents, and the CSLB says time-and-materials home improvement contracts are not allowed.'},
+  AZ:{rule:'cap',   statute:'A.R.S. 32-1158',        note:'Arizona wants the total dollar amount to be paid, including taxes.'},
+  HI:{rule:'cap',   statute:'HAR 16-77-80',          note:'Hawaii wants the exact dollar amount due under the contract.'},
+  NV:{rule:'cap',   statute:'NRS 624.940',           note:'Nevada wants the total amount to be paid, including taxes.'},
+  IL:{rule:'cap',   statute:'815 ILCS 513/15',       note:'Illinois wants the total cost.'},
+  MA:{rule:'cap',   statute:'MGL c.142A 2(a)(5)',    note:'Massachusetts wants the total amount agreed to be paid.'},
+  IN:{rule:'cap',   statute:'IC 24-5-11-10',         note:'Indiana wants the contract price.'},
+  VA:{rule:'cap',   statute:'18 VAC 50-22-260',      note:'Virginia requires a cost-plus contract to state a cap the total cannot exceed.'},
+  PA:{rule:'cap',   statute:'73 P.S. 517.7(a)(8)',   note:'Pennsylvania allows time and materials, and requires the estimate, a ceiling of 10% above it, and the total potential cost in dollars.'},
+  ME:{rule:'cap',   statute:'10 M.R.S. 1487(4)',     note:'Maine wants the total contract price or a cost-plus formula.'},
+  LA:{rule:'warn',  statute:'La. R.S. 37:2175.1',    note:'Louisiana appears to want the total amount agreed to be paid. Not confirmed against the statute text.'},
+};
+// What a job at this address forces onto the proposal. Unknown or absent state
+// means nothing is forced, which is the correct answer for most of the country.
+function statePriceRule(state){
+  const r = STATE_PRICE_RULE[state ? String(state).toUpperCase() : ''];
+  return r || {rule:'none', statute:'', note:''};
+}
+
+// THE CAP WHEN THERE IS NO CONTRACT PRICE (T&M rate sheet, _tmRateOnly).
+//
+// _maxDeposit ends in Math.min(max, amt), which is right: a deposit can never
+// exceed what the job costs. On a rate sheet the job has no stated cost, so
+// that clamp is against 0 and it wipes out a mobilization deposit the
+// contractor deliberately asked for.
+//
+// A percentage arm genuinely cannot be evaluated without a contract price, so
+// it does not apply. A FLAT arm still does, and that is the legally meaningful
+// half here (California's cap, for one, is $1,000 or 10% whichever is less: the
+// $1,000 stands on its own). Infinity means no dollar ceiling in this state.
+function _maxDepositNoTotal(state){
+  const cap=STATE_DEPOSIT_CAP[state?String(state).toUpperCase():''];
+  if(!cap||cap.rule==='none')return Infinity;
+  if(cap.rule==='pct')return Infinity;          // nothing to take a percent of
+  return (cap.flat!=null)?cap.flat:Infinity;    // 'flat' and the flat half of 'lesser'
+}
+
 // Returns the maximum legal deposit dollar amount for a state + contract amount.
 // 'lesser' → min(flat, pct%·amount); 'pct' → pct%·amount; 'flat' → flat;
 // 'none'/unknown → the full contract amount (no statutory cap).

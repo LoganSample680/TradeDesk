@@ -78,14 +78,18 @@
 .tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
   padding:9px 0 0 8px;white-space:nowrap}
 .tl-rail-dur.mute{font-weight:700;color:var(--text3)}
-/* Edit moved onto the row when the entries table left the week view. Right
-   column, under the duration, so it never competes with the clock for the eye
-   and never widens the row. 28px clears the 24px target minimum (2.5.8). */
-.tl-rail-editwrap{display:block;margin-top:4px}
-.tl-rail-edit{min-height:28px;padding:0 9px;border-radius:6px;border:1px solid var(--border2);
-  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11px;font-weight:700;
-  cursor:pointer;white-space:nowrap}
-.tl-rail-edit:hover{border-color:var(--ink)}
+/* ON THE LOG, IN NO TOTAL (owner 2026-09-19: "soft grey it out, important to
+   leave it"). An unpaid row is a real thing that happened and is not hours
+   anybody is owed: Office minutes, a lunch break, a stop the day could not
+   vouch for. Softened, never hidden, and the colour is the app's own muted
+   text rather than a new one, so it reads the same in both themes. The time,
+   the spine and the menu keep their contrast: the row still has to be
+   findable and tappable. */
+.tl-rail-row[data-unpaid="1"] .tl-rail-body{opacity:.62}
+/* .tl-rail-edit and .tl-rail-editwrap were DELETED 2026-09-13 (7: deleted,
+   never hidden). Edit is the first action in the row menu now, for a manual
+   clock and a tracked row alike, so the right column carries a duration and
+   one button instead of a stack of three. */
 /* A hole is the SHAPE OF A HOLE: dashed line, nothing measured. */
 .tl-rail-row[data-kind="gap"] .tl-rail-spine i{
   background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
@@ -412,3 +416,44 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
    the review so the week can be fixed and submitted again. */
 .tl-wbar-stamp.ok{background:var(--c-green-soft,#E6F4EA);color:var(--c-green-deep,#1B6E3A);border-color:transparent}
 .tl-wbar-stamp.back{background:var(--amber-lt);color:var(--amber);border-color:transparent}
+
+/* ── The row menu (owner 2026-09-13) ──────────────────────────────────────
+   Replaces the three-second hold, which was invisible, absent for VoiceOver,
+   and wired only to manual rows.
+
+   BOXED, AND UNDER THE DURATION, NOT BESIDE IT (owner 2026-09-13, on his own
+   rail: "looks disorganized"). It shipped as a bare glyph on the same line as
+   the number, and it cost twice.
+
+   Three loose dots floating at the right edge with nothing around them read
+   as a smudge rather than a control, which is why they were easy to miss on
+   the rows that had them. A 1.5px box is the same border the rail's own chips
+   already wear, so it reads as a button by matching something on the screen
+   that is one.
+
+   And a control on the SAME LINE as the number takes its width from the
+   title. Every drive title on his day is "A to B", the longest strings on the
+   page, and a kebab beside the duration wrapped three of the seven onto a
+   second line. Stacked, the title gets that width back and the rows come out
+   the same height. Both were rendered and compared before this was written.
+
+   32px square rather than the 44px it used to claim: it is a corner target
+   with 6px of gap around it, it clears WCAG 2.5.8's 24px minimum with room,
+   and the old 44px was tall enough to drag the row's own height around. */
+.tl-rail-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:9px 0 0}
+.tl-rail-end .tl-rail-dur{padding:0}
+.tl-rail-more{flex:0 0 auto;width:32px;height:32px;padding:0;
+  border:1.5px solid var(--line-2);border-radius:8px;background:var(--bg-card);
+  color:var(--text3);font-size:15px;line-height:1;cursor:pointer;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.tl-rail-more:hover{border-color:var(--ink);color:var(--text)}
+.tl-rail-more:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.tl-menu-acts{display:flex;flex-direction:column;gap:8px}
+.tl-menu-act{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
+  min-height:52px;padding:10px 13px;border:1.5px solid var(--line-2);background:var(--bg);
+  border-radius:10px;cursor:pointer;font-family:inherit;text-align:left}
+.tl-menu-act:hover{background:var(--bg2)}
+.tl-menu-act.is-danger{border-color:var(--c-red-edge,#e5b4b4)}
+.tl-menu-act.is-danger .tl-menu-act-t{color:var(--c-red-deep,#A32D2D)}
+.tl-menu-act-t{font-size:14px;font-weight:800}
+.tl-menu-act-s{font-size:11px;color:var(--text3);line-height:1.4}

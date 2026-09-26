@@ -204,6 +204,22 @@ test.describe('Timesheet', () => {
       function location_origin_placeholder() { return 'http://localhost:8899/timesheet.html?t=tok_2026-08-23'; }
     });
 
+    // The link binds to the first device that opens it (owner 2026-09-19), a
+    // rule nobody can see from the text message. One sentence says it, and it
+    // sits ABOVE the call to action so the link is still the last thing in
+    // the message and the whole tail stays tappable.
+    test('the text warns that the link opens on one phone only', async () => {
+      await unblock();
+      try {
+        const r = await page.evaluate(async () => _tsSubmit(_tlDrill.wk));
+        expect(r).toContain('This link opens on one phone only, the first one to tap it.');
+        expect(r.indexOf('opens on one phone'), 'above the call to action')
+          .toBeLessThan(r.indexOf('Tap to review'));
+        expect(r.trim().split('\n').pop(), 'and the link is still last')
+          .toMatch(/^https?:\/\/.*timesheet\.html\?t=/);
+      } finally { await reblock(); }
+    });
+
     test('a corrected week says so in the text', async () => {
       await unblock();
       try {

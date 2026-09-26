@@ -56,6 +56,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Park the cloud load. Every fixture here lives in the page's own arrays,
+    // and a background reload (the reconnect probe, a foreground pull) swaps
+    // them for the mock's empty tables. When one landed inside "the drill
+    // opens on the current month" it rendered "No time logged" and left the
+    // month null (midnight clock job, 2026-09-23). Nothing in this file tests
+    // cloud loading; same park as e2e-photo-capture and e2e-geo-permission.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     // Name the business zone: every midnight below is a business midnight now
     // that the day-key helpers follow the business address rather than a
     // hardcoded Central (owner 2026-08-30). Left unset it comes from the
@@ -226,16 +233,47 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.allSameLength).toBe(true);
     });
 
-    test('still-open (currently clocked in) entries are excluded, they belong in the banner, not the history', async () => {
+    // AMENDED 2026-09-15. This used to assert that a running clock is EXCLUDED
+    // from the rows. Owner, looking at a crew member's timesheet on the day he
+    // clocked in at 07:54: "I'm looking at Jack's timesheet and not seeing the
+    // 7:54 am clock in anymore." It had never been there, and _tlRailClocks
+    // says in its own comment that an entry still running "stays an ordinary
+    // row", so this file disagreed with itself and the deleting half won.
+    test('a running clock is a live row on the rail, with no end and no minutes', async () => {
       const r = await page.evaluate(async () => {
-        timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        const st = new Date(Date.now() - 45 * 60000).toISOString();
+        timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: st, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         try {
           const rows = await _timeLogRows(null);
-          return { ok: true, found: rows.some(x => x.rawId === 8990099) };
+          const row = rows.find(x => x.rawId === 8990099);
+          return { ok: true, found: !!row, live: row && row.live, end: row && row.endTime,
+                   mins: row && row.minutes, start: row && row.startTime, src: row && row.source };
         } finally { timeEntries = timeEntries.filter(e => e.id !== 8990099); }
       });
       expect(r.ok).toBe(true);
-      expect(r.found).toBe(false);
+      expect(r.found, 'the clock he punched is on his day').toBe(true);
+      expect(r.live, 'drawn as running, not as a finished shift').toBe(true);
+      expect(r.end, 'no closing cap, because he has not clocked out').toBe(null);
+      expect(r.mins, 'and no minutes, so no total can claim it yet').toBe(0);
+      expect(r.src).toBe('manual');
+    });
+
+    test('a running clock brackets nothing: the blend leaves every other row alone', async () => {
+      // _tlRailClocks is right that a half-open bracket is worse than none.
+      // The live row must therefore never join the clock set, or the rail
+      // would draw a CLOCKED OUT cap at a time nobody clocked out.
+      const r = await page.evaluate(async () => {
+        const st = new Date(Date.now() - 45 * 60000).toISOString();
+        timeEntries.push({ id: 8990098, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: st, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        try {
+          const rows = await _timeLogRows(null);
+          const blended = _tlBlendManual(rows.slice());
+          const row = blended.find(x => x.rawId === 8990098);
+          return { still: !!row, mins: row && row.minutes };
+        } finally { timeEntries = timeEntries.filter(e => e.id !== 8990098); }
+      });
+      expect(r.still, 'it survives the blend').toBe(true);
+      expect(r.mins, 'and still claims nothing').toBe(0);
     });
 
     test('manual entries carry startTime/endTime through for the Clock In / Clock Out columns', async () => {
@@ -1015,22 +1053,169 @@ test.describe('timelog.js: exhaustive coverage', () => {
       window._canViewComp = () => true;
       try {
         const auto = (typeof _tlRailRow === 'function') ? String(_tlRailRow(R({}))) : '';
-        return { auto, hasFix: /\bFix<\/button>/.test(auto), hasEdit: /\bEdit<\/button>/.test(auto) };
+        // AMENDED 2026-09-13 (10.4). This used to read the words off the ROW,
+        // because the control was a chip in the row's right column. It is the
+        // first action in the row menu now (owner: "looks disorganized" at
+        // three stacked controls), so the row carries the flag that says the
+        // action exists and the menu carries the word. Both are checked: the
+        // flag here, the word below, which is more than the old assertion did.
+        const menu = (typeof _tlRowMenu === 'function')
+          ? (() => {
+              document.body.insertAdjacentHTML('beforeend', '<ol>' + auto + '</ol>');
+              const btn = document.body.lastElementChild.querySelector('.tl-rail-more');
+              if (btn) _tlRowMenu(btn);
+              const ov = document.getElementById('_tl-row-menu');
+              const html = ov ? ov.innerHTML : '';
+              if (ov) ov.remove();
+              document.body.lastElementChild.remove();
+              return html;
+            })()
+          : '';
+        return { auto, menu, fixFlag: /data-row-fix="1"/.test(auto),
+                 chip: /tl-rail-edit/.test(auto),
+                 hasFix: /\bFix\b/.test(menu), hasEdit: />Edit</.test(menu) };
       } finally { window._canViewComp = saved; }
     });
     if (out.auto) {
-      expect(out.hasFix, 'the word "Fix" is gone from the rail').toBe(false);
+      expect(out.chip, 'the chip is deleted, not hidden (7)').toBe(false);
+      expect(out.fixFlag, 'the row still says the action exists').toBe(true);
+      expect(out.hasFix, 'the word "Fix" is gone').toBe(false);
       expect(out.hasEdit, 'and the control reads Edit, like a manual clock').toBe(true);
     }
-    // The dialog says the same thing the manual one does.
-    const src = await page.evaluate(() => String(_openFixAutoEntry));
-    expect(src).toContain('Edit time entry');
-    expect(src).not.toContain('Fix clock times');
-    expect(src).toContain('>Start</label>');
-    expect(src).toContain('>End</label>');
+    // AMENDED 2026-09-14 (10.4). This read the tracked dialog's source and
+    // checked it said the same things the manual one did, because there were
+    // two of them and keeping their words in step was a standing hazard. They
+    // are one function now, so "the same" is true by construction and reading
+    // the source proves nothing about it. What is still worth pinning is the
+    // WORDS themselves, so this asserts them on the merged function.
+    // RENDERED, not read off the source. The two fields are built by a helper
+    // now, so the old substring check would have passed on a function that
+    // drew nothing at all. Opening it proves the labels reach the screen.
+    const dlg = await page.evaluate(async () => {
+      const id = 7770001;
+      timeEntries.push({ id, job_id: null, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z',
+        end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null,
+        logged_by_name: 'Owner (me)', open: false });
+      try {
+        await _tlEditEntry('manual', id);
+        const ov = document.querySelector('.zmodal-overlay');
+        const html = ov ? ov.innerHTML : '';
+        if (ov) ov.remove();
+        return html;
+      } finally { timeEntries = timeEntries.filter(e => e.id !== id); }
+    });
+    expect(dlg).toContain('Edit time entry');
+    expect(dlg).not.toContain('Fix clock times');
+    expect(dlg).toContain('>Start</label>');
+    expect(dlg).toContain('>End</label>');
+    // And there is genuinely only one: the two old names are gone, not
+    // wrappers left behind (7).
+    const gone = await page.evaluate(() => ({
+      openEdit: typeof window._openEditTimeEntry,
+      openFix: typeof window._openFixAutoEntry,
+      saveEdit: typeof window._saveEditedTimeEntry,
+      saveFix: typeof window._saveFixedAutoEntry,
+    }));
+    expect(gone).toEqual({ openEdit: 'undefined', openFix: 'undefined',
+      saveEdit: 'undefined', saveFix: 'undefined' });
   });
 
-  test.describe('_tlCanFixAuto / _openFixAutoEntry', () => {
+  // ── THE BUG THE MERGE FIXED (owner 2026-09-14) ───────────────────────────
+  // The manual editor prefilled and parsed with getTimezoneOffset, which is
+  // the DEVICE's zone. The tracked one used business time and its comment said
+  // why: "prefilling in the device's zone would hand someone a wrong baseline
+  // to correct from the moment they left the state." Merging them settled it
+  // the tracked one's way for both.
+  //
+  // The clock pin (5.2.2) makes this testable at all: the page's idea of now
+  // is pinned, so business time and the runner's zone are a known distance
+  // apart rather than whatever the board's machine happens to be set to.
+  test.describe('an edited clock is business time, never the device\'s', () => {
+    const open = (id, startIso, endIso) => page.evaluate(async ([i, s2, e2]) => {
+      timeEntries.push({ id: i, job_id: null, date: '2026-01-01', start_time: s2, end_time: e2,
+        minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+      try {
+        await _tlEditEntry('manual', i);
+        const v = {
+          start: document.getElementById('tle-start').value,
+          end: document.getElementById('tle-end').value,
+          expectStart: _tlBizInputValue(s2),
+          expectEnd: _tlBizInputValue(e2),
+        };
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return v;
+      } finally { timeEntries = timeEntries.filter(x => x.id !== i); }
+    }, [id, startIso, endIso]);
+
+    test('a manual clock prefills in business time, like a tracked row always did', async () => {
+      const v = await open(7770010, '2026-01-01T15:00:00.000Z', '2026-01-01T19:30:00.000Z');
+      expect(v.start).toBe(v.expectStart);
+      expect(v.end).toBe(v.expectEnd);
+    });
+
+    test('what it prefills is what it reads back, so a save with no edit changes nothing', async () => {
+      // The round trip is the part that actually protects a payroll record: if
+      // the field is filled in one clock and parsed in another, opening an
+      // entry and pressing Save moves it, without anybody typing a thing.
+      const r = await page.evaluate(async () => {
+        const id = 7770011;
+        const startIso = '2026-01-01T15:00:00.000Z', endIso = '2026-01-01T19:30:00.000Z';
+        timeEntries.push({ id, job_id: null, date: '2026-01-01', start_time: startIso, end_time: endIso,
+          minutes: 270, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+        const realSave = window.saveAll, realRender = window.renderTimeLog;
+        window.saveAll = () => {}; window.renderTimeLog = () => {};
+        try {
+          await _tlEditEntry('manual', id);
+          await _tlSaveEntry('manual', id);
+          const e = timeEntries.find(x => x.id === id);
+          return { start: e.start_time, end: e.end_time, minutes: e.minutes,
+                   wantStart: startIso, wantEnd: endIso };
+        } finally {
+          timeEntries = timeEntries.filter(x => x.id !== id);
+          window.saveAll = realSave; window.renderTimeLog = realRender;
+          document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        }
+      });
+      expect(r.start).toBe(r.wantStart);
+      expect(r.end).toBe(r.wantEnd);
+      expect(r.minutes).toBe(270);
+    });
+
+    test('an overnight manual clock is allowed; a tracked row that crosses midnight is not', async () => {
+      // The one rule that stayed kind-specific, and deliberately. A derived
+      // row is produced a day at a time, so one spanning two days is a typo.
+      // A manual clock on at 10pm and off at 6am is an ordinary call-out.
+      const r = await page.evaluate(() => ({
+        manual: _tlEditValidate(new Date('2026-01-01T04:00:00Z'), new Date('2026-01-01T12:00:00Z'), 'manual'),
+        auto: _tlEditValidate(new Date('2026-01-01T04:00:00Z'), new Date('2026-01-01T12:00:00Z'), 'auto'),
+      }));
+      // 22:00 to 06:00 Central, which is one calendar day apart.
+      expect(r.manual.ok, 'an overnight shift is real work').toBe(true);
+      expect(r.auto.ok, 'a derived row spanning two days is a typo').toBeUndefined();
+      expect(r.auto.msg).toMatch(/same day/);
+    });
+
+    test('over 24 hours is refused for both, which never was kind-specific', async () => {
+      const r = await page.evaluate(() => ({
+        manual: _tlEditValidate(new Date('2026-01-01T00:00:00Z'), new Date('2026-01-02T01:00:00Z'), 'manual'),
+        auto: _tlEditValidate(new Date('2026-01-01T00:00:00Z'), new Date('2026-01-02T01:00:00Z'), 'auto'),
+      }));
+      expect(r.manual.msg).toMatch(/24 hours/);
+      expect(r.auto.msg).toMatch(/24 hours/);
+    });
+
+    test('junk times are refused rather than saved, for either kind', async () => {
+      const r = await page.evaluate(() => [
+        _tlEditValidate(null, null, 'manual'),
+        _tlEditValidate(new Date('x'), new Date('y'), 'manual'),
+        _tlEditValidate(new Date('2026-01-01T10:00:00Z'), new Date('2026-01-01T10:00:00Z'), 'auto'),
+        _tlEditValidate(new Date('2026-01-01T11:00:00Z'), new Date('2026-01-01T10:00:00Z'), 'auto'),
+      ].map(x => !!x.ok));
+      expect(r).toEqual([false, false, false, false]);
+    });
+  });
+
+  test.describe('_tlCanFixAuto / _tlEditEntry on a tracked row', () => {
     const withComp = (fn) => page.evaluate(async (body) => {
       const saved = window._canViewComp;
       window._canViewComp = () => true;
@@ -1093,15 +1278,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }) };
       window.showToast = () => {}; window.renderTimeLog = () => {};
       try {
-        await _openFixAutoEntry(row.id);
-        const opened = !!document.getElementById('tlf-start');
+        await _tlEditEntry('auto',row.id);
+        const opened = !!document.getElementById('tle-start');
         // Typed in BUSINESS time, which is what the dialog reads now and what
         // a person sitting in the truck actually types. Filling the field via
         // the runner's own zone was the same assumption that shifted the
         // owner's log an hour when he flew to Denver.
-        if (endIso) document.getElementById('tlf-end').value = _tlBizInputValue(endIso);
-        await _saveFixedAutoEntry(row.id);
-        const err = document.getElementById('tlf-err');
+        if (endIso) document.getElementById('tle-end').value = _tlBizInputValue(endIso);
+        await _tlSaveEntry('auto',row.id);
+        const err = document.getElementById('tle-err');
         const out = { opened, updates, errShown: !!(err && err.style.display === 'block'), errMsg: err ? err.textContent : '' };
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         return out;
@@ -1621,18 +1806,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // tests/e2e-timelog-team-bars.spec.js ('the 3-second hold moved onto the
   // rail row'). Everything else asserted markup that no longer exists.
 
-  test.describe('_lpDoDelete(type="timelog"): long-press delete dispatch', () => {
-    // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()): see
-    // tests/e2e-features.spec.js "long-press delete is DEV-ONLY". timelog is
-    // the deliberate exception: real contractors/employees use this gesture,
-    // so these tests prove it works WITHOUT the dev bypass flag.
+  // RETARGETED 2026-09-13 (10.4). These proved the long-press DISPATCH reached
+  // deleteTimeEntry without the dev flag. The dispatch is gone: the three-dot
+  // menu calls deleteTimeEntry directly (_tlRowMenuDo, js/timelog.js) and the
+  // hold is deleted, asserted absent in 'every row can be answered'. What
+  // these tests were really protecting is deleteTimeEntry's OWN permission
+  // check, which is still the only thing standing between a crew member and
+  // somebody else's hours, so they now call it the way the menu does.
+  test.describe('deleteTimeEntry: what the row menu reaches, and its own gate', () => {
     test('deletes a manual entry the caller owns, with NO _e2eAllowDelete / dev flag set', async () => {
       const r = await page.evaluate(() => {
         const id = 8990301;
         const savedFlag = window._e2eAllowDelete;
         window._e2eAllowDelete = false; // explicitly simulate a real, non-dev account
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
-        try { _lpDoDelete(String(id), 'timelog'); return { gone: !timeEntries.find(e => e.id === id) }; }
+        try { _tlRowMenuDo('delete', String(id)); return { gone: !timeEntries.find(e => e.id === id) }; }
         finally { window._e2eAllowDelete = savedFlag; timeEntries = timeEntries.filter(e => e.id !== id); }
       });
       expect(r.gone).toBe(true);
@@ -1645,7 +1833,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._employeeRecord = { permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else', open: false });
-        try { _lpDoDelete(String(id), 'timelog'); return { stillThere: !!timeEntries.find(e => e.id === id) }; }
+        try { _tlRowMenuDo('delete', String(id)); return { stillThere: !!timeEntries.find(e => e.id === id) }; }
         finally {
           window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
           timeEntries = timeEntries.filter(e => e.id !== id);
@@ -1656,7 +1844,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
-        try { _lpDoDelete('999999', 'timelog'); return true; } catch (e) { return false; }
+        try { _tlRowMenuDo('delete', '999999'); return true; } catch (e) { return false; }
       });
       expect(r).toBe(true);
     });
@@ -1755,6 +1943,36 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return document.getElementById('tl-open').innerHTML;
       }, OPEN_ID);
       expect(r).not.toContain('LONG SHIFT');
+    });
+
+    // ── THE DAY HAS TO BE ABLE TO END (owner 2026-09-12) ───────────────
+    // An open dwell has no departure, so it runs to this moment forever. At
+    // his own house, past the end of the workday, this card was the day
+    // refusing to end: "On site now" at the shop, all evening, every evening.
+    // The deriver answers it (atHome plus counts:false); this card asks.
+    test('home for the night: no "On site now" card, but a customer still gets one', async () => {
+      const r = await page.evaluate(() => {
+        const keep = window._geoOpenDwell, keepU = window._supaUser, keepE = window._isEmployee;
+        window._isEmployee = false; window._supaUser = { id: 'me-uid' };
+        const since = Date.now() - 200 * 60000;
+        const mk = (over) => Object.assign({ id: 'd-home', name: 'TradeDesk shop', kind: 'shop',
+          sinceTs: since, sinceIso: new Date(since).toISOString(), atHome: true, counts: false,
+          fence: { addr: '2015 SW Randolph Ave' } }, over || {});
+        const paint = (d) => { window._geoOpenDwell = d; _tlRenderOpenBanner();
+          const el = document.getElementById('tl-open'); return { display: el.style.display, html: el.innerHTML }; };
+        try {
+          return { over: paint(mk()), midday: paint(mk({ counts: true })),
+            client: paint(mk({ atHome: false, kind: 'client', name: 'John Doe' })) };
+        } finally { window._geoOpenDwell = keep; window._supaUser = keepU; window._isEmployee = keepE; }
+      });
+      // Nothing else was open, so the card has nothing left to draw at all.
+      expect(r.over.display).toBe('none');
+      expect(r.over.html).toBe('');
+      // Home at lunch is still the workday.
+      expect(r.midday.html).toContain('TradeDesk shop');
+      // Not counting at a customer's address is still worth saying out loud.
+      expect(r.client.html).toContain('John Doe');
+      expect(r.client.html).toContain('NOT COUNTED');
     });
 
     test('employee without payroll permission, cannot see someone else\'s open entry', async () => {
@@ -2096,8 +2314,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // greps the rendered time finds nothing. The ids are the same in every
         // zone, and the ordering rule is about position, not about what the
         // clock says.
+        // AMENDED 2026-09-13 (10.4). This read data-lp-id, the long-press
+        // attribute, purely as a per-row handle. The hold is gone and the
+        // three-dot carries the id now. The CLAIM is untouched: a day reads
+        // top to bottom in the order it happened.
         const ids = [...document.querySelectorAll('.tl-rail-row')]
-          .map(li => li.getAttribute('data-lp-id'));
+          .map(li => { const b = li.querySelector('.tl-rail-more');
+                       return b ? b.getAttribute('data-row-id') : null; });
         timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
         _tlScope = origScope;
         _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
@@ -2165,8 +2388,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r.found, 'the fixture day must land in a week').toBe(true);
       expect(r.html, 'the rail is what renders a day now').toContain('tl-rail-row');
+      // AMENDED 2026-09-13 (10.4). The Edit chip left the row's right column
+      // on the same principle that moved it there in the first place (7.2:
+      // the capability survives, the UI carrying it may not). It is the first
+      // action in the row menu now, so what the rail must still contain is
+      // the menu button; the handler is asserted where it now lives, in the
+      // 'the menu says delete for a manual row' test below.
+      expect(r.html, 'the chip is deleted, not hidden (7)').not.toContain('tl-rail-edit');
       expect(r.html, 'and editing a manual clock has to still be reachable')
-        .toContain('_openEditTimeEntry(');
+        .toContain('tl-rail-more');
     });
 
 
@@ -2376,7 +2606,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
           await renderTimeLog();
           const bannerHtml = document.getElementById('tl-open').innerHTML;
           const listHtml = document.getElementById('tl-list').innerHTML;
-          return { inBanner: bannerHtml.includes('Currently clocked in'), inHistory: listHtml.includes('_openEditTimeEntry(' + id + ')') };
+          // AMENDED 2026-09-14 (10.4). This used to look for the edit handler
+          // in the rendered history, which worked while every editable row
+          // carried an inline onclick. The rail draws one three-dot per row
+          // and builds the menu on the click instead, so there is no handler
+          // in the markup to look for and that test would now pass for the
+          // wrong reason. The entry's own id is the honest thing to search
+          // for: the open entry must not be drawn as a row anywhere.
+          return { inBanner: bannerHtml.includes('Currently clocked in'), inHistory: listHtml.includes(String(id)) };
         } finally { timeEntries = timeEntries.filter(e => e.id !== id); }
       });
       expect(r.inBanner).toBe(true);
@@ -2657,6 +2894,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // scope, is unchanged; only the precondition is now stated rather
         // than inherited.
         setTimeLogScope('me');
+        // And the DRILL level, for exactly the same reason, one level deeper
+        // (CI shard 6 again, 2026-09-15: meShare read false because the page
+        // was sitting on a day, where there is no month chart to carry a Send).
+        // _tlDrill is module state too, this test mutates it itself further
+        // down, and whether a preceding test in the same worker left it on
+        // 'month' depends on how the shard happened to split. The rule under
+        // test, Share follows scope, has nothing to do with the drill level, so
+        // the level is stated rather than inherited.
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
         await renderTimeLog();
         // The page-level Share button is gone (2026-08-30); what follows scope
         // now is the CHART, and its Send rides on it. Read that instead.
@@ -2843,6 +3089,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       setTimeLogYear(2026);
       _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
       await renderTimeLog();
+      if (lv === 'week') {
+        _tlDrill = { level: 'week', mo: '2026-08', wk: '2026-08-16', day: null };
+        await renderTimeLog();
+      }
       if (lv === 'day') {
         // _tlDrillTo fires renderTimeLog() without awaiting it (the same
         // fire-and-forget convention setTimeLogYear uses), so reading straight
@@ -2963,6 +3213,39 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const me = await body('me', 'day');
       expect(me, 'Me used to render nothing at all on a day').toContain('tl-split-bar');
     });
+
+    // ── The week answers "where did it go" too (owner 2026-09-19) ──────────
+    //
+    // Asked of the shared timesheet link, which opens on the WEEK: "does it
+    // include the breakdown of where time went? I'm talking the totals." It
+    // did not. The week printed a total and seven bars, and a client had to
+    // tap into a single day to learn that four of the hours were driving.
+    test('the week names its buckets, not just its total', async () => {
+      const wk = await body('me', 'week');
+      expect(wk, 'the week is the level the shared link opens on').toContain('tl-split-bar');
+      expect(wk, 'and it says which bucket each slice is').toContain('tl-rail-legend');
+      expect(wk, 'above the per-day bars, which stay').toContain('tl-wbar');
+      expect(wk.indexOf('tl-split-bar'), 'breakdown first, then the days')
+        .toBeLessThan(wk.indexOf('tl-wbar'));
+    });
+
+    // The whole point of putting it on the week is that it folds the WEEK. A
+    // bar that only ever showed the selected day's buckets would be the day
+    // view wearing the week's label.
+    test('and folds the whole week, not one day of it', async () => {
+      const r = await page.evaluate((rows) => {
+        const week = rows.slice();
+        const day = rows.filter(x => x.date === '2026-08-20');
+        const names = h => _TL_BUCKETS.map(b => b.label)
+          .filter(l => String(h).includes('>' + l + ' <b>'));
+        return { week: names(_tlRailHeadHtml(week, '', true)),
+                 day: names(_tlRailHeadHtml(day, '', true)) };
+      }, ROWS);
+      expect(r.day, 'Thursday is shop time and nothing else').toEqual(['Shop']);
+      expect(r.week.length, 'the week spent its hours on more than one thing')
+        .toBeGreaterThan(r.day.length);
+      expect(r.week).toEqual(expect.arrayContaining(['Shop', 'Driving']));
+    });
   });
 
   // ── The repair pass is off the critical path (owner report 2026-08-26) ─────
@@ -2995,6 +3278,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.removed).toBe(true);
       expect(r.retimed).toBe(true);
       expect(r.empty, 'null and empty are the same nothing').toBe(true);
+    });
+
+    // ── AND A ROW THAT ONLY CHANGED ITS NAME (owner 2026-09-20) ───────────
+    // "went to go save things on the day rail and the onsite didn't
+    // immediately flip to the name I assigned, I want that."
+    //
+    // The print was a count and a total of minutes. Naming an address changes
+    // neither, so the revalidate fetched the renamed row, printed it, found
+    // the same string and returned without painting. The rail kept saying
+    // "Unsaved address" until something else repainted the page.
+    test('the fingerprint notices a row that only changed its name', async () => {
+      const r = await page.evaluate(() => {
+        const row = (o) => Object.assign({ id: 'a1', minutes: 42, source: 'auto',
+          rawSource: 'unsaved', clientName: 'Unsaved address', addr: '', jobName: '',
+          detail: '', clientKey: 'd-j-1', unpaid: false, dismissed: false,
+          startTime: '2026-09-20T15:00:00.000Z', endTime: '2026-09-20T15:42:00.000Z' }, o || {});
+        const base = [row()];
+        return {
+          named: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ clientName: 'Aldi GUYS' })]),
+          placed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ rawSource: 'client' })]),
+          addressed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ addr: '2950 SW McClure Rd' })]),
+          answered: _tlRowsFingerprint(base) !== _tlRowsFingerprint([row({ dismissed: true })]),
+          // The open dwell's endTime is Date.now() at the moment it was built,
+          // so a print carrying it would differ on EVERY fetch and every
+          // revalidate would repaint, closing whatever the viewer just opened.
+          ticking: _tlRowsFingerprint(base) === _tlRowsFingerprint([row({ endTime: '2026-09-20T15:59:00.000Z' })]),
+          // Two fetches that came back in a different order are the same day.
+          reordered: _tlRowsFingerprint([row(), row({ id: 'a2' })])
+                  === _tlRowsFingerprint([row({ id: 'a2' }), row()]),
+        };
+      });
+      expect(r.named, 'this is the one he reported').toBe(true);
+      expect(r.placed, 'and an unsaved stop becoming a client').toBe(true);
+      expect(r.addressed).toBe(true);
+      expect(r.answered).toBe(true);
+      expect(r.ticking, 'a live row ticking is not a change worth a repaint').toBe(true);
+      expect(r.reordered, 'order is not news').toBe(true);
     });
   });
 
@@ -3038,6 +3358,49 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.spines, 'a missing segment is a visible break in the line').toBe(4);
       expect(r.nodes).toBe(4);
       expect(r.railVars).toBe(true);
+    });
+
+    // ── A RUNNING CLOCK OPENS THE DAY (owner 2026-09-15) ────────────────
+    // "Clock in and clock out has always rendered." It has, for a clock with
+    // both ends. A live one has to read the same way at the top of the rail,
+    // and must never draw a clock-out nobody punched.
+    test('a running clock draws CLOCKED IN and no closing cap', async () => {
+      const r = await page.evaluate(() => {
+        const iso = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+        const day = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : new Date().toISOString().slice(0, 10);
+        const live = { id: 'mlive', rawId: 77001, source: 'manual', date: day, minutes: 0, live: true,
+          personName: 'Jack', personUid: null, clientName: 'General time', addr: '', jobName: '',
+          detail: 'Clocked in, still running', startTime: iso(7, 54), endTime: null };
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([live]);
+        // data-kind, not the words: the rail prints "Clocked in" and the CSS
+        // uppercases it, so a text match would be asserting a stylesheet.
+        return { ins: d.querySelectorAll('li[data-kind="clock-in"]').length,
+                 outs: d.querySelectorAll('li[data-kind="clock-out"]').length,
+                 // Compared against the app's own formatter, never a literal:
+                 // mockAllExternal pins the page clock by an OFFSET (§5.2.2),
+                 // so a hardcoded "7:54" is asserting the pin, not the rail.
+                 hasTime: d.textContent.indexOf(_tlFmtTime(live.startTime)) >= 0 };
+      });
+      expect(r.ins, 'the punch he made').toBe(1);
+      expect(r.outs, 'and not one he did not').toBe(0);
+      expect(r.hasTime).toBe(true);
+    });
+
+    test('a closed clock still draws both caps, exactly as it always has', async () => {
+      const r = await page.evaluate(() => {
+        const iso = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+        const day = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : new Date().toISOString().slice(0, 10);
+        const done = { id: 'mdone', rawId: 77002, source: 'manual', date: day, minutes: 30,
+          personName: 'Jack', personUid: null, clientName: 'General time', addr: '', jobName: '',
+          startTime: iso(6, 10), endTime: iso(6, 40) };
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([done]);
+        return { ins: d.querySelectorAll('li[data-kind="clock-in"]').length,
+                 outs: d.querySelectorAll('li[data-kind="clock-out"]').length };
+      });
+      expect(r.ins).toBe(1);
+      expect(r.outs).toBe(1);
     });
 
     // WCAG 1.4.1: colour is never the only carrier.
@@ -3772,23 +4135,91 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(home[0].minutes).toBe(30);
     });
 
-    test('home-office app time counts, even on a day with no drives at all', async () => {
+    test('home-office app time is on the log, and is not paid time', async () => {
       // Owner, 2026-09-01: "if it's a home office app time still counts."
       // The first cut of the base rule zeroed this: 45 minutes of real
       // paperwork rendered nothing at all, because 'place-office' matched the
       // same /^place/ predicate the raw dwell does. It is not the same thing.
       // place-office and place-load are the home-office rule's OWN output,
       // minutes the app or the motion chip already proved were work.
+      //
+      // AMENDED 2026-09-19 (10.4). This asserted `unpaid === false`, and that
+      // was the right reading of the sentence above while the only question
+      // anybody had asked was whether the row SURVIVES. It does, and that half
+      // is unchanged and still asserted here.
+      //
+      // What changed is what it is worth. Owner, today: "office time should
+      // never add itself to a table as running time ... important to leave it
+      // but need to mark it as unpaid since office time goes a part of the
+      // bill." Overhead, on the bill and in the record, never in the hours
+      // anybody is paid for. So the row keeps its minutes and its place on the
+      // rail, greyed, and _geoIsOffJobSource now says what it is.
       const rows = await rowsFor([
         { employee_user_id: 'me', minutes: 45, source: 'place-office', dest_place: HOME,
           arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T14:45:00Z' },
       ]);
       const mine = rows.filter(r => r.date === '2026-08-28');
       expect(mine.length, 'the paperwork is on the log').toBe(1);
-      expect(mine[0].minutes).toBe(45);
-      expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
+      expect(mine[0].minutes, 'with every minute of it').toBe(45);
+      expect(mine[0].unpaid, 'and it is overhead, not hours owed').toBe(true);
     });
 
+
+    // ── OFFICE TIME IS NEVER RUNNING TIME (owner rule 2026-09-19) ────────
+    test('office minutes stay out of the paid day, the week and the overtime', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { minutes: 480, unpaid: false, date: '2026-08-28', source: 'auto' },
+          { minutes: 45, unpaid: true, date: '2026-08-28', source: 'auto' },
+        ];
+        return { paid: _tlPaidMin(rows), all: rows.reduce((s, x) => s + x.minutes, 0) };
+      });
+      expect(r.paid, 'eight hours, not eight and three quarters').toBe(480);
+      expect(r.all, 'and the office minutes are still there to be seen').toBe(525);
+    });
+
+    test('an office row says what it is and what it is worth, in three words', async () => {
+      const r = await page.evaluate(() => _tlRailRow({ source: 'auto', rawSource: 'place-office',
+        minutes: 45, unpaid: true, clientName: '7402 SW 22nd Ct',
+        startTime: '2026-08-28T22:00:00Z', date: '2026-08-28' }));
+      expect(r).toContain('Office time · unpaid');
+      expect(r, 'and it is greyed, never hidden').toContain('data-unpaid="1"');
+    });
+
+    test('the rail marks an unpaid row so it reads as not counting', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (unpaid) => _tlRailRow({ source: 'auto', minutes: 45, unpaid,
+          clientName: '7402 SW 22nd Ct', startTime: '2026-08-28T20:00:00Z', date: '2026-08-28' });
+        return { office: /data-unpaid="1"/.test(mk(true)), job: /data-unpaid="1"/.test(mk(false)),
+          muted: /tl-rail-dur mute/.test(mk(true)) };
+      });
+      expect(r.office, 'greyed, never hidden').toBe(true);
+      expect(r.job, 'and a paid row is untouched').toBe(false);
+      expect(r.muted).toBe(true);
+    });
+
+    test('a legacy place-home row re-grades the same way, with no rebuild', async () => {
+      // The deriver stopped writing place-home (rule 12) and the rows it wrote
+      // are still on both accounts. This is a question about the SOURCE, so
+      // they answer it too, the moment this ships.
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 30, source: 'place-home', dest_place: HOME,
+          arrived_at: '2026-08-28T02:00:00Z', departed_at: '2026-08-28T02:30:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-27' || r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid).toBe(true);
+    });
+
+    test('a shop row is untouched: shop time always counts (9.11)', async () => {
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 60, source: 'place-supply', dest_place: 'Neenans Co',
+          arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T15:00:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-28');
+      expect(mine.length).toBe(1);
+      expect(mine[0].unpaid, 'a supply run is work').toBe(false);
+    });
 
     test('a supply house is NOT a base: it still ends the day', async () => {
       // The whole point of "the second fence crossing". Coming home is not
@@ -3975,10 +4406,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         A('place', [8, 0], [9, 0], 60),
         A('place', [12, 0], [13, 0], 60),
       ], CLOCK([8, 0], [13, 0], 300));
-      const site = r.rows.find(x => x.raw === 'site');
+      const site = r.rows.find(x => x.raw === 'clock-span');
       expect(site, 'the three hours between the two visits').toBeTruthy();
       expect(site.m).toBe(180);
-      expect(site.detail).toBe('Address not saved');
+      // AMENDED 2026-09-16 (10.4): "Address not saved" asserted an address.
+      // This row has none and never had one. Paid exactly as before.
+      expect(site.detail).toBe('Clocked in, nothing tracked');
       expect(site.unpaid).toBe(false);
     });
 
@@ -3990,7 +4423,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const r = await rowsFor(rows, CLOCK([8, 0], [13, 0], 300));
       expect(r.paid, 'exactly the clock, before and after').toBe(300);
       const clock = r.rows.find(x => x.src === 'manual');
-      const site = r.rows.find(x => x.raw === 'site');
+      const site = r.rows.find(x => x.raw === 'clock-span');
       expect(clock.m + site.m + 120, 'the clock gave up what the site took').toBe(300);
     });
 
@@ -4005,7 +4438,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         CLOCKR(1, [8, 0], [9, 0], 60),
         CLOCKR(2, [12, 0], [13, 0], 60),
       ], DR);
-      expect(r.rows.some(x => x.raw === 'site'), 'lunch is a clock out, not a guess').toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span'), 'lunch is a clock out, not a guess').toBe(false);
       expect(r.rows.some(x => x.raw === 'unaccounted')).toBe(true);
     });
 
@@ -4015,7 +4448,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         AR('place', [8, 0], [9, 0], 60),
         AR('place', [12, 0], [13, 0], 60),
       ], [], DR);
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
       expect(r.rows.find(x => x.raw === 'unaccounted').unpaid).toBe(true);
     });
 
@@ -4025,7 +4458,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // the inference this app must not make.
     test('a clock with nothing tracked under it at all is left alone', async () => {
       const r = await rowsFor([], CLOCK([8, 0], [16, 0], 480));
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
       expect(r.rows.find(x => x.src === 'manual').m).toBe(480);
       expect(r.paid).toBe(480);
     });
@@ -4036,7 +4469,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         A('place', [8, 0], [9, 0], 60),
         A('place', [9, 2], [10, 0], 58),
       ], CLOCK([8, 0], [10, 0], 120));
-      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.some(x => x.raw === 'clock-span')).toBe(false);
     });
 
     // NOTHING IS INFERRED ABOUT WHERE (owner: "un saved mileage legs no they
@@ -4049,7 +4482,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
         try {
           const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
-          const site = day.find(r => r.rawSource === 'site');
+          const site = day.find(r => r.rawSource === 'clock-span');
           return { addr: site.addr, key: site.clientKey, name: site.clientName,
                    mileage: (typeof mileage !== 'undefined' && Array.isArray(mileage))
                      ? mileage.filter(m => m && m.date === '2026-09-01').length : 0,
@@ -4058,20 +4491,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, [[A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)], CLOCK([8, 0], [13, 0], 300)]);
       expect(out.addr).toBe('');
       expect(out.key).toBe(null);
-      // ADDRESS, not job site (owner 2026-09-04: "rather than unsaved job site
-      // do we say Unsaved Address"). Half of these are a supply house or a
-      // gate, and calling every one of them a job site asserts a reason
-      // nobody supplied.
-      expect(out.name).toBe('Unsaved address');
+      // AMENDED 2026-09-16 (10.4), and the test's own title is now literally
+      // true. It used to check that the row said "Unsaved address", which
+      // claims no address and an address in the same breath. On Jack's real
+      // rail that read as a lost drive: the shop at 1:27, then an address at
+      // 1:57, with nothing in between. He had not moved. The row says what it
+      // knows, which is that the clock was running and nothing tracked this.
+      expect(out.name).toBe('');
       expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
-      // The tag carries the whole statement and the row prints no title of its
-      // own rather than repeating it.
-      expect(out.html).toContain('Unsaved address');
-      // It must never read as the geofenced kind, which is what an audit turns
-      // on. The two real 'place' rows in this fixture DO say "On site", so the
-      // check is that the unsaved row itself does not: its own block carries
-      // that tag and the address disclaimer, never the saved-client one.
-      const i = out.html.indexOf('Unsaved address');
+      expect(out.html).toContain('Manual time');
+      // And it must never claim the two things an audit turns on: the
+      // geofenced kind, or an address.
+      expect(out.html).not.toContain('Unsaved address');
+      const i = out.html.indexOf('Manual time');
       expect(out.html.slice(i, i + 300)).not.toContain('On site');
     });
 
@@ -4115,9 +4547,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, [[A('place', [9, 0], [10, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
       const inCap = html.slice(html.indexOf('data-kind="clock-in"'));
       const outCap = html.slice(html.indexOf('data-kind="clock-out"'));
-      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-edit');
+      // AMENDED 2026-09-13 (10.4). The owner's rule here is unchanged and is
+      // the whole point of the test: BOTH ends reach the editor. What changed
+      // is which control carries it. The Edit chip is deleted from the caps
+      // (7) and the menu is on both of them instead, where it used to be on
+      // the opening cap only, so this now asserts something the old shape
+      // could not: the two ends are finally identical.
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).not.toContain('tl-rail-edit');
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-more');
       expect(outCap.slice(0, outCap.indexOf('</li>')),
-        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-edit');
+        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-more');
+      expect(outCap.slice(0, outCap.indexOf('</li>')),
+        'and it is the clock-OUT cap that opens it, not a stale clock-in label')
+        .toContain('Clocked out');
     });
 
     // ── The clock-out is a hard cutoff ────────────────────────────────────
@@ -4380,7 +4822,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // it used to sit on the clock row as 556 anonymous minutes, and is now
       // handed to a named job-site row (owner's rule, above). The number that
       // must not move is the day's total, and it does not.
-      expect(man.m + (r.rows.find(x => x.raw === 'site') || { m: 0 }).m).toBe(556);
+      expect(man.m + (r.rows.find(x => x.raw === 'clock-span') || { m: 0 }).m).toBe(556);
       expect(r.paid, 'the clock, plus the 18 minutes that ran before it').toBe(576);
     });
 
@@ -4400,7 +4842,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // anonymously are now named as job-site stretches around the lunch. The
       // lunch itself is STILL not deducted, which is what this test guards,
       // and the day still totals what it did.
-      const sites = r.rows.filter(x => x.raw === 'site').reduce((n, x) => n + x.m, 0);
+      const sites = r.rows.filter(x => x.raw === 'clock-span').reduce((n, x) => n + x.m, 0);
       expect(man.m + sites).toBe(480);
       expect(r.rows.some(x => x.raw === 'stop' && x.m === 30),
         'the lunch is still its own row, undeducted').toBe(true);
@@ -4835,6 +5277,68 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.calls).toBe(1);
     });
 
+    // One deliberate tap is not a realtime burst (owner 2026-09-20). The 2.5s
+    // coalesce is right for a flush of a dozen rows and wrong for the person
+    // who just pressed Save and is waiting to see the name.
+    test('a tap that asks for it now does not wait out the burst timer', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        let calls = 0;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { calls++; return false; };
+        _tlLiveRefresh(true);
+        // No await at all: "immediately" has to mean in this same task, not
+        // on some shorter timer.
+        const immediate = calls;
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (!wasActive) pg?.classList.remove('active');
+        return { immediate, after: calls };
+      });
+      expect(r.immediate, 'the tap repaints in the same breath').toBe(1);
+      expect(r.after, 'and does not also fire a debounced second one').toBe(1);
+    });
+
+    // It has to compare against what the screen was PAINTED from. _tlLastRows
+    // is that set already filtered to one scope and one year, so printing an
+    // unfiltered fetch against it compares two different questions.
+    test('the live path compares against the painted rows, not the filtered ones', async () => {
+      const r = await page.evaluate(() => {
+        const src = String(_tlLiveRefresh).replace(/\s/g, '');
+        return { cache: /_tlRevalidateRows\(_tlRowsCache/.test(src),
+                 notFiltered: !/_tlRevalidateRows\(_tlLastRows/.test(src) };
+      });
+      expect(r.cache).toBe(true);
+      expect(r.notFiltered).toBe(true);
+    });
+
+    // A repaint that answers a question about a screen that no longer exists
+    // must not be drawn over the one that does. The live path used to skip
+    // this check, and got away with it only because its fingerprint was too
+    // coarse to ever say "repaint" (CI shard 6, 2026-09-20).
+    test('a live repaint stands down when a newer render has already painted', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        const origRe = window._tlRevalidateRows;
+        let sawGen;
+        window._tlRevalidateRows = async (rows, gen) => { sawGen = gen; return false; };
+        try {
+          _tlLiveRefresh(true);
+          return { gen: sawGen, isNumber: typeof sawGen === 'number',
+                   src: /_tlRevalidateRows\(_tlRowsCache,gen,true\)/.test(String(_tlLiveRefresh).replace(/\s/g, '')) };
+        } finally {
+          window._tlRevalidateRows = origRe;
+          if (!wasActive) pg?.classList.remove('active');
+        }
+      });
+      expect(r.isNumber, 'it names the paint it is answering about').toBe(true);
+      expect(r.src, 'and it is the captured one, not undefined').toBe(true);
+    });
+
     test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {
       const r = await page.evaluate(async () => {
         // The min-gap exists to stop a held-down drill arrow firing three
@@ -4897,20 +5401,788 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // ── A HELD DRIVE READS AS A DRIVE AND PAYS LIKE NOTHING ──────────────────
+  // Rule 18 (js/geo-derive.js, owner 2026-09-13): the deriver writes the
+  // drives and stops of a trip it cannot vouch for as 'drive-held' and
+  // 'unsaved-held'. The rail must say what they WERE, because the person
+  // reading it knows where he went and "Visit" would be a lie about a drive;
+  // and no total may claim a minute of them.
+  // ── EACH SEGMENT OF A SPLIT DRIVE NAMES ITS OWN ENDS ────────────────────
+  // Owner report 2026-09-14, Jack's Sunday: journey j-987ebc83-mu1d7p2e split
+  // at a stop nobody had saved, and the rail drew "JS Solutions shop to Bill
+  // Lorson" at 9:55 AND again at 10:39, with the half-hour stop between them
+  // saying it was an unsaved address. One trip, claimed twice, and neither row
+  // was that trip.
+  //
+  // The labels came off the mileage row. There is deliberately ONE of those
+  // per leg (rule 6: a collapsed leg is the direct route through a personal
+  // stop), so its from_name and to_name are the JOURNEY's ends. The deriver
+  // now writes segEnds alongside them (js/geo-derive.js); this reads it.
+  test.describe('a split drive says where each half actually went', () => {
+    const render = (r, legs) => page.evaluate(([x, L]) => {
+      const keep = window.mileage;
+      window.mileage = L;
+      try { return String(_tlRailRow(x)); } finally { window.mileage = keep; }
+    }, [r, legs]);
+    const DRIVE = (over) => Object.assign({ source: 'auto', rawSource: 'drive', minutes: 15,
+      date: '2026-09-14', personUid: null, detail: 'Drive time', rawId: 'srv-1',
+      clientName: 'Destination not saved', destUnsaved: true,
+      startTime: '2026-09-14T14:55:00Z', endTime: '2026-09-14T15:10:00Z' }, over || {});
+    const LEG = { legKey: 'j-mu1d7p2e', date: '2026-09-14',
+      from_name: 'JS Solutions shop', to_name: 'Bill Lorson',
+      segEnds: [{ from: 'JS Solutions shop', to: '' }, { from: '', to: 'Bill Lorson' }] };
+
+    test('the two halves read shop to the stop, then the stop to the client', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0' }), [LEG]);
+      const second = await render(DRIVE({ clientKey: 'j-mu1d7p2e:1', clientName: 'Bill Lorson',
+        destUnsaved: false, rawId: 'srv-2' }), [LEG]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      // The bug, stated as the assertion: neither half may claim the whole.
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+      expect(second).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a leg that never split is untouched: its ends ARE the row\'s ends', async () => {
+      const plain = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false }), [LEG]);
+      expect(plain).toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a segment written before segEnds existed borrows nothing', async () => {
+      // Every row already on the table. The leg's ends are the journey's, so
+      // the row says what it knows about itself until the next derive of that
+      // day rewrites the leg.
+      const old = Object.assign({}, LEG); delete old.segEnds;
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0' }), [old]);
+      expect(first).not.toContain('→');
+      expect(first).toContain('Destination not saved');
+    });
+
+    // ── AND THE SEGMENT IS NAMED BY ITS OWN JOURNEY (owner 2026-09-14) ────
+    // ':0' and ':1' counted the segments in front of this one, which is the
+    // deriver's own reading of the day and moves when it revises one. Each
+    // drive row carries the id of the journey that started it now, and the
+    // leg lists them in segEnds order as segKeys. The rail reads the pair
+    // through _mileLegSeg (js/mileage.js), so both screens agree by
+    // construction rather than by both remembering the same trick.
+    const KEYED = Object.assign({}, LEG, { segKeys: ['j-mu1d7p2e', 'j-mu1ffssg'] });
+
+    test('each half reads its own ends when the rows are keyed by journey', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e' }), [KEYED]);
+      const second = await render(DRIVE({ clientKey: 'j-mu1ffssg', clientName: 'Bill Lorson',
+        destUnsaved: false, rawId: 'srv-2' }), [KEYED]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      // The first segment's key IS the leg's key, and it must still read as a
+      // SEGMENT: this is the row that would otherwise borrow the journey's
+      // two ends and claim the whole trip.
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('a drive belonging to no leg on the day says only what it knows', async () => {
+      const orphan = await render(DRIVE({ clientKey: 'j-nothing' }), [KEYED]);
+      expect(orphan).not.toContain('→');
+      expect(orphan).toContain('Destination not saved');
+    });
+
+    // ── AND NOW THE ROW TITLES ITSELF (owner 2026-09-15) ─────────────────
+    // "The way it's titled is wrong, we should have fixed the title a long
+    // time ago rather than last night." Every arm above is a JOIN to the
+    // mileage leg, and every way this title has ever been wrong came out of
+    // the join. The deriver writes both ends onto the drive row itself now
+    // (origin_place beside dest_place), so these rows title correctly with no
+    // mileage in the page at all.
+    test('both ends come off the row, with no mileage leg anywhere', async () => {
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e',
+        originPlace: 'JS Solutions shop', destPlace: '' }), []);
+      const second = await render(DRIVE({ clientKey: 'j-mu1ffssg', rawId: 'srv-2',
+        clientName: 'Bill Lorson', destUnsaved: false,
+        originPlace: '', destPlace: 'Bill Lorson' }), []);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+      expect(second).toContain('Unsaved address → Bill Lorson');
+      expect(first).not.toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    test('an unsplit drive reads both its ends off itself', async () => {
+      const plain = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false, originPlace: 'JS Solutions shop', destPlace: 'Bill Lorson' }), []);
+      expect(plain).toContain('JS Solutions shop → Bill Lorson');
+    });
+
+    // Jack's 14 September, which is the report this came from: those rows were
+    // derived before segEnds existed, so the leg has nothing to read and the
+    // rail could only ever say where the drive ended. With the ends on the row
+    // it reads correctly whatever the leg does or does not carry.
+    test("Jack's 14 September: a leg with no segEnds cannot spoil it", async () => {
+      const bare = Object.assign({}, LEG); delete bare.segEnds;
+      const first = await render(DRIVE({ clientKey: 'j-mu1d7p2e:0',
+        originPlace: 'JS Solutions shop', destPlace: '' }), [bare]);
+      expect(first).toContain('JS Solutions shop → Unsaved address');
+    });
+
+    test('the row wins over the leg when they disagree', async () => {
+      // The leg describes the whole journey and the row describes itself, so
+      // there is no case where the leg is the better answer for a drive row.
+      const r = await render(DRIVE({ clientKey: 'j-mu1d7p2e', clientName: 'Bill Lorson',
+        destUnsaved: false, originPlace: 'The Home Depot', destPlace: 'Bill Lorson' }), [KEYED]);
+      expect(r).toContain('The Home Depot → Bill Lorson');
+      expect(r).not.toContain('JS Solutions shop →');
+    });
+
+    test('a row with neither end named still falls back rather than drawing two dashes', async () => {
+      const r = await render(DRIVE({ clientKey: 'j-nothing', originPlace: '', destPlace: '' }), []);
+      expect(r).not.toContain('→');
+      expect(r).toContain('Destination not saved');
+    });
+
+    // ── JACK'S 8 SEPTEMBER (owner 2026-09-16) ────────────────────────────
+    // "On jacks 09/08 rows he has unsaved address to Tagen Lindstram when it
+    // should say JS Solutions shop to Tagen Lindstram, then at 453 it should
+    // say Tagen Linstram to JS Soltuions shop."
+    //
+    // Both names were in the database the whole time. That day was derived on
+    // 14 September and origin_place landed on the 15th, so the rows carry a
+    // dest_place and a null origin_place while the mileage legs say
+    // "JS Solutions shop → Tagen Lindstram" and the reverse. The self-titling
+    // arm fired on EITHER end, claimed the row, and printed "Unsaved address"
+    // for the field that simply had not been written yet, shutting out the
+    // join that held the answer. It hit every drive row derived before 15
+    // September, and those days are past the tape so nothing re-derives them.
+    const S8 = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+      from_name: 'JS Solutions shop', to_name: 'Tagen Lindstram' };
+    const S8BACK = { legKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+      from_name: 'Tagen Lindstram', to_name: 'JS Solutions shop' };
+
+    test('a row from before origin_place existed reads its origin off the leg', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [S8]);
+      expect(out).toContain('JS Solutions shop → Tagen Lindstram');
+      expect(out, 'the origin was never missing, only unasked for').not.toContain('Unsaved address');
+    });
+
+    test('and the 4:53 leg home reads the other way round', async () => {
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt7ijni', date: '2026-09-08',
+        rawId: 'srv-9', clientName: 'JS Solutions shop', destUnsaved: false,
+        originPlace: '', destPlace: 'JS Solutions shop' }), [S8BACK]);
+      expect(out).toContain('Tagen Lindstram → JS Solutions shop');
+      expect(out).not.toContain('Unsaved address');
+    });
+
+    test('but an origin that genuinely is unsaved still says so', async () => {
+      // Same shape, and this time the leg agrees the origin was nobody's
+      // address. The words must survive: a dash is worse than the truth.
+      const bare = { legKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        from_name: '', to_name: 'Tagen Lindstram' };
+      const out = await render(DRIVE({ clientKey: 'j-987ebc83-mtt06pgg', date: '2026-09-08',
+        clientName: 'Tagen Lindstram', destUnsaved: false,
+        originPlace: '', destPlace: 'Tagen Lindstram' }), [bare]);
+      expect(out).toContain('Unsaved address → Tagen Lindstram');
+    });
+
+    test('only a DRIVE row is titled this way', async () => {
+      // A visit carries dest_place too. It is one place, not two, and titling
+      // it with an arrow would invent a journey.
+      const visit = await render(DRIVE({ clientKey: 'd-j-mu1d7p2e', rawSource: 'client',
+        clientName: 'Bill Lorson', destUnsaved: false, detail: 'On site',
+        originPlace: '', destPlace: 'Bill Lorson' }), []);
+      expect(visit).not.toContain('→');
+      expect(visit).toContain('Bill Lorson');
+    });
+  });
+
+  test.describe('a held drive is still a drive, and still earns nothing', () => {
+    // The reader is exercised through the two pure functions the rail is made
+    // of, rather than a whole fake day: what a row is (_tlRailKind) and how it
+    // draws (_tlRailRow). Same door the held-visit block above uses.
+    const kindOf = (r) => page.evaluate((x) => _tlRailKind(x), r);
+    const render = (r) => page.evaluate((x) => String(_tlRailRow(x)), r);
+    const DRIVE = { source: 'auto', rawSource: 'drive-held', clientName: 'Destination not saved',
+      destUnsaved: true, rawId: 'srv-501', unpaid: true, minutes: 20, date: '2026-09-11',
+      personUid: null, detail: 'Drive time',
+      startTime: '2026-09-11T22:45:00Z', endTime: '2026-09-11T23:05:00Z' };
+    const STOP = Object.assign({}, DRIVE, { rawSource: 'unsaved-held', clientName: 'Unsaved address',
+      destUnsaved: false, rawId: 'srv-502', clientKey: 'leg-1:s0', detail: 'Address not saved' });
+
+    test('a held drive is a drive, and a held stop is a stop', async () => {
+      expect(await kindOf(DRIVE), 'the badge says what it was').toBe('drive');
+      expect(await kindOf(STOP)).toBe('site');
+      // Not a Visit: "Visit" is rule 13's word for standing at a client and
+      // means something different from being on the road.
+      expect(await render(DRIVE)).not.toMatch(/Visit/);
+    });
+
+    test('the friendly label is the plain one, not a new string to learn', async () => {
+      const words = await page.evaluate(() => [
+        _tlSourceLabel('drive-held'), _tlSourceLabel('unsaved-held'),
+        _tlSourceLabel('drive'), _tlSourceLabel('unsaved'),
+      ]);
+      expect(words).toEqual(['Drive time', 'Address not saved', 'Drive time', 'Address not saved']);
+    });
+
+    test('and it never asks a question it was designed not to ask', async () => {
+      // The owner's whole rule for this class: "I don't want to ask, I want
+      // this to be fully automatic when addresses are put in." A held drive
+      // is uncounted silently. Only rule 13's client visit asks.
+      expect(await render(DRIVE)).not.toMatch(/_visitHoldAnswer/);
+      expect(await render(DRIVE)).not.toMatch(/Were you working here\?/);
+    });
+
+    test('a held stop still offers Save this address, which is how it stops being held', async () => {
+      // Saving the address re-derives the day into two real legs, which is
+      // the whole correction path for an under-counted trip.
+      //
+      // The leg is seeded now (2026-09-20): the chip asks _mileStopCoord
+      // whether the stop can actually be placed before it is offered, so a
+      // stop with no leg behind it gets no chip. That gate is the fix for
+      // the dead button, and it means this test has to supply the leg its
+      // claim depends on.
+      const withLeg = await page.evaluate((x) => {
+        const keep = window.mileage;
+        window.mileage = [{ legKey: 'leg-1', id: 'leg-1', gps: true, date: '2026-09-11',
+          addressUnknown: true, unsavedVia: true,
+          fromCoord: { lat: 39.04, lng: -95.71 }, toCoord: { lat: 39.05, lng: -95.72 },
+          viaCoord: { lat: 39.061, lng: -95.697 } }];
+        try { return String(_tlRailRow(x)); } finally { window.mileage = keep; }
+      }, STOP);
+      expect(withLeg).toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('the hours record never counts one', async () => {
+      const mins = await page.evaluate(() => {
+        const rows = [
+          { source: 'auto', rawSource: 'drive', minutes: 60, unpaid: false, date: '2026-09-11' },
+          { source: 'auto', rawSource: 'drive-held', minutes: 60, unpaid: true, date: '2026-09-11' },
+          { source: 'auto', rawSource: 'unsaved-held', minutes: 60, unpaid: true, date: '2026-09-11' },
+        ];
+        return rows.filter(r => !r.unpaid).reduce((n, r) => n + r.minutes, 0);
+      });
+      expect(mins, 'only the vouched drive is paid').toBe(60);
+    });
+
+    test('_timeLogRows marks every held source unpaid, whatever the family', async () => {
+      const out = await page.evaluate(() => ['drive-held', 'unsaved-held', 'client-held', 'drive', 'unsaved']
+        .map(s => [s, _geoIsHeldSource(s)]));
+      expect(out).toEqual([['drive-held', true], ['unsaved-held', true], ['client-held', true],
+        ['drive', false], ['unsaved', false]]);
+    });
+  });
+
+  // ── ONE CONTROL PER ROW (owner 2026-09-13) ───────────────────────────────
+  // "Looks disorganized." An On Site row stacked a duration, an Edit chip and
+  // a three-dot in its right column, three deep, while a drive row carried
+  // one, so no two rows were the same height and the column had no edge. Edit
+  // is the first action in the menu now and the chip is gone (7: deleted,
+  // never hidden). 7.1 wants the proof that it is gone, not just that the new
+  // one works.
+  test.describe('the Edit chip is deleted and the menu carries it', () => {
+    test('no rail row draws the old chip, whatever kind it is', async () => {
+      const kinds = await page.evaluate(() => {
+        const saved = window._canViewComp; window._canViewComp = () => true;
+        const R = (o) => Object.assign({ source: 'auto', rawId: 'x1', unpaid: false, minutes: 30,
+          date: '2026-09-13', personUid: null, clientName: 'A place' }, o);
+        const out = [
+          String(_tlRailRow(R({ rawSource: 'place' }))),
+          String(_tlRailRow(R({ rawSource: 'geofence' }))),
+          String(_tlRailRow(R({ rawSource: 'drive' }))),
+          String(_tlRailRow(R({ rawSource: 'shop', source: 'shop' }))),
+          String(_tlRailRow(R({ source: 'manual', rawSource: '' }))),
+        ];
+        window._canViewComp = saved;
+        return out;
+      });
+      for (const h of kinds) {
+        expect(h, 'the chip class is gone from the markup').not.toContain('tl-rail-edit');
+        expect(h, 'and so is its wrapper').not.toContain('tl-rail-editwrap');
+      }
+    });
+
+    test('the stylesheet does not still carry the rules for it', async () => {
+      // Dead CSS is the other half of 7: a class nothing renders is still a
+      // class the next person has to reason about.
+      const css = await page.evaluate(async () => {
+        const r = await fetch('/css/timelog.css'); return await r.text();
+      });
+      expect(css).not.toMatch(/^\.tl-rail-edit\{/m);
+      expect(css).not.toMatch(/^\.tl-rail-editwrap\{/m);
+    });
+
+    test('a tracked row offers Edit in the menu, and an unpaid one does not', async () => {
+      const r = await page.evaluate(() => {
+        const saved = window._canViewComp; window._canViewComp = () => true;
+        const R = (o) => Object.assign({ source: 'auto', rawId: 'x1', unpaid: false, minutes: 30,
+          date: '2026-09-13', personUid: null, clientName: 'A place' }, o);
+        const flag = (o) => /data-row-fix="1"/.test(String(_tlRailRow(R(o))));
+        const out = {
+          place: flag({ rawSource: 'place' }),
+          geofence: flag({ rawSource: 'geofence' }),
+          // A drive's times are the tape's, not a clock somebody set, and the
+          // fix dialog was never offered for one. Unchanged.
+          drive: flag({ rawSource: 'drive' }),
+          // Held rows count nothing, so there is nothing to correct.
+          held: flag({ rawSource: 'place', unpaid: true }),
+        };
+        window._canViewComp = saved;
+        return out;
+      });
+      expect(r).toEqual({ place: true, geofence: true, drive: false, held: false });
+    });
+
+    test('and the flag is what the menu reads, so the two can never disagree', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (fix) => {
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x1'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'place';
+          b.dataset.rowFix = fix; b.dataset.rowLabel = 'A place';
+          document.body.appendChild(b);
+          _tlRowMenu(b);
+          const ov = document.getElementById('_tl-row-menu');
+          const html = ov ? ov.innerHTML : '';
+          if (ov) ov.remove();
+          b.remove();
+          return html;
+        };
+        return { on: mk('1'), off: mk('') };
+      });
+      expect(r.on).toContain('fixauto');
+      expect(r.on).toContain('>Edit<');
+      expect(r.off, 'no flag, no Edit').not.toContain('fixauto');
+      // Not work is on both: that never depended on the row being fixable.
+      // WAS toContain('notwork'): the menu's first tap on Not work now only
+      // asks (owner 2026-09-24), so what the menu carries is the ask, and the
+      // answer lives one step in (tested below).
+      expect(r.off).toContain('_tlRowMenuAskNotWork');
+      expect(r.on).toContain('_tlRowMenuAskNotWork');
+    });
+
+    // ── Not work is last, and asks first (owner 2026-09-24) ─────────────────
+    // Jack's 3:36 stop went Personal at 4:20:27 on 23 September out of this
+    // menu, seconds after he saved its address, with the red Not work sitting
+    // above "Save this address".
+    const openMenu = (raw, extra) => page.evaluate(({ raw, extra }) => {
+      document.getElementById('_tl-row-menu')?.remove();
+      const b = document.createElement('button');
+      b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = raw;
+      b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+      Object.assign(b.dataset, extra || {});
+      document.body.appendChild(b);
+      const keep = window._mileStopCoord;
+      window._mileStopCoord = () => ({ lat: 39, lng: -95 });
+      try { _tlRowMenu(b); } finally { window._mileStopCoord = keep; b.remove(); }
+      const ov = document.getElementById('_tl-row-menu');
+      const labels = ov ? [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent) : [];
+      return { labels, html: ov ? ov.innerHTML : '' };
+    }, { raw, extra });
+
+    test('on an unsaved stop, Save this address comes before Not work', async () => {
+      const r = await openMenu('unsaved', { rowKey: 'd-j-1', rowDate: '2026-09-23' });
+      const iSave = r.labels.indexOf('Save this address'), iNot = r.labels.indexOf('Not work');
+      expect(iSave).toBeGreaterThan(-1);
+      expect(iNot).toBeGreaterThan(iSave);
+      await page.evaluate(() => document.getElementById('_tl-row-menu')?.remove());
+    });
+
+    test('the first tap on Not work only asks: nothing is answered until Yes', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          document.getElementById('_tl-row-menu')?.remove();
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved';
+          b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          const ov = document.getElementById('_tl-row-menu');
+          const not = [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Not work'));
+          not.click();
+          await new Promise(r => setTimeout(r, 20));
+          const afterFirst = { calls: calls.length, open: !!document.getElementById('_tl-row-menu'),
+            labels: [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent),
+            ask: (ov.querySelector('.tl-menu-ask') || {}).textContent || '' };
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Yes, not work')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { afterFirst, calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; document.getElementById('_tl-row-menu')?.remove(); }
+      });
+      expect(r.afterFirst.calls, 'one tap answers nothing').toBe(0);
+      expect(r.afterFirst.open).toBe(true);
+      expect(r.afterFirst.labels).toEqual(['Yes, not work', 'Back']);
+      expect(r.afterFirst.ask).toContain('off your hours');
+      expect(r.calls).toEqual([['x9', 'personal']]);
+      expect(r.open).toBe(false);
+    });
+
+    test('Back puts the menu away and answers nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          _tlRowMenuAskNotWork('x9', 'unsaved');
+          const ov = document.getElementById('_tl-row-menu');
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Back')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; }
+      });
+      expect(r.calls).toEqual([]);
+      expect(r.open).toBe(false);
+    });
+
+    test('asking with no menu open, or with junk arguments, never throws and never answers', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tl-row-menu')?.remove();
+        const out = [];
+        for (const args of [['x', 'unsaved'], [null, null], [undefined], ["x');alert(1);('", 'y']]) {
+          try { out.push(_tlRowMenuAskNotWork(...args)); } catch (e) { out.push('threw'); }
+        }
+        const b = document.createElement('button');
+        b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+        document.body.appendChild(b); _tlRowMenu(b); b.remove();
+        const ok = _tlRowMenuAskNotWork('x9', 'unsaved');
+        const html = document.getElementById('_tl-row-menu').innerHTML;
+        document.getElementById('_tl-row-menu').remove();
+        return { out, ok, carries: html.includes("_tlRowMenuDo('notwork','x9','unsaved')") };
+      });
+      expect(r.out).toEqual([false, false, false, false]);
+      expect(r.ok).toBe(true);
+      expect(r.carries, 'Yes answers the same row, through the same door').toBe(true);
+    });
+
+    // AMENDED 2026-09-14 (10.4). There were two functions when this was
+    // written and the test's whole job was proving the menu picked the right
+    // ONE. There is one now (_tlEditEntry), so the same question is whether
+    // the menu tells it the right KIND, which is the only thing that still
+    // decides where the row is read and written.
+    test('Edit tells the one editor which kind of row it is', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._tlEditEntry;
+        window._tlEditEntry = (kind, id) => { calls.push([kind, id]); return Promise.resolve(); };
+        await _tlRowMenuDo('fixauto', 'srv-77');
+        await _tlRowMenuDo('edit', '1788872335123');
+        window._tlEditEntry = real;
+        return calls;
+      });
+      // A tracked row's id is a uuid and stays a string; a manual one is a
+      // number in the local array and the dataset hands back a string, hence
+      // the parseInt on that branch only.
+      expect(r).toEqual([['auto', 'srv-77'], ['manual', 1788872335123]]);
+    });
+  });
+
+  // ── THE SHOP ROW, which had no three-dot at all ──────────────────────────
+  // Owner 2026-09-13, looking at his own Saturday: "not all rows have the
+  // dots." The 12:41 shop block was the only row on the page without one, and
+  // for a reason nothing on the screen could show: the query that loads shop
+  // entries (js/finance.js) never selected `id`, so every shop row in the app
+  // has arrived with rawId null since the rail was built, and _tlRowMenuable
+  // correctly refuses a row with nothing behind it to act on.
+  //
+  // The other half is that the menu had to WORK once it appeared. A shop dwell
+  // lives in shop_time_entries, geo_answer_visit only ever reads
+  // job_time_entries, so "Not work" on a shop row would have thrown.
+  test.describe('a shop row is answerable like every other automatic row', () => {
+    const SHOP = { source: 'shop', rawSource: 'shop', clientName: 'TradeDesk', rawId: 'srv-shop-1',
+      minutes: 36, date: '2026-09-13', personUid: null, detail: 'Shop time',
+      startTime: '2026-09-13T17:41:00Z', endTime: '2026-09-13T18:17:00Z' };
+    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, SHOP, over));
+
+    test('it has a menu now, and loses it again if the id goes missing', async () => {
+      expect(await render()).toMatch(/tl-rail-more/);
+      // The exact state every shop row was in before js/finance.js asked for
+      // the column. Still refused, and that refusal is right: a button with
+      // no row behind it can only fail.
+      expect(await render({ rawId: null })).not.toMatch(/tl-rail-more/);
+    });
+
+    test('the button carries the raw source, which is what picks the table', async () => {
+      const h = await render();
+      expect(h).toMatch(/data-row-raw="shop"/);
+    });
+
+    test('Not work on a shop row goes through the shop door, not the visit one', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const realShop = window._shopHoldAnswer, realVisit = window._visitHoldAnswer;
+        window._shopHoldAnswer = (id, m) => { calls.push(['shop', id, m]); return Promise.resolve(true); };
+        window._visitHoldAnswer = (id, m) => { calls.push(['visit', id, m]); return Promise.resolve(true); };
+        await _tlRowMenuDo('notwork', 'srv-shop-1', 'shop');
+        await _tlRowMenuDo('notwork', 'srv-vis-1', 'client-held');
+        // A drive is a job_time_entries row too: only 'shop' forks.
+        await _tlRowMenuDo('notwork', 'srv-drv-1', 'drive-held');
+        window._shopHoldAnswer = realShop; window._visitHoldAnswer = realVisit;
+        return calls;
+      });
+      expect(r).toEqual([
+        ['shop', 'srv-shop-1', 'personal'],
+        ['visit', 'srv-vis-1', 'personal'],
+        ['visit', 'srv-drv-1', 'personal'],
+      ]);
+    });
+
+    test('the shop answer calls the shop RPC and refreshes the log', async () => {
+      const r = await page.evaluate(async () => {
+        const rpc = [];
+        let refreshed = false;
+        const realSupa = window._supa, realRefresh = window._tlLiveRefresh, realToast = window.showToast;
+        window._supa = { rpc: (fn, args) => { rpc.push([fn, args]); return Promise.resolve({ error: null }); } };
+        window._tlLiveRefresh = () => { refreshed = true; };
+        window.showToast = () => {};
+        const ok = await _shopHoldAnswer('srv-shop-1', 'personal');
+        window._supa = realSupa; window._tlLiveRefresh = realRefresh; window.showToast = realToast;
+        return { ok, rpc, refreshed };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.rpc).toEqual([['geo_answer_shop', { p_id: 'srv-shop-1', p_mode: 'personal' }]]);
+      expect(r.refreshed, 'the row has to leave the rail without a reload').toBe(true);
+    });
+
+    test('a server refusal says so and changes nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const toasts = [];
+        const realSupa = window._supa, realToast = window.showToast;
+        window._supa = { rpc: () => Promise.resolve({ error: { message: 'nope' } }) };
+        window.showToast = (m) => { toasts.push(String(m)); };
+        const ok = await _shopHoldAnswer('srv-shop-1', 'personal');
+        window._supa = realSupa; window.showToast = realToast;
+        return { ok, toasts };
+      });
+      expect(r.ok).toBe(false);
+      expect(r.toasts.join(' ')).toMatch(/try again/i);
+    });
+
+    test('no _supa at all is a quiet no-op, never a throw', async () => {
+      const r = await page.evaluate(async () => {
+        const realSupa = window._supa, realToast = window.showToast;
+        window._supa = null; window.showToast = () => {};
+        let threw = false, ok = null;
+        try { ok = await _shopHoldAnswer('x', 'personal'); } catch (e) { threw = true; }
+        window._supa = realSupa; window.showToast = realToast;
+        return { threw, ok };
+      });
+      expect(r.threw).toBe(false);
+    });
+  });
+
   // ── A stop nobody saved can be answered from the rail (owner 2026-09-09) ──
   // The mileage log has offered this since 2026-09-08; the rail stated the
   // same fact with no way to act on it. Same chip, same door.
+  // ── THE ROW MENU (owner 2026-09-13) ──────────────────────────────────────
+  // The crew member was seen on a Friday night holding a timesheet entry
+  // trying to get rid of it. He had the right gesture: a 3-second hold DID
+  // delete a row. It was wired only to manual rows (_tlCanEdit refuses
+  // anything else), and the row he was holding was automatic, so nothing
+  // happened and there was no way for him to find out why.
+  //
+  // Every row carries a three-dot now, and the hold is gone (§7). Every row,
+  // because the deriver knows where somebody was and never why: "there are
+  // times he could go to his dads shop and it not be work related, just
+  // visiting his old man" is a row the machine is completely confident about
+  // and completely wrong about.
+  test.describe('every row can be answered, and the hold is gone', () => {
+    const AUTO = { source: 'auto', rawSource: 'shop', clientName: 'JS Solutions shop',
+                   rawId: 'srv-901', minutes: 120, date: '2026-09-12', personUid: null,
+                   startTime: '2026-09-12T14:00:00Z', endTime: '2026-09-12T16:00:00Z' };
+    const row = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, AUTO, over));
+
+    test('the three-second hold is gone from every rail row', async () => {
+      // §7.1: the deleted entry point is ASSERTED absent, not just unused.
+      const h = await Promise.all([
+        row(), row({ source: 'manual', rawSource: 'manual' }),
+        row({ rawSource: 'client-held' }), row({ rawSource: 'unsaved' }),
+      ]);
+      h.forEach(x => {
+        expect(x, 'no long-press attributes survive').not.toContain('data-lp-id');
+        expect(x).not.toContain('data-lp-type');
+      });
+      // And the handler no longer makes an exception for time log rows.
+      const stillSpecialCased = await page.evaluate(() =>
+        typeof _lpDoDelete === 'function' && /timelog/.test(String(_lpDoDelete)));
+      expect(stillSpecialCased, 'the timelog branch is deleted, not orphaned').toBe(false);
+    });
+
+    test('an automatic row at a real business fence still offers the menu', async () => {
+      // The dad case. The deriver is certain he was at the shop; certainty
+      // about geography is not certainty about work.
+      const h = await row();
+      expect(h).toContain('tl-rail-more');
+      expect(h).toContain('_tlRowMenu(this)');
+      expect(h).toContain('data-row-src="auto"');
+    });
+
+    test('a live row has nothing to answer yet', async () => {
+      const h = await row({ live: true, endTime: null });
+      expect(h).not.toContain('tl-rail-more');
+    });
+
+    test('a row with no id behind it offers nothing', async () => {
+      const h = await row({ rawId: null });
+      expect(h).not.toContain('tl-rail-more');
+    });
+
+    test('the menu says delete for a manual row and never for a derived one', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (src, raw) => {
+          const b = document.createElement('button');
+          Object.assign(b.dataset, { rowId: 'x1', rowSrc: src, rowRaw: raw || '',
+            rowKey: 'd-k', rowDate: '2026-09-12', rowLabel: 'A place' });
+          document.body.appendChild(b);
+          try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
+            const html = o ? o.innerHTML : ''; o?.remove(); return html; }
+          finally { b.remove(); }
+        };
+        // A leg whose destination IS this stop, so the Save offer has a
+        // coordinate behind it. Without one the offer is withheld, which is
+        // the case the test below this one covers.
+        const savedMile = mileage;
+        mileage = [{ id: 'k', legKey: 'k', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: '', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try {
+          return { manual: mk('manual'), auto: mk('auto', 'shop'), unsaved: mk('auto', 'unsaved') };
+        } finally { mileage = savedMile; }
+      });
+      // A manual clock is the person's own record. Delete is real.
+      expect(r.manual).toContain('Delete');
+      expect(r.manual).toContain('Edit');
+      expect(r.manual).not.toContain('Not work');
+      // A derived row would be written again tomorrow, so "delete" would be a
+      // lie. It is answered instead, and the word says so.
+      expect(r.auto).toContain('Not work');
+      expect(r.auto, 'the word that would promise the wrong thing').not.toContain('Delete');
+      // And per row, never per place: the copy has to say that out loud,
+      // because teaching it that the shop is personal would stop his pay.
+      expect(r.auto).toContain('not the place');
+      // An unsaved stop can also be named, which answers it forever.
+      expect(r.unsaved).toContain('Save this address');
+      expect(r.auto, 'a named fence has nothing to save').not.toContain('Save this address');
+    });
+
+    // ── A SECOND COPY OF THE SAME BUTTON, WITHOUT THE CHECK ────────────────
+    // (owner 2026-09-22, on Jack's 11:58 to 1:17 on the 21st: "cant save,
+    // why?")
+    //
+    // The chip on the row has asked _mileStopCoord since 2026-09-20 and hides
+    // itself when the answer is nothing. The menu offered the same action with
+    // no check at all, so the row withdrew the offer and the menu kept making
+    // it, and pressing it called a function that returns false and does
+    // nothing. Jack's row is keyed to a journey no leg on that day carries, so
+    // there was never a pin to open a lead on.
+    test('the menu withholds Save when no coordinate is behind the stop', async () => {
+      const r = await page.evaluate(() => {
+        const mk = () => {
+          const b = document.createElement('button');
+          Object.assign(b.dataset, { rowId: 'x9', rowSrc: 'auto', rowRaw: 'unsaved',
+            rowKey: 'd-j-nobody-has-this', rowDate: '2026-09-12', rowLabel: 'A place' });
+          document.body.appendChild(b);
+          try { _tlRowMenu(b); const o = document.getElementById('_tl-row-menu');
+            const html = o ? o.innerHTML : ''; o?.remove(); return html; }
+          finally { b.remove(); }
+        };
+        const savedMile = mileage;
+        // A day with legs on it, none of them this stop's.
+        mileage = [{ id: 'other', legKey: 'other', date: '2026-09-12', gps: true, miles: 3,
+          from: 'A', to: 'B', toCoord: { lat: 39.03, lng: -95.75 } }];
+        try { return { html: mk(), fired: null }; } finally { mileage = savedMile; }
+      });
+      expect(r.html, 'the row is still answerable').toContain('Not work');
+      expect(r.html, 'an offer nothing can honour').not.toContain('Save this address');
+    });
+
+    test('and pressing it, if it were there, still does nothing rather than throw', async () => {
+      const ok = await page.evaluate(async () => {
+        const savedMile = mileage;
+        try {
+          mileage = [];
+          await _tlRowMenuDo('save', 'd-j-nobody-has-this', '2026-09-12');
+          await _tlRowMenuDo('save', '', '');
+          return true;
+        } catch (_e) { return false; } finally { mileage = savedMile; }
+      });
+      expect(ok).toBe(true);
+    });
+
+    test('Not work goes through the one door that already survives a rebuild', async () => {
+      const r = await page.evaluate(async () => {
+        const seen = [];
+        const keep = window._visitHoldAnswer;
+        window._visitHoldAnswer = (id, mode) => { seen.push([id, mode]); };
+        try { await _tlRowMenuDo('notwork', 'srv-901'); return seen; }
+        finally { window._visitHoldAnswer = keep; }
+      });
+      // geo_answer_visit writes dismissed + fixed_at, and geo_replace_day
+      // keeps an answered source across every rebuild after that.
+      expect(r).toEqual([['srv-901', 'personal']]);
+    });
+
+    test('nothing here throws on junk', async () => {
+      const ok = await page.evaluate(async () => {
+        try {
+          _tlRowMenu(null); _tlRowMenu({}); _tlRowMenu({ dataset: {} });
+          await _tlRowMenuDo('nope', 'x'); await _tlRowMenuDo(null, null);
+          document.getElementById('_tl-row-menu')?.remove();
+          return true;
+        } catch (e) { return String(e && e.message); }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
   test.describe('saving an unsaved stop from the rail', () => {
     const STOP = { source: 'auto', rawSource: 'unsaved', clientName: 'Unsaved address',
                    clientKey: 'j-abc:s0', date: '2026-09-09', minutes: 95, personUid: null,
                    startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T20:40:26.000Z' };
-    const render = (over) => page.evaluate((r) => String(_tlRailRow(r)), Object.assign({}, STOP, over));
+    // ── THE LEG HAS TO BE THERE NOW (owner 2026-09-20) ──────────────────
+    //
+    // WAS: the row was rendered against whatever mileage happened to be in
+    // the page, and the chip was drawn for every unsaved stop regardless.
+    // That is precisely the defect: the rail offered a control for stops
+    // _mileSaveStopAddress could not place, and pressing one did nothing at
+    // all ("I'm hitting save this address and it's a dead button",
+    // error_log 202-204 and 207-209). The chip now asks _mileStopCoord
+    // first, so a test that wants the chip has to supply the leg the chip
+    // would act on. That is the honest pairing and it is what the app has.
+    const LEG = { legKey: 'j-abc', id: 'j-abc', gps: true, date: '2026-09-09',
+      addressUnknown: true, unsavedVia: true,
+      fromCoord: { lat: 39.0456, lng: -95.7151 }, toCoord: { lat: 39.0123, lng: -95.7465 },
+      viaCoord: { lat: 39.061, lng: -95.697 } };
+    const render = (over, legs) => page.evaluate(([r, L]) => {
+      const keep = window.mileage;
+      window.mileage = L;
+      try { return String(_tlRailRow(r)); } finally { window.mileage = keep; }
+    }, [Object.assign({}, STOP, over), legs === undefined ? [LEG] : legs]);
 
     test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
       const h = await render();
-      expect(h).toMatch(/Save this address/);
+      // WAS "Save this address". The row now asks business or personal
+      // (owner 2026-09-24) and the save IS the business answer, so the chip
+      // is labelled Business.
+      expect(h).toMatch(/> Business<\/button>/);
       expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
       expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
+    });
+
+    // The whole point of the gate. A stop nothing can place gets no chip
+    // rather than a chip that does nothing: a drive with both ends unsaved
+    // writes no mileage leg at all (rules 18 and 20), and that is the shape
+    // that was sitting on his rail offering a dead button.
+    test('a stop nothing can place offers no button at all', async () => {
+      const h = await render({}, []);
+      expect(h, 'the stop is still stated').toMatch(/Unsaved address|UNSAVED/i);
+      expect(h, 'it just is not offered a control that cannot work')
+        .not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    // The commonest shape on the rail, and the one that was dead: a drive
+    // that ended somewhere nobody saved, keyed 'd-' + the leg id.
+    test('a destination stop offers Save off the leg it ended', async () => {
+      const h = await render({ clientKey: 'd-j-abc' }, [LEG]);
+      expect(h).toMatch(/_mileSaveStopAddress\('d-j-abc','2026-09-09'\)/);
     });
 
     test('no other kind of row grows a Save button', async () => {
@@ -4940,6 +6212,104 @@ test.describe('timelog.js: exhaustive coverage', () => {
         try { return String(_tlRailRow(r)); } finally { window._tlViewOnly = false; }
       }, STOP);
       expect(h).not.toMatch(/_mileSaveStopAddress/);
+    });
+  });
+
+  // ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ──────────────────
+  // "It should just pop the address up and have it greyed so it asks if it
+  // was personal or business ... anything marked as personal says personal
+  // but doesn't show what was there, having the business name in the day
+  // rail would be killer."
+  test.describe('the rail names an unsaved stop by itself', () => {
+    const STOP = { source: 'auto', rawSource: 'unsaved', rawId: 'row-1', clientName: 'Unsaved address',
+                   clientKey: 'd-j-hd', date: '2026-09-09', minutes: 16, personUid: null,
+                   startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T19:21:26.000Z' };
+    const LEG = { legKey: 'j-hd', id: 'j-hd', gps: true, date: '2026-09-09',
+      toCoord: { lat: 39.0451214, lng: -95.7584343 } };
+    // Apple is stood in for at its one door (_stopNameLookup), and the cache
+    // starts empty on every test.
+    const run = (over, answer, legs) => page.evaluate(async ([r, ans, L]) => {
+      // `mileage` is a script-level let (js/data.js), so it is assigned by
+      // name: window.mileage would be a different variable.
+      const keep = { mile: mileage, look: window._stopNameLookup };
+      const asked = [];
+      mileage = L;
+      const reset = () => { clearTimeout(_stopNameTimer); _stopNameTimer = null;
+        _stopNameQueue.length = 0; _stopNameBusy.clear();
+        localStorage.removeItem('zp3_stop_names'); _stopNames = null; };
+      reset();
+      window._stopNameLookup = (c) => { asked.push(c); return Promise.resolve(ans === 'cannot' ? undefined : ans); };
+      try {
+        const first = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const second = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const third = String(_tlRailRow(r));
+        return { first, second, third, asked: asked.length, stored: localStorage.getItem('zp3_stop_names') };
+      } finally { mileage = keep.mile; window._stopNameLookup = keep.look; reset(); }
+    }, [Object.assign({}, STOP, over || {}), answer, legs === undefined ? [LEG] : legs]);
+
+    test('the business Apple finds shows greyed, with its street, once looked up', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '5900 SW Huntoon St, Topeka, KS 66604, United States' });
+      expect(r.first, 'nothing yet on the first paint').not.toContain('The Home Depot');
+      expect(r.second).toContain('The Home Depot');
+      expect(r.second).toMatch(/style="color:var\(--text3\)">The Home Depot/);
+      expect(r.second).toContain('5900 SW Huntoon St, Topeka');
+      expect(r.asked, 'one lookup, not one per paint').toBe(1);
+    });
+
+    test('it asks business or personal, and neither answer is a new control', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '' });
+      expect(r.second).toMatch(/> Business<\/button>/);
+      expect(r.second).toMatch(/_mileSaveStopAddress\('d-j-hd','2026-09-09'\)/);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+    });
+
+    test('a spot with only a street shows the street', async () => {
+      const r = await run({}, { name: null, addr: '1100 SW Wanamaker Rd, Topeka, KS' });
+      expect(r.second).toContain('1100 SW Wanamaker Rd');
+    });
+
+    test('a stop answered Personal still says what was there', async () => {
+      const r = await run({ rawSource: 'dismissed', unpaid: true }, { name: 'Lowe\'s', addr: '' });
+      expect(r.second).toContain('Lowe');
+      expect(r.second, 'and it is still a Personal row').toContain('Personal');
+    });
+
+    test('nothing found is remembered, so the rail never asks again all day', async () => {
+      const r = await run({}, null);
+      expect(r.asked).toBe(1);
+      expect(r.third).not.toMatch(/color:var\(--text3\)">/);
+      expect(r.stored).toContain('"name":""');
+    });
+
+    test('MapKit not ready is not a miss: nothing is remembered, it asks again later', async () => {
+      const r = await run({}, 'cannot');
+      expect(r.stored === null || r.stored === '{}').toBe(true);
+      expect(r.asked).toBeGreaterThanOrEqual(2);
+    });
+
+    test('a named row keeps its own name and never looks anything up', async () => {
+      const r = await run({ rawSource: 'client', clientName: 'John Doe' }, { name: 'Nope', addr: '' });
+      expect(r.asked).toBe(0);
+      expect(r.second).not.toContain('Nope');
+    });
+
+    test('a stop with no spot behind it asks nothing and still offers Personal', async () => {
+      const r = await run({}, { name: 'Nope', addr: '' }, []);
+      expect(r.asked).toBe(0);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+      expect(r.second).not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('a corrupted cache is ignored, never thrown', async () => {
+      const ok = await page.evaluate(() => {
+        localStorage.setItem('zp3_stop_names', '{BROKEN{{'); _stopNames = null;
+        try { _stopNameFor('d-x', '2026-09-09'); _stopNameFor(null, null); _stopNameFor(); return true; }
+        catch (e) { return String(e.message); }
+        finally { localStorage.removeItem('zp3_stop_names'); _stopNames = null; }
+      });
+      expect(ok).toBe(true);
     });
   });
 

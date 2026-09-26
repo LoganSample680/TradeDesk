@@ -203,6 +203,13 @@ function savePlace(pl){
   // this pin becomes this place, which is the whole payoff of promoting a
   // repeat-stop suggestion. Idempotent, only anonymous endpoints move.
   if(typeof _placeRetroNameTrips==='function')_placeRetroNameTrips(existing||pl);
+  // AND THE DAY IT WAS SAVED FROM RE-DERIVES, exactly as the client arm does
+  // (clients.js, saveClient). Without this, answering "a supply house" on the
+  // Save-this-address chooser named the place and left the trip that prompted
+  // it still reading "Unsaved address": the same trip, the same fix, two
+  // different outcomes depending on which button he pressed (owner 2026-09-16,
+  // on Neenans Co). No-ops when nothing is pending.
+  try{if(typeof _mileAddressSaved==='function')_mileAddressSaved(existing||pl);}catch(_e){}
   return existing||pl;
 }
 function deletePlace(id){
@@ -565,9 +572,15 @@ function tdMapRenderKit(o){
         const pts2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
         if(!pts2||pts2.length<2)return;
         try{
+          // DASHED MEANS INFERRED (owner 2026-09-13). A stretch the phone did
+          // not watch, filled in by the router, must never draw as the same
+          // line as one it did. Solid is evidence; dashed is our best guess at
+          // the road between two things we do know.
+          const _st={lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
+            strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)};
+          if(Array.isArray(seg.dash)&&seg.dash.length)_st.lineDash=seg.dash.map(Number);
           st.obj.addOverlay(new mapkit.PolylineOverlay(pts2.map(q=>new mapkit.Coordinate(q[0],q[1])),{
-            style:new mapkit.Style({lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
-              strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)}),
+            style:new mapkit.Style(_st),
           }));
         }catch(_es){}
       });
@@ -667,9 +680,13 @@ function tdMapRenderFallback(o){
         const y=100-((q[0]-minLat)/spanLat)*100;
         return x.toFixed(2)+','+y.toFixed(2);
       }).join(' ');
+      // The same dashed-is-inferred rule as the tile path above, so the two
+      // renderers cannot disagree about which stretch was watched (7.3).
+      const dash=(Array.isArray(seg.dash)&&seg.dash.length)
+        ? ' stroke-dasharray="'+seg.dash.map(Number).join(' ')+'"' : '';
       return '<polyline points="'+poly+'" fill="none" stroke="'+(seg.color||'#2D5DA8')+'" '+
         'stroke-width="'+(+seg.width||4)+'" stroke-linejoin="round" stroke-linecap="round" '+
-        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"/>';
+        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"'+dash+'/>';
     }).join('');
     if(segs)routeSvg+='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
       'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+segs+'</svg>';
@@ -989,6 +1006,15 @@ function _ptrPaint(el,yr,data){
 function _placeKindChanged(kind){
   const note=document.getElementById('place-ho-note');
   if(note)note.style.display=(kind==='home_office')?'block':'none';
+  // Rule 20's toggle is the mirror image: it suppresses the drive BETWEEN the
+  // house and here, so it means nothing on the house itself. Nor on a SHOP,
+  // which reports to itself by definition (owner 2026-09-15: "globally,
+  // employees drive to the shop don't get logged"), so the box would sit there
+  // unticked next to a rule that is already running. It is offered on the
+  // kinds where it is a real question: a second yard, a supply house somebody
+  // starts their day at.
+  const cm=document.getElementById('place-commute-row');
+  if(cm)cm.style.display=(kind==='home_office'||kind==='shop')?'none':'flex';
   // The picker opens on a greyed placeholder, so it paints muted until a real
   // type is chosen and normal text once one is. Same --text3 the hints beside
   // it use, never a hardcoded grey.
@@ -997,7 +1023,7 @@ function _placeKindChanged(kind){
 }
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
-function openPlaceModal(id,lat,lon){
+function openPlaceModal(id,lat,lon,kind){
   const pl=id?(places||[]).find(p=>String(p.id)===String(id)):null;
   const _lat=pl?pl.lat:lat,_lon=pl?pl.lon:lon;
   document.getElementById('place-modal')?.remove();
@@ -1012,7 +1038,11 @@ function openPlaceModal(id,lat,lon){
   // It opens on a greyed placeholder instead, and Save refuses until a real
   // type is chosen (_savePlaceFromModal). An EDIT still opens on the saved
   // kind, the placeholder is only ever the state of a place with no type yet.
-  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:'';
+  // `kind` is an ANSWER, never a default. The 2026-08-31 rule below is about
+  // opening ON a type nobody picked; a caller that passes one here has just
+  // been told (the Save-this-address chooser, mileage.js). Every other caller
+  // passes nothing and opens on the placeholder exactly as before.
+  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:(PLACE_KINDS[kind]?kind:'');
   const kindOpts='<option value="" disabled'+(_plKind?'':' selected')+'>Choose a type</option>'+
     Object.keys(PLACE_KINDS).map(k=>
       '<option value="'+k+'"'+(_plKind===k?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
@@ -1044,6 +1074,17 @@ function openPlaceModal(id,lat,lon){
     // when that is actually the type picked: every other kind got a home-
     // office tax disclaimer nobody asked for.
     '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+(_plKind==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    // ── RULE 20: the place you REPORT to (owner 2026-09-15) ──────────────
+    // "He doesn't get paid for his drive to his dads shop or when he goes
+    // home, his time runs on arrival." This is the IRS commuting rule, so it
+    // is worded as the thing a contractor recognises rather than as a tax
+    // term, and the disclaimer says which rule it is for anybody who wants to
+    // check it. Not offered on a home office (that is the far end of the same
+    // drive) nor on a shop (which is the rule's own anchor and needs no box).
+    '<label id="place-commute-row" style="display:'+((_plKind==='home_office'||_plKind==='shop')?'none':'flex')+';align-items:flex-start;gap:9px;margin-bottom:6px;cursor:pointer">'+
+      '<input type="checkbox" id="place-commute"'+((pl&&pl.commute)?' checked':'')+' style="margin-top:2px;width:17px;height:17px;flex-shrink:0;accent-color:var(--blue)">'+
+      '<span style="font-size:13px;line-height:1.45">I report here<br><span style="font-size:11px;color:var(--text3)">The drive between home and here is a commute: no hours, no miles. Time here still counts from the moment you arrive. Your shop already works this way.</span></span>'+
+    '</label>'+
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
       // Raw lat/lon means nothing to a contractor, the address (when there is
@@ -1135,7 +1176,10 @@ function _savePlaceFromModal(id){
   if(!name){showToast('Give it a name','⚠️');return;}
   if(!kind){showToast('Pick a type','⚠️');return;}
   if(!isFinite(lat)||!isFinite(lon)){showToast('Search the address to drop the pin first','⚠️');return;}
-  savePlace({id:id||undefined,name,kind,lat,lon,addr:addr||undefined,confirmedBy:id?undefined:'manual'});
+  // Rule 20. Always written, never left undefined on an edit, so unticking it
+  // actually clears the flag instead of silently keeping the old answer.
+  const commute=!!document.getElementById('place-commute')?.checked&&kind!=='home_office';
+  savePlace({id:id||undefined,name,kind,lat,lon,addr:addr||undefined,commute,confirmedBy:id?undefined:'manual'});
   if(typeof dismissPlaceSuggestion==='function')dismissPlaceSuggestion(lat,lon);
   document.getElementById('place-modal')?.remove();
   showToast(name+' saved','📍');

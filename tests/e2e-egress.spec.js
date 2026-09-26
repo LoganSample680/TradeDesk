@@ -438,21 +438,29 @@ test.describe('egress: photo compression, thumbnails, CDN rewrite', () => {
     expect(r.thumbUrl).toContain('/gallery/uid-1/900/t-before-123.jpg');
   });
 
-  test('gallery grid renders the THUMB; the photo viewer renders the FULL image', async () => {
+  // The Gallery page is gone (owner 2026-09-22). The same rule it proved,
+  // grids get the thumb and only a deliberate tap fetches the big bytes, now
+  // lives in the album, and it is stricter: the full copy has no url at all.
+  test('the album grid renders the THUMB, and the viewer only starts from it', async () => {
     const r = await page.evaluate(() => {
       photos = [{ id: 'eg-1', url: 'https://mock.supabase.co/storage/v1/object/public/gallery/u/full-1.jpg',
         thumbUrl: 'https://mock.supabase.co/storage/v1/object/public/gallery/u/t-full-1.jpg',
-        type: 'after', caption: '', client_name: 'Thumb Client', uploadedAt: new Date().toISOString() }];
-      renderGallery();
-      const grid = document.getElementById('gallery-grid')?.innerHTML || '';
-      openPhotoViewer('eg-1');
-      const viewers = [...document.querySelectorAll('img')].map(i => i.src);
-      const viewerHasFull = viewers.some(s => s.includes('/full-1.jpg') && !s.includes('/t-full-1.jpg'));
-      document.querySelectorAll('div').forEach(d => { if (d.style.zIndex === '9999') d.remove(); });
-      return { gridUsesThumb: grid.includes('t-full-1.jpg'), viewerHasFull };
+        storagePath: 'u/full-1.jpg', fullPath: 'u/f-full-1.webp',
+        type: 'after', caption: '', client_id: 1, client_name: 'Thumb Client', uploadedAt: new Date().toISOString() }];
+      tdReviewShots(['eg-1']);
+      const grid = document.getElementById('pc-rev').innerHTML;
+      tdReviewOpen(0);
+      const shown = document.getElementById('pc-rev-img').src;
+      const offered = !!document.getElementById('pc-rev-full');
+      tdReviewClose();
+      return { gridUsesThumb: grid.includes('t-full-1.jpg'), shown, offered };
     });
     expect(r.gridUsesThumb).toBe(true);
-    expect(r.viewerHasFull).toBe(true);
+    expect(r.shown).toContain('t-full-1.jpg');   // the viewer's FIRST paint is the cached thumb
+    // Since 2026-09-23 the photo you stay on sharpens by itself (owner: "it's
+    // not showing the full quality, it should"), but only that one and only
+    // after a dwell: that rule is pinned in e2e-photo-capture.spec.js.
+    expect(r.offered).toBe(true);
   });
 
   test('_cdnPhoto passes through on localhost, data: URLs, and non-gallery URLs', async () => {

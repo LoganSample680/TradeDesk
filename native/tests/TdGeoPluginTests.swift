@@ -827,6 +827,91 @@ final class TdGeoPluginTests: XCTestCase {
         d.removeObject(forKey: "td_geo_flush_inflight")
     }
 
+    // ── THE LIVE LANE (owner 2026-09-13: "real time to the second") ────────
+    // A background URLSession is discretionary for any transfer started while
+    // the app is backgrounded, whatever isDiscretionary says, which is why 191
+    // events recorded in one evening hour arrived in a dump at 2:43am. The
+    // plugin now sends through a default session whenever the process actually
+    // has runtime. These pin the parts of that split that can go wrong without
+    // a device in hand.
+
+    func testLiveAndBackgroundSessionsAreDistinct() {
+        XCTAssertFalse(plugin.liveSessionForTest === plugin.flushSessionForTest,
+                       "the live lane must not be the background session under another name")
+        XCTAssertNil(plugin.liveSessionForTest.configuration.identifier,
+                     "a default session has no identifier; a background one does")
+        XCTAssertEqual(plugin.flushSessionForTest.configuration.identifier, "td.geo.flush")
+        XCTAssertFalse(plugin.liveSessionForTest.configuration.waitsForConnectivity,
+                       "waiting for connectivity is the deferral this exists to avoid")
+    }
+
+    func testInflightKeysCannotCollideAcrossSessions() {
+        // taskIdentifier is unique per SESSION, not per process, so the two
+        // lanes can hand out the same number. Keyed bare, one completion would
+        // consume the other's entry and retire a batch that never landed.
+        let live = plugin.liveSessionForTest
+        let bg = plugin.flushSessionForTest
+        let a = live.dataTask(with: URL(string: "https://x.invalid/a")!)
+        let b = bg.dataTask(with: URL(string: "https://x.invalid/b")!)
+        let ka = plugin.inflightKeyForTest(live, a)
+        let kb = plugin.inflightKeyForTest(bg, b)
+        XCTAssertTrue(ka.hasPrefix("L:"), "the live lane is tagged")
+        XCTAssertTrue(kb.hasPrefix("B:"), "the background lane is tagged")
+        XCTAssertNotEqual(ka, kb, "two lanes, two keys, even on the same identifier")
+        a.cancel(); b.cancel()
+    }
+
+    func testDelegateStillRetiresABareKeyFromAnOlderBuild() {
+        // The upgrade case: a build before the split wrote a bare identifier
+        // and died. Its completion must still advance the watermark rather
+        // than orphan the entry forever.
+        let d = UserDefaults.standard
+        d.set(1000.0, forKey: "td_geo_flush_ts")
+        let task = URLSession.shared.dataTask(with: URL(string: "https://x.invalid/old")!)
+        d.set([String(task.taskIdentifier): 7000.0], forKey: "td_geo_flush_inflight")
+        plugin.urlSession(URLSession.shared, task: task, didCompleteWithError: nil)
+        let inflight = (d.dictionary(forKey: "td_geo_flush_inflight") as? [String: Double]) ?? [:]
+        XCTAssertNil(inflight[String(task.taskIdentifier)],
+                     "a bare entry is consumed, not stranded")
+        // Status 0 is the failure branch, so the watermark is untouched: the
+        // point here is only that the entry was FOUND.
+        XCTAssertEqual(d.double(forKey: "td_geo_flush_ts"), 1000.0)
+        d.removeObject(forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+        task.cancel()
+    }
+
+    func testDelegateOnOneLaneLeavesTheOtherLanesEntryAlone() {
+        let d = UserDefaults.standard
+        d.set(1000.0, forKey: "td_geo_flush_ts")
+        let live = plugin.liveSessionForTest
+        let task = live.dataTask(with: URL(string: "https://x.invalid/live")!)
+        let mine = plugin.inflightKeyForTest(live, task)
+        let theirs = "B:" + String(task.taskIdentifier)
+        d.set([mine: 5000.0, theirs: 9000.0], forKey: "td_geo_flush_inflight")
+        plugin.urlSession(live, task: task, didCompleteWithError: nil)
+        let inflight = (d.dictionary(forKey: "td_geo_flush_inflight") as? [String: Double]) ?? [:]
+        XCTAssertNil(inflight[mine], "its own entry is consumed")
+        XCTAssertEqual(inflight[theirs], 9000.0,
+                       "the other lane's identically numbered task is untouched")
+        d.removeObject(forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+        task.cancel()
+    }
+
+    func testHasLiveRuntimeIsFalseOffTheMainThread() {
+        // UIApplication.applicationState is main-thread only. Asking anywhere
+        // else must answer "no runtime" rather than trip the main-thread
+        // checker, which would crash a background wake.
+        let done = expectation(description: "answered off-main")
+        DispatchQueue.global().async {
+            XCTAssertFalse(self.plugin.hasLiveRuntimeForTest(),
+                           "off the main thread the honest answer is no")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+    }
+
     func testFlushDelegateUnknownTaskIsANoOp() {
         // A callback for a task this plugin never sent (another library's
         // background session, a stale identifier) must change nothing.
@@ -893,7 +978,8 @@ final class TdGeoPluginTests: XCTestCase {
 
     // ── App lifecycle + silent push (owner 2026-08-27) ──────────────────────
 
-    private func bufferCount(ofType t: String) -> Int {
+    // Not private: read from the extensions at the end of this file too.
+    func bufferCount(ofType t: String) -> Int {
         let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
         return buf.filter { ($0["type"] as? String) == t }.count
     }
@@ -1225,6 +1311,84 @@ extension TdGeoPluginTests {
         // carries no location of its own and iOS keeps none to pair with it.
         XCTAssertEqual(TdGeoPlugin.backfillFreshMsForTest, 90_000,
             "the freshness window is the whole guard against inventing a place")
+    }
+
+    // ── EVERY WAKE RECOVERS HISTORY, NOT ONLY A CROSSING (owner 2026-09-14)
+    // "I want it live, it should be live by the second."
+    //
+    // backfillMotionHistory() ran on region crossings only, so a
+    // significant-location wake posted its fix and went back to sleep with
+    // every motion flip since the last crossing still in the coprocessor.
+    // Measured on both handsets over four days: the phone was awake within
+    // 0 to 3 minutes of nearly every late drive flip. The 13 September 10:30
+    // automotive flip had a wake 0 minutes after it and took 137 minutes to
+    // reach the server.
+    //
+    // The simulator has no coprocessor, so as the file header says, these
+    // assert the CONTRACT: the wake records what it was woken for, the
+    // backfill is reached, and neither can crash the process.
+
+    func testLocationWakeRecordsTheFixAndDoesNotCrash() {
+        // The significant-change wake, which is the one that was dropping
+        // flips. The fix must land whatever the motion query does after it.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+            CLLocation(latitude: 39.03, longitude: -95.71)])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "fix" },
+            "the fix is the fact we were woken for and must be buffered")
+    }
+
+    // THERE IS NO VISIT-WAKE TEST HERE, DELIBERATELY (7: deleted, not hidden).
+    //
+    // Two attempts, and CI was right both times. The first asserted the visit
+    // landed in the buffer and failed; I read that as UserDefaults refusing to
+    // serialise the event and weakened the assertion. The second CRASHED the
+    // test runner, took the whole xctest process with it, and dragged an
+    // unrelated passing test into the failure list on the restart.
+    //
+    // The real reason is simpler than either diagnosis: CLVisit is created by
+    // CoreLocation and by nothing else. Its properties are read-only and a
+    // hand-constructed CLVisit() is not a half-filled visit, it is an object
+    // whose internals were never initialised, so reading coordinate or
+    // horizontalAccuracy off it is undefined. The delegate is fine. The
+    // fixture cannot exist.
+    //
+    // WHAT COVERS THE VISIT PATH INSTEAD. The change to didVisit is one line,
+    // the same backfillMotionHistory() call didUpdateLocations got, and that
+    // call has five tests of its own above (the mark never rewinds, it floors
+    // at seven days, it survives garbage, it never throws without a
+    // coprocessor, the freshness window is bounded). The wake-reaches-backfill
+    // shape is covered by testLocationWakeRecordsTheFixAndDoesNotCrash, where
+    // the fixture is a CLLocation and CAN be built properly.
+    //
+    // Do not re-add a CLVisit() test. It does not fail, it takes the suite
+    // down.
+
+    func testEmptyLocationWakeIsASafeNoOp() {
+        // didUpdateLocations with nothing in it returns before anything else,
+        // so it must not reach the backfill or buffer a fix.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(), didUpdateLocations: [])
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertFalse(buf.contains { ($0["type"] as? String) == "fix" },
+            "no location, no fix, and no crash")
+    }
+
+    func testRepeatedLocationWakesNeverCrashOrRewindTheMark() {
+        // A drive delivers a fix every few seconds and each one now reaches
+        // the backfill. The mark must only ever advance, or every wake
+        // re-sends the same days, and none of them may crash: iOS terminates
+        // a process that touches CoreMotion wrong, and a background wake is
+        // exactly when nobody is watching.
+        let future = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(future, forKey: markKey)
+        for _ in 0..<10 {
+            plugin.locationManager(CLLocationManager(), didUpdateLocations: [
+                CLLocation(latitude: 39.03, longitude: -95.71)])
+        }
+        XCTAssertGreaterThanOrEqual(UserDefaults.standard.double(forKey: markKey), future,
+            "ten wakes in a row must never move the mark backwards")
     }
 
     func testRegionWakeRecordsTheCrossingBeforeTheBackfill() {
@@ -2719,10 +2883,12 @@ extension TdGeoPluginTests {
     // reason, trigger, source), because a ledger the server cannot read is
     // no better than the counters it replaces.
 
-    private func radio(_ session: String) -> [[String: Any]] {
+    // Not private: the self-arm extension at the end of this file reads the
+    // same two helpers rather than growing its own copies (7.3).
+    func radio(_ session: String) -> [[String: Any]] {
         plugin.radioRowsForTest().filter { ($0["session"] as? String) == session }
     }
-    private func onOff(_ rows: [[String: Any]]) -> [Bool] {
+    func onOff(_ rows: [[String: Any]]) -> [Bool] {
         rows.compactMap { $0["on"] as? Bool }
     }
 
@@ -2862,5 +3028,834 @@ extension TdGeoPluginTests {
             XCTAssertFalse(((r["trigger"] as? String) ?? "").isEmpty)
             XCTAssertEqual(r["source"] as? String, "native")
         }
+    }
+
+    // ── THE FLIP'S OWN INSTANT, NOT THE MOMENT IT REACHED US ──────────────
+    //
+    // Owner 2026-09-14. He started driving at 7:46; CoreMotion delivered the
+    // automotive activity at 7:48:16 and the drive was logged as starting
+    // then. Two minutes off the front of every leg, and worse, a DUPLICATE:
+    // motionSince and backfillMotionHistory both report a.startDate, so the
+    // same physical flip reached the server under two instants, the journey
+    // id is minted from the flip instant, and the phone and the server
+    // derived two different journeys for one drive. 6.6 miles logged for a
+    // 3.4 mile trip.
+    //
+    // CMMotionActivity cannot be constructed by hand, the same wall CLVisit
+    // put up above: read-only properties, CoreMotion is the only thing that
+    // makes one, and the delegate closure is not drivable from a test. So the
+    // DECISION was moved into motionEvent() where it can be reached, and this
+    // is what guards it.
+    func testMotionEventCarriesTheActivityStart_notTheDeliveryMoment() throws {
+        let started = Date().timeIntervalSince1970 * 1000 - 118_000   // his 118s
+        let ev = plugin.motionEvent(startMs: started, kind: "automotive", prev: "walking")
+        // Unwrapped first: XCTAssertEqual(_:_:accuracy:) is constrained to
+        // FloatingPoint and an Optional<Double> does not conform, so the
+        // as?-with-accuracy form does not compile. CI said so before this line
+        // ever ran.
+        let ts = try XCTUnwrap(ev["ts"] as? Double)
+        XCTAssertEqual(ts, started, accuracy: 0.001,
+                       "ts IS the flip instant; a delivery time here shortens every drive")
+        XCTAssertEqual(ev["kind"] as? String, "automotive")
+        XCTAssertEqual(ev["prevKind"] as? String, "walking")
+        // The delivery moment is kept, because the gap between the two is the
+        // detection latency and that is the number worth watching.
+        let delivered = ev["deliveredAtMs"] as? Double
+        XCTAssertNotNil(delivered)
+        XCTAssertGreaterThan(delivered ?? 0, started,
+                             "delivery cannot precede the activity it delivers")
+        XCTAssertEqual((delivered ?? 0) - started, 118_000, accuracy: 5_000)
+    }
+
+    // The duplicate, stated as the invariant that prevents it: one instant in,
+    // the same instant out, every time. Two reads of one flip must agree or
+    // the deriver mints two journey ids for one drive.
+    func testTheSameFlipInstantAlwaysProducesTheSameStamp() {
+        let t = 1_789_000_000_000.0
+        let a = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        let b = plugin.motionEvent(startMs: t, kind: "automotive", prev: "still")
+        XCTAssertEqual(a["ts"] as? Double, b["ts"] as? Double)
+        // The flip id is per-event by design: it identifies the REPORT, not the
+        // flip, and nothing downstream may key a journey on it.
+        XCTAssertNotEqual(a["flipId"] as? String, b["flipId"] as? String)
+    }
+
+    func testMotionEventSurvivesJunkInput() {
+        for (ms, kind, prev) in [(0.0, "", ""), (-1.0, "automotive", ""), (Double.greatestFiniteMagnitude, "x", "y")] {
+            let ev = plugin.motionEvent(startMs: ms, kind: kind, prev: prev)
+            XCTAssertEqual(ev["type"] as? String, "motion")
+            XCTAssertEqual(ev["ts"] as? Double, ms)
+            XCTAssertNotNil(ev["deliveredAtMs"] as? Double)
+            XCTAssertFalse(((ev["flipId"] as? String) ?? "").isEmpty)
+        }
+    }
+
+    // Every field ingest-geo stores, present and the right type, so a rename
+    // on either side fails here rather than silently dropping a column.
+    func testMotionEventHasTheShapeIngestGeoStores() {
+        let ev = plugin.motionEvent(startMs: 1_789_000_000_000.0, kind: "still", prev: "automotive")
+        XCTAssertEqual(ev["type"] as? String, "motion")
+        XCTAssertNotNil(ev["ts"] as? Double)
+        XCTAssertNotNil(ev["kind"] as? String)
+        XCTAssertNotNil(ev["prevKind"] as? String)
+        XCTAssertNotNil(ev["flipId"] as? String)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE FLIP ARMS THE RADIO ITSELF (owner 2026-09-14)
+//
+// He drove 7:48:16 to 7:54:20 and the trip produced four GPS fixes and not
+// one radio row. Nothing was broken: arming the dense window was a JS
+// decision, and on iOS "backgrounded" means SUSPENDED, so the WebView never
+// ran and never asked. The plugin had the automotive flip in its hand at
+// 12:48:16.133 and had it on the server by 12:48:16.527, then went back to
+// sleep because nobody told it to stream.
+//
+// The TRIGGER is now native and NOTHING ELSE IS (§3.2). What a drive costs
+// is still whatever JS last pushed through setSampling, kept in
+// driveCfgKey; when a drive ENDS is still entirely JS's call; and a device
+// that has never been told either does nothing at all. These tests are
+// mostly about that second half, because a plugin that quietly invents its
+// own thresholds is the failure mode §3.2 exists to prevent.
+//
+// The live CoreMotion closure that calls selfArmDrive cannot be driven from
+// a test: CMMotionActivity's properties are read-only and CoreMotion is the
+// only thing that makes one, the same wall CLVisit put up further up this
+// file. So the DECISION is a plain function and the tests call it, exactly
+// the shape motionEvent(startMs:kind:prev:) already uses.
+// ═══════════════════════════════════════════════════════════════════════════
+extension TdGeoPluginTests {
+
+    private var driveCfgKey: String { plugin.driveCfgKeyForTest }
+    private var armedKeyForSelfArm: String { "td_geo_armed" }
+
+    /// The real-world state the self-arm exists for: tracking armed, a recipe
+    /// JS has pushed at some point, and no window open right now.
+    private func seedDriveRecipe(maxMs: Double = 45 * 60_000, filter: Double = 30,
+                                 flushMs: Double = 20_000, accuracy: String = "ten") {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        let on = expectation(description: "js arms the window once")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "maxMs": maxMs,
+                                              "distanceFilter": filter, "flushMs": flushMs,
+                                              "accuracy": accuracy, "reason": "seed"],
+                                    onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let off = expectation(description: "and closes it again")
+        plugin.setSampling(makeCall(options: ["mode": "coarse", "reason": "seed done"],
+                                    onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+    }
+
+    private func clearSelfArmState() {
+        UserDefaults.standard.removeObject(forKey: armedKeyForSelfArm)
+    }
+
+    // ── The golden path ──────────────────────────────────────────────────────
+
+    func testSelfArm_opensTheWindowOnJsTermsAndSaysNativeOnTheLedger() {
+        // Spelled out as Double constants and compared against the same
+        // constants: a bare numeric literal on the right of an XCTAssertEqual
+        // against a Double? is exactly the kind of inference argument that
+        // costs a ten-minute macOS run to discover.
+        let maxMs: Double = 40 * 60_000
+        let filter: Double = 45
+        let flushMs: Double = 25_000
+        seedDriveRecipe(maxMs: maxMs, filter: filter, flushMs: flushMs, accuracy: "ten")
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "the seed must leave the window closed")
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertTrue(plugin.driveSamplingOnForTest(),
+                      "an automotive flip with a recipe on file must open the window with nobody asking")
+        let rows = radio("drive")
+        XCTAssertEqual(onOff(rows), [true], "one flip, one ON row")
+        XCTAssertEqual(rows.first?["trigger"] as? String, "native",
+                       "the whole point of the row: which side armed the radio")
+        XCTAssertEqual(rows.first?["source"] as? String, "native")
+        XCTAssertEqual(rows.first?["reason"] as? String, "motion: automotive")
+        XCTAssertEqual(rows.first?["accuracy"] as? String, "ten",
+                       "the tier JS chose, never a tier Swift picked")
+
+        // And the window itself runs on JS's numbers, not on the plugin's.
+        let st = expectation(description: "samplingState")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["maxMs"] as? Double, maxMs)
+            XCTAssertEqual(data?["distanceFilter"] as? Double, filter)
+            XCTAssertEqual(data?["flushMs"] as? Double, flushMs)
+            XCTAssertEqual(data?["accuracy"] as? String, "ten")
+            st.fulfill()
+        }))
+        wait(for: [st], timeout: 30)
+        clearSelfArmState()
+    }
+
+    // ── No recipe, no invention ─────────────────────────────────────────────
+
+    func testSelfArm_withNothingEverPushedDoesNothingAtAll() {
+        // The §3.2 line in one test. A shell that has never been told what a
+        // drive costs must not guess one, because a guess here is a number
+        // nobody can tune without a 15-minute macOS build.
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "no recipe means no window")
+        XCTAssertTrue(radio("drive").isEmpty, "and no ledger row for a window that never opened")
+        clearSelfArmState()
+    }
+
+    func testSelfArm_junkRecipeIsRefusedRatherThanPartlyBelieved() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        let junk: [[String: Any]] = [
+            ["maxMs": "soon", "filter": "far", "flushMs": "later", "accuracy": 9],
+            ["accuracy": "ten"],                                   // nothing numeric at all
+            ["maxMs": 40 * 60_000.0, "filter": 30.0],              // flushMs missing
+            [:]
+        ]
+        for bad in junk {
+            UserDefaults.standard.set(bad, forKey: driveCfgKey)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                           "a half-written recipe is not a recipe: \(bad)")
+            XCTAssertTrue(radio("drive").isEmpty)
+        }
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        clearSelfArmState()
+    }
+
+    func testDriveRecipe_isReClampedOnTheWayOutOfDefaults() throws {
+        // UserDefaults is not a contract. It holds whatever an older build, a
+        // migration, or a corrupted write left behind, so every number is
+        // bounded again on read rather than trusted because it was bounded
+        // once on write.
+        let high: [String: Any] = ["maxMs": 999_999_999_999.0, "filter": 9999.0,
+                                   "flushMs": 1.0, "accuracy": "ten"]
+        UserDefaults.standard.set(high, forKey: driveCfgKey)
+        let cfg = try XCTUnwrap(plugin.driveCfgForTest())
+        XCTAssertEqual(cfg.maxMs, TdGeoPlugin.samplingCapCeilingMsForTest,
+                       "a week-long window is the exact failure the cap exists to prevent")
+        XCTAssertEqual(cfg.filter, 200)
+        XCTAssertEqual(cfg.flushMs, TdGeoPlugin.flushDebounceFloorMsForTest)
+        XCTAssertEqual(cfg.accuracy, "ten")
+
+        let lowCfg: [String: Any] = ["maxMs": 1.0, "filter": 0.0, "flushMs": 999_999_999.0,
+                                     "accuracy": 7]
+        UserDefaults.standard.set(lowCfg, forKey: driveCfgKey)
+        let low = try XCTUnwrap(plugin.driveCfgForTest())
+        XCTAssertEqual(low.maxMs, TdGeoPlugin.samplingCapFloorMsForTest)
+        XCTAssertEqual(low.filter, 5)
+        XCTAssertEqual(low.flushMs, TdGeoPlugin.flushDebounceCeilingMsForTest)
+        XCTAssertEqual(low.accuracy, "best", "an accuracy that is not a string falls back, never crashes")
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+    }
+
+    // ── Only a drive is a drive ─────────────────────────────────────────────
+
+    func testSelfArm_onlyAutomotiveArmsAnything() {
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        // "driving" and "onFoot" are the HISTORY query's vocabulary
+        // (motionSince); the live stream says "automotive" and "walking". Two
+        // spellings for one fact is how the server once ended up able to see
+        // that a transition happened and never what it was, so the self-arm
+        // matches exactly the one the live stream emits.
+        for kind in ["walking", "still", "cycling", "running", "onFoot", "driving",
+                     "", "AUTOMOTIVE", "automotive ", "unknown"] {
+            plugin.selfArmDriveForTest(kind: kind)
+            XCTAssertFalse(plugin.driveSamplingOnForTest(), "\(kind) is not a drive")
+        }
+        XCTAssertTrue(radio("drive").isEmpty, "and none of them touched the ledger")
+        clearSelfArmState()
+    }
+
+    // ── Never twice ─────────────────────────────────────────────────────────
+
+    func testSelfArm_cannotDoubleArmAWindowJsAlreadyOpened() {
+        // The race that matters in the field: JS IS awake, it armed the window
+        // on the same flip, and the plugin must not open a second one behind
+        // it. One window, one ON row, one cap.
+        seedDriveRecipe()
+        let js = expectation(description: "js arms on the flip")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "reason": "motion walking->automotive"],
+                                    onSuccess: { _ in js.fulfill() }))
+        wait(for: [js], timeout: 30)
+        plugin.clearBufferForTest()
+
+        for _ in 0..<10 { plugin.selfArmDriveForTest(kind: "automotive") }
+
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the window JS opened is still open")
+        XCTAssertTrue(radio("drive").isEmpty,
+                      "ten flips against an open window wrote nothing: the ledger is what the radio DID")
+        clearSelfArmState()
+    }
+
+    func testSelfArm_repeatedFlipsAreOneWindowNotAStack() {
+        // Same guard-race shape as §11.2, from the other side: the plugin
+        // arming itself N times must leave ONE window and ONE cap.
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        for _ in 0..<10 { plugin.selfArmDriveForTest(kind: "automotive") }
+        XCTAssertEqual(onOff(radio("drive")), [true], "ten flips, one window, one row")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+
+        // And JS's close still ends it, however it was opened.
+        let off = expectation(description: "js closes a window it did not open")
+        plugin.setSampling(makeCall(options: ["mode": "coarse", "reason": "park"],
+                                    onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertEqual(onOff(radio("drive")), [true, false])
+        clearSelfArmState()
+    }
+
+    // ── Tracking off means tracking off ─────────────────────────────────────
+
+    func testSelfArm_afterStopAllDoesNothing() {
+        seedDriveRecipe()
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(options: ["reason": "sign out"], onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        plugin.clearBufferForTest()
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                       "a stray CoreMotion callback after sign-out must never turn the receiver back on")
+        XCTAssertTrue(radio("drive").isEmpty)
+    }
+
+    // ── The recipe outlives everything ──────────────────────────────────────
+
+    func testDriveRecipe_survivesTheWindowClosingAndTheCapFiringAndAStopAll() {
+        // If the recipe died with the window, the self-arm would work exactly
+        // once per app launch and then silently stop, which is the kind of
+        // half-working nobody notices for a week.
+        seedDriveRecipe()
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "a closed window must not take the recipe with it")
+
+        plugin.expireSamplingCapForTest()
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "nor may the safety cap")
+
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "nor may a sign-out")
+    }
+
+    func testSelfArm_worksAgainAfterTheWindowItOpenedHasClosed() {
+        // Drive, park, drive again. The second flip must be as good as the
+        // first without JS ever waking up in between.
+        seedDriveRecipe()
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        plugin.expireSamplingCapForTest()
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the second drive of the day is not a special case")
+        XCTAssertEqual(onOff(radio("drive")), [true, false, true])
+        clearSelfArmState()
+    }
+
+    // ── The half-hourly ping pulls the tape (owner 2026-09-14) ──────────────
+    // Every other wake already pulled the coprocessor's history on the way
+    // past. This one did not, and it is the only wake that arrives on a
+    // schedule rather than on movement. It merely looked fine because a BLIND
+    // ping buys a burst whose fixes reach didUpdateLocations; a phone holding
+    // a fresh position bought no burst and pulled nothing.
+    //
+    // The simulator has no coprocessor (see the file header), so what is
+    // asserted is the contract: the ping still records what it was woken for,
+    // it reaches the backfill, and running it five times in a row can neither
+    // rewind the mark nor crash the process.
+    func testSilentPush_pullsTheTapeWithoutRewindingTheMarkOrCrashing() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        plugin.load()
+        let mark = plugin.motionMarkKeyForTest
+        let future = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(future, forKey: mark)
+        let before = bufferCount(ofType: "push-ping")
+
+        for _ in 0..<5 {
+            NotificationCenter.default.post(name: Notification.Name("TdSilentPush"),
+                                            object: nil, userInfo: ["td": "geo-ping"])
+        }
+
+        let settled = expectation(description: "five pings settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "push-ping"), before,
+                                 "the ping is still a liveness row first")
+            XCTAssertGreaterThanOrEqual(UserDefaults.standard.double(forKey: mark), future,
+                                        "the tape pull must never re-send history a previous wake already took")
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 30)
+        clearSelfArmState()
+    }
+}
+
+// ── COVERAGE: WHAT THE PHONE KNOWS IT HAS CHECKED (owner 2026-09-18) ────────
+//
+// "I just need to ensure phone derives go down and they do land in real time."
+//
+// The server derives on every flush and is forbidden to retire a row, because
+// it cannot tell a stretch that did not happen from a stretch nobody uploaded.
+// The coverage mark is the one fact that settles that, so these tests guard the
+// two ways it could lie: claiming a window the coprocessor never answered for,
+// and claiming one the server never received.
+//
+// The simulator has no coprocessor, which makes it the perfect place to prove
+// the first half: a query that cannot run must leave the mark exactly where it
+// was. A mark that crept forward here is a mark that would authorise the server
+// to delete somebody's paid time on no evidence at all.
+extension TdGeoPluginTests {
+
+    private var readKey: String { plugin.motionReadKeyForTest }
+    private var ackedKey: String { plugin.flushCoveredKeyForTest }
+
+    func testCoverageIsNotTheSameMarkAsTheLastFlip() {
+        // These were one number once and it was wrong: a man standing still
+        // from 10:58 to 12:11 has his last FLIP at 10:58 the whole time, while
+        // the phone has checked and knows nothing happened. Two facts, two
+        // keys, and nothing may collapse them back into one.
+        let d = UserDefaults.standard
+        XCTAssertNotEqual(plugin.motionReadKeyForTest, plugin.motionMarkKeyForTest,
+            "coverage and the last flip must not share a key")
+        d.set(1_000_000.0, forKey: plugin.motionMarkKeyForTest)
+        d.set(0.0, forKey: readKey)
+        XCTAssertEqual(d.double(forKey: readKey), 0,
+            "moving the flip mark must not move the coverage mark")
+    }
+
+    func testCoverageIsNotClaimedWithoutACoprocessor() {
+        // The simulator's CMMotionActivityManager is unavailable, so the query
+        // never runs. Nothing was asked, so nothing is covered.
+        let d = UserDefaults.standard
+        d.set(0.0, forKey: readKey)
+        plugin.backfillMotionHistoryForTest()
+        plugin.backfillMotionHistoryForTest()
+        XCTAssertEqual(d.double(forKey: readKey), 0,
+            "a backfill that could not query claimed coverage it does not have")
+    }
+
+    func testCoverageNeverMovesBackwards() {
+        // The server trusts the highest coverage it has been told. A mark that
+        // could fall would re-open a day the server already closed.
+        let d = UserDefaults.standard
+        let ahead = (Date().timeIntervalSince1970 * 1000) + 60_000
+        d.set(ahead, forKey: readKey)
+        plugin.backfillMotionHistoryForTest()
+        XCTAssertGreaterThanOrEqual(d.double(forKey: readKey), ahead,
+            "the coverage mark moved backwards")
+    }
+
+    func testCoverageSurvivesAGarbageValue() {
+        // §3.3 input classes. Whatever is in defaults is not to be trusted:
+        // an upgrade, a restore, a half-written write.
+        let d = UserDefaults.standard
+        for junk in [Double.nan, -1, .infinity, 1e18, 0] {
+            d.set(junk, forKey: readKey)
+            d.set(junk, forKey: ackedKey)
+            plugin.backfillMotionHistoryForTest()
+            plugin.flushNowForTest()
+        }
+        XCTAssertTrue(true, "a corrupt coverage mark never crashed a wake or a flush")
+    }
+
+    func testAQuietWakeWithNoNewCoverageSendsNothing() {
+        // The old behaviour and still the right one for the common case: an
+        // empty buffer and nothing new checked is not worth a request.
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set(["url": "https://example.invalid/ingest", "userId": "u", "deviceId": "dev", "key": "k"],
+              forKey: plugin.flushCfgKeyForTest)
+        let now = Date().timeIntervalSince1970 * 1000
+        d.set(now, forKey: readKey)
+        d.set(now, forKey: ackedKey)      // the server already has this coverage
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertTrue(inflight.isEmpty,
+            "a wake with no events and no new coverage posted anyway")
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+    }
+
+    func testAQuietWakeWithNewCoverageDoesSendIt() {
+        // The half-hourly ping wake is usually this shape: nothing happened,
+        // and that is precisely the fact the server is waiting for. Before
+        // this, an empty buffer ended the flush and the fact never left.
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set(["url": "https://example.invalid/ingest", "userId": "u", "deviceId": "dev", "key": "k"],
+              forKey: plugin.flushCfgKeyForTest)
+        let now = Date().timeIntervalSince1970 * 1000
+        d.set(now, forKey: readKey)
+        d.set(now - 2 * TdGeoPlugin.coverageIdleMsForTest, forKey: ackedKey)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertFalse(inflight.isEmpty,
+            "coverage moved well past what the server has and the phone said nothing")
+        let cov = (d.dictionary(forKey: plugin.flushInflightCovKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(cov.count, inflight.count,
+            "every upload in flight must carry the coverage value it claimed")
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightCovKeyForTest)
+    }
+
+    func testCoverageIdleWindowIsBoundedAwayFromAHeartbeat() {
+        // Zero here turns every wake into a POST, which is how a background
+        // app gets its location privileges throttled. A day is also never
+        // waiting on coverage longer than one ping cycle, so it has a ceiling
+        // as well as a floor.
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.coverageIdleMsForTest, 60_000,
+            "the coverage idle window is short enough to be a heartbeat")
+        XCTAssertLessThanOrEqual(TdGeoPlugin.coverageIdleMsForTest, 30 * 60_000,
+            "a day would wait more than a ping cycle to be declared covered")
+    }
+}
+
+// ── A FLIP IS NEVER DEBOUNCED (owner 2026-09-18) ────────────────────────────
+//
+// "If I arrive at John Doe and go from automotive to on foot, I want it to
+// flush right away. If I go from on foot to drive, I want it to flush right
+// away. This doesn't seem hard."
+//
+// It is not hard, and backgrounded it already worked. Foreground it did not,
+// and foreground is where the damage is: the next thing a person does after a
+// flip is put the phone away, and a timer suspended with the app never fires.
+// His 11 September is the receipt. App active from 19:06, automotive flip at
+// 20:48:43 arming a 1.5 second timer, app backgrounded at 20:49:41, flip on
+// the server at 02:43. The 163 minute dwell it closed could not be written
+// that night, because a dwell needs both of its ends.
+extension TdGeoPluginTests {
+
+    func testAMotionFlipIsUrgentAndAFixIsNot() {
+        // The contract in one assertion. A flip goes out now; a fix keeps the
+        // debounce it was built for, because a drive samples one every couple
+        // of seconds and each one must not become its own POST.
+        XCTAssertTrue(plugin.isUrgentFlushTypeForTest("motion"),
+            "a motion flip must never wait on a timer")
+        XCTAssertFalse(plugin.isUrgentFlushTypeForTest("fix"),
+            "a fix must keep the debounce, or a drive is a POST every two seconds")
+    }
+
+    func testEveryOtherEventKeepsTheDebounce() {
+        // Deliberately narrow. Widening this to every type would turn a drive
+        // into a flush storm, which is the failure the debounce exists for.
+        for t in ["fix", "radio", "heartbeat", "push-ping", "visit", "sampling", ""] {
+            XCTAssertFalse(plugin.isUrgentFlushTypeForTest(t),
+                "\(t) became urgent, which the debounce exists to prevent")
+        }
+    }
+
+    func testFlipUrgencyDoesNotDependOnAppState() {
+        // The whole point: the old rule was "urgent only when not active", and
+        // the flip that cost five hours happened while the app WAS active.
+        // This must be a property of the event, not of what the screen is
+        // doing at the moment it arrives.
+        XCTAssertTrue(plugin.isUrgentFlushTypeForTest("motion"),
+            "flip urgency must not be conditional on the app being backgrounded")
+    }
+
+    func testSchedulingAFlipNeverThrowsOffTheMainThread() {
+        // §3.3 input classes: record() is called from CoreLocation and
+        // CoreMotion callbacks that are not guaranteed to be on the main
+        // thread, and UIApplication is main-thread only. A flip now takes a
+        // path that reads application state, so it has to bounce like the rest.
+        let done = expectation(description: "off-thread flip scheduling returned")
+        DispatchQueue.global().async {
+            self.plugin.scheduleFlushForTest(type: "motion")
+            self.plugin.scheduleFlushForTest(type: "fix")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertTrue(true, "scheduling a flip from a background queue did not crash")
+    }
+
+    // MARK: - A parked truck is parked (owner 2026-09-19)
+
+    // CMMotionActivity's flags are independent booleans and automotive +
+    // stationary means a vehicle that is not moving. Reading automotive first
+    // called that driving, so Jack's phone sat in a truck at a job site and
+    // the tape said he never stopped. CMMotionActivity has no public
+    // initializer, which is why the rule takes plain booleans.
+
+    func testMotionKind_aStoppedVehicleIsStillNotDriving() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                              walking: false, stationary: true), "still",
+                       "automotive + stationary is a parked truck, the one compound that matters")
+    }
+
+    func testMotionKind_amovingVehicleIsStillAutomotive() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                              walking: false, stationary: false), "automotive")
+    }
+
+    func testMotionKind_everySingleFlagKeepsItsOwnName() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: true, running: false,
+                                              walking: false, stationary: false), "cycling")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: true,
+                                              walking: false, stationary: false), "running")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: true, stationary: false), "walking")
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: false, stationary: true), "still")
+    }
+
+    func testMotionKind_nothingSetIsTheEmptyStringTheCallersSkipOn() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: false, cycling: false, running: false,
+                                              walking: false, stationary: false), "",
+                       "an activity with no flag is not a transition and both callers drop it")
+    }
+
+    func testMotionKind_everyFlagAtOnceStillResolvesToOneAnswer() {
+        XCTAssertEqual(TdGeoPlugin.motionKind(automotive: true, cycling: true, running: true,
+                                              walking: true, stationary: true), "still",
+                       "junk in is one answer out, never a crash and never two")
+    }
+
+    func testMotionKind_isPureAndAgreesWithItselfAcrossConcurrentCalls() {
+        // One slot per iteration, so the assertion needs no lock of its own.
+        var out = [String](repeating: "", count: 200)
+        out.withUnsafeMutableBufferPointer { buf in
+            DispatchQueue.concurrentPerform(iterations: buf.count) { i in
+                buf[i] = TdGeoPlugin.motionKind(automotive: true, cycling: false, running: false,
+                                                walking: false, stationary: true)
+            }
+        }
+        XCTAssertEqual(Set(out), ["still"], "same input, same answer, from any thread")
+    }
+
+    // MARK: - A position's age is part of the position (owner 2026-09-19)
+
+    private func locAged(_ secondsAgo: TimeInterval) -> CLLocation {
+        CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0456577, longitude: -95.7151106),
+                   altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                   timestamp: Date(timeIntervalSinceNow: -secondsAgo))
+    }
+
+    func testStaleMsFor_aFreshPositionCarriesNoAgeAtAll() {
+        XCTAssertNil(TdGeoPlugin.staleMsFor(locAged(1)),
+                     "absent means fresh, which is also how every pre-build row reads")
+    }
+
+    func testStaleMsFor_anHourOldLastKnownPositionSaysSo() {
+        let stale = TdGeoPlugin.staleMsFor(locAged(3600))
+        XCTAssertNotNil(stale)
+        XCTAssertEqual(stale ?? 0, 3_600_000, accuracy: 5_000)
+    }
+
+    func testStaleMsFor_theBoundaryIsTheSameFiveMinutesThePingAlreadyUses() {
+        let now = Date()
+        let exactly = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0, longitude: -95.7),
+                                 altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                                 timestamp: now.addingTimeInterval(-TdGeoPlugin.blindPingStaleMsForTest / 1000))
+        XCTAssertNil(TdGeoPlugin.staleMsFor(exactly, now: now), "exactly at the line is not over it")
+        let justOver = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 39.0, longitude: -95.7),
+                                  altitude: 0, horizontalAccuracy: 10, verticalAccuracy: 10,
+                                  timestamp: now.addingTimeInterval(-(TdGeoPlugin.blindPingStaleMsForTest / 1000) - 1))
+        XCTAssertNotNil(TdGeoPlugin.staleMsFor(justOver, now: now))
+    }
+
+    func testStaleMsFor_aClockSkewedFuturePositionIsNotStale() {
+        XCTAssertNil(TdGeoPlugin.staleMsFor(locAged(-600)),
+                     "a negative age is a clock that moved, never a reason to drop a position")
+    }
+
+    func testEvent_aStalePositionRidesAlongMarked_andAFreshOneIsUnmarked() {
+        let stale = plugin.eventForTest(type: "fix", loc: locAged(3600))
+        XCTAssertEqual(stale["type"] as? String, "fix")
+        XCTAssertNotNil(stale["lat"], "a stale fix still carries where the phone WAS, for the map")
+        XCTAssertNotNil(stale["staleMs"], "Jack's 11 replayed shop coordinates, each one marked now")
+        let fresh = plugin.eventForTest(type: "fix", loc: locAged(2))
+        XCTAssertNil(fresh["staleMs"], "nothing changes for a position the receiver just gave us")
+    }
+
+    func testEvent_withNoPositionAtAllIsStillAWellFormedRowAndNeverStale() {
+        let ev = plugin.eventForTest(type: "app-active", loc: nil)
+        XCTAssertEqual(ev["type"] as? String, "app-active")
+        XCTAssertNotNil(ev["ts"])
+        XCTAssertNil(ev["staleMs"])
+        XCTAssertNil(ev["lat"])
+    }
+
+    func testEvent_theTimestampIsStillTheMomentObserved_notThePositionsOwn() {
+        // The age is reported, never substituted: ts stays the wall clock so
+        // the buffer, the flush and the server's ordering are untouched, and
+        // the READER decides what a stale position is worth.
+        let before = Date().timeIntervalSince1970 * 1000
+        let ev = plugin.eventForTest(type: "fix", loc: locAged(7200))
+        let after = Date().timeIntervalSince1970 * 1000
+        let ts = ev["ts"] as? Double ?? 0
+        XCTAssertGreaterThanOrEqual(ts, before)
+        XCTAssertLessThanOrEqual(ts, after)
+    }
+}
+
+// MARK: - A recovered flip is sent on the wake that recovered it (2026-09-23)
+//
+// Owner: "I want to see on time shit within 10 seconds 100% of the time."
+//
+// The flush sent only rows with a capture time newer than the last row the
+// server had acknowledged. A flip the backfill recovers is stamped with when
+// it HAPPENED, which is before whatever this phone had already sent, so it
+// sat below the mark from the moment it was recorded and never went out on a
+// wake: Jack's 9:01 walk into the shop reached the server at 10:26, three
+// seconds after he opened the app. Rows now carry the order they were recorded
+// in, and freshness is decided by that.
+extension TdGeoPluginTests {
+
+    private func clearSeqState() {
+        let d = UserDefaults.standard
+        for k in [plugin.recordSeqKeyForTest, plugin.flushSeqMarkKeyForTest, plugin.flushInflightSeqKeyForTest,
+                  plugin.flushMarkKeyForTest, plugin.flushInflightKeyForTest, plugin.bufferKeyForTest,
+                  plugin.flushCfgKeyForTest] {
+            d.removeObject(forKey: k)
+        }
+    }
+
+    func testFreshRows_aRecoveredFlipOlderThanTheMarkIsStillFresh() {
+        // Jack's shape: the fence exit at 9:06:47 went out first, then the
+        // backfill recovered the 9:01:07 walk. By capture time it is old news;
+        // by the order it was recorded it has never been sent.
+        let exitTs = 1_790_172_407_000.0, walkTs = 1_790_172_067_000.0
+        let buf: [[String: Any]] = [
+            ["type": "regionExit", "ts": exitTs, "seq": 41.0],
+            ["type": "motion", "ts": walkTs, "kind": "onFoot", "hist": true, "seq": 42.0],
+        ]
+        let fresh = TdGeoPlugin.freshRows(buf, tsMark: exitTs, seqMark: 41)
+        XCTAssertEqual(fresh.count, 1, "the recovered walk is fresh even though it happened first")
+        XCTAssertEqual(fresh.first?["kind"] as? String, "onFoot")
+    }
+
+    func testFreshRows_rowsFromBeforeNumberingKeepTheOldRule() {
+        // An upgrade must neither re-send history nor drop the unsent tail.
+        let buf: [[String: Any]] = [
+            ["type": "fix", "ts": 100.0],
+            ["type": "fix", "ts": 200.0],
+            ["type": "fix", "ts": 50.0, "seq": 1.0],
+        ]
+        let fresh = TdGeoPlugin.freshRows(buf, tsMark: 150, seqMark: 0)
+        XCTAssertEqual(fresh.compactMap { $0["ts"] as? Double }.sorted(), [50.0, 200.0])
+    }
+
+    func testFreshRows_anAcknowledgedNumberIsNeverResent() {
+        let buf: [[String: Any]] = (1...5).map { i -> [String: Any] in
+            ["type": "fix", "ts": Double(1000 + i), "seq": Double(i)]
+        }
+        XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 0, seqMark: 5).count, 0)
+        XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 9_999, seqMark: 3).count, 2,
+                       "numbered rows ignore the capture-time mark entirely")
+    }
+
+    func testFreshRows_junkNumbersFallBackToTheTimestamp() {
+        let junks: [Any] = ["7", -3.0, 0.0, Double.nan, Double.infinity, NSNull(), [1], ["a": 1]]
+        for junk in junks {
+            let buf: [[String: Any]] = [["type": "fix", "ts": 500.0, "seq": junk]]
+            XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 400, seqMark: 1_000_000).count, 1,
+                           "\(junk) is not a number, so the row is judged by its time")
+            XCTAssertEqual(TdGeoPlugin.freshRows(buf, tsMark: 600, seqMark: 0).count, 0)
+        }
+    }
+
+    func testFreshRows_emptyAndGarbageBuffersAreNotAFault() {
+        XCTAssertEqual(TdGeoPlugin.freshRows([], tsMark: 0, seqMark: 0).count, 0)
+        XCTAssertEqual(TdGeoPlugin.freshRows([[:], ["seq": 1.0]], tsMark: 0, seqMark: 0).count, 1,
+                       "a row with only a number is still a numbered row")
+    }
+
+    func testRecord_numbersEveryRowInOrderAndSurvivesARelaunch() {
+        clearSeqState()
+        for i in 0..<120 { plugin.recordForTest(["type": "fix", "ts": Double(1_000 + (i % 7))]) }
+        let rows = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        let seqs = rows.compactMap { $0["seq"] as? Double }
+        XCTAssertEqual(seqs.count, 120)
+        XCTAssertEqual(seqs, seqs.sorted(), "recorded order, whatever the capture times")
+        XCTAssertEqual(Set(seqs).count, 120, "no number is handed out twice")
+        // A fresh plugin instance is what a relaunch looks like: the counter
+        // lives on disk, so numbering carries on rather than restarting at 1
+        // and colliding with rows still in the buffer.
+        let reborn = TdGeoPlugin()
+        reborn.recordForTest(["type": "fix", "ts": 1.0])
+        let after = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertEqual(after.last?["seq"] as? Double, 121)
+        clearSeqState()
+    }
+
+    func testRecord_aCorruptCounterStillNumbersForward() {
+        clearSeqState()
+        UserDefaults.standard.set("garbage", forKey: plugin.recordSeqKeyForTest)
+        plugin.recordForTest(["type": "fix", "ts": 1.0])
+        UserDefaults.standard.set(-50.0, forKey: plugin.recordSeqKeyForTest)
+        plugin.recordForTest(["type": "fix", "ts": 2.0])
+        let rows = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertTrue(rows.allSatisfy { (($0["seq"] as? Double) ?? 0) >= 1 }, "never a zero or negative number")
+        clearSeqState()
+    }
+
+    func testFlushNow_sendsARecoveredFlipBelowTheCaptureMark() {
+        // The bug, end to end: red before, green after.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        d.set(1_790_172_407_000.0, forKey: plugin.flushMarkKeyForTest)   // the fence exit, already acked
+        d.set(41.0, forKey: plugin.flushSeqMarkKeyForTest)
+        d.set([["type": "motion", "ts": 1_790_172_067_000.0, "kind": "onFoot", "hist": true, "seq": 42.0]],
+              forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        clearSeqState()
+    }
+
+    func testFlushNow_twoBatchesWithTheSameNewestTimeBothGo() {
+        // Recovered flips can share a newest timestamp with a batch already on
+        // its way; the batch is identified by its newest ROW now.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        d.set([["type": "fix", "ts": 5_000.0, "seq": 1.0]], forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
+        d.set(buf, forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
+        // And the same batch twice is still one upload.
+        plugin.flushNowForTest()
+        plugin.flushNowForTest()
+        let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(again.count, 2)
+        clearSeqState()
+    }
+
+    func testBackfill_manyWakesInARowNeverLeakOrCrash() {
+        // Every wake now holds an assertion until CoreMotion answers. The
+        // simulator has no coprocessor, so this is the guard path: fifty wakes,
+        // from two queues, and nothing left behind or thrown.
+        clearSeqState()
+        let done = expectation(description: "background wakes")
+        DispatchQueue.global().async {
+            for _ in 0..<25 { self.plugin.backfillMotionHistoryForTest() }
+            DispatchQueue.main.async {
+                for _ in 0..<25 { self.plugin.backfillMotionHistoryForTest() }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(true)
+        clearSeqState()
     }
 }

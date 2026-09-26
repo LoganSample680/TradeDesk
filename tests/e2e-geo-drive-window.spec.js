@@ -464,6 +464,132 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.open).toBe(false);
   });
 
+  // ── 5b. A window JS did not open (build 60) ──────────────────────────────
+  //
+  // The plugin arms the dense window itself on an automotive flip now, because
+  // a backgrounded WebView on iOS is a SUSPENDED one: the owner's 14 September
+  // drive, 7:48:16 to 7:54:20, produced four fixes and not one radio row
+  // because _geoTdEvent was never running to ask for the radio. JS therefore
+  // has to be able to wake into a window it did not open, or nothing on this
+  // side would ever close it (park, the confirmer and the leg all key off
+  // _geoDriveWinAt) and it would run to the plugin's 45-minute safety cap.
+
+  test("a drive window the plugin opened is adopted, so JS can close it", async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'sampling', ts: Date.now(), mode: 'drive' });
+      const adopted = _geoDriveWindowOn();
+      const why = _geoDriveWinWhy;
+      const closed = _geoDriveWindowClose('park: Shop');
+      return { adopted, why, closed, open: _geoDriveWindowOn(), last: calls[calls.length - 1] };
+    `);
+    expect(r.adopted).toBe(true);
+    expect(r.why).toBe('native');
+    // The proof that adoption is load-bearing: without it the close is a
+    // no-op that never reaches the plugin and the radio stays up.
+    expect(r.closed).toBe(true);
+    expect(r.open).toBe(false);
+    expect(r.last.mode).toBe('coarse');
+  });
+
+  test("a replayed sampling row never re-opens a window hours later", async () => {
+    // drainBuffer replays everything that happened while the WebView was
+    // asleep. A drive that ended at lunch must not turn the radio on at five.
+    const r = await run(`
+      await _geoTdEvent({ type: 'sampling', ts: Date.now() - 3 * 3600000, mode: 'drive' }, true);
+      return { open: _geoDriveWindowOn(), calls: calls.length };
+    `);
+    expect(r.open).toBe(false);
+    expect(r.calls).toBe(0);
+  });
+
+  test("the plugin's own close still ends a window the plugin opened", async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'sampling', ts: Date.now(), mode: 'drive' });
+      const opened = _geoDriveWindowOn();
+      await _geoTdEvent({ type: 'sampling', ts: Date.now(), mode: 'coarse', reason: 'cap' });
+      return { opened, open: _geoDriveWindowOn() };
+    `);
+    expect(r.opened).toBe(true);
+    expect(r.open).toBe(false);
+  });
+
+  test("a window already open on this side is never re-anchored by the plugin's row", async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      const why = _geoDriveWinWhy;
+      const at = _geoDriveWinAt;
+      await _geoTdEvent({ type: 'sampling', ts: Date.now() + 60000, mode: 'drive' });
+      return { why, sameWhy: _geoDriveWinWhy === why, sameAt: _geoDriveWinAt === at };
+    `);
+    expect(r.why).not.toBe('native');
+    expect(r.sameWhy).toBe(true);
+    expect(r.sameAt).toBe(true);
+  });
+
+  test('booting into a window the plugin already opened adopts it at its real start', async () => {
+    // The relaunch case: the sampling row went out while the WebView was dead,
+    // so there is no live event to adopt. samplingState() is the question this
+    // API was built to answer (7.3).
+    const r = await page.evaluate(`(async () => {
+      const saved = { td: _geoTdPlugin, bound: window._geoTdBound, at: _geoDriveWinAt,
+                      why: _geoDriveWinWhy, asked: _geoDriveWinAskedAt };
+      try {
+        _geoDriveWinAt = 0; _geoDriveWinWhy = ''; _geoDriveWinAskedAt = 0;
+        window._geoTdBound = false;
+        _geoTdPlugin = () => ({
+          addListener: () => {},
+          drainBuffer: () => Promise.resolve({ fixes: [] }),
+          samplingState: () => Promise.resolve({ mode: 'drive', maxMs: 45 * 60000,
+            remainingMs: 40 * 60000, distanceFilter: 30, flushMs: 20000, accuracy: 'ten' }),
+        });
+        _geoTdInit();
+        await new Promise(r => setTimeout(r, 80));
+        return { on: _geoDriveWindowOn(), why: _geoDriveWinWhy, ageMs: Date.now() - _geoDriveWinAt };
+      } finally {
+        _geoTdPlugin = saved.td; window._geoTdBound = saved.bound;
+        _geoDriveWinAt = saved.at; _geoDriveWinWhy = saved.why; _geoDriveWinAskedAt = saved.asked;
+      }
+    })()`);
+    expect(r.on).toBe(true);
+    expect(r.why).toBe('native');
+    // 45 minutes of cap with 40 left means the radio came up five minutes ago,
+    // and the cap has to measure from THEN, not from this boot.
+    expect(r.ageMs).toBeGreaterThanOrEqual(5 * 60000);
+    expect(r.ageMs).toBeLessThan(5 * 60000 + 10000);
+  });
+
+  test('booting with the radio coarse, or on a shell with no samplingState, opens nothing', async () => {
+    const r = await page.evaluate(`(async () => {
+      const saved = { td: _geoTdPlugin, bound: window._geoTdBound, at: _geoDriveWinAt,
+                      why: _geoDriveWinWhy, asked: _geoDriveWinAskedAt };
+      const out = {};
+      try {
+        for (const [name, plug] of [
+          ['coarse', { addListener: () => {}, drainBuffer: () => Promise.resolve({ fixes: [] }),
+                       samplingState: () => Promise.resolve({ mode: 'coarse', remainingMs: 0 }) }],
+          ['old-shell', { addListener: () => {}, drainBuffer: () => Promise.resolve({ fixes: [] }) }],
+          ['rejects', { addListener: () => {}, drainBuffer: () => Promise.resolve({ fixes: [] }),
+                        samplingState: () => Promise.reject(new Error('nope')) }],
+          ['junk', { addListener: () => {}, drainBuffer: () => Promise.resolve({ fixes: [] }),
+                     samplingState: () => Promise.resolve(null) }],
+        ]) {
+          _geoDriveWinAt = 0; _geoDriveWinWhy = ''; _geoDriveWinAskedAt = 0;
+          window._geoTdBound = false;
+          _geoTdPlugin = () => plug;
+          _geoTdInit();
+          await new Promise(r => setTimeout(r, 60));
+          out[name] = _geoDriveWindowOn();
+        }
+        return out;
+      } finally {
+        _geoTdPlugin = saved.td; window._geoTdBound = saved.bound;
+        _geoDriveWinAt = saved.at; _geoDriveWinWhy = saved.why; _geoDriveWinAskedAt = saved.asked;
+      }
+    })()`);
+    expect(r).toEqual({ coarse: false, 'old-shell': false, rejects: false, junk: false });
+  });
+
   // ── 6. Park, and the arrow the owner actually sees ───────────────────────
 
   test('backgrounding with nothing driving parks immediately instead of after four minutes', async () => {
@@ -504,50 +630,10 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
   // The iOS 17 stream relaunches the app when the truck moves; what JS does
   // with that is under test here, the Swift half in TdGeoPluginTests.
 
-  test('parking arms the wake stream, and the answer is journaled', async () => {
-    const r = await page.evaluate(async () => {
-      const notes = [];
-      const savedNote = _geoParkNote, savedOk = _geoWakeArmOk;
-      _geoParkNote = (ev, x) => notes.push([ev, String(x)]);
-      // The gate (rule 2, tested in e2e-geo-wake-bounds) reads the clock and
-      // the work week; held open here so this test is about the arm itself.
-      _geoWakeArmOk = () => '';
-      try {
-        const calls = [];
-        const td = { setWakeOnMove: (o) => { calls.push(o); return Promise.resolve({ on: true, supported: true }); } };
-        const armed = _geoWakeOnMoveArm(td);
-        await new Promise(r => setTimeout(r, 10));
-        const old = _geoWakeOnMoveArm({ startEvents: () => {} });   // a shell without the method
-        const none = _geoWakeOnMoveArm(null);
-        const unsupported = _geoWakeOnMoveArm({ setWakeOnMove: () => Promise.resolve({ on: false, supported: false }) });
-        await new Promise(r => setTimeout(r, 10));
-        const failed = _geoWakeOnMoveArm({ setWakeOnMove: () => Promise.reject(new Error('nope')) });
-        await new Promise(r => setTimeout(r, 10));
-        return { armed, calls, old, none, unsupported, failed, notes, flag: _GEO_WAKE_ON_MOVE };
-      } finally { _geoParkNote = savedNote; _geoWakeArmOk = savedOk; }
-    });
-    expect(r.flag).toBe(true);
-    expect(r.armed).toBe(true);
-    // The reason rides the call since 2026-09-08 (the radio ledger): the
-    // plugin writes the row, JS says why. The two bounds ride it too
-    // (e2e-geo-wake-bounds pins the numbers).
-    expect(r.calls.length).toBe(1);
-    expect(r.calls[0]).toEqual(expect.objectContaining({ on: true, reason: 'park armed' }));
-    expect(r.calls[0].maxMovingMs).toBeGreaterThan(0);
-    expect(r.calls[0].tapeGraceMs).toBeGreaterThan(0);
-    expect(r.old).toBe(false);
-    expect(r.none).toBe(false);
-    expect(r.unsupported).toBe(true);
-    expect(r.failed).toBe(true);
-    expect(r.notes).toEqual([['wake-on-move', 'on'], ['wake-on-move', 'unsupported'], ['wake-on-move-fail', 'nope']]);
-  });
-
-  test('park mode itself asks for the wake stream once the regions are armed', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
-    const i = js.indexOf("_geoParkNote('park-on'");
-    expect(i).toBeGreaterThan(-1);
-    expect(js.slice(i, i + 900).includes('_geoWakeOnMoveArm(Td,_at)')).toBe(true);
-  });
+  // Parking used to arm the wake stream here. Retired 2026-09-23 (owner: "no
+  // arrow"); e2e-geo-wake-bounds proves nothing can arm it and that park mode
+  // says off instead. A wake-move from an older shell still reaches the
+  // window below, which is why those cases stay.
 
   test('a live wake-move with the flip only on the tape opens the window; a replayed one does not', async () => {
     const r = await run(`
@@ -584,11 +670,33 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     //
     // clock-in and clock-out joined it 2026-09-04. They pass the same test
     // push-ping failed: each is a getCurrentPosition read taken at the instant
-    // of the tap, never a cached position replayed from a wake. The rule this
-    // list encodes is unchanged, and wake-move is still not in it.
-    expect(r.types).toEqual(['fix', 'clock-in', 'clock-out']);
-    expect(r.types, 'a cached position never qualifies').not.toContain('push-ping');
+    // of the tap, never a cached position replayed from a wake.
+    //
+    // AMENDED 2026-09-18. This asserted exactly ['fix','clock-in','clock-out']
+    // and that push-ping was never in it. `visit` is in the list now and
+    // push-ping is admitted conditionally, and the reason the old line was
+    // right in September and wrong now is that the phone changed underneath
+    // it: since 2026-09-09 silentPush measures the cache against the
+    // CLLocation's OWN timestamp and marks anything over five minutes with
+    // staleMs, and a stale cache buys a four-second burst to replace itself.
+    // The 343 ft phantom-exit case this comment describes cannot happen to an
+    // unmarked ping any more, because unmarked now MEANS measured-fresh.
+    //
+    // What the old rule cost is Jack's 18 September: a correct position every
+    // thirty minutes all morning, on push-ping and visit rows, every one
+    // discarded, while the `fix` stream it trusted instead reported a shop he
+    // had left at 07:53. A visit is not a cache at all, it is CLVisit, iOS
+    // reporting a place a person stopped with its own arrival and departure
+    // times, and it was the best evidence in the system going straight in the
+    // bin.
+    expect(r.types).toEqual(['fix', 'clock-in', 'clock-out', 'visit']);
+    // Still not in the LIST, because whether a given push-ping qualifies is a
+    // question about the row, not the type: _geoFreshFixEv answers it.
+    expect(r.types, 'the type alone never qualifies a ping').not.toContain('push-ping');
     expect(r.types).not.toContain('wake-move');
+    // wake-drop stays out for the reason push-ping used to: wakeDrop takes
+    // mgr().location and measures no age at all.
+    expect(r.types).not.toContain('wake-drop');
   });
 
   // Owner 2026-09-03: the history query knew he was driving at 16:08:06, the
@@ -1081,6 +1189,47 @@ test.describe('The native half of the drive window', () => {
     const s = swiftSrc();
     expect(s.includes('CAPPluginMethod(name: "setSampling"')).toBe(true);
     expect(s.includes('CAPPluginMethod(name: "samplingState"')).toBe(true);
+  });
+
+  // ── The plugin arms itself (owner 2026-09-14) ─────────────────────────────
+  // The behaviour lives in native/tests/TdGeoPluginTests.swift (3.3); these
+  // pin the CONTRACT this JS file is written against, the same way everything
+  // else in this describe does.
+
+  test('an automotive flip arms the drive window in Swift, without asking JS', () => {
+    const s = swiftSrc();
+    expect(s.includes('private func selfArmDrive(kind: String)'),
+      'the decision is a plain function, because the CoreMotion closure it lives in is not drivable from a test').toBe(true);
+    expect(s.includes('self.selfArmDrive(kind: kind)'),
+      'and the live motion stream is what calls it').toBe(true);
+    expect(s.includes('private let driveCfgKey = "td_geo_drive_cfg"'),
+      'the recipe JS pushed has to outlive the window, or the self-arm works once and stops').toBe(true);
+  });
+
+  test('the self-arm invents no threshold of its own (3.2)', () => {
+    const s = swiftSrc();
+    const i = s.indexOf('private func selfArmDrive(kind: String)');
+    expect(i).toBeGreaterThan(-1);
+    const body = s.slice(i, s.indexOf('@objc func samplingState'));
+    expect(body.includes('guard let c = driveCfg() else { return }'),
+      'no recipe means no window: a shell never told what a drive costs does not guess').toBe(true);
+    expect(body.includes('guard !driveSamplingOn() else { return }'),
+      'a window JS already opened must never be opened twice').toBe(true);
+    expect(body.includes('guard trackingArmed() else { return }'),
+      'tracking off means a stray callback can never turn the receiver back on').toBe(true);
+    expect(body.includes('trigger: "native"'),
+      'the ledger has to say which side armed the radio').toBe(true);
+  });
+
+  test('the half-hourly ping pulls the motion tape as well as proving liveness', () => {
+    // The one wake that arrives on a schedule instead of on movement, and the
+    // only one that was not already recovering what CoreMotion held while the
+    // process was suspended.
+    const s = swiftSrc();
+    const i = s.indexOf('@objc private func silentPush');
+    expect(i).toBeGreaterThan(-1);
+    const body = s.slice(i, s.indexOf('private static let blindPingBurstSec'));
+    expect(body.includes('backfillMotionHistory()')).toBe(true);
   });
 
   test('only a drive breadcrumb may wait; everything a person watches stays live', () => {

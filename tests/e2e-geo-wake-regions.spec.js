@@ -255,7 +255,81 @@ test.describe('Wake region set for the dead app', () => {
   test('the park arm prefers the events engine and passes the FULL region set', async () => {
     const src = readJs('geo-track.js');
     expect(src.includes("typeof Td.startEvents==='function'"), 'park must arm visits when the shell has them').toBe(true);
-    expect(src.includes('_geoParkRegions(_at,radiusM)'), 'park arms the full wake set, not one kerb').toBe(true);
+    expect(src.includes('_geoParkRegions(_at,regionM)'), 'park arms the full wake set, not one kerb').toBe(true);
+  });
+
+  // ── The kerb region is what wakes a parked phone now (owner 2026-09-23) ──
+  // "No arrow" retired the wake stream, so the region at the kerb is the
+  // wake. His 13:30 pull-out from the shop woke the phone 830 m down the road
+  // off a 243 m region; iOS fires well past the edge, so the edge comes in.
+  const parkArm = (spot) => page.evaluate(async (spot) => {
+    const saved = { td: _geoTdPlugin, on: _geoAppOnScreen, wid: _geoNativeWatcherId, park: _geoParkModeOn,
+      note: _geoParkNote, hb: _geoHeartbeatSync, drop: _geoDropWatchers, persist: _geoParkPersist,
+      spot: _geoParkSpot, r: _geoParkRadiusM, places: places.slice(), off: [S.officeLat, S.officeLon] };
+    const out = { regs: null, off: [] };
+    _geoTdPlugin = () => ({
+      startParked: () => Promise.resolve({ armed: 1 }),
+      startEvents: (a) => { out.regs = a.regions; return Promise.resolve({ armed: a.regions.length }); },
+      setWakeOnMove: (a) => { out.off.push(a); return Promise.resolve({ on: false }); },
+    });
+    _geoAppOnScreen = () => false; _geoNativeWatcherId = 'w1'; _geoParkModeOn = false;
+    _geoParkNote = () => {}; _geoHeartbeatSync = () => {}; _geoDropWatchers = () => 0; _geoParkPersist = () => {};
+    places.length = 0; places.push({ id: 'p-shop', name: 'Shop', kind: 'shop', lat: 39.0307066, lon: -95.7112082 });
+    S.officeLat = 39.03071; S.officeLon = -95.71121;
+    try {
+      _geoEnterParkMode(spot);
+      await new Promise(r => setTimeout(r, 20));
+      out.jsRadius = _geoParkRadiusM;
+      return out;
+    } finally {
+      _geoTdPlugin = saved.td; _geoAppOnScreen = saved.on; _geoNativeWatcherId = saved.wid; _geoParkModeOn = saved.park;
+      _geoParkNote = saved.note; _geoHeartbeatSync = saved.hb; _geoDropWatchers = saved.drop; _geoParkPersist = saved.persist;
+      _geoParkSpot = saved.spot; _geoParkRadiusM = saved.r;
+      places.length = 0; saved.places.forEach(p => places.push(p)); S.officeLat = saved.off[0]; S.officeLon = saved.off[1];
+      try { localStorage.removeItem('zp3_geo_park'); } catch (e) {}
+    }
+  }, spot);
+
+  test('parked at a saved place: iOS gets a 100 m kerb under the place name', async () => {
+    const r = await parkArm({ lat: 39.03072, lng: -95.71124, name: 'Shop' });
+    expect(r.regs[0].id).toBe('place-p-shop');
+    expect(r.regs[0].radius).toBe(100);
+    // The JS exit test still judges on the full park radius; only the iOS wake tightened.
+    expect(r.jsRadius).toBeCloseTo(600 * 0.3048 + 60, 0);
+    expect(r.off).toEqual([{ on: false, reason: 'park armed, stream retired' }]);
+  });
+
+  test('a foot stop keeps its 250 m floor, so a walk around the block does not wake the GPS', async () => {
+    const r = await parkArm({ lat: 38.5, lng: -94.5, name: 'stop' });
+    expect(r.regs[0].id).toBe('fence');
+    expect(r.regs[0].radius).toBe(250);
+  });
+
+  test('a named place merging into the kerb keeps the kerb size; elsewhere it keeps its own', async () => {
+    const r = await page.evaluate(() => {
+      const saved = places.slice();
+      try {
+        places.length = 0;
+        places.push({ id: 'here', name: 'Yard', kind: 'supply', lat: 39.0400, lon: -95.7500, fenceFt: 800 });
+        places.push({ id: 'there', name: 'Depot', kind: 'supply', lat: 39.0600, lon: -95.7700, fenceFt: 800 });
+        return _geoParkRegions({ lat: 39.04001, lng: -95.75001 }, 100);
+      } finally { places.length = 0; saved.forEach(p => places.push(p)); }
+    });
+    const here = r.find(x => x.id === 'place-here'), there = r.find(x => x.id === 'place-there');
+    expect(here.radius).toBe(100);
+    expect(there.radius).toBeCloseTo(800 * 0.3048 + 60, 0);
+    expect(r.find(x => x.id === 'fence')).toBeUndefined();
+  });
+
+  test('junk spots never throw and never arm a region at nowhere', async () => {
+    const r = await page.evaluate(() => {
+      const out = [];
+      for (const junk of [null, undefined, {}, { lat: null, lng: null }, { lat: 'x', lng: 'y' }]) {
+        try { out.push(_geoParkRegions(junk, 100).some(x => x.id === 'fence' && !isFinite(x.lat))); } catch (e) { out.push('threw'); }
+      }
+      return out;
+    });
+    expect(r.every(x => x === false)).toBe(true);
   });
 
   test('the live watcher arms the baseline the moment tracking starts (mid-drive force close)', async () => {
@@ -532,24 +606,47 @@ test.describe('Wake region set for the dead app', () => {
   // New web code used to reach a phone only when somebody opened the app, so
   // a backgrounded phone sat on old JS and then reloaded in the owner's hand.
   const bgUpd = (opts) => page.evaluate(async (o) => {
-    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') };
+    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden'),
+      poll: window._checkVersionOnResume };
     let reloads = 0, fetches = 0;
     try {
+      // THE OTHER TWO REASONS A RELOAD FIRES ARE NOT THIS TEST'S (webkit shard
+      // 3, b7dbc59: reloads 2). The stub counts every caller, and cloud.js has
+      // two more: the 15 s poller, and a reload a cold load deferred earlier in
+      // the worker (_deferredReload), which re-fires when that load settles and
+      // can land inside this window. Both are closed for the window, so the
+      // count is the wake's, the same way the probe count already is.
+      window._checkVersionOnResume = async () => {};
+      _deferredReload = false;
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
-      window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
+      // COUNT THE WAKE'S PROBE, NOT THE FILENAME. Four paths fetch
+      // version.json and only one of them is under test here; `bg=1` is the
+      // wake's own marker (js/geo-track.js _geoBgUpdateCheck).
+      window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
+        return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
       window._autoSaveAndReload = async () => { reloads++; };
       _geoBgUpdAt = 0;
       await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
       await new Promise(r => setTimeout(r, 60));
       return { reloads, fetches, running: APP_VERSION };
     } finally {
-      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload; window._checkVersionOnResume = saved.poll;
       delete document.hidden;
       if (saved.hidden) Object.defineProperty(Document.prototype, 'hidden', saved.hidden);
       _geoBgUpdAt = 0;
     }
   }, opts);
 
+  // ── COUNT THE PROBE, NOT EVERY FETCH ON THE PAGE (2026-09-16) ────────────
+  // These three stubs replaced window.fetch wholesale and counted every call,
+  // and the thing under test is the VERSION PROBE ('version.json'). A push-ping
+  // also kicks the day deriver (_geoDeriveLiveSoon at the push-ping arm), and
+  // that fetches the server's fixes when this page's local fix log happens to
+  // be thin. Whether it is thin depends on what ran before in the same worker,
+  // so the count read 1 or 2 depending on shard composition: it failed on
+  // WebKit shard 3 the day two tests were added to an unrelated spec. The
+  // assertion was measuring the wrong thing, which is the "scan written too
+  // broadly" class in CLAUDE.md 5.2.1. The probe is still counted exactly.
   test('a backgrounded phone on an old version reloads on the push wake', async () => {
     const r = await bgUpd({ hidden: true, serverVersion: '99.99.99.9' });
     expect(r.fetches, 'the wake must check the live version').toBe(1);
@@ -576,7 +673,9 @@ test.describe('Wake region set for the dead app', () => {
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
         const cur = APP_VERSION;
-        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: cur }) }; };
+        // Same narrowing as bgUpd: only the wake's own probe carries bg=1.
+        window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
+          return { ok: true, json: async () => ({ version: cur }) }; };
         window._autoSaveAndReload = async () => {};
         _geoBgUpdAt = 0;
         for (let i = 0; i < 5; i++) await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
@@ -596,7 +695,10 @@ test.describe('Wake region set for the dead app', () => {
       let fetches = 0;
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
+        // toBe(0) here, so the broad scan was the worse bug of the three: any
+        // unrelated version.json fetch on the page failed a test about replay.
+        window.fetch = async (u) => { if (String(u).indexOf('bg=1') >= 0) fetches++;
+          return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
         _geoBgUpdAt = 0;
         await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 }, true);
         await new Promise(r => setTimeout(r, 60));
@@ -744,12 +846,16 @@ test.describe('Wake region set for the dead app', () => {
       return out;
     }, { setup });
 
-    test('a park written down comes back, and nothing is disarmed', async () => {
+    // WAS: "nothing is disarmed", because the stream was the park's wake and
+    // a restored park had to keep it. The stream is retired (2026-09-23, owner:
+    // "no arrow"), so a restored park keeps its REGIONS and says off to the
+    // stream, which is how a phone still holding one from an older build lets go.
+    test('a park written down comes back, and only the retired stream is told off', async () => {
       const r = await boot({ store: true, ageMs: 60000, name: 'TradeDesk shop' });
       expect(r.ok).toBe(true);
       expect(r.park, 'JS believes it is parked again, so park-exit can run').toBe(true);
       expect(r.spot.name).toBe('TradeDesk shop');
-      expect(r.wake.length, 'a real park must never be disarmed on boot').toBe(0);
+      expect(r.wake, 'only ever an off, and only for the retired stream').toEqual([{ on: false, reason: 'park restored, stream retired' }]);
     });
 
     test('no park stored: the plugin is told to drop the stream', async () => {

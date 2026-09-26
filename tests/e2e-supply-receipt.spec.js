@@ -113,14 +113,115 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.heldGone, 'and the card has nothing left to ask').toBe(true);
     });
 
+    // ── ONE TRIP, ONE ANSWER, BOTH BOOKS (owner 2026-09-16) ─────────────────
+    // "Personal should remove the mileage and the timesheet will then have a
+    // personal hole and exclude itself from time."
+    //
+    // It only ever reached the mileage row. Jack's Neenans run came off his
+    // deductible miles and left forty-four minutes of drive and dwell on his
+    // timesheet as paid work, so the app told him two different stories about
+    // one trip. geo_answer_supply_run is the door for the time half, keyed by
+    // the run because that is what the card is about: a day and a store.
+    test('Personal also takes the hours off, through the one door that owns them', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate((k) => {
+        const calls = [];
+        const orig = window._supa;
+        window._supa = Object.assign({}, orig || {}, {
+          rpc: (fn, args) => { calls.push([fn, args]); return Promise.resolve({ data: null, error: null }); },
+        });
+        try { resolveSupplyRun(k, 'personal'); return { calls }; }
+        finally { window._supa = orig; }
+      }, key);
+      expect(out.calls).toEqual([['geo_answer_supply_run', { p_key: key, p_mode: 'personal' }]]);
+    });
+
+    // ── AND A FAILED ANSWER SAYS SO (owner 2026-09-20) ──────────────────
+    //
+    // "Home Depot runs aren't staying personal." His 19 September, hours
+    // after he answered it: the time rows dismissed, the mileage row still
+    // holding pendingReceipt with no personal flag. One trip, two books, two
+    // stories, and the card reads the book that still said unanswered, so it
+    // asked him again.
+    //
+    // The RPC owns both books now (migration 20261028), which means a failed
+    // call leaves NOTHING written on the server while this device shows the
+    // card gone. That used to be swallowed by a bare .catch(()=>{}). It has
+    // to speak: a person who is not told is a person who finds out on the
+    // dashboard hours later and concludes the app does not remember.
+    test('an answer the server refused tells him, instead of vanishing', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate(async (k) => {
+        const toasts = [];
+        const origSupa = window._supa, origToast = window.showToast;
+        window.showToast = (m) => toasts.push(String(m));
+        window._supa = Object.assign({}, origSupa || {}, {
+          rpc: () => Promise.resolve({ data: null, error: { message: 'offline' } }),
+        });
+        try {
+          resolveSupplyRun(k, 'personal');
+          await new Promise(r => setTimeout(r, 60));
+          return { toasts };
+        } finally { window._supa = origSupa; window.showToast = origToast; }
+      }, key);
+      expect(out.toasts.some(t => /did not save/i.test(t)),
+        'he is told, not left to find out later: ' + JSON.stringify(out.toasts)).toBe(true);
+    });
+
+    // ── AND THE WAY BACK FROM A MIS-TAP (owner 2026-09-16) ─────────────────
+    // "For Jack he meant to hit no receipt." He has done it twice, and until
+    // today no control anywhere could undo it: the card is gone once answered
+    // and the mileage row only reported what had happened to it.
+    //
+    // Back to where "no receipt" would have left it, not back to HELD. He has
+    // answered the receipt question; asking it again is the app refusing to
+    // believe him.
+    test('It was work: a mis-tapped Personal goes back to no-receipt business, hours and all', async () => {
+      const key = await seedHeld();
+      const out = await page.evaluate((k) => {
+        const calls = [];
+        const orig = window._supa;
+        window._supa = Object.assign({}, orig || {}, {
+          rpc: (fn, args) => { calls.push([fn, args]); return Promise.resolve({ data: null, error: null }); },
+        });
+        try {
+          resolveSupplyRun(k, 'personal');
+          const n = resolveSupplyRun(k, 'unpersonal');
+          const rows = mileage.filter(m => m.supplyRunKey === k);
+          return { n, calls,
+            cleared: rows.every(m => !m.personal && m.noReceipt === true && !m.pendingReceipt),
+            backOnBooks: deductibleTrips(mileage).length === rows.length,
+            notReasked: pendingSupplyRuns().length === 0 };
+        } finally { window._supa = orig; }
+      }, key);
+      expect(out.n).toBe(2);
+      expect(out.cleared, 'personal off, no receipt on, not held again').toBe(true);
+      expect(out.backOnBooks, 'and the miles are deductible again').toBe(true);
+      expect(out.notReasked, 'the receipt question is not re-opened').toBe(true);
+      expect(out.calls[1]).toEqual(['geo_answer_supply_run', { p_key: key, p_mode: 'working' }]);
+    });
+
+    // NOT DOM-TESTED, and said out loud rather than quietly skipped: the
+    // mileage list does not draw in the offline harness (renderAllMileage
+    // writes into a container the test DOM never builds), so the chip's markup
+    // has no honest assertion here. What it calls IS tested, directly, by the
+    // two tests above. If the list ever becomes renderable offline, assert
+    // 'Personal · off the books' and 'It was work' on the row and delete this
+    // note.
+
     test('an answered run stays answered when the deriver writes the same leg again', async () => {
       // The carry-across in js/geo-track.js: whatever the person answered
       // rides onto the re-derived leg, and the fresh hold is dropped.
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const day = todayKey(), key = day + '|Home Depot';
+        // ONE instant, computed once. This used to call new Date() inside
+        // leg(), so the rebuild's leg claimed a different departure from the
+        // one that was answered, which is now (2026-09-18) exactly how the
+        // app tells two trips apart.
+        const started = new Date().toISOString();
         const leg = (extra) => Object.assign({ id: 'j-x-1', legKey: 'j-x-1', gps: true, date: day, miles: 4,
-          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: new Date().toISOString() }, extra || {});
+          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: started }, extra || {});
         const results = {};
         for (const [name, answer] of [['personal', 'personal'], ['noreceipt', 'noreceipt'], ['receipt', 'receipt']]) {
           mileage.length = 0;
@@ -140,6 +241,213 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.noreceipt).toEqual({ held: false, personal: false, noReceipt: true, exp: undefined });
       expect(out.receipt).toEqual({ held: false, personal: false, noReceipt: false, exp: 777001 });
       expect(out.unanswered).toEqual({ held: true, n: 1 });
+    });
+
+    // ── AN ANSWER BELONGS TO A TRIP, NOT TO AN ID (owner 2026-09-18) ──────
+    // "Ain't no fucking way Jack answered personal to the timesheet rows why
+    // the fuck did things at 8 am go to personal" He had not. His
+    // j-987ebc83-mu6ym0i3 began the day as a seven-minute drive to an unsaved
+    // job site and ended it as a 0.9-mile round trip that had absorbed three
+    // journeys, because the id is minted from the motion flip and the journey
+    // around that flip is re-derived on every rebuild. The answer given to the
+    // first trip became true of the second.
+    test('an answer does not follow the id onto a different trip', async () => {
+      const out = await page.evaluate(() => {
+        const day = todayKey(), key = day + '|Home Depot';
+        const started = '2026-09-18T12:53:31.275Z';
+        const leg = (extra) => Object.assign({ id: 'j-x-2', legKey: 'j-x-2', gps: true, date: day,
+          miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run',
+          to_name: 'Home Depot', collapsedStops: 0, startedIso: started }, extra || {});
+        const after = (extra) => {
+          mileage.length = 0;
+          _geoDeriveApplyMileage(day, [leg()]);
+          resolveSupplyRun(key, 'personal');
+          _geoDeriveApplyMileage(day, [leg(extra)]);      // the rebuild, reshaped
+          const m = mileage.find(x => x.id === 'j-x-2');
+          return { personal: !!m.personal, miles: m.miles, to: m.to_name };
+        };
+        return {
+          same:      after({}),
+          collapsed: after({ collapsedStops: 3, to_name: 'JS Solutions shop', miles: 0.9 }),
+          elsewhere: after({ to_name: 'Neenans Co' }),
+          farther:   after({ miles: 12 }),
+          later:     after({ startedIso: '2026-09-18T17:45:13.000Z' }),
+          nudged:    after({ miles: 4.3 }),
+        };
+      });
+      expect(out.same.personal, 'the same trip keeps its answer').toBe(true);
+      expect(out.collapsed.personal, 'his 8am leg: it absorbed three stops and became a round trip').toBe(false);
+      expect(out.elsewhere.personal, 'a different destination is a different trip').toBe(false);
+      expect(out.farther.personal, 'four miles became twelve').toBe(false);
+      expect(out.later.personal, 'a different departure is a different journey').toBe(false);
+      expect(out.nudged.personal, 'a router re-measuring the same trip is still that trip').toBe(true);
+    });
+
+    test('the identity fields still ride across a reshaped leg', async () => {
+      const out = await page.evaluate(() => {
+        const day = todayKey();
+        mileage.length = 0;
+        const base = { id: 'j-x-3', legKey: 'j-x-3', gps: true, date: day, miles: 4,
+          to_name: 'Home Depot', collapsedStops: 0, startedIso: '2026-09-18T12:53:31.275Z' };
+        _geoDeriveApplyMileage(day, [Object.assign({}, base)]);
+        const m0 = mileage.find(x => x.id === 'j-x-3');
+        m0.vehicle = '2013 Ford F150'; m0.vehicleId = 7; m0.notes = 'gate code 4412';
+        _geoDeriveApplyMileage(day, [Object.assign({}, base, { to_name: 'Somewhere else', miles: 19 })]);
+        const m = mileage.find(x => x.id === 'j-x-3');
+        return { vehicle: m.vehicle, vehicleId: m.vehicleId, notes: m.notes };
+      });
+      expect(out, 'a truck and a note are about the leg however it is shaped')
+        .toEqual({ vehicle: '2013 Ford F150', vehicleId: 7, notes: 'gate code 4412' });
+    });
+
+    // ── THE FEAR BELONGS ON THE DESTRUCTIVE DOOR (owner 2026-09-18) ───────
+    // "I think personal needs to be the most scary looking thing"
+    // It was the other way round, and the control log shows the cost: at
+    // 16:54:45 Jack tapped _supplyRunNoReceipt, then a dialog button, then
+    // _supplyRunPersonal. No receipt is the harmless answer and carried the
+    // only warning; Personal took the miles AND the hours in one tap with no
+    // confirm at all.
+    test('Personal asks first, in red, and names what it costs', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p1', supplyRunKey: 'k1', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k1'));
+        const o = document.querySelector('.zmodal-overlay');
+        const yes = o && o.querySelector('#zmodal-yes');
+        return {
+          asked: !!o,
+          title: o && o.querySelector('.zmodal-title').textContent,
+          msg: o && o.querySelector('.zmodal-msg').textContent,
+          yes: yes && yes.textContent,
+          no: o && o.querySelector('.zmodal-cancel').textContent,
+          red: yes && /a32d2d/i.test(yes.getAttribute('style') || ''),
+          // Nothing may happen until he answers.
+          personalYet: !!mileage[0].personal,
+        };
+      });
+      expect(r.asked, 'one tap must no longer be enough').toBe(true);
+      expect(r.title).toBe('Read this before you tap');
+      expect(r.msg, 'the real numbers, not a category').toContain('4.5 mi');
+      expect(r.msg).toContain('26m');
+      expect(r.msg, 'both books, said plainly').toContain('timesheet');
+      expect(r.msg).toContain('mileage');
+      expect(r.msg, 'paid is the word that matters').toContain('do not get paid');
+      expect(r.msg, 'and it points at the answer he probably wants').toContain('No receipt');
+      expect(r.yes).toBe('Delete it, it was personal');
+      expect(r.no).toBe('No, keep it');
+      expect(r.red, 'the destructive button is the red one').toBe(true);
+      expect(r.personalYet, 'asking is not doing').toBe(false);
+    });
+
+    // The half the owner's draft got wrong, and it matters more than the fear:
+    // 'unpersonal' exists (built 2026-09-16 on his own instruction after this
+    // same mis-tap), so a warning that says otherwise would be a lie, and a lie
+    // here teaches people to hide mistakes rather than undo them.
+    test('the warning promises an undo, and the undo is real', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p2', supplyRunKey: 'k2', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k2'));
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('#zmodal-yes').click();
+        const after = !!mileage[0].personal;
+        resolveSupplyRun('k2', 'unpersonal');
+        return { msg, after, back: !!mileage[0].personal, noReceipt: !!mileage[0].noReceipt };
+      });
+      // The copy does NOT promise an undo any more (owner wanted it to feel
+      // final), and it does not deny one either: it says nothing will PROMPT
+      // you, which is true. The undo still exists and still works, which is
+      // what the rest of this test proves.
+      expect(r.msg).toContain('nothing will ever prompt you');
+      expect(r.msg, 'and it never claims the undo is impossible').not.toContain('no way');
+      expect(r.after, 'saying yes does take it off').toBe(true);
+      expect(r.back, 'and the way back really works').toBe(false);
+      expect(r.noReceipt, 'landing where a no-receipt answer would have').toBe(true);
+    });
+
+    // ── THE SAFE ANSWER UNDER THE THUMB (owner 2026-09-18) ───────────────
+    // "No keep it should be on the right not left". Opt-in per dialog, so the
+    // other ~57 .zmodal sites keep the order they have always had (§15.2).
+    test('the safe answer comes last, so it sits right of the red one', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-o1', supplyRunKey: 'ko', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('ko'));
+        const btns = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        // Geometry, not just source order: whichever way they wrap, the safe
+        // one must never be left of the destructive one on the same line.
+        const yes = document.querySelector('#zmodal-yes').getBoundingClientRect();
+        const no = document.querySelector('.zmodal-cancel').getBoundingClientRect();
+        document.querySelector('.zmodal-cancel').click();
+        return { btns, sameLine: Math.abs(yes.top - no.top) < 4,
+          noIsRight: no.left >= yes.left, noIsLower: no.top >= yes.top };
+      });
+      expect(r.btns, 'destructive first in the DOM, safe last').toEqual(
+        ['Delete it, it was personal', 'No, keep it']);
+      expect(r.sameLine ? r.noIsRight : r.noIsLower,
+        'side by side: safe on the right. stacked: safe on the bottom').toBe(true);
+    });
+
+    test('every other dialog keeps the order it always had', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-o2', supplyRunKey: 'ko2', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunNoReceipt(encodeURIComponent('ko2'));
+        const btns = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        document.querySelector('.zmodal-cancel').click();
+        // And a bare zConfirm, which is what the other sites are.
+        zConfirm('plain', () => {}, { title: 't' });
+        const plain = [...document.querySelectorAll('.zmodal-btns button')].map(b => b.textContent);
+        document.querySelector('.zmodal-cancel').click();
+        return { btns, plain };
+      });
+      expect(r.btns, 'No receipt is untouched').toEqual(['Cancel', 'Save as business']);
+      expect(r.plain, 'and so is every plain zConfirm').toEqual(['Cancel', 'Yes']);
+    });
+
+    test('No, keep it changes nothing at all', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p3', supplyRunKey: 'k3', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunPersonal(encodeURIComponent('k3'));
+        document.querySelector('.zmodal-cancel').click();
+        return { personal: !!mileage[0].personal, held: !!mileage[0].pendingReceipt,
+          gone: !document.querySelector('.zmodal-overlay') };
+      });
+      expect(r).toEqual({ personal: false, held: true, gone: true });
+    });
+
+    test('No receipt is no longer dressed as the dangerous one', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [{ id: 'j-p4', supplyRunKey: 'k4', miles: 4.5, mins: 26,
+          pendingReceipt: true, gps: true, date: todayKey() }];
+        _supplyRunNoReceipt(encodeURIComponent('k4'));
+        const yes = document.querySelector('#zmodal-yes');
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('.zmodal-cancel').click();
+        return { red: /a32d2d/i.test(yes.getAttribute('style') || ''), msg };
+      });
+      expect(r.red, 'the ordinary business answer is not the red button').toBe(false);
+      expect(r.msg, 'but the tax note stays, because it is true').toContain('IRS');
+    });
+
+    // §11.1: a run with nothing to read still asks, and says something true.
+    test('a run with no numbers still asks, in plain words', async () => {
+      const r = await page.evaluate(async () => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window.mileage = [];
+        _supplyRunPersonal(encodeURIComponent('k-missing'));
+        const msg = document.querySelector('.zmodal-msg').textContent;
+        document.querySelector('.zmodal-cancel').click();
+        return msg;
+      });
+      expect(r).toContain('the miles and the time');
     });
 
     test('No receipt: commits as business carrying the noReceipt flag', async () => {

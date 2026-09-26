@@ -63,11 +63,34 @@ async function _fetchStripeConnectStatus(){
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
     if(!token)return null;
+    // ── ASK ABOUT THE ACCOUNT ON SCREEN, NOT THE ONE HOLDING THE TOKEN ─────
+    // (owner 2026-09-16: "why is his account saying stripe is connected in
+    // integrations though?"). Jack has no Stripe account and never has. The
+    // target used to be gated on _isEmployee, which meant "my rows live on
+    // another account" until the 2026-09-13 split made it the ROLE only. The
+    // support view then named another account through _effectiveUid with
+    // _isEmployee false, so this went out empty, the Edge Function answered
+    // about the SIGNED-IN user, and the viewer's own Stripe was cached under
+    // the viewed account's key and drawn on their Integrations screen. One
+    // owner's payment account shown as another's is the worst shape that bug
+    // could take.
+    //
+    // The uid decides now, not the role. The function verifies the team link
+    // server-side and 403s when there is none, which is the right answer for
+    // a support view: it cannot see another owner's Stripe, so it says so.
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
       method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify(_isEmployee&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
+      body:JSON.stringify(_statusUid&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
     });
     const data=await res.json();
+    // A REFUSAL IS NOT A STATUS. An error body has no `connected` key, so
+    // caching it would park a shape every reader tests with `?.charges_enabled`
+    // for an hour, and a later legitimate read would never happen. Answer
+    // "not connected" for this render and leave the cache empty.
+    if(!res.ok||!data||data.error){
+      _stripeConnectStatus={connected:false,reason:'unavailable'};
+      return _stripeConnectStatus;
+    }
     _stripeConnectStatus=data;
     try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
     return data;
@@ -593,7 +616,10 @@ async function _devLoadUserAccount(key){
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
     syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
-  // Load target user's records into memory
+  // Load target user's records into memory. photos[] is emptied first: the
+  // td_photos set() keeps this device's pending uploads, and those are the
+  // dev's own, never the target account's (they come back via _devSavedState).
+  photos.length=0;
   for(let i=0;i<_TD_TABLES.length;i++){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
@@ -686,7 +712,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.14.26.3';
+const APP_VERSION='09.26.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -912,10 +938,21 @@ function _opClone(r){try{return JSON.parse(JSON.stringify(r));}catch(_e){return 
 // Rebuild the diff baseline from the authoritative rows (mirrors the _syncedHash rebuild).
 // MUST run AFTER all post-load array mutation (dedupe, draft-bid filter) so the baseline
 // equals the settled state, else those filtered rows look like deletes on the next diff.
+// Whose edits the op log is recording. A login the server ended leaves
+// _supaUser null while the SAME account's data stays on screen (_mergeOnSignIn,
+// _loadedDataOwner), and reading that null as "somebody else now" wiped the
+// field clocks, so an edit made in the gap (Jack's Clock out, 2026-09-23) lost
+// to the cloud's older row the moment he signed back in.
+function _opOwner(){
+  const u=_hlcOwner();
+  if(u)return u;
+  try{if(_mergeOnSignIn&&_loadedDataOwner)return _loadedDataOwner;}catch(_e){}
+  return null;
+}
 function _opRebaseline(){
   if(!window._opLogShadow)return;
   try{
-    const owner=_hlcOwner();
+    const owner=_opOwner();
     // Reset field clocks ONLY on a genuine account switch (A→B), NEVER on a fresh boot
     // (_opPrevOwner null), else we'd wipe the clocks _opDbLoad just rehydrated from the
     // durable IndexedDB log, breaking cross-reload field-clock durability (Phase 1 invariant).
@@ -936,7 +973,7 @@ function _opRebaseline(){
 function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
-    const owner=_hlcOwner();
+    const owner=_opOwner();
     if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
     // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
@@ -1297,7 +1334,7 @@ let _opSyncRunning=false;
 async function _opSyncOps(){
   if(!window._opLogShadow||!_supa||!_supaUser||_opSyncRunning)return;
   if(_devSupportMode)return;
-  const _opUid=_isEmployee?_contractorUserId:_supaUser.id;
+  const _opUid=_effectiveUid();
   if(!_opUid)return;
   _opSyncRunning=true;
   try{
@@ -1354,13 +1391,58 @@ function _recordLocalDelete(tbl,...ids){
 // the user deleted, cascades included, and nothing a concurrent peer touched.
 // Usage: wrap the function body's mutation+save, e.g.
 //   function deleteBid(id){ if(!confirm)return; _userDelete(()=>{ bids=bids.filter(b=>b.id!==id); saveAll(); }); }
+// ── THE INTENT HAS TO EXIST BEFORE THE SAVE LOOKS FOR IT ───────────────────
+//
+// Owner, 2026-09-18: "I deleted Blake sample like 4 times over the last week
+// and she keeps coming back." Her row never carried a deleted_at at all. The
+// delete had not failed; it had never been sent.
+//
+// This function learns WHAT was deleted by diffing the arrays after fn() runs.
+// But several call sites end fn() with _flushSaveNow() (deleteClient,
+// delMileage), and supaSaveToCloud runs SYNCHRONOUSLY from there down into
+// _upsertTable: no await stands between them on an account with nothing
+// queued. So the save read _locallyDeletedIds while it was still empty, found
+// nothing changed and nothing pending, took its no-op fast path, and that path
+// advances _lastKnownIds to the array as it is NOW.
+//
+// That last step is what made it permanent rather than merely late. The sweep
+// only ever removes ids that were in _lastKnownIds and are not in the array
+// any more; the id had just been erased from _lastKnownIds, so no later save
+// could ever see it leave. The intent was recorded a moment later onto a
+// bookkeeping state that no longer had anywhere to apply it.
+//
+// So the save waits. Every _flushSaveNow raised while a delete is in flight is
+// remembered and fired once the diff below has run, which is the only point at
+// which the arrays and the delete list agree with each other. The debounced
+// path needs nothing: its timer could not fire this early anyway.
+let _userDeleteDepth=0;
+let _userDeletePendingFlush=false;
 function _userDelete(fn){
   const before={};
   for(const t of _TD_TABLES){ try{ before[t.t]=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ before[t.t]=new Set(); } }
-  const ret=fn();
-  for(const t of _TD_TABLES){
-    let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
-    before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+  let ret;
+  _userDeleteDepth++;
+  // All of it in a finally, because a delete that throws part way through is
+  // the case that matters most. A client delete cascades across six arrays; if
+  // it dies on the fourth, the three that already shrank are REAL local
+  // deletions and the rows come back on the next load unless they are written
+  // down. The gate has to reopen on that path too, or one bad delete would shut
+  // every later save out of the cloud for the rest of the session.
+  try{ ret=fn(); }
+  finally{
+    _userDeleteDepth--;
+    try{
+      for(const t of _TD_TABLES){
+        let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
+        before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+      }
+    }catch(_e){}
+    // Only the outermost delete releases: a nested one is still inside a set of
+    // arrays its caller is mid-way through changing.
+    if(!_userDeleteDepth&&_userDeletePendingFlush){
+      _userDeletePendingFlush=false;
+      try{_flushSaveNow();}catch(_e){}
+    }
   }
   return ret;
 }
@@ -1461,8 +1543,27 @@ const _TD_TABLES=[
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
   {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
-  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
+  // thumbUrl/thumbPath were NOT in this list until 2026-09-21, so every photo
+  // lost its thumbnail the moment the row round-tripped through the cloud: a
+  // second device (and the hub snapshot built on it) fell back to the full
+  // 1600px image in every 60px grid, which is exactly the egress the thumbnail
+  // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
+  // (js/photo-capture.js), and a photo whose tag does not survive the sync is
+  // a photo that leaves the Before/After pair on one phone.
+  // set() KEEPS a photo still waiting to upload (Jack, 2026-09-24). A pending
+  // row never syncs (tx below needs a url), so the cloud copy of this table
+  // never has it, and replacing the list wholesale erased the only copy.
+  // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
+    // originalUrl/originalPath/annotated are here for the SAME reason
+    // thumbUrl was missing and had to be added: a field the feature depends
+    // on that the sync drops is a field that exists only on the phone that
+    // wrote it. Caught by the live flow run, 2026-09-21: marking a photo up
+    // set originalUrl locally, the sync stripped it, the next delta load
+    // replaced the row, and the pointer to the UNTOUCHED original was gone.
+    // "The original is never destroyed" is the rule mark-up is built on, and
+    // an original nobody can find again is a destroyed original.
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,shotPx,accM,by,exifGps,stamped,imported,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',shotPx:shotPx||'',accM:accM!=null?accM:null,by:by||'',exifGps:!!exifGps,stamped:!!stamped,imported:!!imported,annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -1640,15 +1741,15 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   function _lpStart(e){
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
-    // Every other [data-lp-id] row is a DEV-ONLY hard-purge gesture, inert for
-    // real users. Time Log rows are the one exception, the gesture there
-    // calls deleteTimeEntry(), a real soft-delete that already re-checks
-    // ownership/permission itself (js/jobs.js) and is only rendered onto rows
-    // _tlCanEdit() already approved (js/timelog.js _tlRailRow), so it's safe to
-    // let regular contractors/employees use it, not just dev mode.
+    // DEV-ONLY, all of it, again (owner 2026-09-13). Time Log rows used to be
+    // the one exception here, because the hold was the only way to delete a
+    // time entry. It is not any more: every row carries a three-dot menu
+    // (js/timelog.js _tlRowMenu), which is discoverable, reachable by
+    // VoiceOver, and works on the derived rows this gesture never touched.
+    // Two doors to one action is how they drift apart, so this one is closed
+    // (7: deleted, not hidden).
     const devOk=typeof _canDelete==='function'&&_canDelete();
-    const timelogOk=row.dataset.lpType==='timelog';
-    if(!devOk&&!timelogOk)return;
+    if(!devOk)return;
     if(e.target.closest('button,select,input,a,label'))return;
     clearTimeout(_lpTimer);_lpFired=false;
     const t=e.touches?e.touches[0]:e;
@@ -1693,10 +1794,6 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
-  // timelog is the one non-dev-gated type (see _lpStart), deleteTimeEntry()
-  // is a real soft-delete that re-checks ownership/permission itself, unlike
-  // every other branch below which is a dev-only hard purge.
-  if(type==='timelog'){if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(id,10));return;}
   if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
   // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via
@@ -2453,6 +2550,12 @@ async function supaInit(){
             const _oBids=[...new Map([...(_op?.bids||[]),...bids].map(b=>[b.id,b])).values()];
             const _oJobs=[...new Map([...(_op?.jobs||[]),...jobs].map(j=>[j.id,j])).values()];
             localStorage.removeItem('zp3_offline_pending');
+            // The field clocks of every edit made while signed out, back from
+            // the durable log BEFORE the cloud rows land: they are what lets
+            // _opApplyIncoming keep a newer local field (a Clock out tapped in
+            // the gap) over the cloud's older copy. A relaunch while signed out
+            // boots from cache and never loads them otherwise.
+            try{if(typeof _opDbLoad==='function')await _opDbLoad();}catch(_e){}
             await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
             // Merge offline additions that aren't already in cloud data
             const _cSet=new Set(clients.map(c=>c.id));
@@ -2556,6 +2659,17 @@ async function supaInit(){
           _wipeLocalAccountData();
           _deliberateSignOut=false;
           supaSetStatus('local');
+          supaShowLogin({force:true});
+        } else if(localStorage.getItem('zp3_cloud_cache')&&!_sdkHasStoredSession()){
+          // THE SERVER ENDED THIS LOGIN (Jack, 2026-09-23). The SDK clears its
+          // stored session only when the server rejected the refresh token, so
+          // with the network up this is not a blip: every tap from here on
+          // saves to the phone alone. He tapped Clock out on a dashboard that
+          // looked normal and it never reached the server. Keep the cached
+          // data (it merges back on sign-in) but ask him to sign in now.
+          _loadedFromCacheOnly=true;
+          _mergeOnSignIn=true;
+          supaSetStatus('error');
           supaShowLogin({force:true});
         } else if(localStorage.getItem('zp3_cloud_cache')){
           // Non-deliberate sign-out (token refresh failure or rotation), keep data in memory.
@@ -6431,6 +6545,21 @@ function _clearRememberedLogin(){
   try{localStorage.removeItem('zp3_remembered_login');}catch(_e){}
 }
 let _deliberateSignOut=false;
+// Whether the Supabase SDK still has a session of its own in storage. The SDK
+// removes it only when the server has rejected the refresh token (a network
+// failure keeps it), so present means "retry later" and absent means "this
+// login is over".
+function _sdkHasStoredSession(){
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k.indexOf('sb-')!==0||!/-auth-token$/.test(k))continue;
+      const v=JSON.parse(localStorage.getItem(k)||'null');
+      if(v&&(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)))return true;
+    }
+  }catch(_e){}
+  return false;
+}
 function _saveSessionBackup(session){
   if(!session)return;
   try{localStorage.setItem('zp3_session_backup',JSON.stringify({
@@ -6707,6 +6836,27 @@ function _offlinePendingBlob(){
     _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
     clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
+// The same blob, but never LOSING what is already pending. Used only while a
+// cloud load is in flight, when memory is the server's copy plus whatever the
+// person has done since, and the rows the load has not drained back yet exist
+// nowhere else. Current memory wins for an id both hold; a pending row memory
+// no longer has is carried across untouched.
+function _offlinePendingBlobMerged(){
+  try{
+    const prev=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+    if(!prev)return _offlinePendingBlob();
+    const now=JSON.parse(_offlinePendingBlob());
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      const cur=Array.isArray(now[key])?now[key]:[];
+      const old=Array.isArray(prev[key])?prev[key]:[];
+      if(!old.length)continue;
+      const have=new Set(cur.map(r=>String(r&&r.id)));
+      now[key]=cur.concat(old.filter(r=>r&&!have.has(String(r.id))));
+    }
+    return JSON.stringify(now);
+  }catch(_e){return _offlinePendingBlob();}
+}
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
 function _readOwnedOfflinePending(){
@@ -6743,8 +6893,28 @@ function supaSaveDebounced(){
   // before visibilitychange or the async catch block can run, but a synchronous
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
+  // ── A LOAD MAY NOT EMPTY THE NET (owner 2026-09-16, Jack's missing 9am
+  // clock-in) ────────────────────────────────────────────────────────────
+  // This blob is a SNAPSHOT OF MEMORY, not a queue of unsynced rows, and that
+  // is the whole hazard. A cloud load replaces every array with the server's
+  // copy and only drains the blob back in at the very END of the load. Any
+  // save that fires inside that window (applySettings alone reaches saveAll)
+  // rewrote the blob from arrays that no longer held the unsynced row, and the
+  // only record of it was gone before the drain ever looked.
+  //
+  // Jack's morning is that shape: a punch that had not reached the server, a
+  // resume, and a day that came back saying he was never clocked in. The blob
+  // is the force-quit safety net; a net the load can empty is not one.
+  //
+  // SKIPPING THE WRITE IS THE WRONG FIX, and CI caught it: a row CREATED
+  // during a load (a save is a save, the person is still using the app) would
+  // then never be snapshotted at all, which loses the new row instead of the
+  // old one. Both have to hold, so during a load the blob is MERGED rather
+  // than replaced: current memory wins per id, and anything pending that
+  // memory no longer holds rides along untouched.
   if(_supaCloudLoaded||_mergeOnSignIn){
-    try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',
+      _loadInProgress?_offlinePendingBlobMerged():_offlinePendingBlob());}catch(_e){}
   }
   // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow), a bare
   // supaSaveToCloud() here is invisible to the silent-load guard in supaLoadFromCloud,
@@ -6761,6 +6931,11 @@ function supaSaveDebounced(){
 let _pendingSavePromise=null;
 function _flushSaveNow(){
   if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+  // A delete is mid-flight and has not been written down yet (_userDelete):
+  // this save would sweep against an empty delete list and, worse, erase the
+  // id it needs from _lastKnownIds on the way past. Remember the ask and fire
+  // it the moment the intent is recorded.
+  if(_userDeleteDepth){_userDeletePendingFlush=true;return;}
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   _pendingSavePromise=supaSaveToCloud().finally(()=>{_pendingSavePromise=null;});
   return _pendingSavePromise;
@@ -6919,6 +7094,17 @@ async function _probeAndSync(){
         _onReconnect();
         return;
       }
+      // THE BACKUP NEVER OUTRANKS THE SDK (Jack, 2026-09-23). getSession()
+      // comes back null for a moment after iOS relaunches the app, while the
+      // SDK's own stored session is still there and still good. This used to
+      // fall straight through to zp3_session_backup, which had drifted two
+      // refreshes behind: at 4:20:34 pm it sent a refresh token retired at
+      // 2:38, Supabase read the reuse as theft and revoked the WHOLE login,
+      // and it died for good when the access token ran out at 4:40. Nothing
+      // he tapped until he signed in again at 7:00 reached the server. While
+      // the SDK still holds a session it is the only voice: wait for the next
+      // tick. The backup is for a session the SDK no longer has at all.
+      if(_sdkHasStoredSession()){_sessionRestoreInProgress=false;return;}
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
@@ -7153,9 +7339,7 @@ async function supaSaveToCloud(){
     else localStorage.removeItem('zp3_rcpt_imgs');
   }catch(_e){}
 
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
 
   try{
     const ts=new Date().toISOString();
@@ -8013,6 +8197,8 @@ function quickScheduleJob(bidId,startKey,clientId){
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
     loggedAt:new Date().toISOString()
   });
+  // The estimate's photos follow the bid into the job (js/photo-capture.js).
+  try{if(typeof tdInheritBidPhotos==='function')tdInheritBidPhotos(bidId,jobs[jobs.length-1].id);}catch(_e){}
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();
@@ -8187,9 +8373,7 @@ async function supaLoadFromCloud({silent=false}={}){
   // ReferenceError and the load-failure cache fallback silently painted NOTHING
   // for every signed-in user (caught by the dual-hat regression test's warn
   // trace: "Cache load failed: uid is not defined").
-  const uid=_devSupportMode
-    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-    :(_isEmployee?_contractorUserId:_supaUser.id);
+  const uid=_effectiveUid();
   try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
@@ -8532,7 +8716,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // onFoot/still/driving the coprocessor holds stops being handset-only, and
     // then any home-office visit that closed before the load-out rule existed
     // and both no-op without a tape, same as the mileage sweep above.
-    try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
+    try{if(typeof _geoTapeSync==='function')_geoTapeSync('boot');}catch(_e){}
     // And the plugin's own wake counters, once per session, as analytics rows.
     // flushSent / flushOk / flushFail is the difference between "the upload
     // failed" and "the upload was never sent", which is the one thing the raw
@@ -8715,13 +8899,16 @@ async function supaLoadFromCloud({silent=false}={}){
     _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
+    // One query against the county assessor records we already hold, for every
+    // address at once. This used to be _startPropQueue, which trickled one
+    // Zillow scrape every 6.5s and could not finish a big import before the tab
+    // closed. See _syncPropertyData (js/clients.js).
+    if(typeof _syncPropertyData==='function')setTimeout(_syncPropertyData,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();
     if(typeof renderAllMileage==='function')renderAllMileage();
     if(typeof renderFleet==='function')renderFleet();
-    if(typeof renderGallery==='function')renderGallery();
     if(typeof renderLicensing==='function')renderLicensing();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
@@ -8849,7 +9036,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
-          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const _puid=_effectiveUid();
           if(_isEmployee&&!_devSupportMode){
             // Crew can't SELECT zj_data, the cursor RPC is their heartbeat probe.
             const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
@@ -9171,9 +9358,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // into B's arrays even in that race. The expected owner is B's uid (contractor's uid for
   // an employee, the dev-support target while in support mode).
   if(fromRealtime){
-    const _curOwner=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId)
-      :(_isEmployee?_contractorUserId:(_supaUser&&_supaUser.id));
+    const _curOwner=_effectiveUid();
     const _recOwner=(payload.new&&payload.new.user_id)||(payload.old&&payload.old.user_id);
     // Drop ONLY when BOTH owners are known and differ (a genuine foreign-account row).
     // Never drop on a transient-null _curOwner: on an offline worker's reconnect _supaUser
@@ -9281,7 +9466,6 @@ function _renderAllPages(){
   if(typeof renderExpenses==='function')renderExpenses();
   if(typeof renderAllMileage==='function')renderAllMileage();
   if(typeof renderFleet==='function')renderFleet();
-  if(typeof renderGallery==='function')renderGallery();
   if(typeof renderLicensing==='function')renderLicensing();
   if(typeof renderCalendar==='function')renderCalendar();
   if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
