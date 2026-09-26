@@ -121,11 +121,19 @@ function _whProposalFinds(){
 
 // Plumbers see it from day one so the empty board can take their old books.
 // Anyone else sees it once a water heater exists or a proposal names one.
+// A plumber is anyone with plumbing among their trades, not only when plumbing
+// is the pill they have selected (owner 2026-09-26: a landscaper who also runs
+// a plumbing line lost the board every time the switcher sat on landscaping).
+function _whPlumbs(){
+  const active=(typeof getActiveTrade==='function')?getActiveTrade():'';
+  if(active==='plumbing')return true;
+  const lines=(typeof _getTradeLines==='function')?_getTradeLines():[];
+  return Array.isArray(lines)&&lines.indexOf('plumbing')>=0;
+}
 function _whBoardVisible(){
   if(typeof _isEmployee!=='undefined'&&_isEmployee)return false;
   if(_whUnits().length)return true;
-  const trade=(typeof getActiveTrade==='function')?getActiveTrade():'';
-  if(trade==='plumbing')return true;
+  if(_whPlumbs())return true;
   return _whProposalFinds().length>0;
 }
 

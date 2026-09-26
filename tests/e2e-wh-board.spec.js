@@ -330,12 +330,35 @@ test.describe('Water heater flush board', () => {
       window._isEmployee = wasEmp;
       equipment.length = 0;
       bids.length = 0;
-      const plumber = typeof getActiveTrade === 'function' && getActiveTrade() === 'plumbing';
+      const plumber = _whPlumbs();
       _renderWhBoard();
       return { crew, empty: document.getElementById('dash-wh-board').style.display, plumber };
     });
     expect(r.crew).toBe('none');
     expect(r.empty).toBe(r.plumber ? 'block' : 'none');
+  });
+
+  // Owner 2026-09-26: "show it for any plumbing line". A landscaper who also
+  // runs plumbing sees the board whichever trade the switcher is on.
+  test('shown for any account with a plumbing line, not only when plumbing is selected', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      const keep = { cfg: _config, active: window.getActiveTrade };
+      equipment.length = 0; bids.length = 0;
+      window.getActiveTrade = () => 'landscaping';
+      try {
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting,plumbing' });
+        _renderWhBoard();
+        const withLine = document.getElementById('dash-wh-board').style.display;
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting' });
+        _renderWhBoard();
+        const without = document.getElementById('dash-wh-board').style.display;
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: ['landscaping', 'plumbing'] });
+        const arrayForm = _whPlumbs();
+        return { withLine, without, arrayForm };
+      } finally { _config = keep.cfg; window.getActiveTrade = keep.active; _renderWhBoard(); }
+    });
+    expect(r).toEqual({ withLine: 'block', without: 'none', arrayForm: true });
   });
 
   test('bad input never throws', async () => {
