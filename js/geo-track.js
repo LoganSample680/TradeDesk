@@ -6154,6 +6154,9 @@ function stopGeoTracking(){
   _geoClearParkTimer();
   _geoParkModeOn=false;
   _geoParkForget();
+  // The next sign-in on this page is a new person: the boot must ask again.
+  _geoTrackInitOk=false;_geoTrackInitTries=0;
+  if(_geoTrackInitT){clearTimeout(_geoTrackInitT);_geoTrackInitT=null;}
   _geoFenceEnteredAtMs=null;
   _geoQuietSinceMs=null;_geoParkPrevFix=null;
   // Before stopAll, so the window's own state machine unwinds through the one
@@ -7016,14 +7019,60 @@ function _geoDisarmIfForeign(){
   }catch(_e){}
 }
 
+// ── Start tracking once the account has ARRIVED, not once the clock says so ──
+// Jack, 2026-09-25: he opened the app at 9:19, used it for three minutes, and
+// tracking never started, so iOS put it to sleep the moment he left and every
+// motion flip that morning waited for the backfill. The boot asked exactly
+// once, 2.4 seconds in. A crew phone boots from its cached identity
+// (_restoreIdentityFromCache), which says "employee" before the crew row has
+// come back from the server, and _geoTrackInit met _isEmployee with no
+// _employeeRecord and returned. Nothing ever asked again.
+//
+// So the boot asks here instead: now, then every few seconds until the answer
+// is in, and again whenever the app comes back to the screen. _geoTrackInit
+// returns false ONLY for the answers still on their way (the crew row, the
+// signed-in user, the company's tracking switch); every other return means it
+// ran and made its decision, and this stops asking.
+const _GEO_INIT_RETRY_MS=5000;
+const _GEO_INIT_TRIES=36;                    // three minutes, then the next foreground
+let _geoTrackInitOk=false,_geoTrackInitT=null,_geoTrackInitTries=0;
+function _geoTrackInitSoon(){
+  if(_geoTrackInitOk)return true;
+  if(_geoTrackInitT){clearTimeout(_geoTrackInitT);_geoTrackInitT=null;}
+  if(!window._geoInitVisBound){
+    window._geoInitVisBound=true;
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden||_geoTrackInitOk)return;
+      _geoTrackInitTries=0;
+      _geoTrackInitSoon();
+    });
+  }
+  let ok=false;
+  try{ok=_geoTrackInit()!==false;}catch(_e){ok=true;}   // a throw is not "still loading"; never loop on it
+  if(ok){
+    _geoTrackInitOk=true;
+    if(_geoTrackInitTries>0){
+      _geoParkNote('init-late',_geoTrackInitTries+' tries');
+      try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('geo_init_late','geo',_geoTrackInitTries);}catch(_e){}
+    }
+    return true;
+  }
+  _geoTrackInitTries++;
+  if(_geoTrackInitTries===1)_geoParkNote('init-wait',!_supaUser?'no user':(!S.teamTracking?'tracking off':'no crew row'));
+  if(_geoTrackInitTries<_GEO_INIT_TRIES)_geoTrackInitT=setTimeout(_geoTrackInitSoon,_GEO_INIT_RETRY_MS);
+  return false;
+}
 function _geoTrackInit(){
   // Read-only support view (js/ops-view.js): the phone in your hand is not
   // theirs. Tracking here would prompt the VIEWER for location, watch the
   // VIEWER's position, and try to write it against the account being looked
   // at. Looking at somebody's app is not that person working.
   if(typeof opsReadOnly==='function'&&opsReadOnly())return;
-  if(!S.teamTracking)return;                 // tracking not enabled for the company
-  if(!_supaUser)return;
+  // The three answers that can still be ON THEIR WAY return false, so
+  // _geoTrackInitSoon knows to ask again. See the note on that function.
+  if(!S.teamTracking)return false;           // tracking not enabled for the company (or not loaded yet)
+  if(!_supaUser)return false;
+  if(_isEmployee&&!_employeeRecord)return false;
   _geoDisarmIfForeign();                     // drop the other account's fences before arming ours
   _geoTapeClaim();                           // this person owns this phone's tape from now
   _geoDeriveRebuildSoon();
@@ -7126,7 +7175,6 @@ function _geoTrackInit(){
   // an asleep phone and the manager would keep asking.
   if(typeof _crewLocateInit==='function'){try{_crewLocateInit();}catch(_e){}}
   if(_isEmployee){
-    if(!_employeeRecord)return;
     // Tracking being a condition of the job is the OWNER's call and stays that
     // way. What changed: we no longer FABRICATE the agreement. The app used to
     // write location_consent=true here without ever telling the crew member their
