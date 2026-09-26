@@ -160,11 +160,18 @@ test.describe('the wake stream is retired', () => {
       expect(r.fenceSame, 'a drop never moves the fence machine').toBe(true);
     });
 
-    test('park mode says off where it used to arm (source guarantee)', () => {
+    // It said so inside the answer from iOS until 2026-09-26; that answer
+    // waits for the next app open when the park happens as the app
+    // backgrounds, so everything in the park now runs before it is awaited.
+    test('park mode says off where it used to arm, before iOS answers (source guarantee)', () => {
       const src = readJs('geo-track.js');
-      const i = src.indexOf("_geoParkNote('park-on'");
-      expect(i).toBeGreaterThan(-1);
-      expect(src.slice(i, i + 400).includes("_geoWakeStreamOff('park armed, stream retired')")).toBe(true);
+      const a = src.indexOf('function _geoEnterParkMode(');
+      const wait = src.indexOf('Promise.resolve(_armCall)', a);
+      expect(a).toBeGreaterThan(-1);
+      expect(wait).toBeGreaterThan(a);
+      const off = src.indexOf("_geoWakeStreamOff('park armed, stream retired')", a);
+      expect(off).toBeGreaterThan(a);
+      expect(off, 'said in the same tick, not in the .then').toBeLessThan(wait);
     });
   });
 

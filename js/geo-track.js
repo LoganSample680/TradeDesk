@@ -4729,43 +4729,62 @@ function _geoParkRestore(){
 // and the native ttl still self-stops a beat nobody turned off. Re-arming is
 // idempotent on the native side (the timer restarts, the ttl refreshes), and
 // the 60s throttle keeps drive-start churn off the bridge.
-let _geoHbArmedAtMs=0;
+let _geoHbArmedAtMs=0,_geoHbKeepAwake=null;
+// How long this phone should stay awake from `nowMs`, in ms: the rest of
+// today's working hours (Settings > Business, _geoWorkHours), or 0 on a day
+// off, outside the hours, or inside a Time off block. Same local-clock read as
+// _geoPingBurstOk, so the two gates can never disagree about the shift.
+function _geoKeepAwakeMs(nowMs){
+  try{
+    const now=new Date(nowMs);
+    const w=_geoWorkHours();
+    if(Array.isArray(w.days)&&w.days.length&&w.days.indexOf(now.getDay())<0)return 0;
+    const hm=v=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(v||''));return m?Number(m[1])*60+Number(m[2]):NaN;};
+    const a=hm(w.start),b=hm(w.end);
+    if(!(isFinite(a)&&isFinite(b)&&b>a))return 0;
+    const cur=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+    if(cur<a||cur>=b)return 0;
+    const day=_geoDayKeyOf(nowMs,_geoBizTz());
+    const off=(typeof S!=='undefined'&&S&&Array.isArray(S.timeOff))?S.timeOff:[];
+    if(off.some(t=>t&&t.start&&String(t.start)<=day&&day<=String(t.end||t.start)))return 0;
+    return Math.round((b-cur)*60000);
+  }catch(_e){return 0;}
+}
 function _geoHeartbeatSync(spot){
   try{
     const Td=_geoTdPlugin();
     if(!Td||typeof Td.startHeartbeat!=='function')return;
     const atHome=!!(spot&&typeof _placeIsLikelyHome==='function'&&_placeIsLikelyHome({lat:spot.lat,lng:spot.lng},0));
     if(atHome){
-      _geoHbArmedAtMs=0;
+      _geoHbArmedAtMs=0;_geoHbKeepAwake=null;
       if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat({reason:'parked at home'})).catch(()=>{});
       _geoParkNote('hb-off','home park');
       return;
     }
-    if(Date.now()-_geoHbArmedAtMs<60000)return;
-    _geoHbArmedAtMs=Date.now();
-    // keepalive:false is the whole answer to "why is the blue arrow up when
-    // TradeDesk backgrounds" (owner 2026-09-01). The beat used to hold a
-    // standing 3km background location session purely to keep this process
-    // resident, and iOS pins the status-bar indicator for ANY background
-    // location session however coarse, so the arrow was on for every waking
-    // minute of a shift.
+    // THE MIX (owner 2026-09-26: "do it Life360 style but still get events
+    // in 10 seconds"). iOS never wakes a sleeping app because the motion chip
+    // changed its mind, so a flip only reaches the server live if the app is
+    // already awake when it happens. Measured 9/25: his phone, awake all day,
+    // 93% of flips inside 10s; Jack's, asleep, 8%, the rest waiting on the
+    // backfill. So during working hours the beat holds the 3km session
+    // (cell and wifi, no GPS, no arrow on an Always grant) and the app stays
+    // resident; off the clock, at home and on time off it holds nothing and
+    // the phone sleeps on its fences, Life360 style.
     //
-    // Whether that session bought any residency is not established: on
-    // 2026-08-31 he backgrounded a phone mid-shift and delivery stopped dead
-    // (the backgrounding row itself took 1028 seconds to arrive), but nothing
-    // proves the beat was armed at that minute. What IS settled is that the
-    // liveness has a cheaper owner: the 30-minute silent push already wakes a
-    // backgrounded app and records a fix, and it is the same push that
-    // confirms the drive window above.
+    // The ttl ends the keep-awake at the close of working hours BY ITSELF:
+    // after the last park of the day this JS is paused, so the native timer
+    // is the only thing that is certain to be running when the shift ends.
     //
-    // Passed EXPLICITLY rather than relying on the plugin's default, because
-    // this is the decision and it belongs in JS (§3.2): flipping it to true is
-    // one word and a UAT roll if drives start being missed, never a rebuild.
-    // What still wakes a dead app is unchanged and is not this: region
-    // monitoring, significant-location-change and visit monitoring, all armed
-    // by startEvents, all of which relaunch a force-quit app.
-    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000,keepalive:false,reason:'shift start'})).catch(()=>{});
-    _geoParkNote('hb-on','30m tick armed');
+    // This was keepalive:false from 2026-09-01 ("why is the blue arrow up
+    // when TradeDesk backgrounds"); that arrow was the precise JS watcher,
+    // not this session, and it is fixed at its source in _geoEnterParkMode.
+    const awakeMs=_geoKeepAwakeMs(Date.now());
+    const keepalive=awakeMs>0;
+    if(keepalive===_geoHbKeepAwake&&Date.now()-_geoHbArmedAtMs<60000)return;
+    _geoHbArmedAtMs=Date.now();_geoHbKeepAwake=keepalive;
+    const ttlMs=keepalive?awakeMs:12*3600000;
+    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs,keepalive,reason:keepalive?'shift keep-awake':'shift start'})).catch(()=>{});
+    _geoParkNote('hb-on',keepalive?('awake '+Math.round(awakeMs/60000)+'m'):'30m tick armed');
   }catch(_e){}
 }
 function _geoArmParkTimer(spot){
@@ -4852,30 +4871,38 @@ function _geoEnterParkMode(spot){
   const _armCall=(typeof Td.startEvents==='function')
     ?Td.startEvents({regions:_regs,reason:_armReason})
     :Td.startParked({regions:_regs.slice(0,1),reason:_armReason});
+  // EVERYTHING THAT MATTERS HAPPENS NOW, NOT WHEN iOS ANSWERS (owner
+  // 2026-09-26, his GPS on from 7:37am to 8:09pm with the app in his pocket).
+  // Parking mostly happens at the instant the app goes to the background
+  // (bg-park-now), and iOS pauses the page's JavaScript a moment later. The
+  // teardown used to wait for startEvents to answer, so the answer sat queued
+  // until the next time he opened the app, twelve hours on, and the precise
+  // watcher ran all day. That is also the 2026-09-15 "arrow lit from 06:45 to
+  // 6pm" below, which was read as a lost watcher id: the id was fine, the
+  // release was simply never reached. The native call above has already been
+  // sent; what follows must run in this same tick.
+  _geoParkModeOn=true;
+  _geoParkPersist(spot);
+  // The wake stream is retired: see _geoWakeStreamOff.
+  _geoWakeStreamOff('park armed, stream retired');
+  // The shift heartbeat, and during working hours the keep-awake that lets
+  // every motion flip reach the server live (see _geoHeartbeatSync). A park
+  // at the likely-home pin is the end of the shift and turns it off.
+  _geoHeartbeatSync(_at);
+  // EVERY watcher, not the one this JS happens to remember (owner 2026-09-15:
+  // the persisted list is what a reload leaves behind).
+  _geoDropWatchers(_armReason);
   Promise.resolve(_armCall)
     .then((r)=>{
-      _geoParkModeOn=true;
-      _geoParkPersist(spot);
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
-      // The wake stream is retired: see _geoWakeStreamOff.
-      _geoWakeStreamOff('park armed, stream retired');
-      // The shift heartbeat (owner 2026-08-27: catch the phone left in the
-      // truck or set down all day). A park at a WORK spot keeps a 30-minute
-      // liveness tick alive; a park at the likely-home pin is the end of the
-      // shift and turns it off. Timing lives here in JS; the plugin only
-      // holds the low-power session and fires the tick. ttl self-stops a
-      // heartbeat nobody turned off (phone left at the shop over a weekend).
-      _geoHeartbeatSync(_at);
-      // EVERY watcher, not the one this JS happens to remember. Park is the
-      // moment the precise receiver must go dark, and the id in memory is the
-      // least durable record we have of it (owner 2026-09-15, arrow lit from
-      // 06:45 to gone-6pm: the ledger's js-watcher session opened at 06:45:42
-      // and never closed, and the night before ran 676 minutes the same way).
-      _geoDropWatchers(_armReason);
     },(err)=>{
       // A failed attempt must never die silently (it did, and the arrow sat
-      // there all evening): journal the reason and retry on the countdown.
+      // there all evening): journal the reason, put the live watcher back so
+      // a failed park is never a deaf phone, and retry on the countdown.
       _geoParkNote('park-fail',(err&&(err.message||err.code))||err);
+      _geoParkModeOn=false;
+      _geoParkForget();
+      if(_geoNativePlugin())startGeoTracking();
       _geoArmParkTimer();
     });
 }

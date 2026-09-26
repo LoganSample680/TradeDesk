@@ -399,6 +399,9 @@ test.describe('Wake region set for the dead app', () => {
         });
         _placeIsLikelyHome = (c) => !!(c && c.lat === 39.9);
         _geoHbArmedAtMs = 0;
+        // Off the clock: the bare 30-minute tick. The keep-awake has its own
+        // describe (the mix, 2026-09-26).
+        const keepAw = _geoKeepAwakeMs; _geoKeepAwakeMs = () => 0; saved.aw = keepAw;
         _geoHeartbeatSync(null);                       // shift start: arms
         _geoHeartbeatSync(null);                       // 1s later: throttled
         const afterThrottle = calls.start.length;
@@ -407,10 +410,12 @@ test.describe('Wake region set for the dead app', () => {
         _geoHeartbeatSync({ lat: 39.1, lng: -94.1 });  // work park right after home: re-arms (throttle was reset)
         return { first: calls.start[0] || null, afterThrottle, stops, total: calls.start.length };
       } finally {
-        _geoTdPlugin = saved.td; _placeIsLikelyHome = saved.home; _geoHbArmedAtMs = 0;
+        _geoTdPlugin = saved.td; _placeIsLikelyHome = saved.home; _geoHbArmedAtMs = 0; _geoHbKeepAwake = null;
+        if (saved.aw) _geoKeepAwakeMs = saved.aw;
       }
     });
     expect(r.first).toBeTruthy();
+    expect(r.first.keepalive, 'off the clock the phone sleeps').toBe(false);
     expect(r.first.intervalMs).toBe(30 * 60000);
     expect(r.first.ttlMs).toBe(12 * 3600000);
     expect(r.afterThrottle, 'a second arm inside 60s must not hit the bridge').toBe(1);
