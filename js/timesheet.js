@@ -25,7 +25,7 @@
 // CLAUDE.md 7.3), the text is _tlWeekShareText (one builder, js/timelog.js),
 // the send is pwaShare. Nothing here writes a row directly: timesheet_submit
 // is the one writer, and it is what makes the week locked.
-const _TS_SELECT='week_start,status,version,token,submitted_at,approved_at,approved_name,rejected_at,reject_note';
+const _TS_SELECT='week_start,status,version,token,submitted_at,approved_at,approved_name,rejected_at,reject_note,pay_rate';
 let _tsByWeek={};        // week key -> the td_timesheets row for me
 let _tsFor=null;         // the uid the cache belongs to
 let _tsLoading=null;     // the in-flight load, so two renders share one
@@ -128,6 +128,31 @@ function _tsWeekButtonHtml(wk){
     (Number(t.version)>1?' · corrected':'')+'</button>';
 }
 
+// ── Pay (owner 2026-09-26) ───────────────────────────────────────────────────
+// "Timesheet for Jack needs to show hourly rate of $25 that can be updated and
+// when the link gets sent out that shows his weekly payout down to the exact
+// minute." The rate rides on the submitted week (td_timesheets.pay_rate), so
+// the rate a week was approved at never moves. The box starts at this week's
+// rate if it has one, else the last week that had one.
+function _tsLastRate(wk){
+  const own=_tsStatus(wk);
+  if(own&&Number(own.pay_rate)>0)return Number(own.pay_rate);
+  const weeks=Object.keys(_tsByWeek||{}).filter(k=>Number((_tsByWeek[k]||{}).pay_rate)>0).sort();
+  return weeks.length?Number(_tsByWeek[weeks[weeks.length-1]].pay_rate):0;
+}
+// Minutes x rate, to the cent: the exact minute, never rounded hours.
+function _tsPay(min,rate){return Math.round((Number(min)||0)/60*(Number(rate)||0)*100)/100;}
+function _tsPayMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function _tsPayLine(min,rate){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  return fm(min)+' at $'+String(rate).replace(/\.00$/,'')+'/hr = '+_tsPayMoney(_tsPay(min,rate));
+}
+function _tsRateInput(el,min){
+  const r=parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
+  const out=document.getElementById('ts-pay-total');
+  if(out)out.textContent=r>0?_tsPayMoney(_tsPay(min,r)):'';
+}
+
 // ── The review sheet ─────────────────────────────────────────────────────────
 function _tsReviewClose(){const o=document.getElementById('ts-review');if(o)o.remove();}
 function _tsReviewOpen(wk){
@@ -162,6 +187,9 @@ function _tsReviewOpen(wk){
       note+
       '<div class="ts-days">'+dayRows+'</div>'+
       '<div class="ts-total"><span>Total</span><b>'+escHtml(fm(e.min)||'0m')+'</b></div>'+
+      (()=>{const r=_tsLastRate(wk);return '<label class="ts-pay"><span>Pay</span>'+
+        '<span class="ts-pay-rate">$<input id="ts-rate" type="text" inputmode="decimal" placeholder="0" value="'+(r>0?r:'')+'" oninput="_tsRateInput(this,'+Math.round(e.min)+')">/hr</span>'+
+        '<b id="ts-pay-total">'+(r>0?_tsPayMoney(_tsPay(e.min,r)):'')+'</b></label>';})()+
       (split?'<div class="ts-split">'+escHtml(split)+'</div>':'')+
       '<div class="ts-btns">'+
         '<button type="button" id="ts-submit" class="btn btn-p"'+(blockers.length?' disabled aria-disabled="true"':'')+
@@ -192,6 +220,8 @@ async function _tsSubmit(wk){
   }
   const btn=document.getElementById('ts-submit');
   if(btn){btn.disabled=true;}
+  const rateEl=document.getElementById('ts-rate');
+  const rate=rateEl?(parseFloat(String(rateEl.value).replace(/[^0-9.]/g,''))||0):_tsLastRate(wk);
   const name=_tsMyName();
   let data=null;
   try{
@@ -211,6 +241,11 @@ async function _tsSubmit(wk){
   const row=Object.assign({},_tsByWeek[wk]||{},{week_start:wk,status:'submitted',version:data.version||1,token:data.token,
     submitted_at:data.submitted_at||new Date().toISOString(),approved_at:null,approved_name:null,rejected_at:null,reject_note:null});
   _tsByWeek[wk]=row;_tsFor=_tsUid();
+  // The rate goes on the week just submitted. A failure here leaves the week
+  // submitted without a pay line, never unsubmitted.
+  if(rate>0){
+    try{const pr=await _supa.rpc('timesheet_set_pay',{p_week_start:wk,p_pay_rate:rate});if(!(pr&&pr.error))row.pay_rate=rate;}catch(_e){}
+  }
   _tsReviewClose();
   // The text: the same message as always, then the stamp, then what to DO
   // with it (owner 2026-09-05: "would love something that says click below to
@@ -220,6 +255,7 @@ async function _tsSubmit(wk){
   // page has both buttons, and a line that only says approve would be leading
   // the person who has to check the hours.
   const text=_tlWeekShareText(rows,wk)+'\n\n'+
+    (Number(row.pay_rate)>0?'Pay: '+_tsPayLine(Math.round(_tlPaidMin(rows)),row.pay_rate)+'\n':'')+
     (Number(row.version)>1?'Corrected timesheet. ':'')+
     'Submitted by '+name+', '+_tsWhen(row.submitted_at)+'\n\n'+
     // ONE LINE, BECAUSE THE RULE IS INVISIBLE OTHERWISE (owner 2026-09-19).

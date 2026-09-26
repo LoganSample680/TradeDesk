@@ -214,6 +214,21 @@ test.describe('The public timesheet page', () => {
     expect(r.fine).toBe('A corrected timesheet will show up at this same link.');
   });
 
+  test('pay: the week carries a rate, the header shows the payout to the cent', async ({ page }) => {
+    await openPage(page, Object.assign({}, DATA, { pay_rate: 25 }));
+    const r = await page.evaluate(() => ({
+      l: document.querySelector('.tsp-pay-l').textContent.trim(),
+      v: document.querySelector('.tsp-pay-v').textContent.trim(),
+    }));
+    // 1000 min = 16h 40m; 1000/60*25 = 416.666... -> $416.67.
+    expect(r.l).toBe('Pay this week16h 40m at $25/hr');
+    expect(r.v).toBe('$416.67');
+  });
+  test('pay: no rate, no pay line', async ({ page }) => {
+    await openPage(page, DATA);
+    expect(await page.locator('.tsp-pay').count()).toBe(0);
+  });
+
   test('a corrected version says so', async ({ page }) => {
     await openPage(page, Object.assign({}, DATA, { version: 2 }));
     expect(await page.evaluate(() => document.querySelector('.tsp-chip').textContent)).toContain('corrected');
