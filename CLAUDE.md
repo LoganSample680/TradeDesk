@@ -358,6 +358,27 @@ never decides on their behalf that their testing is finished.
   dev branch or into `main`: it carries other sessions' unmerged work, and
   pulling it into your branch drags their features into your PR. Each feature
   reaches `main` only through its own reviewed PR (§14.1.1).
+- **Every branch starts from `main`. Never from `uat`** (owner 2026-09-26).
+  `uat` is the showroom, `main` is the workbench: build on `main`, roll to
+  `uat` with the script to see it on the phone, PR the same branch to `main`
+  to ship it. A branch cut from `uat` is the same mistake as merging `uat`
+  in, and it happened: PR #98 opened with 400 commits, a merge conflict and
+  a duplicate migration version, none of them its own. Three guards now
+  catch it, so nobody has to remember: `scripts/session-branch-check.sh`
+  warns at the start of every session (SessionStart hook in
+  `.claude/settings.json`), the **Branch starts from main** CI job fails any
+  PR carrying a `UAT deploy` or `into uat` commit, and the fix it names is
+  to restart the branch from `origin/main` and cherry-pick only its own
+  commits. If a session starts on a `uat`-based branch, tell the owner
+  BEFORE building anything on it.
+- **A migration version is taken the moment ANY branch uses it, `uat`
+  included.** Two sessions picking "the next free number" independently is
+  how 20261005, 20261006 and 20261038 each got used twice. Before naming a
+  migration, check `origin/uat` as well as `main`
+  (`git ls-tree --name-only origin/uat supabase/migrations/`) and take a
+  number neither has. Migration lint now fails a PR whose new version is
+  already used on `uat` by a different file, and `scripts/uat-roll.sh`
+  refuses to push a `uat` with two files on one version.
 - **To try one feature on its own, use that branch's Pages preview URL**, which
   every push already builds. `uat` is only special because the TestFlight shell
   points at it, so spend it on what has to be on a phone.

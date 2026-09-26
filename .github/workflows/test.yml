@@ -87,6 +87,34 @@ jobs:
           fi
           echo "✅ Every migration version is unique"
 
+      # ── AND NOT ONE UAT ALREADY USES (2026-09-26) ───────────────────────
+      # The check above only sees this branch. Two sessions each picking the
+      # next free number collide on uat first, where no PR check runs, and
+      # then again on main. 20261038 was used by two different files on uat
+      # the day this was added. A version this PR adds that uat already
+      # holds under a DIFFERENT filename is the same collision, caught now.
+      - name: No migration version already taken on uat
+        run: |
+          git fetch -q --depth=1 origin uat 2>/dev/null || { echo "uat not reachable, skipping"; exit 0; }
+          taken=$(git ls-tree --name-only FETCH_HEAD supabase/migrations/ | xargs -n1 basename)
+          # Only files this PR adds: a clash already on main is main's to fix,
+          # and failing every PR for it would teach people to ignore this.
+          git fetch -q --depth=1 origin main 2>/dev/null || true
+          onmain=$(git ls-tree --name-only FETCH_HEAD supabase/migrations/ 2>/dev/null | xargs -n1 basename 2>/dev/null)
+          bad=""
+          for f in supabase/migrations/*.sql; do
+            b=$(basename "$f"); v=${b%%_*}
+            printf '%s\n' "$onmain" | grep -qx "$b" && continue
+            other=$(printf '%s\n' "$taken" | grep "^${v}_" | grep -vx "$b" || true)
+            [ -n "$other" ] && bad="$bad$b (uat has: $other)"$'\n'
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::A migration version in this PR is already used on uat by a different file. The second one to deploy will fail. Take the next free number."
+            printf '%s' "$bad"
+            exit 1
+          fi
+          echo "✅ No version clashes with uat"
+
       # ON_ERROR_STOP IS THE WHOLE POINT (2026-09-15). Without it psql prints
       # ERROR and exits 0, so this step passed on a migration that could not be
       # applied at all: 20261017 widened geo_fences_for's returns-table without
@@ -186,6 +214,44 @@ jobs:
   # to route around it, which defeats the entire point of making this
   # visible. This is an FYI for the owner and Claude to glance at, not a
   # merge blocker.
+  # ── EVERY BRANCH STARTS FROM MAIN (owner 2026-09-26) ────────────────────
+  # uat is where features are SHOWN (the TestFlight shell points at it); main
+  # is where they are BUILT. A branch cut from uat carries every other
+  # session's unmerged work, so its PR tries to ship all of it. PR #98 opened
+  # with 400 commits, a merge conflict and a duplicate migration version for
+  # that reason alone, and nothing named the cause until a person dug.
+  #
+  # The test is exact rather than clever: the roll script writes two commit
+  # shapes that exist nowhere but uat, "UAT deploy" and "Merge branch 'x' into
+  # uat". If either is in this PR, the branch came from uat. Hard fail, with
+  # the fix in the message. scripts/session-branch-check.sh says the same
+  # thing at the start of every session, before any work is built on it.
+  branch-from-main:
+    name: Branch starts from main
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: No uat roll commits in this PR
+        run: |
+          git fetch -q origin "${{ github.event.pull_request.base.ref }}"
+          # "origin/base..HEAD" rather than a merge-base: it needs no common
+          # ancestor, so a shallow history can never make this pass silently.
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          leaked=$(git log --format='%h %s' "$BASE"..HEAD | grep -E "^[0-9a-f]+ (UAT deploy$|Merge (remote-tracking )?branch '.*' into uat$)" || true)
+          if [ -n "$leaked" ]; then
+            n=$(git rev-list --count "$BASE"..HEAD)
+            echo "::error::This branch was started from uat, not main. It carries $n commits, including uat roll commits, so merging it ships other sessions' unfinished work. Restart the branch from origin/main and cherry-pick only this PR's own commits (CLAUDE.md 3.1)."
+            echo "$leaked"
+            exit 1
+          fi
+          echo "✅ No uat roll commits: this branch starts from main"
+
   flow-test-advisory:
     name: "§12.8 flow-test advisory"
     runs-on: ubuntu-latest
