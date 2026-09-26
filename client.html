@@ -288,6 +288,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-ba-verified{text-align:center;font-size:11px;font-weight:700;color:var(--green-mid,#0E6B39);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:4px}
 .hub-ba-more{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin-top:10px}
 .hub-photo-thumb img{width:100%;height:100%;object-fit:cover}
+.hub-photo-day{font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.02em;margin-bottom:8px}
 .hub-photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 .hub-log-item{padding:12px 0;border-bottom:1px solid var(--border);display:flex;gap:12px}
 .hub-log-item:last-child{border-bottom:none}
@@ -1750,6 +1751,34 @@ function _hubBaDrag(e,id){
   if(h)h.style.left=pct+'%';
   if(k)k.style.left=pct+'%';
 }
+// Photos grouped by the local day they were taken: [{key,label,photos}],
+// newest day first; inside a day, before, progress, after, then anything else,
+// each in time order. Undated photos form one last group.
+const _HUB_STAGE={before:0,'before-after':1,progress:2,after:3};
+function _hubPhotoDays(list){
+  const days=new Map();
+  (list||[]).forEach(p=>{
+    if(!p)return;
+    const t=/^\d{4}-\d{2}-\d{2}/.test(String(p.uploadedAt||''))?Date.parse(p.uploadedAt):NaN;
+    let key='';
+    if(!isNaN(t)){const d=new Date(t);key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+    if(!days.has(key))days.set(key,[]);
+    days.get(key).push({p,t:isNaN(t)?0:t});
+  });
+  const label=k=>{
+    if(!k)return 'Undated';
+    const d=new Date(k+'T12:00:00');
+    const sameYear=d.getFullYear()===new Date().getFullYear();
+    return d.toLocaleDateString('en-US',sameYear?{weekday:'short',month:'short',day:'numeric'}:{month:'short',day:'numeric',year:'numeric'});
+  };
+  return [...days.keys()].sort((a,b)=>!a?1:!b?-1:b.localeCompare(a)).map(k=>({
+    key:k,label:label(k),
+    photos:days.get(k).sort((x,y)=>{
+      const st=q=>Object.prototype.hasOwnProperty.call(_HUB_STAGE,q.p.type)?_HUB_STAGE[q.p.type]:4,sx=st(x),sy=st(y);
+      return sx!==sy?sx-sy:x.t-y.t;
+    }).map(x=>x.p),
+  }));
+}
 function renderProject(){
   if(!_hub)return;
   const h=_hub;
@@ -1858,19 +1887,26 @@ function renderProject(){
 
   // Orphan photos: not linked to any job OR estimate card above.
   const orphanPhotos=allPhotos.filter(p=>(!p.job_id||!jobIds.has(p.job_id))&&!bidGroupPhotoUrls.has(p.url));
+  // By the day they were taken, newest day first, and within a day in the
+  // order the work happened: before, progress, after (owner 2026-09-26: they
+  // read as a jumble). Photos with no date go last.
   if(orphanPhotos.length){
     html+='<div class="card">';
-    html+='<div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px">Other photos</div>';
-    html+='<div class="hub-photo-grid">';
-    orphanPhotos.forEach(p=>{
-      const i=allPhotos.indexOf(p);
-      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='before-after'?'B&A':p.type==='progress'?'Progress':'';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')">';
-      html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
-      if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
+    html+='<div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px">'+(allJobs.length||bidGroups.length?'Other photos':'Photos')+'</div>';
+    _hubPhotoDays(orphanPhotos).forEach((d,di)=>{
+      html+='<div class="hub-photo-day"'+(di?' style="margin-top:16px"':'')+'>'+esc(d.label)+'</div>';
+      html+='<div class="hub-photo-grid">';
+      d.photos.forEach(p=>{
+        const i=allPhotos.indexOf(p);
+        const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='before-after'?'B&A':p.type==='progress'?'Progress':'';
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')">';
+        html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
+        if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
+        html+='</div>';
+      });
       html+='</div>';
     });
-    html+='</div></div>';
+    html+='</div>';
   }
 
   document.getElementById('view-project').innerHTML=html;
