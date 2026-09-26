@@ -333,11 +333,42 @@ Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=
 // Crew assigned to this bid (employee emails). Each adds their loaded payroll cost as a
 // real expense; more people on the job → bigger cost. Hours come automatically from scope.
 let _estCrew=[];
+// WHAT EACH PERSON BILLS AT, WHICH IS NOT WHAT EACH PERSON COSTS.
+//
+// Owner 2026-09-19: "could this give me the ability to do two different rates on
+// time and materials for the people I add?" A lead and an apprentice do not
+// bill the same, so the rate belongs to the WORKER and the job shows the total
+// per hour that comes out of it.
+//
+// Two numbers per person and they must never be conflated (rule 18.2):
+//   pay_rate  on team_members   what they cost you, already per person, already
+//                               gated behind _canViewComp()
+//   billRate  on the employee   what the client is charged for their hour
+//
+// This map is the override for THIS job only. Empty means the person bills at
+// their own default, and no default means the job's flat rate, which is how
+// every bid written before today still prices.
+let _estCrewRates={};
+Object.defineProperty(window,'_estCrewRates',{get:()=>_estCrewRates,set:v=>{_estCrewRates=(v&&typeof v==='object')?v:{};},configurable:true});
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+// ── THE RATE IS ON THE JOB. WHETHER THE CUSTOMER SEES IT IS A SEPARATE THING ─
+//
+// Owner, 2026-09-22: "how do we give contractors the opportunity to hide the
+// rate in the proposal but it be something they have to toggle, if they usually
+// hide their rate does it persist?"
+//
+// One flag was doing two jobs. Turning Rate off took the rate off the BID,
+// which is also what Tim multiplies the clocked hours by to bill the job
+// (timWorkSheet, js/tim-ask.js), so a man who simply did not want his hourly
+// rate printed was throwing away his own invoicing to get that.
+// They are separate now: the rate is on the job either way, and this says
+// whether it is printed.
+let _tmHideRate=false;
 Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
 Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCrewCount=v;},configurable:true});
 Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
+Object.defineProperty(window,'_tmHideRate',{get:()=>_tmHideRate,set:v=>{_tmHideRate=!!v;},configurable:true});
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmCapAction='Stop & get re-approval';
@@ -476,7 +507,51 @@ function _geiOpenModeEstimate(c,bidId,mode){
   }
   _geiOpenModeAt(c,mode,c?c.addr:'');
 }
+// ── NO DOOR INTO A CALIFORNIA HOME T&M ─────────────────────────────────────
+//
+// Owner, 2026-09-23: "California bans T&M for residential so they shouldn't
+// even be able to proceed [past the first page] if it's for a residential
+// address."
+//
+// The picker's card was already locked, but that was one door of five: the
+// trade picker's T&M shortcut, a spoken "T and M for the Ruizes", resuming an
+// old draft, and Change on step 1 (a new address, or home/business flipped)
+// all still opened the builder. So the check lives where every one of them
+// has to pass: here, once the address is known and before a draft exists, and
+// in goGeiStep, which is the only way onto the T&M page at all.
+//
+// Business jobs are outside B&P 7159 and pass. What is blocked is read from
+// statePriceRule (js/legal.js), not hard-coded to California, so if the table
+// ever names another state this follows it.
+function _tmHomeBlock(addr,commercial){
+  if(commercial)return null;
+  const st=(typeof stateFromAddr==='function'?stateFromAddr(addr||''):null)||(typeof S!=='undefined'&&S&&S.state)||'';
+  const r=(typeof statePriceRule==='function'&&st)?statePriceRule(st):{rule:'none'};
+  if(r.rule!=='block')return null;
+  return Object.assign({state:st,name:_tmStateName(st)||st},r);
+}
+// The one stop. "Make it a fixed price" opens Build Your Own for the same
+// customer at the same address, carrying any scope already written; Cancel
+// leaves him where he came from (onNo), never inside a T&M.
+function _tmHomeStop(blk,c,addr,steps,onNo){
+  zConfirm(escHtml(blk.name)+' law does not allow a time and materials contract on a home. '+
+    'Build this one as a fixed price instead.'+(blk.statute?' ('+escHtml(blk.statute)+')':''),
+    ()=>{
+      if(!c)return;
+      const lines=(steps||[]).filter(Boolean);
+      if(lines.length){
+        window._scanEstimateSeed={clientId:c.id,lines:lines.map(t=>({desc:t,qty:1,unit:'ea',rate:0,total:0,notes:'',
+          _byoSection:(typeof _byoWorkSection==='function'?_byoWorkSection():'Work')}))};
+      }
+      _geiOpenModeAt(c,'byo',addr||c.addr||'');
+    },
+    {title:'Not allowed in '+escHtml(blk.name),yes:'Make it a fixed price',danger:false,onNo:onNo||null});
+}
 function _geiOpenModeAt(c,mode,addr){
+  if(mode==='tm'){
+    const blk=_tmHomeBlock(addr||(c&&c.addr)||'',String((c&&c.ptype)||'').toLowerCase()==='commercial');
+    if(blk){_tmHomeStop(blk,c,addr,[],null);return;}
+  }
   // Drafts belong to a specific property. Only offer a draft to resume when it's
   // for the SAME address the user just picked at the gate: a primary-address
   // draft must never surface (or silently resume) when they picked the rental or
@@ -596,7 +671,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -655,12 +730,33 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
+  _geiChecking=false;
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
-  // A NEW T&M PROPOSAL STARTS AT NOTHING. Scope and Send, and whatever the job
-  // address's own statute forces on (_tmApplyLayers adds those). His last
-  // proposal's shape is not carried over: the fast path is the empty one, and
-  // a man who wants a rate on every job is one tap from it.
-  _tmLayers=new Set();_tmRateOnly=false;
+  // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
+  //
+  // It started at NOTHING until 2026-09-22, and the reasoning then was sound:
+  // scope and Send is a complete proposal, the statute adds what it must, and
+  // a man who wants a rate is one tap from it.
+  //
+  // What changed is not the argument, it is what the rate is FOR. Owner:
+  // "we want rate because then Tim can feed a quick invoice." The rate is no
+  // longer only a number the customer reads; it is the multiplier that turns
+  // the hours his crew clocks against this job into an invoice, through
+  // timWorkSheet (js/tim-ask.js). A T&M job with no rate on its bid gives Tim
+  // hours and nothing to bill them at, and that is discovered on the Friday
+  // somebody wants paid, which is the worst possible moment to find it.
+  //
+  // So it is ON, pre-filled with his own labor rate (_facts.laborRate below),
+  // and one tap from OFF for the job that really is agreed some other way.
+  // Nothing is required here that was not required before: the statute is
+  // still the only thing that can lock a layer.
+  // AND THE CEILING BOX, EMPTY. Both are on the page from the first second, so
+  // neither costs him an Add tap. An empty ceiling is no ceiling: nothing reads
+  // the layer alone, everything reads _tmCapVal() > 0, so the document is
+  // exactly what it was until he types a number (2026-09-23).
+  _tmLayers=new Set(['rate','cap']);_tmRateOnly=true;
+  // His standing answer, not a fresh question on every job.
+  _tmHideRate=_tmHideRateDefault();
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -710,6 +806,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
+        // A proposal comes back the way it was SENT. Falling through to the
+        // standing preference here would silently reprint a rate on a job he
+        // had already hidden it on, or hide one a customer has already seen.
+        _tmHideRate=(b.tmHideRate!==undefined)?!!b.tmHideRate:_tmHideRateDefault();
         // The BID's own answer wins over the account default: a rate sheet he
         // saved stays a rate sheet, and a totalled T&M he saved before he ever
         // turned the default on does not silently lose its total on resume.
@@ -768,7 +868,8 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;
+        _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
@@ -844,7 +945,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   const _sp=document.getElementById('_style-pick-ov');
   if(_sp){_sp.style.opacity='0';_sp.style.transform='translateY(10px)';setTimeout(()=>_sp.remove(),240);}
   if(typeof _stylePickState!=='undefined')try{_stylePickState=null;}catch(e){}
-  goGeiStep(_resumingExisting?2:1);
+  // A NEW T&M OPENS ON THE PAGE, not on a screen whose only content is two
+  // lines he can already see and a Next button. The two facts that screen held
+  // (home or business, and which customer at which address) are on the page's
+  // own sub-line now with a Change that goes back to it.
+  goGeiStep((_resumingExisting||_geiIsTM)?2:1);
 }
 
 function goGeiStep(n){
@@ -857,6 +962,16 @@ function goGeiStep(n){
       [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===1)?'':'none';});
       _geiSyncJobTypeButtons();
       window.scrollTo({top:0,behavior:'instant'});
+      return;
+    }
+    // Resume, step 1's Next after Change, and a fresh open all land here. A
+    // California home stops on step 1, where the address and home/business
+    // that decided it are on screen and can be changed.
+    const _blk=_tmHomeBlock(_geiSiteAddr(),_geiIsCommercial);
+    if(_blk){
+      goGeiStep(1);
+      const _c=(typeof getClientById==='function'&&_geiClientId)?getClientById(_geiClientId):null;
+      _tmHomeStop(_blk,_c,_geiSiteAddr(),(_geiScopeChips||[]).slice(),null);
       return;
     }
     const byoP=document.getElementById('gei-byo-page');if(byoP)byoP.style.display='none';
@@ -921,8 +1036,18 @@ function _tmRecalc(){
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  // The OTHER place the rate reaches him. Shown, the line is hours at a rate;
+  // hidden, it is one lump with the same total and no per-hour figure anywhere
+  // on it, because a line that says "120 hr @ $760" hands back by division
+  // exactly what the clause above just stopped printing.
+  const _hideR=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideR
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr');
+  const _laborTotal=Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours);
+  const line=_hideR
+    ? {desc,qty:1,unit:'lot',rate:_laborTotal,_tmLabor:true,total:_laborTotal}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:_laborTotal};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   renderGeiLines();calcGeiTotal();
@@ -975,6 +1100,40 @@ function _tmSyncCycleButtons(){
 // this consolidation followed).
 function _geiRenderTopBar(prefix,defaultTitle,editFnName){
   const wrap=document.getElementById(prefix+'-topbar-wrap');if(!wrap)return;
+  // T&M: ONE NAV BAR, THEN A LARGE TITLE (2026-09-23). It was an eyebrow link,
+  // a title, a sub-line and a separate Save draft / Cancel row, about 470px of
+  // an 852px phone before the first field. iOS puts Back on the left and the
+  // one action on the right, and names the screen once, large. Back IS cancel,
+  // so there is no separate Cancel; tapping the title renames it.
+  if(prefix==='tm'||prefix==='byo'){
+    wrap.className='';
+    wrap.innerHTML=
+      '<div class="ios-nav">'+
+        '<button type="button" class="ios-navbtn" onclick="_geiBack()" aria-label="Back">'+
+          '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>Back</button>'+
+        // What kind of proposal this is, in the middle of the bar where iOS
+        // names the screen, so the line under the customer's name has room
+        // for the address (it was cut to "41…").
+        '<span class="ios-navtitle">'+(prefix==='tm'?'Time &amp; Materials':'Build Your Own')+'</span>'+
+        // Save is done: it keeps the draft and takes him home (owner,
+        // 2026-09-25: "Save on time and materials doesn't take us back to home
+        // page"). The tab bar is hidden on this page, so Save and Back are the
+        // only ways out; staying put after Save left him stuck.
+        '<button type="button" class="ios-navbtn bold" onclick="_geiSaveAndExit()">Save</button>'+
+      '</div>'+
+      '<div class="ios-large">'+
+        // A div, not a <button>: the rename input is typed INTO this element,
+        // and an input inside a button is not reliably editable everywhere.
+        '<div class="ios-title" role="button" tabindex="0" onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename">'+
+          '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
+          // NAMING IT IS VISIBLE (owner, 2026-09-23: "still want the ability
+          // to name the proposal if wanted on both"). The title was always
+          // tappable; nothing said so. A pencil does.
+          '<span class="ios-rename" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></div>'+
+        '<div class="ios-sub" id="'+prefix+'-page-sub">-</div>'+
+      '</div>';
+    return;
+  }
   wrap.innerHTML=
     '<div class="tbar-l">'+
       '<button class="link-back" onclick="_geiBack()">← Job type</button>'+
@@ -1011,13 +1170,21 @@ function _geiScopeCardMode(prefix){
 }
 function _geiRenderScopeCard(prefix){
   const wrap=document.getElementById(prefix+'-scopecard-wrap');if(!wrap)return;
+  // T&M: the section (label, group, footnote, and what Tim noticed) is drawn
+  // whole by _tmScopeIosHtml, so this is only the container it lives in.
+  if(prefix==='tm'){wrap.style.display='';if(!document.getElementById('tm-scope-wrap'))wrap.innerHTML='<div id="tm-scope-wrap"></div>';return;}
   const mode=_geiScopeCardMode(prefix);
   if(mode==='off'){wrap.innerHTML='';wrap.style.display='none';return;}
   wrap.style.display='';
   wrap.innerHTML=
     '<div class="card-hd">'+
-      '<div class="card-hd-title">Scope of work</div>'+
-      (mode==='full'?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
+      // "in order" is a promise the list now keeps, so the heading says it.
+      '<div class="card-hd-title">Scope of work, in order</div>'+
+      // Points at the box, not the picker. The list is still reachable from
+      // inside the box, which is where somebody who wants it will look.
+      // Only once there is a list to add to. With nothing written, the box it
+      // would open is already on the screen right under it.
+      (mode==='full'&&(_geiScopeChips||[]).length?'<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_geiScopeSayMore(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>':'')+
     '</div>'+
     (mode==='legacy'?'<div style="padding:11px 16px 2px;font-size:11.5px;color:var(--text-3);line-height:1.5">Your line items and their descriptions are the scope on this proposal now. These older entries still print, remove any you do not want.</div>':'')+
     '<div id="'+prefix+'-scope-wrap"></div>';
@@ -1051,6 +1218,29 @@ function _geiRenderActionButtons(prefix,opts){
   const o=opts||{};
   const cols=o.extraButtons?o.extraButtons.length+2:2;
   const extra=(o.extraButtons||[]).map(b=>'<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+b.onclick+'">'+b.label+'</button>').join('');
+  // TWO BUTTONS, THEN WORDS. Five full-width buttons at the bottom of a page
+  // is five decisions at the moment he should be making one. The two that end
+  // the job, sending it and signing it here, stay big. Looking at it first,
+  // handing the phone over and comparing options are things he may want, so
+  // they are a quiet line of links under the two, not buttons competing with
+  // them (owner, 2026-09-23: "so easy my 3 year old could build the estimate").
+  if(o.compact){
+    // ONE TINT (2026-09-23). Send is the filled button, Sign it here the
+    // tinted one under it, and the three lesser things are plain tint-coloured
+    // words. The black slab, the green slab and the blue links were three
+    // colours saying "press me" at the same moment.
+    const link=(fn,txt)=>'<button type="button" onclick="'+fn+'">'+txt+'</button>';
+    wrap.innerHTML=
+      '<button type="button" class="ios-btn ios-btn-fill" onclick="sendGenericProposal()">'+(o.sendLabel||'Send proposal')+'</button>'+
+      '<button type="button" class="ios-btn ios-btn-tint" onclick="_geiSignInPerson()">Sign it here</button>'+
+      '<div class="ios-links">'+
+        link(o.previewOnclick||'_geiPreviewClient()','See what they get')+
+        link('_geiPresent()','Show them on this phone')+
+        (o.extraLinks||[]).map(x=>link(x.onclick,x.label)).join('')+
+        link('_openComparisonPicker()','Compare')+
+      '</div>';
+    return;
+  }
   wrap.innerHTML=
     '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">'+svgIcon('📨',{size:16})+' '+(o.sendLabel||'Send proposal')+'</button>'+
     '<button class="btn btn-xl btn-full" style="margin-top:8px;background:#0f172a;color:#fff;border-color:#0f172a" onclick="_geiPresent()">'+svgIcon('📱',{size:16,color:'#fff'})+' Present on this screen</button>'+
@@ -1163,7 +1353,7 @@ const _GEI_MODES={
     titleSuffix:'Time & Materials',
     gaugeOninput:'_tmInputChange()',
     depositOninput:'_tmInputChange();_geiRememberDeposit()',
-    actionOpts:{sendLabel:'Send T&amp;M proposal'},
+    actionOpts:{sendLabel:'Send it',compact:true},
   },
   byo:{
     pageId:'gei-byo-page',
@@ -1172,7 +1362,7 @@ const _GEI_MODES={
     titleSuffix:'Build Your Own',
     gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
     depositOninput:'_byoUpdateRail();_byoAutosave();_geiRememberDeposit()',
-    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Add option',onclick:'_byoDuplicateBid()'}]},
+    actionOpts:{sendLabel:'Send it',compact:true,extraLinks:[{label:'Add an option',onclick:'_byoDuplicateBid()'}]},
   },
 };
 // Shared page chrome for both single-page estimate layouts: hide the legacy
@@ -1211,7 +1401,30 @@ function _geiRenderAddrSub(prefix){
   const c=getClientById(_geiClientId);
   if(!c){sub.textContent='New proposal';return;}
   const street=(_geiSiteAddr()||'').split(',')[0];
-  sub.textContent=(c.name||'')+(street?' · '+street:'');
+  if(prefix!=='tm'&&prefix!=='byo'){sub.textContent=(c.name||'')+(street?' · '+street:'');return;}
+  // AN iOS TITLE NAMES THE THING ON THE SCREEN (2026-09-23). With no name of
+  // his own on it, this read "Proposal", which is every screen in this part of
+  // the app. The customer is what he will recognise it by; a name he types
+  // (tap the title) replaces it, and it is display only, so the auto name
+  // that files the proposal and heads the document is untouched.
+  const tt=document.getElementById(prefix+'-tbar-title');
+  const own=(typeof _geiDescUserSet!=='undefined'&&_geiDescUserSet)?(document.getElementById('gei-desc')?.value||'').trim():'';
+  if(tt&&!tt.querySelector('input'))tt.textContent=own||c.name||(prefix==='tm'?'Time & Materials':'Build Your Own');
+  if(!own){
+    // The words in a span of their own, so on a phone they end in … and
+    // Change stays on the line instead of being the part that is cut off.
+    sub.innerHTML='<span class="txt">'+(_geiIsCommercial?'Business job':'Home job')+(street?' · '+escHtml(street):'')+'</span>'+
+      ' <button type="button" onclick="goGeiStep(1)">Change</button>';
+    return;
+  }
+  // T&M says WHAT it is first. The title is named after the work, so without
+  // this nothing on the page confirmed which kind of proposal he had picked.
+  // Home or business is on the line because it now decides which state law
+  // applies (_tmStateRule), and Change is the only way back to it.
+  // Styled by the page's iOS layer (.ios-sub b / button), not inline.
+  sub.innerHTML='<span class="txt">'+
+    (_geiIsCommercial?'Business job':'Home job')+' · '+escHtml(c.name||'')+(street?' · '+escHtml(street):'')+'</span>'+
+    ' <button type="button" onclick="goGeiStep(1)">Change</button>';
 }
 function _geiSiteNoteInput(val){
   if(_geiClientId==null||!clients.find)return;
@@ -1300,6 +1513,62 @@ function _geiRenderExclusions(prefix){
   '</div>';
 }
 
+// ── Property access notes ────────────────────────────────────────────────────
+//
+// Owner 2026-09-19: "Property access notes, how can we make that look better?
+// It's ugly."
+//
+// It was, and the reason is worth writing down because it is a shape that
+// recurs. The field was 480px of the first 874px on the phone: a card header
+// with an emoji, a hairline, two sentences of grey explaining itself, and a
+// three row textarea. All of it above the scope of work, which is the thing he
+// opened the page to write. And on most jobs there is no gate code, so what he
+// saw first, every time, was a large empty box justifying its own existence.
+// The amber stripe made it worse by reading as a warning about a note.
+//
+// So it is one row now, the same shape as "On this contract": what it is, one
+// line saying why it is private, and a chevron. Two states that matter:
+//
+//   Empty      one quiet row inviting the note. Costs about 60px, not 480.
+//   Has a note THE NOTE ITSELF is the row. That is the state with the value in
+//              it, because a gate code he can read without tapping is a gate
+//              code he can read while the client is standing there.
+//
+// The explanation moved inside the expanded state, where somebody typing is the
+// only person who needs it. Nothing about where the note is stored changed: it
+// is still per property on the CLIENT record, never on the bid, so it can never
+// reach the proposal.
+let _geiSiteNoteOpen=false;
+function _geiToggleSiteNote(prefix){
+  _geiSiteNoteOpen=!_geiSiteNoteOpen;
+  _geiRenderSiteNoteField(prefix||(_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen'));
+  if(_geiSiteNoteOpen)setTimeout(()=>document.getElementById('gei-sitenote')?.focus(),60);
+}
+// THE NOTE, READ RATHER THAN QUOTED. A paragraph clamped to two lines is not
+// readable by somebody standing at a gate with a toolbox in one hand, and that
+// is the only posture this field is ever read in. timSiteFacts pulls out the
+// three things that stop a crew at the kerb; his sentence is untouched and one
+// tap away in the editor.
+//
+// Returns '' when nothing was recognised, and the caller falls back to the
+// clamped sentence. Half a reading is worse than none: if Tim cannot see the
+// facts, the man's own words are still the best thing to show.
+function _geiSiteChips(val,opts){
+  if(typeof timSiteFacts!=='function')return '';
+  let facts=[];
+  try{facts=timSiteFacts(val)||[];}catch(_e){return '';}
+  if(!facts.length)return '';
+  const o=opts||{};
+  return '<span style="display:flex;flex-wrap:wrap;gap:6px'+(o.gapTop?';margin-top:2px':'')+'">'+
+    facts.map(f=>
+      '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:var(--r-pill,999px);'+
+        'background:'+(f.k==='dog'?'var(--amber-lt,#FEF3C7)':'var(--bg2)')+';'+
+        'box-shadow:inset 0 0 0 1px '+(f.k==='dog'?'#F0C674':'var(--border)')+';'+
+        'font-size:12px;font-weight:700;color:'+(f.k==='dog'?'#92400E':'var(--text)')+';white-space:nowrap">'+
+        (typeof svgIcon==='function'?svgIcon(f.icon,{size:12}):'')+escHtml(f.label)+'</span>').join('')+
+  '</span>';
+}
+
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
@@ -1307,15 +1576,69 @@ function _geiRenderSiteNoteField(prefix){
   const addr=_geiSiteAddr();
   const val=c?getSiteNote(c,addr):'';
   const addrShort=(addr||'').split(',')[0].trim();
-  // Sits right under the address header, amber inset stripe marks it internal.
-  // One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
-  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Property access notes</div></div>'+
-    '<div style="padding:12px 14px">'+
-      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Crew only, never on the proposal. Saved to '+(addrShort?'<strong>'+escHtml(addrShort)+'</strong> and auto-loads on every future job there':'this property')+'.</div>'+
-      '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" placeholder="Gate code, dog, where to park, tricky access..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
-    '</div>'+
-  '</div>';
+  const has=!!String(val||'').trim();
+  const chev='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--border2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;transition:transform .18s cubic-bezier(.4,0,.2,1)'+
+    (_geiSiteNoteOpen?';transform:rotate(90deg)':'')+'"><path d="m9 18 6-6-6-6"></path></svg>';
+
+  // The row. When there is a note it IS the note, clamped to two lines so a
+  // long one cannot push the scope of work off the screen again.
+  const row=
+    '<button type="button" onclick="_geiToggleSiteNote('+escHtml(JSON.stringify(prefix))+')" '+
+      'aria-expanded="'+(_geiSiteNoteOpen?'true':'false')+'" '+
+      'style="display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left">'+
+      '<span style="flex:1;min-width:0">'+
+        (has
+          ? (_geiSiteChips(val)
+            || '<span style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escHtml(val)+'</span>')
+          // Open, the row names the thing; the invitation would only repeat the
+          // placeholder sitting two lines under it.
+          : '<span style="display:block;font-size:14px;font-weight:500;color:var(--text)">'+
+              (_geiSiteNoteOpen?'Property access notes':'Gate code, dog, where to park')+'</span>')+
+        '<span style="display:block;font-size:11.5px;color:var(--text-3);margin-top:2px">'+
+          (has
+            ? (addrShort?escHtml(addrShort)+' · crew only':'Crew only')
+            : 'Crew only. Never on the proposal.')+
+        '</span>'+
+      '</span>'+
+      chev+
+    '</button>';
+
+  // Open: the field, and the one sentence that is worth saying to somebody who
+  // is actually typing into it.
+  const open=_geiSiteNoteOpen
+    ? '<div style="padding:0 16px 14px">'+
+        '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" '+
+          'placeholder="Gate code, dog, where to park, tricky access..." '+
+          'style="width:100%;box-sizing:border-box;padding:10px 12px;border:0;border-radius:var(--r);'+
+          'box-shadow:0 0 0 1px var(--border2);font-size:13.5px;font-family:inherit;background:var(--bg2);'+
+          'color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+        // Said, not typed. This is a note a man writes standing in the
+        // driveway looking at the gate he is describing, which is the worst
+        // possible place to type and the best possible place to talk. Same
+        // door as the scope box: _timTalkToggle takes the field id.
+        ((typeof _voiceCapable==='function'&&_voiceCapable())
+          ? '<button type="button" onclick="_timTalkToggle(\'gei-sitenote\')" '+
+            'style="margin-top:9px;display:inline-flex;align-items:center;gap:7px;padding:8px 13px;'+
+            'border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+            'font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+              'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+              '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>'+
+              '<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Say it</button>'
+          : '')+
+        '<div style="font-size:11.5px;line-height:1.5;color:var(--text-3);margin-top:8px">'+
+          (addrShort
+            ? 'Saved to <strong>'+escHtml(addrShort)+'</strong>, and it loads itself on every future job there.'
+            : 'Saved to this property, and it loads itself on every future job there.')+
+        '</div>'+
+      '</div>'
+    : '';
+
+  // T&M draws it as an iOS group with its label outside (2026-09-23); the other
+  // builders keep their card.
+  wrap.innerHTML=(prefix==='tm'||prefix==='byo')
+    ?'<div class="ios-sec"><div class="ios-group ios-note">'+row+open+'</div></div>'
+    :'<div class="card card-pad-0" style="margin-bottom:12px">'+row+open+'</div>';
 }
 function _geiShowSharedChrome(prefix){
   const m=_GEI_MODES[prefix];if(!m)return;
@@ -1329,6 +1652,15 @@ function _geiShowSharedChrome(prefix){
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
   _geiApplyDepositDefault(prefix);
+  // THE ANSWER TIM TOOK ON THE DRIVEWAY, written now that the page knows which
+  // property this job is at. Held rather than saved earlier because a client can
+  // own five houses and this is the screen that decides which one (js/tim.js,
+  // timTakePendingSiteNote).
+  if(typeof timTakePendingSiteNote==='function'){
+    const pending=timTakePendingSiteNote();
+    if(pending&&typeof _geiSiteNoteInput==='function')_geiSiteNoteInput(pending);
+  }
+  _geiSiteNoteOpen=false;   // a new estimate opens shut, whatever the last one was left on
   _geiRenderSiteNoteField(prefix);
   _geiRenderExclusions(prefix);
   // Trade branding in title
@@ -1358,7 +1690,12 @@ function _geiHidePage(pageId){
 
 // ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
 function _tmShowPage(){
+  // A fresh page is not a tap on the bar (_tmDockReady).
+  _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
   const b=_geiShowSharedChrome('tm');
+  // Step 1 is skipped on the way in now, so nothing else repaints its facts
+  // line; keep the hidden copy true so Change opens on the right answer.
+  if(typeof _geiRenderFactsLine==='function')try{_geiRenderFactsLine();}catch(_e){}
   // Populate inputs from current state, comma-formatted like the price fields
   // elsewhere (_fmtMoneyInput/_moneyVal), so a restored value displays the same
   // way it would after the contractor typed it.
@@ -1367,20 +1704,54 @@ function _tmShowPage(){
   setV('tm-i-days',_tmEstHours?Math.round(_tmEstHours/8):'');
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
-  if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
+  // ALWAYS WRITTEN, EMPTY INCLUDED. This used to run only when the bid HAD a
+  // ceiling, so a new T&M kept whatever the last one left in the box: a Kansas
+  // customer's $4,500 turned up on the next customer's Pennsylvania contract,
+  // read by the proposal builder through the tm-nte-cap mirror whether or not
+  // the box was even on screen. A figure on a contract is either this bid's or
+  // nothing (2026-09-23).
+  setV('tm-i-nte',(b&&Number(b.tmNteCap)>0)?b.tmNteCap:'');
+  {const _m=document.getElementById('tm-nte-cap');if(_m)_m.value=(b&&Number(b.tmNteCap)>0)?String(b.tmNteCap):'';}
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  // Not printed anywhere, but saved onto the bid: the last customer's "why T&M"
+  // note must not be written onto this one's record.
+  {const _r=document.getElementById('tm-reason');if(_r)_r.value=(b&&b.tmReason)||'';
+   const _n=document.getElementById('tm-reason-note');if(_n)_n.value=(b&&b.tmReasonNote)||'';}
   // A rate sheet's deposit is a flat figure, not a percent of a total it does
   // not have. Restored before _tmApplyLayers so the row is populated the
   // instant it is shown.
-  if(b&&Number(b.tmDepositAmt)>0)setV('tm-i-dep-flat',b.tmDepositAmt);
-  // THE BID'S OWN LAYERS WIN. A proposal he built as scope-only stays
-  // scope-only on resume; one with a rate and a cap comes back with both. A bid
-  // written before layers existed is read from what it actually carries, so
-  // nothing saved earlier opens looking empty.
-  _tmLayers = new Set(Array.isArray(b&&b.tmLayers) ? b.tmLayers : _tmLayersFrom(b));
+  // Same fault, same fix: the last job's mobilization deposit is not this one's.
+  // A proposal saved before 2026-09-23 may carry its deposit only as
+  // b.deposit (a percent of an estimate, worked out); that figure comes back
+  // as the flat amount, so what he sent is what he sees.
+  {const _d=b?(Number(b.tmDepositAmt)>0?Number(b.tmDepositAmt):Number(b.deposit)>0?Number(b.deposit):0):0;
+   setV('tm-i-dep-flat',_d>0?_d:'');}
+  // THE BID'S OWN LAYERS WIN, AND ONLY A BID HAS ANY. A proposal he built as
+  // scope-only stays scope-only on resume; one with a rate and a cap comes back
+  // with both. A bid written before layers existed is read from what it
+  // actually carries, so nothing saved earlier opens looking empty.
+  //
+  // An EMPTY DERIVATION IS NOT AN ANSWER. Opening a fresh T&M autosaves a draft
+  // bid immediately, and that draft carries no tmLayers and no figures to read
+  // any back out of, so _tmLayersFrom(b) returned [] and wiped the rate layer
+  // _geiOpenModeEstimate had switched on four hundred lines earlier. The result
+  // was a screen arguing with itself: his own rate sitting in the box and
+  // folded away as "$95/hr each" while the rail called it Not set and pointed
+  // its next-move marker straight at it. Found by counting taps, 2026-09-22.
+  //
+  // So the two cases are told apart rather than run together. b.tmLayers is
+  // authoritative WHENEVER IT EXISTS, including when it is empty, because an
+  // empty saved list is the deliberate scope-only proposal and must come back
+  // that way. Without one, the derivation only wins when it finds something;
+  // finding nothing means nothing has been recorded yet, and the default the
+  // open path just set is the better answer than silence.
+  const _savedLayers=Array.isArray(b&&b.tmLayers)?b.tmLayers:null;
+  const _restored=_savedLayers||_tmLayersFrom(b);
+  if(_savedLayers||_restored.length)_tmLayers=new Set(_restored);
   _tmApplyLayers();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
@@ -1438,7 +1809,10 @@ function _byoShowPage(){
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
+  _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
+  _byoSayOpen=false;_byoMissed=[];_geiChecking=false;
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
@@ -1473,8 +1847,470 @@ function _updateScopeSheetBtn(label){
   const ck=btn.querySelector('._sc-ck');
   if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.innerHTML=on?svgIcon('✓',{size:9,color:'#fff'}):'';}
 }
+// ── SAY THE JOB, GET THE SCOPE ───────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "I really want to retire the scope picker on every bid,
+// instead I want you to type up what youre doing or speak it to tim and he
+// builds the scope in order broken down by steps in order. Tim cant forget a
+// step."
+//
+// The picker asked a man to find his own job in somebody else's list, on every
+// bid, forever. He has already said the job out loud twice before he opens the
+// app: once on the driveway and once to whoever is going to do it. So the box
+// takes that sentence. js/tim-knowledge.js does the work (timScopeBuild), which
+// is pure, offline and tested on its own; this only has to ask and then show.
+//
+// The list is still there behind "pick from a list", because retiring a thing
+// people rely on is a one way door and this has been live for one afternoon.
+
+// What he last said, and what Tim reckoned he left out. On the module rather
+// than the DOM so a re-render cannot lose it mid-decision.
+let _geiScopeSaid='';
+let _geiScopeMissed=[];
+Object.defineProperty(window,'_geiScopeMissed',{get:()=>_geiScopeMissed,set:v=>{_geiScopeMissed=v||[];},configurable:true});
+
+// ── THE WORK, iOS (2026-09-23) ──────────────────────────────────────────────
+//
+// One group per thing: the steps, numbered, in work order; what Tim noticed,
+// as its own section under them; and the box to say more, INSIDE the group it
+// adds to. No ✕ on every line: a step is removed the way iOS removes a row,
+// by swiping it left, or with Edit for anyone who does not swipe.
+let _tmScopeEditing=false,_tmSayMoreOpen=false;
+// UNDO. A thumb that deletes the wrong step gets it back from the toast, in
+// the same place (2026-09-23: Earl swiped the wrong row).
+function _tmUndoToast(msg,fn){
+  if(typeof showToast!=='function')return;
+  showToast(msg,'↩',5000);
+  const t=[...document.querySelectorAll('.toast')].pop();
+  if(!t)return;
+  const b=document.createElement('button');
+  b.type='button';b.className='tm-undo';b.textContent='Undo';
+  b.onclick=()=>{try{fn();}finally{t.remove();}};
+  const x=t.querySelector('.toast-close');
+  t.insertBefore(b,x||null);
+}
+function _tmDelStep(label){
+  const i=_geiScopeChips.indexOf(label);if(i<0)return;
+  _toggleScopeChip(label);
+  _tmUndoToast('Step removed',()=>{
+    if(_geiScopeChips.indexOf(label)>=0)return;
+    _geiScopeChips.splice(Math.min(i,_geiScopeChips.length),0,label);
+    ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+    if(typeof _tmRenderSteps==='function')_tmRenderSteps();
+    if(typeof _byoAutosave==='function')_byoAutosave();
+  });
+}
+function _tmScopeEdit(){_tmScopeEditing=!_tmScopeEditing;_renderScopeChips('tm-scope-wrap');if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+// The example in the box is the contractor's own trade (2026-09-23). A roofer
+// reading a plumber's sentence learns the box is not for him.
+const _TM_SAY_EXAMPLE={
+  painting:'Wash the house, scrape and caulk the trim, prime the bare wood and paint two coats',
+  plumbing:'Pull the old water heater, run new pex to the manifold and set a tankless',
+  electrical:'Swap the panel for a 200 amp, run a new circuit to the garage and add two outlets',
+  hvac:'Pull the old furnace and AC, set a new heat pump and air handler and run a new line set',
+  roofing:'Tear off the old shingles, replace any rotted decking and put on new architectural shingles',
+  landscaping:'Rip out the old beds, regrade the side yard, lay sod and plant six shrubs',
+};
+function _tmSayExample(){
+  const t=(typeof _geiTrade!=='undefined'&&_geiTrade)||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  return _TM_SAY_EXAMPLE[t]||'Tear out the old vanity, run new supply lines, set the new one and top, then caulk it and test everything';
+}
+function _tmVoiceBtn(){
+  return (typeof _voiceCapable==='function'&&_voiceCapable())
+    ?'<button type="button" class="ios-btn ios-btn-tint" onclick="_geiScopeTalk()">'+
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button>'
+    :'';
+}
+function _tmSayBox(ph){
+  return '<textarea id="gei-scope-say" class="ios-say" rows="3" placeholder="'+escHtml(ph)+'"></textarea>';
+}
+function _tmScopeIosHtml(){
+  const cid='tm-scope-wrap';
+  const steps=_geiScopeChips||[];
+  const btns='<div style="margin-top:14px">'+
+      '<button type="button" class="ios-btn ios-btn-fill" onclick="_geiScopeBuild(\''+cid+'\')">Build the steps</button>'+
+      _tmVoiceBtn()+'</div>';
+  // THE PAGE'S ONE BUTTON IS AT THE BOTTOM (2026-09-23, "does it look like
+  // something a pro UX designer would ship?"). Build the steps is the bar's
+  // job while there are none, so the box stands alone here with one line
+  // under it and the two other ways in as words.
+  // TYPE IT OR TALK TO TIM (2026-09-23). Two equal ways in, and the line
+  // under them says what Tim does with it, because that is the part nobody
+  // expects: it comes back in order, with what was left out.
+  if(!steps.length){
+    const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
+    return '<div class="ios-sec">'+
+      '<div class="ios-group">'+_tmSayBox(_tmSayExample())+'</div>'+
+      (voice?'<div style="margin-top:12px">'+_tmVoiceBtn()+'</div>':'')+
+      '<div class="ios-foot">'+(voice
+        ?'Type it or talk it, the way you would tell your crew. Tim puts it in order and finds what you left out.'
+        :'Type it, or tap the mic on your keyboard and talk. Tim puts it in order and finds what you left out.')+'</div>'+
+      '<div class="ios-links left"><button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button></div>'+
+    '</div>';
+  }
+  const ed=_tmScopeEditing;
+  const rows=steps.map((l,i)=>
+    '<div class="ios-swipe" data-kind="step">'+
+      '<div class="ios-row">'+
+        (ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(l)+'" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">−</button>':'')+
+        '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl">'+escHtml(l)+'</span>'+
+      '</div>'+
+      '<button type="button" class="ios-del" tabindex="-1" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">Delete</button>'+
+    '</div>').join('');
+  const reorder=(steps.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder())
+    ?'<button type="button" class="ios-row ios-link" onclick="_geiPutScopeInOrder()">Put these in work order</button>':'';
+  const more=_tmSayMoreOpen
+    ?_tmSayBox('What else? Say it the way you would tell your crew.')
+    :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
+  return '<div class="ios-sec">'+
+      '<div class="ios-group">'+rows+reorder+more+'</div>'+
+      (_tmSayMoreOpen?btns:'')+
+    '</div>'+
+    _geiScopeMissedHtml();
+}
+// Swipe left to reveal Delete, the iOS way. One row open at a time; a tap
+// anywhere else closes it. Buttons inside the row still take their own taps,
+// because nothing moves until the finger has travelled 8px sideways.
+function _tmWireSwipe(root){
+  const OPEN=-88;
+  const closeAll=except=>root.querySelectorAll('.ios-swipe.open').forEach(w=>{
+    if(w===except)return;w.classList.remove('open');const r=w.firstElementChild;if(r)r.style.transform='';});
+  root.querySelectorAll('.ios-swipe').forEach(w=>{
+    const row=w.firstElementChild;if(!row)return;
+    let x0=null,y0=0,dx=0,live=false;
+    w.addEventListener('pointerdown',e=>{if(e.button!==undefined&&e.button!==0)return;x0=e.clientX;y0=e.clientY;dx=0;live=false;});
+    w.addEventListener('pointermove',e=>{
+      if(x0===null)return;
+      const mx=e.clientX-x0,my=e.clientY-y0;
+      if(!live){if(Math.abs(mx)<8||Math.abs(mx)<Math.abs(my))return;live=true;w.classList.add('dragging');closeAll(w);
+        try{w.setPointerCapture(e.pointerId);}catch(_e){}}
+      const base=w.classList.contains('open')?OPEN:0;
+      dx=Math.max(OPEN*1.4,Math.min(0,base+mx));
+      row.style.transform='translateX('+dx+'px)';
+    });
+    const end=()=>{
+      if(x0===null)return;x0=null;w.classList.remove('dragging');
+      if(!live)return;
+      const open=dx<OPEN/2;
+      w.classList.toggle('open',open);row.style.transform=open?('translateX('+OPEN+'px)'):'';
+    };
+    w.addEventListener('pointerup',end);w.addEventListener('pointercancel',end);
+  });
+  if(!root._tmSwipeClose){
+    root._tmSwipeClose=true;
+    document.addEventListener('pointerdown',e=>{if(!e.target.closest('.ios-swipe.open'))closeAll(null);},true);
+  }
+}
+function _geiScopeComposerHtml(containerId){
+  const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
+    ? '<button type="button" onclick="_geiScopeTalk()" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;'+
+      'padding:10px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
+      'font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>'+
+        '<path d="M12 19v3"></path></svg>Talk to Tim</button>'
+    : '';
+  return '<div style="padding:12px 16px 14px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">Tell me what you are doing</div>'+
+    '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:9px">'+
+      'The way you would say it to your crew. I will break it into steps and tell you what you left out.</div>'+
+    '<textarea id="gei-scope-say" rows="3" placeholder="'+escHtml(_tmSayExample())+'" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
+      'box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text);line-height:1.5;resize:vertical"></textarea>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:9px">'+
+      mic+
+      '<button type="button" onclick="_geiScopeBuild(\''+containerId+'\')" style="flex:1;min-width:0;padding:10px 14px;'+
+        'border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;font-size:13px;font-weight:800;'+
+        'cursor:pointer;font-family:inherit">Build the steps</button>'+
+    '</div>'+
+    '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="margin-top:9px;border:0;background:none;'+
+      'padding:2px 0;font-size:12px;color:var(--text3);cursor:pointer;font-family:inherit;text-decoration:underline">'+
+      'Or pick from a list</button>'+
+  '</div>';
+}
+
+// Tap to start, tap to stop. The owner was explicit that he would never hold a
+// button on a job site, and a scope is thirty seconds of talking, not three.
+function _geiScopeTalk(){
+  if(typeof _timTalkToggle!=='function')return;
+  _timTalkToggle('gei-scope-say');
+}
+
+function _geiScopeBuild(containerId){
+  const el=document.getElementById('gei-scope-say');
+  const said=el?String(el.value||''):'';
+  if(!said.trim()){
+    if(typeof showToast==='function')showToast('Say what the job is first','🔧',2200);
+    return;
+  }
+  if(typeof timScopeBuild!=='function')return;
+  const rejected=(typeof timDropped==='function')?[]:[];
+  const built=timScopeBuild(said,{rejected});
+  if(!built.steps.length){
+    if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
+    return;
+  }
+  _geiScopeSaid=said;
+  _tmSayMoreOpen=false;
+  // ADDED TO what is there, never replacing it: he may build twice, once from
+  // the driveway and once after he has walked the crawlspace.
+  built.steps.forEach(st=>{
+    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===st.text.toLowerCase()))_geiScopeChips.push(st.text);
+  });
+  // The whole point of the feature, held until he says yes to each one.
+  // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
+  // (prep-consumables is primer, masking and sandpaper) and those belong on the
+  // supply list, not numbered on a contract a homeowner signs. A rule with a
+  // `step` is a thing you do; a rule without one is a thing you buy.
+  _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
+    .filter(im=>!im.step||!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  _geiScopeNoScope=false;
+  // CARD FIRST, ROWS SECOND. _geiRenderScopeCard rebuilds the wrap the rows
+  // live in, so painting them before it throws them away, which is how the
+  // first build landed four steps in _geiScopeChips and an empty card.
+  if(typeof _geiRenderScopeCard==='function')_geiRenderScopeCard(_geiIsTM?'tm':'byo');
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+
+// What he did not say. Each one carries the reason in his own words, and
+// nothing moves until he taps it: rule 3 of js/tim-knowledge.js is that nothing
+// Tim guessed becomes a fact until the contractor accepts it.
+function _geiScopeMissedHtml(){
+  if(!_geiScopeMissed.length)return '';
+  if(_geiIsTM)return _timMissCardHtml(_geiScopeMissed,'_geiScopeTakeMissed','_geiScopeDropMissed','_geiScopeTakeAllMissed',_tmScopeEditing);
+  const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
+    '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(im.say||'')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-top:1px">'+escHtml(im.because||'')+'</div>'+
+      '</div>'+
+      '<button type="button" onclick="_geiScopeTakeMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'style="flex-shrink:0;align-self:center;padding:6px 12px;border-radius:var(--r-pill,999px);border:0;'+
+        'background:var(--ink);color:var(--text-cream,#fff);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Add</button>'+
+      '<button type="button" onclick="_geiScopeDropMissed('+escHtml(JSON.stringify(String(im.id||'')))+')" '+
+        'aria-label="No" style="flex-shrink:0;align-self:center;border:0;background:none;color:var(--text3);'+
+        'font-size:17px;font-weight:700;cursor:pointer;padding:2px 4px;line-height:1;font-family:inherit">×</button>'+
+    '</div>').join('');
+  const _nAll=_timMissTakeable(_geiScopeMissed).length;
+  const all=_nAll>1
+    ? '<button type="button" onclick="_geiScopeTakeAllMissed()" style="margin-left:auto;flex-shrink:0;'+
+      'padding:5px 11px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);'+
+      'color:var(--text-cream,#fff);font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">'+
+      'Add all '+_nAll+'</button>'
+    : '';
+  return '<div style="border-top:1px solid var(--border);background:var(--bg2)">'+
+    '<div style="display:flex;align-items:center;gap:8px;padding:11px 16px 2px">'+
+      (typeof timMark==='function'?timMark(15):'')+
+      '<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+
+        'You did not say'+'</span>'+all+'</div>'+
+    rows+'</div>';
+}
+
+// The composer again, under a list that already exists. Rendered in place
+// rather than as a sheet, because a man adding one more step should not lose
+// sight of the nine he already has.
+function _geiScopeSayMore(containerId){
+  const wrap=document.getElementById(containerId);
+  if(!wrap)return;
+  if(containerId==='tm-scope-wrap'&&_geiIsTM){
+    _tmSayMoreOpen=true;_tmScopeEditing=false;
+    _renderScopeChips('tm-scope-wrap');
+    const t=document.getElementById('gei-scope-say');if(t)t.focus();
+    return;
+  }
+  if(document.getElementById('gei-scope-say')){
+    document.getElementById('gei-scope-say').focus();
+    return;
+  }
+  wrap.insertAdjacentHTML('beforeend',_geiScopeComposerHtml(containerId));
+  document.getElementById('gei-scope-say')?.focus();
+}
+
+// Where a step goes when Tim adds it. Not the end of the list, which is the
+// one place a scaffold step is useless.
+function _geiScopePlace(text,stage,last){
+  const t=String(text||'').trim();
+  if(!t)return;
+  if(_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))return;
+  if(last||stage==='restore'||stage==='clean'){_geiScopeChips.push(t);return;}
+  // UNSHIFT IS ONLY RIGHT ONE AT A TIME. Access and protect both went to the
+  // front, so adding two of them put the second above the first: "cover the
+  // floor" ended up ahead of "shut the water off", which is the one order those
+  // two must never be in. It never showed while steps were taken one at a time
+  // and a job rarely had two; Add all made it every water heater. Fixed by
+  // asking the same spine the scope is sorted on WHERE this step goes, rather
+  // than by which end of the list to throw it at.
+  if(stage&&typeof timStageOf==='function'&&typeof TIM_STAGES!=='undefined'){
+    // A step Tim cannot place (his own words, a stage word Tim does not know)
+    // counts as MID-JOB, the install stage, never as the end. It used to count
+    // as last, so "Pressure it up" went in ahead of "Pull the old water heater"
+    // because "pull" was not a word Tim knew: a finish step above the demo.
+    // Early steps still go above everything he said, late ones below it.
+    const mid=TIM_STAGES.findIndex(x=>x.k==='install');
+    const ix=s=>{const i=TIM_STAGES.findIndex(x=>x.k===s);return i===-1?mid:i;};
+    const mine=ix(stage);
+    let at=_geiScopeChips.length;
+    for(let i=0;i<_geiScopeChips.length;i++){
+      if(ix(timStageOf(_geiScopeChips[i]))>mine){at=i;break;}
+    }
+    _geiScopeChips.splice(at,0,t);
+    return;
+  }
+  if(stage==='access'||stage==='protect'){_geiScopeChips.unshift(t);return;}
+  _geiScopeChips.push(t);
+}
+
+// ── TIM'S QUESTIONS AND HIS CALLS ───────────────────────────────────────────
+// A missed item with `ask` is a question (the unit's make and model): the
+// answer goes into his own install line, never a line of its own. One with
+// `optIn` (the permit) is his call, so Add all leaves it for him to tap.
+// The box on the screen he is on. T&M and Build Your Own both draw Tim's card,
+// so after a T&M a hidden copy of "Name the unit" stays on the T&M page with
+// the same id, and a plain getElementById read that empty one and said "Type
+// the make and model first" to a man who just had (2026-09-26).
+function _timMissAskEl(id){
+  const sel='[id="tim-ask-'+String(id).replace(/"/g,'')+'"]';
+  return document.querySelector((_geiIsTM?'#gei-tm-page ':'#gei-byo-page ')+sel)||document.querySelector(sel);
+}
+function _timMissAskVal(id){
+  const el=_timMissAskEl(id);
+  return el?String(el.value||'').trim():'';
+}
+function _timMissAskNeed(id){
+  const el=_timMissAskEl(id);
+  if(el){try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type the make and model first');
+}
+// The line the unit goes into: his install step that names the equipment,
+// else any step that does. Returns the index, or -1.
+function _timMissAskTarget(texts){
+  const eq=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/i;
+  const st=t=>(typeof timStageOf==='function'?timStageOf(t):null);
+  let i=texts.findIndex(t=>eq.test(t)&&st(t)==='install');
+  if(i<0)i=texts.findIndex(t=>eq.test(t)&&st(t)!=='demo'&&!/\bold\b/i.test(t));
+  return i;
+}
+function _timMissLearn(im,yes){
+  if(typeof timLearn!=='function')return;
+  try{timLearn('implied',im.id,yes);if(im.learnKey)timLearn('implied-key',im.id+':'+im.learnKey,yes);}catch(_e){}
+}
+// The question row: what Tim wants to know, why, and the field for the answer
+// with its own Add. Enter adds too, the way the keyboard's Done key should.
+// TIM'S CARD, ONE FOR BOTH SCREENS (2026-09-26). T&M and Build Your Own drew
+// the same card from two copies, and only T&M's got the No. Tinted, his mark
+// on it, a filled Add, and a visible No beside every Add: the bar walks him to
+// this card, so turning one down has to be one tap too, not a swipe.
+function _timMissCardHtml(list,take,drop,takeAll,ed){
+  const n=_timMissTakeable(list).length;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group ios-tim">'+
+      '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
+        '<span class="who">You did not say</span>'+
+        (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
+      '</div>'+
+      list.map(im=>{
+        const id=escHtml(JSON.stringify(String(im.id||'')));
+        if(im.ask)return _timMissAskRow(im,take,drop);
+        return '<div class="ios-swipe" data-kind="missed">'+
+          '<div class="ios-row">'+
+            (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="'+drop+'('+id+')">−</button>':'')+
+            // The reason is a tap on the words away. Four paragraphs in a
+            // row was a manual; the step names alone read like a list.
+            '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+            '<button type="button" class="ios-no" onclick="'+drop+'('+id+')">No</button>'+
+            '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="'+take+'('+id+')">Add</button>'+
+          '</div>'+
+          '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+        '</div>';
+      }).join('')+
+    '</div>'+
+  '</div>';
+}
+function _timMissAskRow(im,take,drop){
+  const id=escHtml(JSON.stringify(String(im.id||'')));
+  const fid='tim-ask-'+escHtml(String(im.id||''));
+  return '<div class="ios-swipe ios-ask" data-kind="ask">'+
+    '<div class="ios-row"><span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span></div>'+
+    '<div class="ios-row ios-ask-row">'+
+      '<input id="'+fid+'" class="ios-ask-in" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="done" '+
+        'aria-label="'+escHtml((im.ask&&im.ask.label)||'Answer')+'" placeholder="'+escHtml((im.ask&&im.ask.placeholder)||'')+'" '+
+        'onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+take+'('+id+');}">'+
+      '<button type="button" class="ios-pill" onclick="'+take+'('+id+')">Add</button>'+
+    '</div>'+
+    '<div class="ios-row ios-ask-skip"><button type="button" class="ios-no" onclick="'+drop+'('+id+')">Skip this</button></div>'+
+    '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+  '</div>';
+}
+function _timMissTakeable(list){return (list||[]).filter(im=>!im.optIn&&!im.ask);}
+
+function _geiScopeTakeMissed(id){
+  const im=_geiScopeMissed.filter(x=>String(x.id)===String(id))[0];
+  if(!im)return;
+  if(im.ask){
+    const val=_timMissAskVal(id);
+    if(!val){_timMissAskNeed(id);return;}
+    const i=_timMissAskTarget(_geiScopeChips.map(String));
+    if(i>=0)_geiScopeChips[i]=String(_geiScopeChips[i]).replace(/[,\s]+$/,'')+', '+val;
+    else _geiScopePlace('Set the '+val,im.stage||'install',false);
+    _timMissLearn(im,true);
+    _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+    ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+    if(typeof _byoAutosave==='function')_byoAutosave();
+    return;
+  }
+  // `say` is the correction, `step` is the line. "Scaffold goes up before
+  // anything is stripped" is Tim talking to the contractor; a homeowner reading
+  // the contract gets "Set scaffold".
+  _geiScopePlace(im.step||im.say,im.stage,false);
+  // AND THE ONE THAT COMES WITH IT. Scaffold goes up and scaffold comes down,
+  // gutters come off and gutters go back on, and the second of each pair is the
+  // step everybody forgets, which is the whole reason this feature exists.
+  if(im.pairs&&im.pairs.step)_geiScopePlace(im.pairs.step,im.pairs.stage,!!im.pairs.last);
+  // Accepted makes it a fact he keeps. Rule 3, and the same n:1 the price book
+  // already uses.
+  _timMissLearn(im,true);
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
+// ONE TAP FOR THE WHOLE LIST. Tim knows the sequence of a water heater swap
+// better than the list of four Adds implies, and a man who agrees with all four
+// should not have to say so four times. It is the same _geiScopeTakeMissed per
+// item, so each one is still placed by its own stage and still learned as a
+// yes; the only thing saved is his thumb. Offered from two up, because "Add all
+// one" is not a sentence.
+function _geiScopeTakeAllMissed(){
+  _timMissTakeable(_geiScopeMissed).forEach(im=>_geiScopeTakeMissed(im.id));
+}
+
+function _geiScopeDropMissed(id){
+  const _im=_geiScopeMissed.find(x=>String(x.id)===String(id));
+  if(_im)_timMissLearn(_im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
+  _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+}
+
 function _renderScopeChips(containerId){
   const wrap=document.getElementById(containerId);if(!wrap)return;
+  if(containerId==='tm-scope-wrap'&&_geiIsTM&&!_geiScopeNoScope){
+    wrap.style.display='block';
+    wrap.innerHTML=_tmScopeIosHtml();
+    _tmWireSwipe(wrap);
+    if(typeof _tmRenderAddRow==='function'){try{_tmRenderAddRow(_tmStateRule(),_tmLockedLayers());}catch(_e){}}
+    return;
+  }
+  // THE RAIL READS THE SCOPE, SO IT REPAINTS WITH IT. It did not: building the
+  // steps drew three numbered lines here while the panel below still said
+  // "1 The work, NEXT: say what you will do", telling him to do the thing he
+  // had just done. Every scope change (build, add, take, remove) comes through
+  // this function, so this is the one place that keeps the two in step.
+  if(containerId==='tm-scope-wrap'&&_geiIsTM&&typeof _tmRenderAddRow==='function'){
+    try{_tmRenderAddRow(_tmStateRule(),_tmLockedLayers());}catch(_e){}
+  }
   wrap.style.display='block';
   const trade=_geiTrade||getActiveTrade();
   const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||TRADE_SCOPE_CHIPS[trade]||[];
@@ -1485,26 +2321,75 @@ function _renderScopeChips(containerId){
         '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border:1.5px solid var(--blue);font-size:12px;font-weight:700;cursor:pointer">&#8709; None<span style="font-size:11px;font-weight:900;opacity:.6;margin-left:2px">&#xd7;</span></span>'+
       '</div>';
     }else{
-      wrap.innerHTML='<div style="padding:10px 16px">'+
-        '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;background:var(--bg2);border:1.5px dashed var(--border2);font-size:13px;font-weight:600;color:var(--text3);cursor:pointer;font-family:inherit">'+
-        '<span style="font-size:16px;line-height:1">+</span> Add scope of work</button>'+
-      '</div>';
+      wrap.innerHTML=_geiScopeComposerHtml(containerId);
     }
     return;
   }
-  // Render selected scope as clean line items (not pills), one per row with a divider.
+  // SCOPE IS A NUMBERED LIST, IN THE ORDER THE WORK HAPPENS.
+  //
+  // It used to be an icon per row, which said what KIND of work each line was
+  // and nothing about when it happens. The owner's note: "Scope of work I love
+  // how it puts it all in order from start." So the icon gives up its place to
+  // the step number, because the number is the information: a crew reading line
+  // 1 is reading the first thing they do, and a homeowner reading it can follow
+  // the week.
+  //
+  // The array's own order IS the work order. js/tim-knowledge.js `timOrderScope`
+  // is what puts it in that order, and this only draws it.
   let html='<div style="padding:4px 0">';
   _geiScopeChips.forEach((l,i)=>{
     const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
     const border=i<_geiScopeChips.length-1?'border-bottom:1px solid var(--border)':'';
-    html+='<div style="display:flex;align-items:center;gap:11px;padding:11px 16px;'+border+'">'+
-      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+svgIcon(c.icon||'✓',{size:17})+'</span>'+
-      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(c.label)+'</span>'+
+    html+='<div style="display:flex;align-items:baseline;gap:11px;padding:12px 16px;'+border+'">'+
+      '<span style="font-size:11.5px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums;flex-shrink:0;min-width:10px">'+(i+1)+'</span>'+
+      '<span style="flex:1;min-width:0;font-size:14px;font-weight:500;color:var(--text);line-height:1.4">'+escHtml(c.label)+'</span>'+
       '<button type="button" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')" aria-label="Remove '+escHtml(c.label)+'" style="flex-shrink:0;border:none;background:none;color:var(--text3);font-size:18px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1;font-family:inherit">×</button>'+
     '</div>';
   });
   html+='</div>';
+  // The offer to sort it, and only when sorting it would actually change
+  // something. A list already in work order does not get a button telling him
+  // it might not be.
+  if(_geiScopeChips.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder()){
+    html+='<button type="button" onclick="_geiPutScopeInOrder()" style="width:100%;display:flex;align-items:center;gap:8px;padding:12px 16px;border:0;border-top:1px solid var(--border);background:none;cursor:pointer;font-family:inherit;text-align:left">'+
+      (typeof timMark==='function'?timMark(16):'')+
+      '<span style="font-size:13.5px;font-weight:600;color:var(--blue)">Put these in work order</span>'+
+    '</button>';
+  }
+  // What he left out, under the list it belongs to, and only ever an offer.
+  html+=_geiScopeMissedHtml();
+  // Saying more once there is already a list. Same box, same door, so a second
+  // pass after he has walked the crawlspace adds to the scope rather than
+  // making him start again.
+  html+='<div style="border-top:1px solid var(--border);padding:9px 16px">'+
+    '<button type="button" onclick="_geiScopeSayMore(\''+containerId+'\')" style="border:0;background:none;padding:2px 0;'+
+      'font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;font-family:inherit">+ Say or type more</button>'+
+  '</div>';
   wrap.innerHTML=html;
+}
+
+// Would sorting this change anything? `timOrderScope` is stable, so a list
+// already in order comes back identical and this is false.
+function _geiScopeOutOfOrder(){
+  if(typeof timOrderScope!=='function')return false;
+  try{
+    const now=(_geiScopeChips||[]).slice();
+    const sorted=timOrderScope(now).map(s=>s.text);
+    return sorted.some((t,i)=>t!==now[i]);
+  }catch(_e){return false;}
+}
+// Tim's one job on this card. Nothing is added or removed, the same lines come
+// back in the order the work happens, and he can undo it by dragging or by
+// removing and re-adding like any other day.
+function _geiPutScopeInOrder(){
+  if(typeof timOrderScope!=='function')return;
+  const sorted=timOrderScope((_geiScopeChips||[]).slice()).map(s=>s.text);
+  if(!sorted.length)return;
+  _geiScopeChips.length=0;
+  sorted.forEach(t=>_geiScopeChips.push(t));
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  if(typeof _byoAutosave==='function')_byoAutosave();
+  if(typeof showToast==='function')showToast('Scope is in work order','🔧',2200);
 }
 function _openScopeSheet(containerId){
   document.getElementById('_scope-sheet-ov')?.remove();
@@ -1582,12 +2467,28 @@ function _editEstTitle(titleId,btnId){
   inp.type='text';inp.value=prev;
   inp.style.cssText='font-family:var(--font-display);font-size:inherit;font-weight:900;letter-spacing:-1.2px;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--blue);outline:none;width:240px;max-width:55vw;padding:0 0 2px;line-height:1';
   titleEl.textContent='';titleEl.appendChild(inp);
-  if(btn)btn.style.opacity='0';
+  // Where the title IS the rename control (T&M), hiding the control would hide
+  // the box he is typing in.
+  const _hideBtn=btn&&!btn.contains(titleEl);
+  if(_hideBtn)btn.style.opacity='0';
   inp.focus();inp.select();
   let _done=false;
   const commit=()=>{
     if(_done)return;_done=true;
-    const val=inp.value.trim()||prev;
+    const typed=inp.value.trim();
+    // Cleared on purpose in the editors: back to the automatic name, and the
+    // customer heads the screen again.
+    if(!typed&&/^(tm|byo)-/.test(titleId)){
+      if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=false;
+      const descEl=document.getElementById('gei-desc');if(descEl)descEl.value='';
+      if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
+      titleEl.textContent=prev;
+      if(typeof _geiRenderAddrSub==='function')_geiRenderAddrSub(titleId.slice(0,titleId.indexOf('-')));
+      if(btn)btn.style.opacity='';
+      if(typeof _byoAutosave==='function')_byoAutosave();
+      return;
+    }
+    const val=typed||prev;
     titleEl.textContent=val;
     if(btn)btn.style.opacity='';
     const descEl=document.getElementById('gei-desc');if(descEl)descEl.value=val;
@@ -1989,7 +2890,7 @@ function _attachCardHTML(){
           :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
-      '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
+      '<button class="att-skip" onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
     '</div>').join('');
   return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
     '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
@@ -1999,6 +2900,99 @@ function _attachCardHTML(){
   '</div>';
 }
 
+// ── BUILD YOUR OWN, THE LIST (2026-09-23) ──────────────────────────────────
+//
+// Owner: "what about the BYO design, the true custom estimate ... go for it."
+// Each line was a checkbox, a price, Copy, Edit and an X, which left the title
+// one word wide ("Remove / old / water / heater"). Now a line is an iPhone row:
+// the check, the title with its description under it, the price on the right.
+// Tap the row to edit it, swipe it left to delete (with Undo). Sections only
+// show when he uses more than one; a new job is one plain list. And the first
+// way in is the same as T&M: say it or type it, and Tim breaks it into priced
+// lines from his own book.
+let _byoSayOpen=false,_byoMissed=[];
+function _byoSayHtml(){
+  const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
+  const more=_byoItems.length>0;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group"><textarea id="byo-say" class="ios-say" rows="3" placeholder="'+escHtml(more?'What else? Say it the way you would tell your crew.':_tmSayExample())+'"></textarea></div>'+
+    (voice?'<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-tint" onclick="_byoTalk()">'+
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button></div>':'')+
+    '<div class="ios-foot">'+(voice
+      ?'Type it or talk it. Tim makes the lines, prices them from your book, and finds what you left out.'
+      :'Type it, or tap the mic on your keyboard and talk. Tim makes the lines, prices them from your book, and finds what you left out.')+'</div>'+
+    '<div class="ios-links left">'+
+      '<button type="button" onclick="_byoAddItem(_byoWorkSection())">Add a line yourself</button>'+
+      (more?'<button type="button" onclick="_byoSayOpen=false;_byoRenderSections()">Cancel</button>':'')+
+    '</div>'+
+  '</div>';
+}
+function _byoTalk(){if(typeof _timTalkToggle==='function')_timTalkToggle('byo-say');}
+// The price for a line Tim wrote: HIS OWN BOOK, or none. A going rate from the
+// trade catalog was tried and put $33 on "run new gas line to the heater"
+// (2026-09-23): a guessed number on a contract is worse than a blank one that
+// asks. Unpriced, the row says Add price and the bar walks him through them.
+function _byoPriceFor(text){
+  const trade=_geiTrade||getActiveTrade();
+  const own=(typeof _pbFind==='function')?_pbFind(text,trade):null;
+  if(own&&Number(own.rate)>0)return {rate:Number(own.rate),unit:own.unit||'ea',notes:own.notes||'',from:'book'};
+  return {rate:0,unit:'ea',notes:'',from:null};
+}
+function _byoAddLine(text,sec){
+  const p=_byoPriceFor(text);
+  const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
+  _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
+}
+function _byoSayBuild(){
+  const el=document.getElementById('byo-say');
+  const said=el?String(el.value||'').trim():'';
+  if(!said){
+    if(el){try{el.focus();}catch(_e){}}
+    if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+    return;
+  }
+  if(typeof timScopeBuild!=='function')return;
+  const built=timScopeBuild(said,{rejected:[]});
+  if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
+  const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
+  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text);have.add(st.text.toLowerCase());}});
+  _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
+  _byoSayOpen=false;
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+function _byoTakeMissed(id){
+  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
+  if(im.ask){
+    const val=_timMissAskVal(id);
+    if(!val){_timMissAskNeed(id);return;}
+    const on=_byoItems.filter(it=>it&&!it._rrp);
+    const i=_timMissAskTarget(on.map(it=>String(it.label||'')));
+    if(i>=0)on[i].label=String(on[i].label).replace(/[,\s]+$/,'')+', '+val;
+    else _byoAddLine('Set the '+val);
+    _timMissLearn(im,true);
+    _byoMissed=_byoMissed.filter(x=>x!==im);
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+    return;
+  }
+  _byoAddLine(im.step);
+  if(im.pairs&&im.pairs.step)_byoAddLine(im.pairs.step);
+  _timMissLearn(im,true);
+  _byoMissed=_byoMissed.filter(x=>x!==im);
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+}
+function _byoTakeAllMissed(){_timMissTakeable(_byoMissed).forEach(im=>_byoTakeMissed(im.id));}
+function _byoDropMissed(id){
+  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
+  _timMissLearn(im,false);
+  _byoMissed=_byoMissed.filter(x=>x!==im);
+  _byoRenderSections();
+}
+function _byoMissedHtml(){
+  if(!_byoMissed.length)return '';
+  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
+}
+function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
   _injectRrpItems();
   _byoNormAll();
@@ -2007,50 +3001,190 @@ function _byoRenderSections(){
   const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_defSecs.includes(s));
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
   const sections=[..._defSecs,...new Set(allExtra)];
-  const secHtml=sections.map(sec=>{
-    // Materials is ONE section shared with T&M (js/materials.js), so the two
-    // can never drift apart again.
-    if(sec===_MAT_SEC)return _matCardHTML();
+  // Only the sections with something in them, plus any he made himself. With
+  // one in use, no heading at all: a list does not need a title.
+  // Materials is NOT drawn here: it is ONE card shared with T&M
+  // (js/materials.js, #97), and the supply house card lives inside it.
+  const used=sections.filter(sec=>sec!==_MAT_SEC&&(_byoItems.some(it=>it.section===sec&&!it._supply)||_byoCustomSections.includes(sec)));
+  const titled=used.length>1||_byoCustomSections.length>0;
+  const lines=!_byoItems.length?'':used.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
-    const rowHtml=rows.length?rows.map(it=>{
+    const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
-      return _geiItemRowHtml({
-        checked:it.on,rowOnclick:'_byoToggle('+idx+')',
-        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,qtyLabel:_byoQtyLabel(it),
-        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')',dupFn:it._rrp?'':'_byoDupItem('+idx+')'
-      });
-    }).join(''):
-    '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet, tap + Add item</div>';
-    return '<div class="card card-pad-0" style="margin-bottom:12px">'+
-      '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
-      '<div style="display:flex;gap:6px">'+
-        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">'+svgIcon('✕',{size:12})+'</button>':'')+
-        '<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">+ Add item</button>'+
-      '</div></div>'+
-      '<div>'+rowHtml+'</div>'+
-    '</div>';
+      const priced=Number(it.price)>0;
+      const note=(it.notes&&!it._rrp)?it.notes:'';
+      return '<div class="ios-swipe" data-kind="line"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
+          '<button type="button" class="ios-check'+(it.on?' on':'')+'" aria-label="'+(it.on?'On the proposal':'Off the proposal')+'" '+
+            (it.required?'disabled ':'')+'onclick="event.stopPropagation();_byoToggle('+idx+')">'+(it.on?_TM_TICK:'')+'</button>'+
+          // A small grid: check, title and price on one line, the description
+          // full width under them (an earlier owner report: notes squeezed
+          // into a narrow middle column left grey space under the price).
+          '<span class="byo-title">'+escHtml(it.label)+'</span>'+
+          (priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>')+
+          (note?'<small class="byo-note">'+escHtml(note)+'</small>':'')+
+        '</div>'+
+        (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
+      '</div>';
+    }).join('');
+    return '<div class="ios-sec">'+
+      (titled?'<div class="ios-h"><span>'+escHtml(sec)+'</span>'+
+        (isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'')+'</div>':'')+
+      '<div class="ios-group">'+(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
+        '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'+
+        (sec===used[used.length-1]&&!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':'')+
+      '</div></div>';
   }).join('');
-  const addSecBtn='<div style="margin-bottom:12px">'+
-    '<button class="btn btn-ghost btn-full" onclick="_byoAddSection()" style="border:1.5px dashed var(--border2)">+ Add section</button>'+
-  '</div>';
-  const tcCard='<div class="card card-pad-0" style="margin-bottom:12px">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Terms &amp; Conditions</div></div>'+
-    '<div style="padding:12px 14px">'+
-      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
-      '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
-        'oninput="_byoCustomTerms=this.value;_byoAutosave()" '+
-        'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
-    '</div>'+
-  '</div>';
-  // The package card sits ABOVE the sections and only on an empty estimate: it
-  // is the fastest way in, and once there is a line on the bid it has done its
-  // job and gets out of the way.
-  // The attach card goes directly under the work and ABOVE "+ Add section":
-  // it is about the lines that are already on the estimate, and putting a
-  // rarely-used structural control between them buried it three cards down.
-  wrap.innerHTML=_pkgCardHTML()+secHtml+_attachCardHTML()+addSecBtn+tcCard;
+  const say=(!_byoItems.length||_byoSayOpen)?_byoSayHtml():'';
+  const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
+  // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
+  // page so autosave and the proposal keep reading it by its id.
+  const terms='<div id="byo-terms-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your own terms</span></div>'+
+    '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
+      'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
+    '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+_matCardHTML()+(_byoItems.length?_attachCardHTML():'')+group+terms;
   _matClaim(wrap);
+  _tmWireSwipe(wrap);
+  _byoRenderSteps();
+}
+function _byoDelLine(idx){
+  const it=_byoItems[idx];if(!it||it.required)return;
+  const copy=Object.assign({},it);
+  _byoDelItem(idx);
+  _tmUndoToast('Line removed',()=>{
+    _byoItems.splice(Math.min(idx,_byoItems.length),0,copy);
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  });
+}
+// ── THE STEPS, THE PRICE, THE BAR ──────────────────────────────────────────
+function _byoState(){
+  const on=_byoItems.filter(it=>it.on);
+  const unpriced=on.filter(it=>!(Number(it.price)>0)&&!it._rrp);
+  const {total}=(typeof calcGeiTotal==='function')?calcGeiTotal():{total:0};
+  return {n:_byoItems.length,on,unpriced,total};
+}
+function _byoDepositState(total){
+  const pct=_geiDepositPct();
+  const amt=Math.round(total*pct/100);
+  const addr=(document.getElementById('gei-addr')||{}).value||'';
+  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
+  const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
+  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  const max=applies&&typeof _maxDeposit==='function'?_maxDeposit(st,total):Infinity;
+  return {pct,amt,st,law,applies,max,over:isFinite(max)&&amt>max+0.5};
+}
+function _byoRenderSteps(){
+  const st=_byoState();
+  const head=(id,n,title,state,status)=>{
+    const el=document.getElementById(id);if(!el)return;
+    el.setAttribute('data-state',state);
+    el.innerHTML='<span class="n">'+(state==='done'?_TM_TICK:n)+'</span><span class="t">'+escHtml(title)+'</span>'+(status?'<span class="s">'+escHtml(status)+'</span>':'');
+  };
+  const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
+  head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
+  // Not ticked until he has looked at the total and the deposit.
+  head('byo-step-2',2,'The price',two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  _byoRenderPrice(st);
+  _byoRenderDock(st);
+}
+function _byoRenderPrice(st){
+  const g=document.getElementById('byo-price-group');if(!g)return;
+  st=st||_byoState();
+  const sec=document.getElementById('byo-price-sec');
+  if(sec)sec.style.display=st.n?'':'none';
+  if(!st.n){g.innerHTML='';return;}
+  const tax=(()=>{const r=document.getElementById('byo-rail-tax-row');return r&&r.style.display!=='none'?[(document.getElementById('byo-rail-tax-lbl')||{}).textContent,(document.getElementById('byo-rail-tax-amt')||{}).textContent]:null;})();
+  const costEl=document.getElementById('byo-expected-cost');
+  const cost=parseFloat(costEl&&costEl.value)||0;
+  const sub=st.on.reduce((a,it)=>a+(Number(it.price)||0),0);
+  const profit=sub>0&&cost>0?Math.round((sub-cost)/sub*100):null;
+  const pcol=profit==null?'':profit<0?'#DC2626':profit<_MARGIN_BANDS.low?'#EF4444':profit<_MARGIN_BANDS.target?'#B45309':profit<_MARGIN_BANDS.high?(document.body.classList.contains('dark')?'var(--green)':'var(--c-green,#117841)'):'#B45309';
+  const D=_byoDepositState(st.total);
+  const sname=_tmStateName(D.st)||D.st;
+  const depNote=D.over?('<small style="color:var(--ios-law)">'+escHtml(sname)+' allows up to '+_byoMoney(Math.floor(D.max))+' here.</small>')
+    :(D.amt>0?'<small>'+_byoMoney(D.amt)+' before work starts</small>':'<small>Nothing up front</small>');
+  const exclN=(_geiExclusions||[]).length;
+  const exclOpen=(document.getElementById('byo-excl-wrap')||{}).style&&document.getElementById('byo-excl-wrap').style.display!=='none'&&document.getElementById('byo-excl-wrap').dataset.open==='1';
+  const termsOpen=(document.getElementById('byo-terms-wrap')||{}).style&&document.getElementById('byo-terms-wrap').style.display!=='none';
+  const focusedCost=document.activeElement&&document.activeElement.id==='byo-cost-in';
+  const focusedDep=document.activeElement&&document.activeElement.id==='byo-dep-in';
+  if(focusedCost||focusedDep){
+    // Mid-typing: update the words around the box, never the box itself.
+    const pr=document.getElementById('byo-profit-val');
+    if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost));pr.style.color=pcol;}
+    const tv=document.getElementById('byo-total-val');if(tv)tv.textContent=_byoMoney(st.total);
+    const dn=document.getElementById('byo-dep-note');if(dn)dn.outerHTML=depNote.replace('<small','<small id="byo-dep-note"');
+    return;
+  }
+  g.innerHTML=
+    '<div class="ios-row byo-total"><span class="ios-lbl">Their price<small>Fixed. Only added or changed work, on a change order they sign, moves it.</small></span><span class="ios-fact" id="byo-total-val">'+_byoMoney(st.total)+'</span></div>'+
+    (tax?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">'+escHtml(tax[0]||'')+'</small></span><span class="ios-fact" style="font-weight:400">'+escHtml(tax[1]||'')+'</span></div>':'')+
+    // PROFIT IS HIS, NEVER THEIRS (owner: "still want them to show profit
+    // percentage"). One number he types, what the job costs him, and the
+    // margin next to it. No materials list to fill out.
+    '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
+      '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Math.round(cost).toLocaleString('en-US'):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
+    '<div class="ios-row"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+'">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+    '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
+      '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
+    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
+    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
+  const foot=document.getElementById('byo-price-foot');
+  if(foot)foot.textContent='The customer sees the total and the deposit. Line prices, your cost and your profit stay on this screen.';
+}
+function _byoToggleFold(id){
+  const el=document.getElementById(id);if(!el)return;
+  const open=el.style.display==='none'||el.dataset.open!=='1';
+  el.style.display=open?'':'none';el.dataset.open=open?'1':'0';
+  _byoRenderPrice();
+  if(open){try{el.scrollIntoView({block:'nearest',behavior:'smooth'});}catch(_e){}}
+}
+function _byoCostInput(el){
+  const c=document.getElementById('byo-expected-cost');if(!c)return;
+  const v=(typeof _moneyVal==='function')?_moneyVal('byo-cost-in'):parseFloat(String(el.value).replace(/,/g,''))||0;
+  c.value=v>0?String(v):'';
+  if(v>0)c.dataset.userSet='true';else delete c.dataset.userSet;
+  _byoUpdateRail();_byoAutosave();
+}
+function _byoDepInput(el){
+  _geiNumsTouched();
+  const v=String(el.value||'').replace(/[^0-9.]/g,'');
+  const pct=document.getElementById('byo-deposit-pct');if(!pct)return;
+  pct.value=v===''?'0':String(Math.max(0,Math.min(100,parseFloat(v)||0)));
+  pct.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function _byoDockNext(st){
+  if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  // Tim before the prices: a step he adds is a line that needs a price, so
+  // pricing first would send him back to pricing (2026-09-26, shared walk).
+  const tim=_geiTimStep(_byoMissed);
+  if(tim)return tim;
+  if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
+  const D=_byoDepositState(st.total);
+  if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
+  return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
+    yes:'Yes: '+_byoMoney(st.total)+', '+D.pct+'% deposit'});
+}
+function _byoDockBuild(){
+  const el=document.getElementById('byo-say');
+  if(el&&String(el.value||'').trim()){_byoSayBuild();return;}
+  if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+}
+function _byoRenderDock(st){
+  const d=document.getElementById('byo-dock');if(!d)return;
+  st=st||_byoState();
+  const nx=_byoDockNext(st);
+  const label=nx?nx.label:'send';
+  if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
+  d.setAttribute('data-state',nx?'todo':'now');
+  const tim=(typeof openTim==='function')
+    ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
+  d.innerHTML=tim+(nx
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
+    :'<button type="button" class="ios-btn ios-btn-tint" id="byo-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
+     '<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -2082,6 +3216,7 @@ function _byoAutosave(){
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
   b.estCrew=[..._estCrew];
+  b.estCrewRates=Object.assign({},_estCrewRates);
   b.exclusions=[..._geiExclusions];
   // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
   // and his scope history, so it MOVES as the book learns. Stamping it here is
@@ -2105,13 +3240,15 @@ function _byoAutosave(){
     b.isFreeForm=false;
     b.tmRateOnly=!!_tmRateOnly;
     b.tmLayers=[..._tmLayers];
-    if(_tmRateOnly){
-      // Same reason as saveGenericEstimate: the flat figure is the deposit, and
-      // the percent the shared block just wrote off a phantom total is wrong.
-      b.tmDepositPct=0;
-      b.tmDepositAmt=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
-      b.deposit=b.tmDepositAmt;
-    }
+    // On the BID as well as on S: the preference is what he usually does, this
+    // is what THIS proposal did, and a resumed one has to come back the way it
+    // was sent rather than the way he has since changed his mind.
+    b.tmHideRate=!!_tmHideRate;
+    // The deposit is the flat figure he named, or nothing (_tmDepositState),
+    // never a percent of an estimate. The shared block above just wrote one.
+    b.tmDepositPct=0;
+    b.tmDepositAmt=_tmDeposit();
+    b.deposit=b.tmDepositAmt;
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
@@ -2132,6 +3269,11 @@ function _byoAutosave(){
   if(_wasEmpty&&!_geiDraftIsEmpty(b)){
     try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
   }
+  // Every field on this page feeds something Tim reads: the address is the
+  // state, the lines are the price check, the scope is whether the work reaches
+  // past a ladder. One coalesced repaint per frame, so a burst of keystrokes is
+  // still one pass over the book.
+  if(typeof timDockRefresh==='function')timDockRefresh();
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
@@ -2481,6 +3623,168 @@ function _toggleCrewMember(email){
   if(typeof _byoUpdateRail==='function')_byoUpdateRail();
   if(typeof _byoAutosave==='function')_byoAutosave();
 }
+// ── The rate on the worker ───────────────────────────────────────────────────
+//
+// What this person's hour is sold for. Three places it can come from, nearest
+// first: what he typed on THIS job, what he set as their default, and failing
+// both, nothing, which leaves the job's one flat rate in charge exactly as it
+// was before per-person rates existed.
+//
+// Two numbers per person and they must never be conflated (rule 18.2):
+//   pay_rate  on team_members   what they cost you, gated behind _canViewComp()
+//   billRate  on the employee   what the client is charged for their hour
+function _billRateFor(email){
+  const k=String(email||'').toLowerCase();
+  if(!k)return 0;
+  const own=Number(_estCrewRates&&_estCrewRates[k]);
+  if(own>0)return own;
+  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+  const def=Number(e&&e.billRate);
+  return def>0?def:0;
+}
+// What the crew on site bills, per hour, all in. Zero when nobody on this job
+// has a rate of their own, which is the signal to fall back to crew × flat.
+function _crewHourlyBill(){
+  if(!_estCrew.length)return 0;
+  return _estCrew.reduce((s,email)=>s+_billRateFor(email),0);
+}
+// The number the client is actually charged per hour. One place, so the rail,
+// the labor line, the day rate and the proposal cannot disagree (rule 18: one
+// definition, many mouths).
+function _tmHourlyBill(){
+  const crew=_crewHourlyBill();
+  return crew>0?crew:(_tmCrewCount*_tmRatePerMan);
+}
+// Set what somebody bills. `asDefault` writes it onto the person so it follows
+// them to the next job, which is the point of the rate living on the worker;
+// otherwise it is this job only.
+function _setBillRate(email,rate,asDefault){
+  const k=String(email||'').toLowerCase();
+  const r=Math.max(0,Number(rate)||0);
+  if(!k)return;
+  if(r>0)_estCrewRates[k]=r;else delete _estCrewRates[k];
+  if(asDefault){
+    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+    if(e){e.billRate=r||0;if(typeof _settingsChanged==='function')_settingsChanged();}
+  }
+  if(_geiIsTM&&typeof _tmInputChange==='function')_tmInputChange();
+  else{if(typeof _byoUpdateRail==='function')_byoUpdateRail();if(typeof _byoAutosave==='function')_byoAutosave();}
+}
+function _onBillRateInput(el,email){
+  if(!el)return;
+  const r=parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
+  if(r===_billRateFor(email))return;
+  _setBillRate(email,r,false);
+}
+// Has this person billed the same figure often enough that it should just BE
+// their rate? Three of the same number is a habit, not a Tuesday. Tim offers it
+// once so the rate gets set on the person and never typed again.
+function _billRateHabit(email){
+  const k=String(email||'').toLowerCase();
+  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+  if(!e||Number(e.billRate)>0)return null;
+  const seen={};
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{
+    const r=Number(b&&b.estCrewRates&&b.estCrewRates[k]);
+    if(r>0)seen[r]=(seen[r]||0)+1;
+  });
+  const best=Object.keys(seen).map(Number).sort((a,b)=>seen[b]-seen[a])[0];
+  if(!best||seen[best]<3)return null;
+  return {rate:best,n:seen[best],name:(e.name||'').split(' ')[0]||e.name,email:k};
+}
+// "Marco at $95, Jess at $75". Said in names and figures, because that is how
+// he checks it, and it is what the line under the rate has to carry once the
+// rate is not one number any more.
+function _crewRateWords(){
+  return _estCrew.map(email=>{
+    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===String(email).toLowerCase());
+    const first=((e&&e.name)||email||'').split(' ')[0]||email;
+    const r=_billRateFor(email);
+    return first+(r>0?(' at $'+r.toLocaleString()):'');
+  }).join(', ');
+}
+function _takeBillRateDefault(email,rate){
+  _setBillRate(email,rate,true);
+  if(typeof showToast==='function')showToast('That is their rate from now on','🔧',2400);
+}
+
+// ── Crew and rates ───────────────────────────────────────────────────────────
+//
+// One row per person actually on the job: what they cost, and the only number
+// he has to type, what they bill. Then the line that is the whole reason for
+// the feature, the total per hour that comes out of it, with the day behind it
+// and the cost under it.
+//
+// Nobody on the job means no table. The flat rate field above is still the
+// right control for a man working alone, and a two column grid asking him to
+// price a crew of nobody is noise.
+function _crewRatesHtml(emps){
+  if(!_estCrew.length)return '';
+  const rows=(emps||[]).filter(e=>_estCrew.indexOf(String(e.email||'').toLowerCase())>=0);
+  if(!rows.length)return '';
+  const canSeeCost=(typeof _canViewComp!=='function')||_canViewComp();
+  const cell='display:flex;align-items:center;justify-content:flex-end;padding:7px 0 7px 4px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums';
+  let html='<div style="display:grid;grid-template-columns:minmax(0,1fr) 62px 76px;margin-bottom:8px">'+
+    '<div style="padding:5px 0;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Person</div>'+
+    '<div style="display:flex;align-items:center;justify-content:flex-end;padding:5px 0 5px 4px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+(canSeeCost?'Costs you':'')+'</div>'+
+    '<div style="display:flex;align-items:center;justify-content:flex-end;padding:5px 0 5px 4px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Bills at</div>';
+  rows.forEach(e=>{
+    const email=String(e.email||'').toLowerCase();
+    const first=(e.name||'').split(' ')[0]||e.name||email;
+    const loaded=(typeof _empLoadedFor==='function')?_empLoadedFor(email):0;
+    const bill=_billRateFor(email);
+    html+='<div style="padding:7px 0;border-top:1px solid var(--border);min-width:0;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(first)+
+        (e.role?'<span style="display:block;font-size:10px;font-weight:500;color:var(--text3)">'+escHtml(e.role)+'</span>':'')+
+      '</div>'+
+      '<div style="'+cell+';font-size:12px;color:var(--text3)">'+(canSeeCost&&loaded>0?('$'+(Math.round(loaded*100)/100)):'')+'</div>'+
+      '<div style="'+cell+'">'+
+        '<span style="display:inline-flex;align-items:center;height:30px;padding:0 4px 0 8px;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);font-size:13px;font-weight:700;color:var(--text)">$'+
+        '<input type="text" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
+          'aria-label="What '+escHtml(first)+' bills per hour" '+
+          'onchange="_onBillRateInput(this,'+escHtml(JSON.stringify(email))+')" '+
+          'style="width:44px;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
+        '</span>'+
+      '</div>';
+  });
+  html+='</div>';
+
+  const perHr=_crewHourlyBill();
+  if(perHr>0){
+    const ppl=_estCrew.length;
+    const day=perHr*8;
+    const cost=(typeof _estLaborCost==='function'&&_estLaborHours()>0)?Math.round(_estLaborCost()/_estLaborHours()*8):0;
+    html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:0 0 8px">'+
+      '<span style="min-width:0">'+
+        '<span style="display:block;font-size:12px;font-weight:600;color:var(--text)">'+
+          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+'$'+perHr.toLocaleString()+' an hour</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is $'+day.toLocaleString()+'.'+
+          (canSeeCost&&cost>0?(' Costs you $'+cost.toLocaleString()+'.'):'')+'</span>'+
+      '</span>'+
+      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">$'+perHr.toLocaleString()+
+        '<span style="font-size:11px;font-weight:600;color:var(--text3)">/hr</span></span>'+
+    '</div>';
+  }
+
+  // Set it once. A rate he has typed on three jobs is the rate, and typing it a
+  // fourth time is the friction the whole feature exists to remove.
+  for(const e of rows){
+    const h=_billRateHabit(String(e.email||'').toLowerCase());
+    if(!h)continue;
+    html+='<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 0 10px;border-top:1px solid var(--border)">'+
+      (typeof timMark==='function'?timMark(18,{style:'margin-top:1px'}):'')+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:11.5px;line-height:1.5;color:var(--text2)">'+escHtml(h.name)+' billed $'+h.rate+' on his last '+h.n+' jobs. Make that his default rate?</div>'+
+        '<div style="display:flex;gap:7px;margin-top:7px">'+
+          '<button type="button" onclick="_takeBillRateDefault('+escHtml(JSON.stringify(h.email))+','+h.rate+')" style="height:28px;padding:0 11px;border:0;border-radius:var(--r-sm);background:var(--blue);color:#fff;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">Set as default</button>'+
+          '<button type="button" onclick="_setBillRate('+escHtml(JSON.stringify(h.email))+','+h.rate+',false)" style="height:28px;padding:0 11px;border:0;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);color:var(--text2);font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">Just this job</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    break;   // one offer at a time, the same rule the dock pill follows
+  }
+  return html;
+}
+
 // Render the crew picker + red payroll-expense figure into {type}-labor-cost-wrap.
 // Hidden entirely when there are no employees (solo operator → cost is materials only).
 function _renderLaborPicker(type){
@@ -2517,7 +3821,14 @@ function _renderLaborPicker(type){
   if(!_estCrew.length){
     body='<span style="color:var(--text3)">Tap a name to add who\'s on this job, their pay + benefits become a job cost.</span>';
   }else if(cost<=0){
-    body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
+    // TWO NUMBERS, AND THIS LINE IS ONLY ABOUT ONE OF THEM. With per-person
+    // bill rates on screen above it, the old wording ("set pay rates") read as
+    // "your rates did not take" on a table that visibly had rates in it. What
+    // is missing is what they COST, which is a different number in a different
+    // place, and the sentence now says which.
+    body=_crewHourlyBill()>0
+      ? '<span style="color:var(--c-amber)">What they bill is set. What they cost you is not, so there is no profit figure on this job yet. Add their pay on the Team page.</span>'
+      : '<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
   }else{
     const ppl=_estCrew.length;
     const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
@@ -2528,6 +3839,7 @@ function _renderLaborPicker(type){
   wrap.innerHTML=
     '<div class="td-micro" style="margin-bottom:6px">Crew on this job <span style="font-weight:500;color:var(--text3);text-transform:none;letter-spacing:0">(their pay is your cost)</span></div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+
+    _crewRatesHtml(emps)+
     '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
     '<div class="summary-divider"></div>';
 }
@@ -2556,6 +3868,11 @@ function _geiRenderDriveLine(type,d){
     '</div>'+netNote+ask;
 }
 
+// THE BANDS, IN ONE PLACE. The gauge and the three money rows both colour and
+// both talk about the same thresholds, and two copies of 35 is how a screen
+// ends up calling the same job "below target" and "above your target" in the
+// same rail (rule 18: one definition, many mouths).
+const _MARGIN_BANDS={low:22,target:35,high:55};
 function _updateMarginGauge(type,total){
   const gWrap=document.getElementById(type+'-profit-gauge');
   if(!gWrap)return;
@@ -2582,9 +3899,9 @@ function _updateMarginGauge(type,total){
   const pos=Math.min(Math.max(margin,2),98);
   let color,msg;
   if(margin<0){color='#DC2626';msg='Below cost, you’re losing money on this job';}
-  else if(margin<22){color='#EF4444';msg='Underpriced: consider raising your rate';}
-  else if(margin<35){color='#F59E0B';msg='Below target, a bit of room to grow';}
-  else if(margin<55){color='#22C55E';msg='Priced right, solid margin for this job';}
+  else if(margin<_MARGIN_BANDS.low){color='#EF4444';msg='Underpriced: consider raising your rate';}
+  else if(margin<_MARGIN_BANDS.target){color='#F59E0B';msg='Below target, a bit of room to grow';}
+  else if(margin<_MARGIN_BANDS.high){color='#22C55E';msg='Priced right, solid margin for this job';}
   // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
   // margins that usually mean a cost got missed, green now tops out at 55%.
   else if(margin<75){color='#F59E0B';msg='High margin, double-check your cost numbers';}
@@ -2710,6 +4027,7 @@ function _byoUpdateRail(){
   // Margin is calculated on pre-tax revenue (sub): sales tax is pass-through to the
   // government and not the contractor's earnings, so including it inflates the margin.
   _updateMarginGauge('byo',sub);
+  if(typeof _byoRenderSteps==='function'&&document.getElementById('byo-step-1'))_byoRenderSteps();
 }
 // Comma-formats a BYO price field as the contractor types, native type="number"
 // inputs reject commas outright in every browser, so this field is plain text
@@ -3167,15 +4485,24 @@ function _showProposalPreviewOverlay(proposalHtml){
   ov.id='_prop-preview-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
   const hdr=document.createElement('div');
-  hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
-  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview, how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
+  // CLEAR OF THE DYNAMIC ISLAND (Jack, 2026-09-23: the preview "was in the
+  // dynamic island space and can't be exited"). The app is viewport-fit=cover,
+  // so a bar at top:0 with 12px of padding put Close under the island, where
+  // iOS takes the tap. Same env() inset every other full-screen bar uses.
+  hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top,0px));display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview, how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;min-height:44px;flex-shrink:0">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
   // flex:0 1 auto (not flex:1): the card hugs its own content height instead
   // of stretching to fill the screen. Short proposals no longer leave a slab
   // of flat gray dead space below the card; long ones still scroll normally.
-  body.style.cssText='flex:0 1 auto;overflow-y:auto;max-height:calc(100vh - 56px);padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
+  body.style.cssText='flex:0 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 68px - env(safe-area-inset-top,0px));padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
   ov.appendChild(hdr);ov.appendChild(body);
+  // A tap on the dim below a short proposal closes it, the way every sheet
+  // does; Escape on a keyboard. Two more ways out than the one button.
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const _esc=e=>{if(e.key==='Escape'){ov.remove();document.removeEventListener('keydown',_esc);}};
+  document.addEventListener('keydown',_esc);
   document.body.appendChild(ov);
 }
 // ─── Presentation mode ───────────────────────────────────────────────────────
@@ -3241,12 +4568,16 @@ function _presentShell(inner){
   return ov;
 }
 function _presentHdr(sub){
-  const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
-  return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
+  // WHITE LABEL: his name or nothing. getBusinessName() falls back to
+  // "TradeDesk", which put our name across the top of the screen his customer
+  // is holding (2026-09-26), the same leak the proposal had.
+  const biz=(typeof S!=='undefined'&&S.bname)||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
+  // Clear of the Dynamic Island, same as the preview bar: the exit is up here.
+  return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
     '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
       (sub?'<div style="font-size:11.5px;color:rgba(245,239,226,.62);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</div>':'')+
     '</div>'+
-    '<button id="present-exit" onclick="_presentClose()" aria-label="Exit presentation" style="flex-shrink:0;background:rgba(245,239,226,.10);border:none;color:rgba(245,239,226,.75);width:34px;height:34px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;touch-action:manipulation">×</button>'+
+    '<button id="present-exit" onclick="_presentClose()" aria-label="Exit presentation" style="flex-shrink:0;background:rgba(245,239,226,.10);border:none;color:rgba(245,239,226,.75);width:44px;height:44px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;font-family:inherit;touch-action:manipulation">×</button>'+
   '</div>';
 }
 function _presentName(b){
@@ -3259,6 +4590,9 @@ function _presentMoney(n){return '$'+(Number(n)||0).toLocaleString('en-US',{maxi
 // mode exists to avoid.
 async function _geiPresent(){
   try{if(typeof saveGenericEstimate==='function')saveGenericEstimate(true);}catch(_e){}
+  // Handing the phone to the customer is showing them the contract. The same
+  // law applies before they read it as before they sign it.
+  if(_geiIsTM&&typeof _tmLegal==='function'){const _L=_tmLegal();if(_L.problems.length){_tmLegalStop(_L);return;}}
   const list=_presentList();
   if(!list.length){showToast('Save your proposal first','⚠️');return;}
   if(list.length===1){return _presentOpen(list[0].id);}
@@ -3309,6 +4643,7 @@ function _presentUnique(b,list,cur){
 // decides whether "yes" happens now or "let me talk to my wife" happens now.
 function _presentDeposit(b,me,total){
   if(me){
+    if(_geiIsTM)return _tmDeposit();
     const pct=(typeof _geiDepositPct==='function')?_geiDepositPct():0;
     return pct>0?Math.round(total*pct/100*100)/100:0;
   }
@@ -3474,6 +4809,7 @@ function _buildComparisonPreview(){
 }
 // ─── End comparison ──────────────────────────────────────────────────────────
 function _tmCrewStep(delta){
+  _tmTouchedRate();
   _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
   const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
   const lbl=document.getElementById('tm-i-crew-label');
@@ -3498,20 +4834,41 @@ function _tmInputChange(){
   // below.
   const daysInput=_moneyVal('tm-i-days');
   _tmEstHours=_tmRateOnly?0:daysInput*8;
-  const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
+  // THE HOUR IS PRICED BY WHO IS STANDING IN IT. With per-person rates set,
+  // what comes off the job per hour is the sum of those rates, not a crew count
+  // times one flat number. With none set, _tmHourlyBill returns exactly the old
+  // crew × flat, so every bid written before today prices the same to the cent.
+  const perHour=_tmHourlyBill();
+  const crewRates=_crewHourlyBill()>0;
+  const labor=perHour*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
-  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  // The client sees what it costs per hour, and with two rates on the job he
+  // sees both, because "2 workers @ $85/hr" is not true when one bills 95 and
+  // the other 75 and the total is the same.
+  // ...unless he has kept the rate off this proposal. The LINE carries the
+  // rate as surely as the terms clause does: "320 hr @ $190" hands it straight
+  // back by division, and the per-person wording hands back more than the
+  // clause ever printed. Hidden, it is one lump for the same money with no
+  // arithmetic on it that recovers an hourly figure.
+  const _hideRate=_tmHideRate&&_tmCanHideRate();
+  const desc=_hideRate
+    ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
+    : (crewRates
+      ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
+      : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
+  const line=_hideRate
+    ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
+    : {desc,qty:_tmEstHours,unit:'hr',rate:Math.round(perHour),_tmLabor:true,total:Math.round(labor)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
-  const dayRate=_tmCrewCount*_tmRatePerMan*8;
+  const dayRate=perHour*8;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   setT('tm-stat-day','$'+dayRate.toLocaleString());
-  setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
+  setT('tm-stat-day-s',perHour>0?(crewRates?_estCrew.length+'-person crew · 8hr day · their own rates':_tmCrewCount+'-person crew · 8hr day'):'enter rate & crew');
   setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'-');
+  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × $'+perHour.toLocaleString()+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
   setT('tm-stat-days',_tmEstHours);
   // Materials subtotal, shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
@@ -3521,17 +4878,37 @@ function _tmInputChange(){
   setT('tm-rail-labor','$'+labor.toLocaleString());
   setT('tm-rail-mat','$'+matRaw.toLocaleString());
   // The rate head, which is what a rate sheet's rail says instead of a total.
-  setT('tm-rail-rate','$'+_tmRatePerMan.toLocaleString());
+  setT('tm-rail-rate','$'+perHour.toLocaleString());
   const _rateEl=document.getElementById('tm-rail-rate');
-  if(_rateEl)_rateEl.innerHTML='$'+_tmRatePerMan.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
-  setT('tm-rail-rate-sub',_tmCrewCount>1?'per worker, '+_tmCrewCount+' on site':'per worker');
-  setT('tm-rail-rate-crew',String(_tmCrewCount));
+  if(_rateEl)_rateEl.innerHTML='$'+perHour.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
+  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?'$'+_tmRatePerMan.toLocaleString()+' per worker, '+_tmCrewCount+' on site':'per worker'));
+  setT('tm-rail-rate-crew',String(crewRates?_estCrew.length:_tmCrewCount));
   setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
   setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
-  const _tmDeposit=Math.round(total*_geiDepositPct())/100;
-  setT('tm-rail-balance','$'+(total-_tmDeposit).toLocaleString());
+  const _tmDepNow=_tmDeposit();
+  setT('tm-rail-balance','$'+Math.max(0,total-_tmDepNow).toLocaleString());
   let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
+  // PENNSYLVANIA SETS THE CEILING, SO HE DOES NOT. js/legal.js: the estimate,
+  // plus ten percent. A figure the statute fixes is not a question to put to a
+  // man on a driveway with a calculator in his head, so it is worked out from
+  // the estimate on every change and the box is read-only while it is. Rounded
+  // UP to the dollar, because rounding a legal ceiling down is the one
+  // direction that can put it under the statute.
+  // Off the figure the CUSTOMER reads (markup and sales tax in), not the bare
+  // labor-plus-materials sum, or the ceiling could land under the printed
+  // estimate it is supposed to sit ten percent above.
+  const _capRule=_tmStateRule();
+  if(nteInp){
+    const _custTotal=(_capRule.capOverEst&&typeof calcGeiTotal==='function')?Math.max(total,calcGeiTotal().total||0):total;
+    if(_capRule.capOverEst&&!_tmRateOnly&&_custTotal>0){
+      nte=Math.ceil(_custTotal*(1+_capRule.capOverEst));
+      nteInp.value=nte.toLocaleString('en-US');
+      nteInp.readOnly=true;
+    }else if(nteInp.readOnly){
+      nteInp.readOnly=false;
+    }
+  }
   // A cap under the estimated total is a contradiction, but only where there IS
   // an estimated total. On a rate sheet the cap is the ceiling he has chosen to
   // give, and flagging it red against a number the client never sees would be
@@ -3541,7 +4918,9 @@ function _tmInputChange(){
     nteInp.title='NTE cap cannot be less than the estimated total ($'+total.toLocaleString()+')';
   } else if(nteInp){nteInp.style.borderColor='';nteInp.title='';}
   const nteRow=document.getElementById('tm-rail-nte-row');
-  if(nteRow)nteRow.style.display=nte>0?'flex':'none';
+  // Not shown on T&M (2026-09-23): the Billing row directly above it already
+  // says the most it can cost, with the figure typed into it.
+  if(nteRow)nteRow.style.display='none';
   if(nte>0)setT('tm-rail-nte-amt','$'+nte.toLocaleString());
   // Mirror values to legacy DOM ids so saveGenericEstimate/sendGenericProposal pick them up
   const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
@@ -3569,8 +4948,82 @@ function _tmInputChange(){
   _geiRenderDriveLine('tm',_tmDrive);
   const _tmCostEl=document.getElementById('tm-expected-cost');
   if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
+  _tmRenderMoneyRows({bill:total,hours:_tmEstHours,perHour,crewRates,
+    pay:_tmCrewCost,materials:matRaw,drive:(_tmDrive&&_tmDrive.cost)||0,cost:_tmTrueCost});
   _updateMarginGauge('tm',total);
+  // The rail says what is still missing, and he just typed one of the things it
+  // was asking for. It has to move on the keystroke, not on the next redraw.
+  if(typeof _tmRenderAddRow==='function'){try{_tmRenderAddRow(_tmStateRule(),_tmLockedLayers());}catch(_e){}}
+  try{_tmTidyRail();}catch(_e){}
+  _tmFitInputs();
   _byoAutosave();
+  // The deposit's line reads the ceiling and the deposit, both typed here.
+  if(typeof _tmRenderBillTerms==='function')_tmRenderBillTerms();
+}
+
+// ── You bill, it costs you, you keep ─────────────────────────────────────────
+//
+// Three rows, one number each, and not one word of the trade's own vocabulary.
+// No margin, no burdened rate, no mobilization. The owner read the coloured
+// version of this and said he did not know what any of it meant, and if he does
+// not, a contractor does not.
+//
+// Nothing here is new arithmetic: `bill` is the same total the rail prints,
+// `cost` is the same figure that feeds the gauge (rule 18, one definition).
+// This only says it in the order a man asks it in.
+function _tmRenderMoneyRows(n){
+  const el=document.getElementById('tm-money-rows');
+  if(!el)return;
+  const bill=Math.round(Number(n&&n.bill)||0);
+  const cost=Math.round(Number(n&&n.cost)||0);
+  // Nothing to say until both halves exist. A "you keep" figure computed
+  // against a cost of zero is the flattering number rule 18 exists to prevent.
+  if(bill<=0||cost<=0){el.innerHTML='';return;}
+  const keep=bill-cost;
+  const share=Math.round((keep/bill)*100);
+  const cents=Math.max(0,Math.min(100,share));
+  // Whole dollars, the same rule Tim's panels use. `fmt` always prints cents,
+  // which belong on the proposal and the tax documents where precision is a
+  // legal matter. This rail is neither, and ".00" three times is just noise on
+  // three figures he is glancing at.
+  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const target=_MARGIN_BANDS.target;
+  const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
+
+  const billSub=n.perHour>0&&n.hours>0
+    ? ('$'+Number(n.perHour).toLocaleString()+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
+    : 'labor and materials on this proposal';
+  const costBits=[];
+  if(n.pay>0)costBits.push('their pay '+money(n.pay));
+  if(n.materials>0)costBits.push('materials '+money(n.materials));
+  if(n.drive>0)costBits.push('driving '+money(n.drive));
+
+  const row=(label,sub,value,strong)=>
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
+      '<span style="min-width:0">'+
+        '<span style="display:block;font-size:12.5px;font-weight:'+(strong?'700':'600')+';color:var(--text)">'+label+'</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub)+'</span>'+
+      '</span>'+
+      '<span style="font-size:'+(strong?'17px':'15px')+';font-weight:700;color:'+(strong?colour:'var(--text)')+';font-variant-numeric:tabular-nums;letter-spacing:-.2px;flex-shrink:0">'+value+'</span>'+
+    '</div>';
+
+  el.innerHTML=
+    '<div style="display:flex;align-items:center;gap:7px;padding:0 0 10px">'+
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"></path><path d="M14.1 14.2a3 3 0 0 1-4.3-4.3"></path><path d="M17.5 17.5A10.8 10.8 0 0 1 2 12.3a1 1 0 0 1 0-.7 10.8 10.8 0 0 1 4.5-5.1"></path><path d="m2 2 20 20"></path></svg>'+
+      '<span style="font-size:11.5px;font-weight:600;color:var(--text2)">Your figures. Not on the proposal.</span>'+
+    '</div>'+
+    row('You bill',billSub,money(bill),false)+
+    row('It costs you',costBits.join(' · ')||'what this job takes',money(cost),false)+
+    row('You keep',cents+' cents on the dollar at these rates',money(keep),true)+
+    '<div style="height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:8px">'+
+      '<div style="width:'+cents+'%;height:100%;background:'+colour+'"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;line-height:1.5;color:var(--text3);padding-bottom:4px">'+
+      (share>=target
+        ? ('Above your '+target+' percent target. Every hour past '+(n.hours||0)+' keeps the same share.')
+        : ('Under your '+target+' percent target by '+(target-share)+' points. Raising the rate is the only lever on a job billed by the hour.'))+
+    '</div>'+
+    '<div class="summary-divider"></div>';
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
@@ -3595,13 +5048,27 @@ function _tmRenderMatList(){
 // two concepts for one idea: a T&M proposal with no day count IS a rate sheet,
 // so "rate only" is simply the Rate layer without the Estimate layer, and
 // _tmRateOnly is derived from that below instead of being its own toggle.
+// ORDER IS THE ADVICE. Cap sits second, ahead of Estimate, because that is the
+// truth about time and materials: of the ten states that force a number onto a
+// T&M job, nine want a CEILING ("the total amount to be paid", "a cap the total
+// cannot exceed") and only Pennsylvania names an estimate. _tmLockedLayers has
+// always locked rate and cap and never est, so the legal position was already
+// this; only the row disagreed, by putting Estimate next to Rate and leaving
+// the cap sixth, where it read as an afterthought.
+//
+// Owner, 2026-09-22: "does time and materials even need estimate cause why put
+// a price on time and materials???" It does not, mostly. An estimate is a guess
+// at the hours; a ceiling is a promise about the bill. The second is what a
+// homeowner is asking for and what the statutes want, so it is what the row
+// offers first.
 const TM_LAYERS = [
-  {k:'rate', label:'Rate',         blk:'tm-blk-rate'},
-  {k:'est',  label:'Estimate',     needs:'rate'},   // the day count, inside the rate block
-  {k:'mat',  label:'Materials',    blk:'tm-blk-mat'},
+  {k:'rate', label:'Rate',          blk:'tm-blk-rate'},
+  // "The most it can cost", the one name it has on every surface (2026-09-23).
+  {k:'cap',  label:'The most it can cost', blk:'tm-blk-nte'},
+  {k:'est',  label:'Estimate',      needs:'rate'},   // the day count, inside the rate block
+  {k:'mat',  label:'Materials',     blk:'tm-blk-mat'},
   {k:'dep',  label:'Deposit'},                       // rail only
-  {k:'cap',  label:'Not to exceed', blk:'tm-blk-nte'},
-  {k:'excl', label:'Exclusions',   blk:'tm-blk-excl'},
+  {k:'excl', label:'Not included',  blk:'tm-blk-excl'},
 ];
 let _tmLayers=new Set();
 Object.defineProperty(window,'_tmLayers',{get:()=>_tmLayers,set:v=>{_tmLayers=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
@@ -3613,12 +5080,186 @@ function _tmStateRule(){
   const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)
     ||(typeof S!=='undefined'&&S.state)||'';
   const r=(typeof statePriceRule==='function')?statePriceRule(st):{rule:'none'};
+  // EVERY ONE OF THESE IS A HOME IMPROVEMENT STATUTE (B&P 7159, HICPA, the
+  // Illinois Home Repair and Remodeling Act, MGL 142A and the rest). A
+  // commercial job is outside all of them, and applying California's block to
+  // a warehouse would stop a man doing legal work, which this file has always
+  // treated as the worse of the two ways to be wrong.
+  if(_geiIsCommercial&&r.rule&&r.rule!=='none'){
+    return {state:st,rule:'none',statute:'',note:'',needs:[],commercial:true,homeRule:r.rule};
+  }
   return Object.assign({state:st},r);
 }
+// ── WHERE HIDING IT IS NOT HIS TO DECIDE ────────────────────────────────────
+//
+// The rate is a REQUIRED TERM in some states, not a courtesy. Pennsylvania's
+// HICPA defines a time-and-materials contract as payment "based on the actual
+// cost of labor at a specified hourly rate", so a PA proposal with the rate
+// hidden is not a T&M contract at all.
+//
+// Rather than write a second legal table and have to be right about nine more
+// states, this reuses the boundary the file already draws: wherever a statute
+// LOCKS the rate layer on, the rate also has to be printed. That is
+// conservative, and conservative is the correct direction to be wrong in on a
+// contract term. Everywhere else it is his call.
+function _tmCanHideRate(){return !_tmLockedLayers().has('rate');}
+// STATE_NAMES already exists in js/legal.js (§18: one definition, many mouths).
+// The code is the fallback, for the case where the address parsed to something
+// that map has never heard of.
+function _tmStateName(st){
+  const k=String(st||'').toUpperCase();
+  try{if(typeof STATE_NAMES!=='undefined'&&STATE_NAMES[k])return STATE_NAMES[k];}catch(_e){}
+  return st||'';
+}
+// What he did last time, because a man who hides his rate hides it on every
+// job and should not have to say so on every job. On S, so it follows him to
+// the tablet in the truck rather than living on one phone.
+// One test for "does the customer read the rate", used by the Rate clause in
+// the terms and the Rate row on the document.
+function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
+function _tmHideRateDefault(){
+  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+}
+function _tmSetHideRate(v){
+  if(!_tmCanHideRate()){_tmHideRate=false;}
+  else _tmHideRate=!!v;
+  // PERSISTED the way every other account preference is, not just assigned.
+  // An assignment alone lives until the tab closes, which is not "remembered"
+  // and is certainly not "follows him to the tablet in the truck".
+  try{
+    if(typeof S!=='undefined'&&S){
+      S.tmHideRate=_tmHideRate;
+      if(typeof _settingsChanged==='function')_settingsChanged();
+    }
+  }catch(_e){}
+  // The labor LINE carries the rate too, so it has to be rebuilt, not just
+  // re-rendered: hidden, it becomes one lump with no per-hour figure on it.
+  if(typeof _tmInputChange==='function')_tmInputChange();
+  if(typeof _tmApplyLayers==='function')_tmApplyLayers();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+
 // A layer a statute put there cannot be tapped off.
+// What the statute will not let him switch off. Read from statePriceRule's
+// `needs` (js/legal.js), so Pennsylvania's estimate is locked alongside its
+// rate and ceiling instead of being noted in a comment and left optional.
 function _tmLockedLayers(){
   const r=_tmStateRule();
-  return r.rule==='cap'?new Set(['rate','cap']):new Set();
+  return new Set(Array.isArray(r.needs)?r.needs:[]);
+}
+
+// ── CAN THIS BE SENT, IN THIS STATE ─────────────────────────────────────────
+//
+// Owner, 2026-09-23: "it all needs to be [impossible] for them to get wrong in
+// compliance with their state laws."
+//
+// Until today the law was on the SCREEN and nowhere else. California's
+// warning sat above a Send button that sent. A cap state locked the ceiling
+// switch on and then let him send it with the box empty. Pennsylvania's
+// estimate was a comment. So a proposal could go out wrong in exactly the ten
+// states where going out wrong matters.
+//
+// This is now the one answer. The rail, Send and Sign in person all ask it, so
+// none of them can let through what another would stop. Each problem says what
+// to do in plain words and names the step it is about, so the fix is one tap.
+function _tmLegal(){
+  const r=_tmStateRule();
+  const name=_tmStateName(r.state)||'This state';
+  const out={state:r.state,name,rule:r.rule,statute:r.statute||'',note:r.note||'',problems:[]};
+  if(!_geiIsTM)return out;
+  if(r.rule==='block'){
+    out.problems.push({k:'block',say:name+' does not allow a time and materials contract for home improvement work.',
+      fix:'Build it as a fixed price instead.'});
+    return out;
+  }
+  const needs=Array.isArray(r.needs)?r.needs:[];
+  if(needs.includes('rate')&&!(Number(_tmRatePerMan)>0))
+    out.problems.push({k:'rate',say:name+' requires your hourly rate on this contract.',fix:'Put in your rate.'});
+  if(needs.includes('est')&&!(_tmLayers.has('est')&&Number(_tmEstHours)>0))
+    out.problems.push({k:'est',say:name+' requires an estimate on a time and materials contract.',fix:'Say how many days.'});
+  if(needs.includes('cap')&&!(_tmCapVal()>0))
+    out.problems.push({k:'cap',say:name+' requires the most this can cost, in dollars.',fix:'Put in the most it can cost.'});
+  // The deposit, against the state's limit (_tmDepositState).
+  const D=_tmDepositState();
+  const dname=_tmStateName(D.state)||'This state';
+  if(D.needCap)
+    out.problems.push({k:'cap',say:dname+' limits a deposit to '+D.law.pct+'% of the contract price, and this one has no price yet.',
+      fix:'Put in the most it can cost.',law:D.law.statute||''});
+  else if(D.over&&(D.overCap&&!(D.applies&&D.max<D.cap)))
+    out.problems.push({k:'dep',say:'The money up front is more than the most this job can cost.',fix:'Lower the deposit.'});
+  else if(D.over)
+    out.problems.push({k:'dep',say:dname+' allows a deposit of up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.',
+      fix:'Lower the deposit.',law:D.law.statute||''});
+  return out;
+}
+// The stop, shared by Send and Sign in person. One button that does the fix,
+// never a dead-end alert he has to read and then go hunting for the field.
+function _tmLegalStop(L){
+  const p=L.problems[0];
+  const cite=(p.law||L.statute)?(' ('+(p.law||L.statute)+')'):'';
+  if(p.k==='block'){
+    zConfirm(p.say+cite+' '+p.fix,
+      ()=>{if(typeof _tmToFixedPrice==='function')_tmToFixedPrice();},
+      {title:'Not allowed in '+L.name,yes:'Make it a fixed price',danger:false});
+    return;
+  }
+  zConfirm(p.say+cite,()=>_tmStepAct(p.k),{title:'One thing first',yes:p.fix.replace(/\.$/,''),danger:false});
+}
+// ── THE T&M DEPOSIT: ONE DEFINITION (§18) ─────────────────────────────────
+//
+// Owner, 2026-09-23: "how can you get a mobilization deposit on something you
+// don't put a price on?" You cannot take a percent of nothing. So a T&M
+// deposit is a flat figure he names ("up front for materials"), or nothing.
+// When there is a ceiling it is measured against it, because the ceiling is
+// the only dollar figure the contract carries, and a state that limits a
+// deposit to a share of the contract price is measured on that.
+//
+// Before this, five paths each worked the deposit out their own way: a percent
+// of an estimate with the Deposit switch off, the state limit applied only on
+// Save and only as a toast, and Sign in person writing a percent over the flat
+// figure. Every path now reads this, and Send and Sign refuse what the law
+// does not allow (_tmLegal), with the fix one tap away.
+function _tmDepositState(){
+  const on=_tmLayers.has('dep');
+  const amt=on?Math.max(0,Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0)):0;
+  const addr=(document.getElementById('gei-addr')||{}).value||'';
+  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
+  const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
+  const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
+  // Deposit limits are home-improvement law. A business job is not one.
+  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  let max=Infinity, needCap=false;
+  if(applies){
+    if(cap>0)max=(typeof _maxDeposit==='function')?_maxDeposit(st,cap):Infinity;
+    else{
+      max=(typeof _maxDepositNoTotal==='function')?_maxDepositNoTotal(st):Infinity;
+      // A share of a price that is not there cannot be measured, so in a state
+      // that limits by share, a deposit needs the ceiling first.
+      if(law.pct!=null&&amt>0)needCap=true;
+    }
+  }
+  // Anywhere, law or no law: money up front is never more than the most the
+  // whole job can cost. Earl typed 5000 against a 3000 ceiling in Kansas and
+  // it went through (2026-09-23).
+  const overCap=cap>0&&amt>cap+0.005;
+  if(cap>0)max=Math.min(max,cap);
+  return {on,amt,cap,state:st,law,applies,max,needCap,overCap,
+    over:isFinite(max)&&amt>max+0.005,
+    pctOfCap:cap>0&&amt>0?Math.round(amt/cap*100):null};
+}
+function _tmDeposit(){return _geiIsTM?_tmDepositState().amt:0;}
+// California. The scope he just said is the part worth keeping, so it goes
+// across as the lines of a Build Your Own proposal and all he adds is prices.
+function _tmToFixedPrice(){
+  const c=(typeof getClientById==='function'&&_geiClientId)?getClientById(_geiClientId):null;
+  if(!c)return;
+  const steps=(_geiScopeChips||[]).slice();
+  if(steps.length){
+    window._scanEstimateSeed={clientId:c.id,lines:steps.map(t=>({desc:t,qty:1,unit:'ea',rate:0,total:0,notes:'',
+      _byoSection:(typeof _byoWorkSection==='function'?_byoWorkSection():'Work')}))};
+  }
+  // Same customer, same address, straight in: this is not a new decision.
+  _geiOpenModeAt(c,'byo',_geiSiteAddr()||c.addr||'');
 }
 function _tmAddLayer(k){
   if(!TM_LAYERS.some(l=>l.k===k))return;
@@ -3635,6 +5276,109 @@ function _tmDropLayer(k){
   _tmApplyLayers();_tmInputChange();
 }
 function _tmToggleLayer(k){_tmLayers.has(k)?_tmDropLayer(k):_tmAddLayer(k);}
+
+// ── A SECTION HE HAS ANSWERED SAYS ONE LINE ─────────────────────────────────
+//
+// Owner, 2026-09-22: "its overwhelming even to me, sure as shit would be
+// overwleming to a client", and then "is T&M built into a easy to flow wizard?"
+//
+// Not a wizard. Same-day proposals close at roughly twice the rate of follow
+// ups and a day back at the office costs about 10% of the close, so what is
+// being optimised is seconds from seeing the job to pressing send, on a
+// driveway, with the homeowner watching. A wizard taxes every job with extra
+// taps to solve a first-job problem, and it hides the document at the exact
+// moment he turns the phone around to show it.
+//
+// So one screen that starts nearly empty and grows as he answers. A card he has
+// filled folds to its label and its figure; the one he has not is open. Nothing
+// is hidden that he has not already decided.
+//
+// Which ones he has pushed back open, so a re-render does not shut them again
+// under his thumb.
+let _tmOpen=new Set();
+Object.defineProperty(window,'_tmOpen',{get:()=>_tmOpen,set:v=>{_tmOpen=(v instanceof Set)?v:new Set(v||[]);},configurable:true});
+
+function _tmFoldToggle(id){
+  if(_tmOpen.has(id))_tmOpen.delete(id);else _tmOpen.add(id);
+  _tmApplyLayers();
+  // OPENING IT PUTS HIM IN IT. Owner, 2026-09-22: "the rates and crew updating
+  // it was a extra tap I had ti hit to edit."
+  //
+  // He was right and the fold caused it. Before, the rate field was on screen
+  // and editing it was one tap. Folded, it was tap the line, then tap the
+  // field. Landing the caret in the first input of the card he just opened
+  // makes it one tap again, with the keyboard already up, so the fold costs
+  // him nothing on the card he touches on every single job.
+  if(_tmOpen.has(id)){
+    const el=document.getElementById(id);
+    if(el){
+      try{el.scrollIntoView({block:'center'});}catch(_e){}
+      const f=el.querySelector('input:not([type=checkbox]):not([type=radio]),textarea');
+      if(f)try{f.focus();if(typeof f.select==='function')f.select();}catch(_e){}
+    }
+  }
+}
+
+// One card. `value` empty means there is nothing answered yet, so it stays open
+// and is not foldable: a fold with nothing behind it is a door to an empty room.
+function _tmFold(id,label,value){
+  const card=document.getElementById(id);
+  if(!card)return;
+  const has=!!String(value||'').trim();
+  const open=!has||_tmOpen.has(id);
+  let bar=card.querySelector(':scope > .tm-fold');
+  if(!bar){
+    bar=document.createElement('button');
+    bar.type='button';
+    bar.className='tm-fold';
+    bar.addEventListener('click',()=>_tmFoldToggle(id));
+    card.insertBefore(bar,card.firstChild);
+  }
+  bar.innerHTML='<span class="tm-fold-l">'+escHtml(label)+'</span>'+
+    '<span class="tm-fold-v">'+escHtml(value||'')+'</span>'+
+    '<span class="tm-fold-c"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" '+
+      'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="m9 18 6-6-6-6"></path></svg></span>';
+  bar.setAttribute('aria-label',(open?'Hide ':'Edit ')+label);
+  card.setAttribute('data-fold',open?'0':'1');
+}
+
+// What each one says when it is folded. Only ever what he actually put in it.
+function _tmFoldAll(){
+  const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const rate=Number(_tmRatePerMan)||0;
+  const crew=Math.max(1,Number(_tmCrewCount)||1);
+  // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside
+  // this card, so folding it hid the most consequential fact about the number
+  // on the line above: "$95/hr each" says nothing about whether the customer
+  // ever sees $95, and if anything implies they do.
+  //
+  // It is worse than a blank, because the preference is STICKY (S.tmHideRate,
+  // so it follows him to the tablet). A man who turned it on months ago and
+  // forgot would fold this card on every job and never be told again.
+  //
+  // Only the exceptional state is marked. Printing the rate is what a T&M
+  // contract normally does, and a badge on every proposal saying so is the
+  // noise this page has spent all day shedding.
+  //
+  // NOT FOLDED ANY MORE (2026-09-23). The rate and the most it can cost are one
+  // iOS row each now, with the figure typed straight into the row, so a
+  // summary line that has to be tapped open to reach a one-line field was one
+  // tap and one layer for nothing. "Keep my rate off the proposal" is a switch
+  // on the row directly under the rate, so whether they see it is always in
+  // view. Materials and Not included are multi-row blocks and still fold.
+  ['tm-blk-rate','tm-blk-nte'].forEach(id=>{
+    const c=document.getElementById(id);if(!c)return;
+    c.removeAttribute('data-fold');c.querySelector(':scope > .tm-fold')?.remove();
+  });
+  // The same rows _tmRenderMatList draws, counted the same way: everything in
+  // _geiLines that is not the labor line.
+  const mats=(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))
+    ?_geiLines.filter(l=>l&&!l._tmLabor).length:0;
+  _tmFold('tm-blk-mat','Materials',mats?(mats+' categor'+(mats>1?'ies':'y')):'');
+  const ex=(typeof _geiExclusions!=='undefined'&&Array.isArray(_geiExclusions))?_geiExclusions.length:0;
+  _tmFold('tm-blk-excl','Not included',ex?(ex+' item'+(ex>1?'s':'')):'');
+}
 
 // Everything the layers show, hide and say, in one place, so a flip and a
 // resume paint the same page.
@@ -3653,20 +5397,262 @@ function _tmApplyLayers(){
   show('tm-stat-days-tile',_tmLayers.has('est'));
   const grid=document.getElementById('tm-stat-grid');
   if(grid)grid.style.gridTemplateColumns=_tmLayers.has('est')?'repeat(3,1fr)':'1fr';
+  // Without an estimate this grid is one tile saying the day rate, and the rail
+  // further down says the day rate. One of them had to go, and the rail is the
+  // one standing next to the send button.
+  // Never shown now (2026-09-23). With an estimate on it was three tall tiles,
+  // day rate, labor total and hours, restating the estimate the rail states a
+  // screen further down next to Send. The working is still on the rail's rows.
+  show('tm-stat-grid',false);
   // The rail carries only what he added.
   const anyMoney=['rate','est','mat','dep','cap'].some(k=>_tmLayers.has(k));
   show('tm-rail-money',anyMoney);
   show('tm-rail-total-wrap',_tmLayers.has('est'));
-  show('tm-rail-rate-wrap',_tmRateOnly);
-  show('tm-deposit-wrap',_tmLayers.has('dep')&&_tmLayers.has('est'));
-  show('tm-deposit-flat-wrap',_tmLayers.has('dep')&&!_tmLayers.has('est'));
-  show('tm-cad-head',_tmLayers.has('rate'));
-  show('tm-cad-row',_tmLayers.has('rate'));
+  // Never shown now. It restated the rate the rate card's own summary line
+  // already states ("$45/hr each"), in 34px, a screen further down: the same
+  // number twice is the kind of thing that made the page read as a form.
+  show('tm-rail-rate-wrap',false);
+  // Never the percent field on T&M (2026-09-23): the deposit is "Up front"
+  // in How it bills, a flat figure or none (_tmDepositState).
+  show('tm-deposit-wrap',false);
+  _tmRenderBillTerms();
+  // How often it bills is a real choice and almost nobody changes it from
+  // weekly, so it lives under More options with the other rarely-touched ones.
+  // Drawn as a segmented control inside More options now (2026-09-23).
+  show('tm-cad-head',false);
+  show('tm-cad-row',false);
+  // The toggle lives IN the rate block, next to the number it is about, rather
+  // than in a settings screen he would have to know exists.
+  const hr=document.getElementById('tm-hide-rate-wrap');
+  if(hr){
+    const can=_tmCanHideRate();
+    if(!can)_tmHideRate=false;
+    hr.innerHTML=can
+      // SAID THE WAY THE SWITCH MOVES (2026-09-23). "Keep my rate OFF the
+      // proposal" put a switch that was ON beside a rate that was OFF, and the
+      // owner: "even I don't know what side keeps it on or off." Now blue
+      // means the rate is in the contract, the way every iPhone switch means
+      // yes, and the line under it says in words where the customer reads it.
+      ? '<label class="ios-row" style="cursor:pointer">'+
+          '<span class="ios-lbl">Rate in the contract<small id="tm-show-rate-sub"></small></span>'+
+          '<input type="checkbox" class="ios-switch" id="tm-show-rate" '+(_tmHideRate?'':'checked')+
+          ' onchange="_tmSetHideRate(!this.checked)"></label>'
+      // Named, not abbreviated: a man reading why he cannot turn something off
+      // is owed the state's name and the statute behind it, not a two-letter
+      // code he has to decode to know which law is talking to him.
+      // Named in full, with the statute: a man told he cannot turn something
+      // off is owed which law is saying so.
+      : '<div class="ios-row"><span class="ios-lbl">Rate in the contract<small>'+
+          escHtml(_tmStateName(rule.state))+' requires it on a time and materials contract. '+escHtml(rule.statute||'')+'</small></span>'+
+          '<input type="checkbox" class="ios-switch" checked disabled aria-label="Rate shown, required"></div>';
+    // The line under the switch is written by _tmRenderBillTerms, which ran
+    // before this row was redrawn; fill it again now it exists.
+    _tmRenderBillTerms();
+  }
+  // ONE NAME FOR IT, EVERYWHERE: "The most it can cost". The rail said
+  // "ceiling", the chip said "Not to exceed", this card said "Guaranteed
+  // maximum price" in cap states, and a man reading three names reasonably
+  // assumes three things. The sub-line says whether it is his choice.
   const nteH=document.getElementById('tm-nte-head');
-  if(nteH)nteH.textContent=locked.has('cap')
-    ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
-    :(_tmRateOnly?'The most it can cost them (the only number they see)':'The most it can cost them (optional)');
+  if(nteH)nteH.textContent='The most it can cost';
+  const nteI=document.getElementById('tm-i-nte');
+  if(nteI)nteI.placeholder=rule.capOverEst?'Fills in':locked.has('cap')?'Required':'Optional';
+  const nteS=document.getElementById('tm-nte-sub');
+  // The Billing group's footnote now; whether it is optional is on the row.
+  if(nteS)nteS.textContent=!_tmLayers.has('cap')?''
+    :rule.capOverEst
+    ?_tmStateName(rule.state)+' sets the most it can cost: your estimate plus ten percent. It fills in on its own.'
+    // Owner, 2026-09-23: "changes added by clients can be covered or a rush
+    // request to get the job done equals more men on it therefore increased
+    // cost for T&M". Three reasons, each only by a change order they sign.
+    :'Past the most it can cost: hidden damage, work they add, or a rush that needs more crew. Each is a change order they sign.';
+  // Last, so every figure it reads is the one this pass just settled.
+  _tmFoldAll();
   _tmRenderAddRow(rule,locked);
+  _tmTidyRail();
+  _tmFitInputs();
+}
+// NO RULE BETWEEN NOTHING AND NOTHING. The rail's dividers are fixed in the
+// markup and the blocks between them come and go with the layers, so a rate
+// sheet with no deposit drew three grey lines stacked on top of each other
+// above Send, which is exactly what an unfinished page looks like. A divider
+// shows only with something visible on BOTH sides of it; a rail with nothing
+// in it at all is hidden, leaving the two buttons.
+// "$ ⟶ 45" read as two things; "$45" is one. An iOS value is flush right with
+// its unit against it, so each money box is exactly as wide as what is in it.
+function _tmFitInputs(){
+  ['tm-i-rate','tm-i-nte','tm-i-days'].forEach(id=>{
+    const e=document.getElementById(id);if(!e)return;
+    const n=Math.max(String(e.value||'').length,e.value?1:String(e.placeholder||'').length);
+    e.style.width=(n+0.6)+'ch';
+  });
+}
+function _tmTidyRail(){
+  const box=document.getElementById('tm-rail-money');if(!box)return;
+  // Re-open it before measuring: an earlier pass may have hidden it empty, and
+  // the figure he just typed has to be able to bring it back.
+  if(['rate','est','mat','dep','cap'].some(k=>_tmLayers.has(k)))box.style.display='';
+  const kids=[...box.children];
+  const seen=el=>el.style.display!=='none'&&el.offsetHeight>0;
+  kids.forEach(el=>{if(el.classList.contains('summary-divider'))el.style.display='none';});
+  const content=kids.filter(el=>!el.classList.contains('summary-divider')&&seen(el));
+  if(!content.length&&box.style.display!=='none'){box.style.display='none';return;}
+  kids.forEach((el,i)=>{
+    if(!el.classList.contains('summary-divider'))return;
+    const before=kids.slice(0,i).some(k=>!k.classList.contains('summary-divider')&&seen(k));
+    const after=kids.slice(i+1).some(k=>!k.classList.contains('summary-divider')&&seen(k));
+    el.style.display=(before&&after)?'':'none';
+  });
+}
+
+// ── WHAT THIS PROPOSAL IS, RIGHT NOW, IN ONE SENTENCE ───────────────────────
+//
+// Owner, 2026-09-22, on this screen: "I'm honestly lost on what I even need to
+// do ... the flow just seems broken, doesn't seem natural."
+//
+// The page was a row of six ＋ chips with nothing above them. It knew things it
+// never said: that the scope alone is already a complete proposal, that a rate
+// with no day count prints no total, that Estimate needs Rate. A man looking at
+// six equal buttons has no way to know which of those are true, so he cannot
+// tell whether he is finished.
+//
+// So the row says what he has. Not what he could add, which is what the chips
+// already show, but what he would be SENDING if he stopped now. That is the
+// question somebody standing on a driveway is actually asking.
+function _tmShape(){
+  const L=_tmLayers;
+  // THE NUMBER, NOT THE SWITCH. The ceiling box is on the page from the start
+  // now, empty (2026-09-23), so "the cap layer is on" no longer means there is
+  // a ceiling. Only a figure in the box does, and only a figure goes on the
+  // contract, so the sentence reads the same thing the contract does.
+  const cap=(L.has('cap')&&typeof _tmCapVal==='function')?_tmCapVal():0;
+  const capWords=cap>0?('never more than $'+cap.toLocaleString('en-US')):'';
+  // The figure, not the switch: an Up front row set to Amount and left empty
+  // asks for nothing (_tmDepositState).
+  const depAmt=(typeof _tmDeposit==='function')?_tmDeposit():0;
+  const depWords=depAmt>0?('$'+depAmt.toLocaleString('en-US')+' up front'):'';
+  if(!L.has('rate')&&!L.has('mat')&&!(cap>0)){
+    // The one nobody believes is finished. It usually is.
+    return {head:'Scope only, no price',
+      body:'A complete proposal, and in most states a legal one. Without a rate, Tim cannot turn the clocked hours into an invoice.'};
+  }
+  if(L.has('rate')&&!L.has('est')){
+    // SHORT, and in the words on the rest of the page. "Cap" and "ceiling"
+    // were two more names for the thing the page calls the most it can cost.
+    return {head:'A rate, no total',
+      body:cap>0
+        ? 'Paid by the hour, and '+capWords+(depWords?', with '+depWords:'')+'.'
+        : 'Paid by the hour'+(depWords?', with '+depWords:'')+'. If they want a number, put in the most it can cost.'};
+  }
+  if(L.has('rate')&&L.has('est')){
+    return {head:'A rate and a total',
+      body:'The rate, the days, and what that comes to'+
+        (L.has('mat')?', plus materials':'')+
+        (depWords?', with '+depWords:'')+
+        (cap>0?', and '+capWords:'')+'.'};
+  }
+  if(L.has('mat')&&!L.has('rate')){
+    return {head:'Materials, no labor rate',
+      body:'What the materials cost, and nothing about your time.'};
+  }
+  return {head:'The most it can cost, nothing else',
+    body:'A limit on the bill, and no working behind it.'};
+}
+
+// What is actually in the cap field right now, as opposed to whether the layer
+// is switched on. A ceiling nobody typed a number into is not a ceiling.
+function _tmCapVal(){
+  try{return (typeof _moneyVal==='function')?(Number(_moneyVal('tm-i-nte'))||0):0;}catch(_e){return 0;}
+}
+// Has he said what the work is? Any of the ways this app lets him say it, plus
+// the deliberate "no scope" answer, which is an answer.
+// _geiJobScope is NOT one of those ways and must never be read here. It is the
+// tax classification, 'repair' or 'improvement', and it is initialised to
+// 'repair' on every estimate this app has ever opened. Reading it meant step
+// one reported "Written above" on a brand new T&M with nothing written, the
+// rail moved its next-move marker down to the rate, and the one screen whose
+// whole job is to say what is still missing was telling him the customer-facing
+// half of the document was already done. Found by counting the taps in a
+// 30-second build, 2026-09-22.
+function _tmScopeDone(){
+  try{
+    if(typeof _geiScopeNoScope!=='undefined'&&_geiScopeNoScope)return true;
+    if(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length)return true;
+    if(typeof _geiLines!=='undefined'&&(_geiLines||[]).some(l=>l&&!l._tmLabor))return true;
+  }catch(_e){}
+  return false;
+}
+
+// ── WHAT TO DO NEXT ─────────────────────────────────────────────────────────
+//
+// Owner, 2026-09-22: "need clear action item steps that look clean and
+// understand what's going on", then "it has to be short and fucking beautiful."
+//
+// Those two pull against each other only if every step talks. A step he has
+// already done does not need persuading; it needs a tick and its figure, on one
+// line, like a receipt. Only the step he has NOT done has anything to argue,
+// and it is the only one that gets a card, a sentence and a button. Everything
+// after it stays collapsed so he can still see what is coming.
+//
+// So each step carries two things: `value`, the one short fact a finished line
+// shows, and `why`, the sentence that only ever appears on the step that is
+// actually next. That split is what makes the panel a third of its old height
+// without losing a word he needs at the moment he needs it.
+//
+// Pure: it reads state and returns the list. Nothing here touches the DOM, so
+// a test can ask what the screen is telling him without rendering it.
+// "A rate, no total" reads as a fragment after "They get". Only the first
+// letter moves, because the rest may carry a figure or a proper noun.
+function _tmLower(t){
+  const v=String(t||'');
+  return v?(v.charAt(0).toLowerCase()+v.slice(1)):v;
+}
+function _tmSteps(){
+  const L=_tmLayers,locked=_tmLockedLayers();
+  const rateOn=L.has('rate')&&Number(_tmRatePerMan)>0;
+  const capOn=L.has('cap')&&_tmCapVal()>0;
+  const capLocked=locked.has('cap');
+  const rule=_tmStateRule();
+  const sname=_tmStateName(rule.state)||'Your state';
+  const sh=_tmShape();
+  const out=[
+    {k:'scope',label:'The work',done:_tmScopeDone(),
+      value:_tmScopeDone()?'Written above':'Nothing yet',
+      why:'Say what you will do, up at the top. That part is the proposal.'},
+    {k:'rate',label:'Your rate',done:rateOn,act:rateOn?null:'rate',req:locked.has('rate'),
+      value:rateOn?('$'+Number(_tmRatePerMan).toLocaleString()+'/hr each'):'Not set',
+      why:locked.has('rate')
+        ?sname+' requires your hourly rate on a time and materials contract.'
+        :'The one term a time and materials contract actually has, and what Tim invoices the clocked hours at.'},
+  ];
+  // Pennsylvania, and only Pennsylvania, names an estimate. Everywhere else it
+  // stays a switch he may never touch, which is why it is not a step.
+  if(locked.has('est')){
+    const estOn=L.has('est')&&Number(_tmEstHours)>0;
+    out.push({k:'est',label:'How many days',done:estOn,act:estOn?null:'est',req:true,
+      value:estOn?(Math.round(_tmEstHours/8)+' day'+(_tmEstHours>8?'s':'')):'Required here',
+      why:sname+' requires an estimate on a time and materials contract.'});
+  }
+  // The reason this row got reordered. Whether it is the NEXT thing is decided
+  // below, not here: a ceiling is not the next move while there is no rate.
+  out.push({k:'cap',label:'The most it can cost',done:capOn,act:capOn||rule.capOverEst?null:'cap',req:capLocked,
+    value:capOn?('$'+_tmCapVal().toLocaleString()):(capLocked?'Required here':'None'),
+    why:rule.capOverEst
+      ?sname+' sets this for you: your estimate plus ten percent. It fills in on its own.'
+      :capLocked
+      ?sname+' requires the most this can cost, in dollars.'
+      // One line on an iPhone row (2026-09-23): the same point, a third the words.
+      :'The number they really want. A limit, not a price.'});
+  // Not a step he can tick. It is the read-back of what the others add up to,
+  // which is why it sits under a rule rather than in the list.
+  out.push({k:'send',label:'Send it',done:false,value:sh.head,why:sh.body});
+  out.forEach((s,i)=>{s.n=i+1;});
+  // EXACTLY ONE EXPANDED STEP. The first thing he has not done, whether or not
+  // there is a button for it: an unwritten scope has no Add, but it is still
+  // the thing standing between him and a proposal, so it still does the talking.
+  const next=out.filter(s=>!s.done&&s.k!=='send')[0];
+  if(next)next.rec=true;
+  return out;
 }
 
 // The row of chips. An added layer reads as added and can be tapped back off,
@@ -3675,33 +5661,407 @@ function _tmRenderAddRow(rule,locked){
   const row=document.getElementById('tm-add-row');
   if(!row)return;
   rule=rule||_tmStateRule();locked=locked||_tmLockedLayers();
-  const chips=TM_LAYERS.map(l=>{
-    const on=_tmLayers.has(l.k),lock=locked.has(l.k);
-    const bg=lock?'var(--amber-lt,#FEF3C7)':on?'var(--ink)':'var(--bg2)';
-    const fg=lock?'#92400E':on?'var(--text-cream,#fff)':'var(--text2)';
-    const bd=lock?'1.5px solid #D97706':on?'1.5px solid var(--ink)':'1.5px solid var(--border2)';
-    const mark=lock?'🔒':on?'✓':'＋';
-    return '<button type="button" onclick="_tmToggleLayer(\''+l.k+'\')"'+
-      (lock?' title="'+escHtml(rule.note||'')+'"':'')+
-      ' style="padding:8px 13px;border-radius:var(--r-pill,999px);border:'+bd+';background:'+bg+';color:'+fg+
-      ';font-size:13px;font-weight:700;cursor:'+(lock?'default':'pointer')+';font-family:inherit">'+
-      mark+' '+escHtml(l.label)+'</button>';
-  }).join('');
-  // A state that will not take a T&M contract at all has to say so where he is
-  // about to write one, not at the send button after he has done the work.
-  const blocked=rule.rule==='block'
-    ?'<div class="tip" style="width:100%;margin-top:4px;background:#FEE8E8;border-color:#E5B5B5">'+
-      '<span data-ico="⚠️" data-ico-size="18"></span><div><b>'+escHtml(rule.state)+
-      ' does not allow a time and materials home improvement contract.</b> '+escHtml(rule.note)+
-      ' Use a fixed-price proposal for this address.</div></div>'
+  // ── iOS (2026-09-23) ─────────────────────────────────────────────────────
+  // What was a card with a numbered badge, a coloured tag, a paragraph and a
+  // pill is now ONE ROW in its own group: a dot, the next thing, why, and Add.
+  // Under it, as the group's footnote, the plain-English read-back of what the
+  // customer will get, and the state's law where it has any. When there is
+  // nothing left to do the row says so, which is the moment a three-year-old
+  // needs told most.
+  const sname=_tmStateName(rule.state);
+  if(rule.rule==='block'){
+    row.innerHTML='<div class="ios-sec"><div class="ios-group">'+
+      '<div class="ios-row"><span class="ios-lbl"><b>'+escHtml(sname)+' does not allow a time and materials contract on a home.</b>'+
+        '<small>Build this one as a fixed price. '+escHtml(rule.statute||'')+'</small></span></div></div>'+
+      '<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-fill" onclick="_tmToFixedPrice()">Make it a fixed price</button></div></div>';
+    _tmRenderMore(rule,locked);
+    return;
+  }
+  const law=rule.rule==='cap'
+    ?sname+' law requires '+(rule.capOverEst?'your rate, an estimate, and a ceiling of the estimate plus ten percent':'your rate and the most it can cost')+
+      ' on this contract. '+(rule.statute||'')
+    :rule.rule==='warn'?(rule.note||''):'';
+  const all=_tmSteps();
+  const next=all.find(s=>s.rec);
+  const send=all.find(s=>s.k==='send');
+  // THE NEXT THING IS MARKED ON THE FIELD ITSELF, not in a row of its own
+  // above it. A separate "The most it can cost · NEXT · Add" row sat directly
+  // over the "The most it can cost" field: the same thing, twice, one under
+  // the other. Now the field carries the Next tag and the reason, and the
+  // scope needs no marker at all, because with nothing written the box to
+  // write it in is the first thing on the screen.
+  const fields={rate:['tm-lbl-rate','Hourly rate'],est:['tm-lbl-days','Days, estimated'],cap:['tm-nte-head','The most it can cost']};
+  // ONLY THE LAW MARKS A FIELD (2026-09-23). The bar at the bottom names the
+  // next thing and takes him to it, so a "Next" tag and a sentence on the
+  // field as well was the same instruction twice. What a statute requires is
+  // still marked where it is typed, in red, with the reason.
+  Object.keys(fields).forEach(k=>{
+    const [id,txt]=fields[k];const el=document.getElementById(id);if(!el)return;
+    const on=next&&next.k===k&&next.req;
+    el.innerHTML=escHtml(txt)+(on
+      ?' <span class="ios-tag req">Required here</span><small>'+escHtml(next.why)+'</small>'
+      :'');
+  });
+  // A rate no tradesman charges is a slipped thumb, not a price. Said on the
+  // row, never blocking: a specialist may mean it (2026-09-23).
+  {const r=Number(_tmRatePerMan)||0,el=document.getElementById('tm-lbl-rate');
+   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">$'+r.toLocaleString('en-US')+' an hour. Check it.</small>');}
+  // The Billing group's footnote: what the customer will get, in plain words,
+  // and what happens at the most it can cost when there is one.
+  const foot=document.getElementById('tm-nte-sub');
+  if(foot){
+    const capNote=!_tmLayers.has('cap')?''
+      :rule.capOverEst?' '+sname+' sets the most it can cost: your estimate plus ten percent. It fills in on its own.'
+      :(_tmCapVal()>0?' Hidden damage past that is a change order they sign.':'');
+    // What the customer will get, in one sentence, under the fields that
+    // decide it. (A list of "What they get" repeated the job and the rate a
+    // thumb's width above it, and came out, 2026-09-23.)
+    foot.innerHTML=send?('<b>They get '+escHtml(_tmLower(send.value))+'.</b> '+escHtml(send.why)+escHtml(capNote)):escHtml(capNote.trim());
+  }
+  // UNLESS THE FIELD IS NOT ON THE PAGE. With its switch off (a scope-only or
+  // materials-only proposal) the rate row is hidden, and a Next tag on a hidden
+  // row marks nothing. Then, and only then, the step gets a row of its own
+  // with the Add that switches the field on and lands him in it.
+  const onPage=next&&(next.k==='est'?_tmLayers.has('est'):next.k==='scope'?true:_tmLayers.has(next.k));
+  // And only while it stands in his way: once step 2 is done, an optional
+  // part he has switched off is not the next thing, it is a choice he made.
+  // The bar says Send, and a row saying "Next" under it contradicted it.
+  // The one exception is the rate: a T&M proposal with materials and no
+  // labor rate is allowed (scope-only and materials-only are real shapes),
+  // but the rate is still offered, as an Add without a "Next" on it.
+  const inWay=next&&(next.req||!_tmStepsState(all).two);
+  const orphan=next&&!onPage&&(inWay||next.k==='rate')
+    ?'<div class="ios-sec"><div class="ios-group"><div class="ios-row'+(next.req?' law':'')+'"><i class="ios-dot"></i>'+
+        '<span class="ios-lbl">'+escHtml(next.label)+(inWay?' <span class="ios-tag">'+(next.req?'Required here':'Next')+'</span>':'')+
+        '<small>'+escHtml(next.why)+'</small></span>'+
+        (next.act?'<button type="button" class="ios-textbtn" onclick="_tmStepAct(\''+next.act+'\')">Add</button>':'')+
+      '</div></div></div>'
     :'';
-  const forced=rule.rule==='cap'
-    ?'<div style="width:100%;font-size:11px;color:var(--text3);margin-top:2px">'+
-      escHtml(rule.state)+' requires a total, so the cap is part of this one. '+escHtml(rule.statute)+'</div>'
-    :rule.rule==='warn'
-    ?'<div style="width:100%;font-size:11px;color:#92400E;margin-top:2px">'+escHtml(rule.note)+'</div>'
+  // "Ready to send" is step 3's heading now, not a row of its own.
+  row.innerHTML=orphan+
+    (law?'<div class="ios-foot law" style="margin:-4px 0 14px;padding-top:0">'+escHtml(law)+'</div>':'');
+  _tmRenderSteps(all,rule);
+  _tmRenderMore(rule,locked);
+}
+// ── MORE OPTIONS ────────────────────────────────────────────────────────────
+//
+// Owner, 2026-09-23: "so easy my 3 year old could build the estimate but still
+// look damn good and create a professional bid." Everything a T&M proposal can
+// carry beyond the scope, the rate and the ceiling lives here, shut by default,
+// with a one-line summary of what is switched on so nothing is hidden by
+// surprise. What a statute requires is NEVER in here: it is on the page, locked.
+let _tmMoreOpen=false;
+Object.defineProperty(window,'_tmMoreOpen',{get:()=>_tmMoreOpen,set:v=>{_tmMoreOpen=!!v;},configurable:true});
+function _tmToggleMore(){_tmMoreOpen=!_tmMoreOpen;_tmApplyLayers();}
+// ── THE THREE STEPS ─────────────────────────────────────────────────────────
+//
+// 1 The job, 2 How it bills, 3 Send it. Each heading carries a number that
+// turns into a green check when that step is finished, and one line of where
+// it stands, so the page answers "where am I" at a glance, and Tim can talk
+// about "step 2" and mean one thing (data-tim-step on each heading). Step 3
+// reads back what the customer will get as facts, the list Tim reads aloud.
+const _TM_TICK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function _tmStepsState(all){
+  all=all||_tmSteps();
+  const L=_tmLayers;
+  const one=_tmScopeDone();
+  const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
+  const rate=Number(_tmRatePerMan)||0, cap=_tmCapVal();
+  const rateOk=!L.has('rate')||rate>0;
+  const estOk=!L.has('est')||Number(_tmEstHours)>0;
+  const two=rateOk&&estOk&&!legal.length;
+  const chips=(_geiScopeChips||[]).length;
+  // Nothing beside the heading until there is something to count: the box
+  // under it already says what to do, and saying it twice is what made the
+  // page read as one long run of words (owner, 2026-09-23).
+  const s1=one?(chips?(chips+' step'+(chips>1?'s':'')):'Done'):'';
+  const need=legal.length?legal[0].fix.replace(/\.$/,'')
+    :!rateOk?'Put in your rate':!estOk?'Say how many days':'';
+  const s2=two
+    ?(L.has('rate')?('$'+rate.toLocaleString('en-US')+'/hr'+(cap>0?(' · up to $'+cap.toLocaleString('en-US')):'')):(cap>0?('Up to $'+cap.toLocaleString('en-US')):'No price, scope only'))
+    :need;
+  return {one,two,s1,s2};
+}
+function _tmRenderSteps(all,rule){
+  const st=_tmStepsState(all);
+  rule=rule||_tmStateRule();
+  const blocked=rule.rule==='block';
+  const head=(id,n,title,state,status)=>{
+    const el=document.getElementById(id);if(!el)return;
+    el.setAttribute('data-state',state);
+    el.innerHTML='<span class="n">'+(state==='done'?_TM_TICK:n)+'</span>'+
+      '<span class="t">'+escHtml(title)+'</span>'+(status?'<span class="s">'+escHtml(status)+'</span>':'');
+  };
+  const cur=!st.one?1:!st.two?2:3;
+  head('tm-step-1',1,'The job',st.one?'done':'now','');
+  // Edit sits where iOS puts it, on the right of the title of the list it
+  // edits. A line of its own under "The job" was a row for one word.
+  if((_geiScopeChips||[]).length){
+    const h=document.getElementById('tm-step-1');
+    if(h)h.insertAdjacentHTML('beforeend','<button type="button" class="s" id="tm-scope-edit" onclick="_tmScopeEdit()">'+(_tmScopeEditing?'Done':'Edit')+'</button>');
+  }
+  // Not ticked until he has looked at the numbers: a pre-filled rate is not a
+  // checked one.
+  const chk=!_tmLayers.has('rate')||_tmRateChecked();
+  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  _tmRenderDock(st,rule,all);
+}
+// ── THE BAR ─────────────────────────────────────────────────────────────────
+//
+// Step 3 is not a section, it is the bar pinned to the bottom of the screen:
+// Tim, and ONE button that is always the next thing. "Build the steps" until
+// there is a job, then the missing figure ("Add your rate"), then Send. The
+// Send button used to be 2,400px down the page under a read-back of what was
+// already on it (owner, 2026-09-23: "does it look like something a pro UX
+// designer would ship? I don't think so"). data-tim-step="3" so Tim's "step 3"
+// is still one place.
+function _tmDockNext(st,rule,all){
+  if(rule.rule==='block')return {label:'Make it a fixed price',fn:'_tmToFixedPrice()'};
+  if(!st.one)return {label:'Build the steps',fn:'_tmDockBuild()'};
+  if(!st.two){
+    const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
+    const n=(all||_tmSteps()).find(s=>s.rec&&s.k!=='scope');
+    // The law first: what it asks for is the next thing, whatever the steps say.
+    const k=legal.length?legal[0].k:(n?n.k:'rate');
+    const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost',dep:'Lower the deposit'}[k]||'Finish How it bills';
+    return {label:say,fn:'_tmStepAct(\''+k+'\')'};
+  }
+  // HELD BY THE HAND TO SEND (owner, 2026-09-26: "even I would race to get
+  // the proposal done, there was a ton of shit I would've missed if my hand
+  // wasn't held, rate, how much my hourly number was, how many people, Tim's
+  // recommendations"). His rate and one person are filled in for him, so the
+  // bar went straight from Build the steps to Send it and none of them was
+  // ever looked at. Now the bar walks him through each before Send: Tim's
+  // questions (answered or turned down, one tap either way), then the rate and
+  // the people, confirmed in one tap that says the numbers out loud.
+  // Steps he left out are things Tim caught; the permit and the unit are
+  // questions only he can answer. The bar says which it is.
+  // Shared with Build Your Own (_geiTimStep, _geiNumsStep below).
+  const tim=_geiTimStep(_geiScopeMissed);
+  if(tim)return tim;
+  const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
+  return _geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
+    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+}
+// ── THE WALK TO SEND, SHARED BY T&M AND BUILD YOUR OWN (2026-09-26) ──────
+//
+// Owner: "BYO should carry over as much as possible with shared code". Both
+// bars run the same two steps before Send, from the same functions:
+//  1. What Tim caught, then Tim's questions (the permit, the unit), each
+//     answered or turned down on his card.
+//  2. The figures filled in for him, looked at once: T&M's rate and people,
+//     BYO's total and deposit. The first tap takes him there and lights them;
+//     the bar then says the numbers out loud as a Yes.
+// Confirmed once per proposal, remembered by bid; changing a figure counts.
+function _geiTimStep(miss){
+  miss=miss||[];
+  const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
+  return null;
+}
+let _geiNumsOk={},_geiChecking=false;
+function _geiNumsChecked(){
+  const k=String(_geiEditBidId||'');
+  if(_geiNumsOk[k])return true;
+  try{return localStorage.getItem('td_nums_ok_'+k)==='1';}catch(_e){return false;}
+}
+// Changing a figure is looking at it: no Yes needed after. No repaint here,
+// the input's own handler repaints.
+function _geiNumsTouched(){
+  const k=String(_geiEditBidId||'');
+  _geiNumsOk[k]=true;_geiChecking=false;
+  try{localStorage.setItem('td_nums_ok_'+k,'1');}catch(_e){}
+}
+function _geiNumsMark(){
+  _geiNumsTouched();
+  document.querySelectorAll('.tm-guide').forEach(e=>e.classList.remove('tm-guide'));
+  _geiRepaint();
+}
+function _geiNumsStep(o){
+  if(!o.has||_geiNumsChecked())return null;
+  if(_geiChecking)return {label:o.yes,fn:'_geiNumsMark()'};
+  return {label:o.check,fn:'_geiNumsGo(\''+o.target+'\')'};
+}
+function _geiNumsGo(id){
+  _geiChecking=true;
+  _geiGuideTo(document.getElementById(id));
+  _geiRepaint();
+}
+function _geiRepaint(){
+  if(_geiIsTM){if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+  else if(typeof _byoRenderSteps==='function')_byoRenderSteps();
+}
+// Scroll to the thing and light it, so he sees WHAT he is saying yes to.
+function _geiGuideTo(el){
+  if(!el)return;
+  try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
+  el.classList.remove('tm-guide');void el.offsetWidth;el.classList.add('tm-guide');
+}
+function _geiGoTimAsks(){
+  const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
+  _geiGuideTo(card);
+  // A question with a box (the unit) gets the cursor, so he can just type.
+  // Look the box up when the timer fires: the card can re-render in between,
+  // and focusing the old, detached one lands the cursor nowhere.
+  const sel=(_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim .ios-ask-in';
+  setTimeout(()=>{const f=document.querySelector(sel);if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+}
+// The T&M names, kept for Tim and the tests that call them.
+function _tmRateChecked(){return _geiNumsChecked();}
+function _tmMarkRateChecked(){_geiNumsMark();}
+function _tmTouchedRate(){_geiNumsTouched();}
+function _tmCheckRate(){_geiNumsGo('tm-blk-rate');}
+function _tmGoTimAsks(){_geiGoTimAsks();}
+function _tmDockBuild(){
+  const el=document.getElementById('gei-scope-say');
+  if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
+  // Nothing in the box: say so, and put him in it. A button that does
+  // nothing visible gets tapped five more times and then thrown.
+  if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
+  if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
+}
+// A BUTTON THAT CHANGES UNDER HIS THUMB WAITS A MOMENT. Earl tapped Build the
+// steps twice because the first one "didn't take". The first tap built them,
+// his rate was already in, the same button became Send it, and the second tap
+// sent the proposal to his customer (2026-09-23). When the bar's button comes
+// to mean something new, taps are ignored for 700ms: long enough to swallow a
+// double tap, short enough that nobody waiting on it notices.
+// Only a change the bar's own tap caused arms it: opening the page, or typing
+// the rate in, is not a thumb resting on the button.
+let _tmDockLabel='',_tmDockSince=0,_tmDockTapAt=0;
+function _tmDockReady(){
+  if(Date.now()-_tmDockSince<700)return false;
+  _tmDockTapAt=Date.now();
+  return true;
+}
+function _tmRenderDock(st,rule,all){
+  const d=document.getElementById('tm-dock');if(!d)return;
+  st=st||_tmStepsState(all);rule=rule||_tmStateRule();
+  const nx=_tmDockNext(st,rule,all);
+  const label=nx?nx.label:'send';
+  if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
+  d.setAttribute('data-state',nx?'todo':'now');
+  const tim=(typeof openTim==='function')
+    ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
+  d.innerHTML=tim+(nx
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
+    :'<button type="button" class="ios-btn ios-btn-tint" id="tm-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
+     '<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
+}
+// For Tim: "step 2" is one place on the page. Scrolls there and says whether
+// that step is done, so a nudge or a spoken answer can point at it.
+function _tmGoStep(n){
+  const el=document.querySelector('#gei-tm-page [data-tim-step="'+Number(n)+'"]');
+  if(!el)return null;
+  try{el.scrollIntoView({block:'start',behavior:'smooth'});}catch(_e){}
+  return el.getAttribute('data-state');
+}
+function _tmRenderMore(rule,locked){
+  const w=document.getElementById('tm-more-row');if(!w)return;
+  rule=rule||_tmStateRule();locked=locked||_tmLockedLayers();
+  if(rule.rule==='block'){w.innerHTML='';return;}
+  // Materials and Estimate are not offered on a new T&M (2026-09-23): the
+  // materials TERM is a row of its own, and an estimate turns T&M back into a
+  // price the customer holds him to. Pennsylvania's estimate is on the page,
+  // required. A draft that already has either keeps its switch to turn it off.
+  // Up front is a row of its own too.
+  const opts=TM_LAYERS.filter(l=>!locked.has(l.k)&&l.k!=='dep'&&((l.k!=='est'&&l.k!=='mat')||_tmLayers.has(l.k)));
+  const onNames=opts.filter(l=>_tmLayers.has(l.k)&&l.k!=='rate'&&l.k!=='cap').map(l=>l.label);
+  const offer=opts.filter(l=>l.k!=='rate'&&l.k!=='cap');
+  // iOS (2026-09-23): a disclosure row, and when open, a SWITCH per option,
+  // which is what a thing that is either on or off looks like on an iPhone.
+  // The chips they replace were buttons that looked like tags.
+  const say={rate:'Your hourly rate on the contract',cap:'A limit on the bill',est:'Days, and what that comes to',
+    mat:'Materials, listed at cost',dep:'Money up front',excl:'What this job does not cover'};
+  const head='<button type="button" class="ios-row" id="tm-more-btn" onclick="_tmToggleMore()" aria-expanded="'+(_tmMoreOpen?'true':'false')+'">'+
+      '<span class="ios-lbl">More options<small>'+
+        (onNames.length?escHtml(onNames.join(', '))+' on'
+          // Named from what is actually in here: in Pennsylvania the estimate is
+          // on the page, required, so it is not offered as an option.
+          :escHtml((offer.length?offer:opts).map((l,i)=>i?l.label.toLowerCase():l.label).join(', ')))+
+      '</small></span>'+
+      '<span class="ios-chev" style="transform:rotate('+(_tmMoreOpen?'90':'0')+'deg);transition:transform .2s ease">\u203a</span>'+
+    '</button>';
+  if(!_tmMoreOpen){w.innerHTML=head;return;}
+  const rows=opts.map(l=>
+    '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">'+escHtml(l.label)+'<small>'+escHtml(say[l.k]||'')+'</small></span>'+
+      '<input type="checkbox" class="ios-switch" data-layer="'+l.k+'" '+(_tmLayers.has(l.k)?'checked':'')+
+      ' onchange="_tmToggleLayer(\''+l.k+'\')"></label>').join('');
+  // Estimate is the one switch with a dependency: it turns Rate on with it.
+  const dep=(!_tmLayers.has('rate')&&!locked.has('rate'))
+    ?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Estimate turns on Rate with it: a day count has nothing to multiply on its own.</small></span></div>'
     :'';
-  row.innerHTML=chips+forced+blocked;
+  w.innerHTML=head+rows+dep;
+}
+// ── MATERIALS, UP FRONT, BILLS: the three terms under the rate ──────────────
+// Static inputs (so typing never loses focus to a repaint); this sets which
+// segment is on, which rows show, and the line under the deposit.
+function _tmDepMode(on){
+  if(on){_tmStepAct('dep');}
+  else{if(typeof _tmDropLayer==='function')_tmDropLayer('dep');const i=document.getElementById('tm-i-dep-flat');if(i)i.value='';_tmInputChange();}
+  _tmRenderBillTerms();
+}
+function _tmRenderBillTerms(){
+  if(!_geiIsTM)return;
+  const segOn=(id,v)=>{const w=document.getElementById(id);if(w)w.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===String(v)));};
+  const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
+  const depOn=_tmLayers.has('dep');
+  segOn('tm-dep-seg',depOn?1:0);
+  show('tm-dep-amt-row',depOn);
+  // The line under the deposit: what it is against the ceiling, and the law.
+  const note=document.getElementById('tm-dep-note');
+  if(note){
+    const D=_tmDepositState();
+    const sname=_tmStateName(D.state)||D.state;
+    const lim=D.applies&&D.law.pct!=null?(sname+' allows up to '+(Math.round(D.law.pct)===33?'a third':D.law.pct+'%')+' of the price'):'';
+    let t='',law=false;
+    if(D.needCap){t=sname+' limits it to a share of the price. Put in the most it can cost first.';law=true;}
+    else if(D.over&&D.overCap&&!(D.applies&&D.max<D.cap)){t='More than the most it can cost.';law=true;}
+    else if(D.over){t=sname+' allows up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.';law=true;}
+    else if(D.pctOfCap!=null)t=D.pctOfCap+'% of the most it can cost'+(lim?'. '+lim+'.':'.');
+    else if(D.amt>0)t='For materials and getting started.';
+    else t=lim?lim+'.':'For materials and getting started.';
+    note.textContent=t;note.style.color=law?'var(--ios-law)':'';
+  }
+  // What the rate switch means, in words, with his figure in it.
+  const rs=document.getElementById('tm-show-rate-sub');
+  if(rs){
+    const r=Number(_tmRatePerMan)||0,f='$'+r.toLocaleString('en-US');
+    const shown=!(_tmHideRate&&_tmCanHideRate());
+    // WHERE it shows, said plainly: the rate is never printed on the proposal
+    // page itself (owner, 2026-09-17: "hourly rate never gets exposed to the
+    // proposal itself"). This switch decides whether it is a term in the
+    // contract they sign.
+    rs.textContent=shown
+      ?(r>0?'They sign to '+f+' an hour, per worker. It is in the contract terms, not on the proposal page.':'They sign to your hourly rate, in the contract terms.')
+      :(r>0?'Nowhere they see. You still bill the hours at '+f+'.':'Nowhere they see. You still bill the hours at your rate.');
+  }
+  // Bills: on every contract that bills time.
+  const cw=document.getElementById('tm-cad-main');
+  if(cw){
+    const cyc=_tmBillingCycle||'weekly';
+    const seg=(k,t)=>'<button type="button" class="'+(cyc===k?'on':'')+'" onclick="_tmCadence(\''+k+'\');_tmRenderBillTerms()">'+t+'</button>';
+    cw.innerHTML=_tmLayers.has('rate')
+      ?'<div class="ios-row"><span class="ios-lbl">Bills</span><span class="ios-seg">'+
+          seg('weekly','Weekly')+seg('milestone','Milestones')+seg('completion','At the end')+'</span></div>'
+      :'';
+  }
+}
+// Turning a step on and landing him in the field it is about. The chip alone
+// only makes a box appear somewhere further down the page, which on a phone is
+// off screen: he taps Add, sees nothing happen, and taps it again.
+function _tmStepAct(k){
+  _tmAddLayer(k);
+  const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':(k==='est')?'tm-i-days':(k==='dep')?'tm-i-dep-flat':null;
+  const el=id?document.getElementById(id):null;
+  if(!el)return;
+  // The card it lives in may be folded to its summary line; open it first or
+  // the focus lands on an element that is not on the page.
+  const card=el.closest&&el.closest('[data-fold="1"]');
+  if(card&&card.id&&typeof _tmFoldToggle==='function')_tmFoldToggle(card.id);
+  try{el.scrollIntoView({block:'center'});}catch(_e){}
+  try{el.focus();}catch(_e){}
 }
 // WHAT A BID SAVED BEFORE LAYERS ACTUALLY CARRIES. Read from its own values,
 // never guessed: a resumed proposal must come back showing exactly the blocks
@@ -3727,8 +6087,28 @@ function _tmSyncCadence(){
 function _tmPreviewClient(){_geiPreviewClient();}
 
 function _geiBack(){
-  if(_geiStep>1){goGeiStep(_geiStep-1);return;}
+  // Back is leaving too: the mic goes off, and what he said stays in the box.
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){try{_timTalkStop(true);}catch(_e){}}
+  // T&M skips step 1 on the way in, so Back does not walk into it on the way
+  // out either. Step 1 is reached on purpose, from Change on the sub-line.
+  // Build Your Own is the same full-screen page with the same Change, so its
+  // Back does the same (2026-09-25): it went to the old setup step instead.
+  if(_geiStep>1&&!_geiIsTM&&!_geiIsFreeForm){goGeiStep(_geiStep-1);return;}
   _geiToStylePicker();
+}
+// Save the draft and go home. The draft stays in the pipeline to pick up
+// again; nothing he typed is lost on the way out.
+// Tim still listening when he taps Save (owner, 2026-09-26: "he also doesn't
+// turn off if you save and exit"): the mic goes off first and what he said so
+// far lands in the box, so it is saved with the rest. Not built into steps: he
+// left, he did not ask for that.
+async function _geiSaveAndExit(){
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){
+    try{await Promise.race([_timTalkStop(true),new Promise(r=>setTimeout(r,1500))]);}catch(_e){}
+  }
+  try{saveGenericEstimate(true);}catch(_e){}
+  document.getElementById('gei-cart-bar')?.remove();
+  goPg('pg-dash');
 }
 function _geiToStylePicker(){
   document.getElementById('gei-cart-bar')?.remove();
@@ -4006,9 +6386,13 @@ function _geiRenderCartBar(){
   })();
   const{sub}=calcGeiTotal();
   const n=_geiLines.length;
-  if(!n||_geiStep!==2){bar.style.display='none';return;}
+  // Tim's dock stands on whatever is pinned to the bottom of the screen, so it
+  // has to be told when this bar comes and goes, or it lands on top of it.
+  const _lift=()=>{if(typeof timDockRefresh==='function')timDockRefresh();};
+  if(!n||_geiStep!==2){bar.style.display='none';_lift();return;}
   bar.style.display='flex';
   bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">$${sub.toLocaleString('en-US',{maximumFractionDigits:0})} · Review →</span>`;
+  _lift();
 }
 
 function _geiRenderTemplates(){
@@ -4153,6 +6537,9 @@ function _geiSyncAutoName(){
 function _geiRefreshAutoTitle(prefix){
   if(_geiDescUserSet)return;
   _geiSyncAutoName();
+  // The iOS editors title the screen with the customer (_geiRenderAddrSub);
+  // the auto name still files the proposal, it just does not head the page.
+  if(prefix==='tm'||prefix==='byo')return;
   const el=document.getElementById(prefix+'-tbar-title');
   if(el&&!el.querySelector('input')){
     const n=document.getElementById('gei-desc')?.value||'';
@@ -4725,7 +7112,10 @@ function _panelPrint(){
 function calcGeiTotal(){
   const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
-  const markup=sub*pct/100;
+  // T&M carries no markup here: how materials are priced is his business,
+  // not a term on the contract, and receipts never go on a bill (owner,
+  // 2026-09-23).
+  const markup=_geiIsTM?0:sub*pct/100;
 
   // Sales tax, separate from markup, based on state rules and job scope
   let salesTax=0,salesTaxTreatment=null;
@@ -4834,7 +7224,8 @@ function saveGenericEstimate(draft){
   // to 0 rather than left at his standard, because 25% of a total that does not
   // exist is exactly the bug that puts $0 on the proposal and a live percent in
   // the record for the invoice to find later.
-  const _tmFlatDep=(_geiIsTM&&_tmRateOnly)?Math.round(_moneyVal('tm-i-dep-flat')):0;
+  // T&M: _tmDepositState, the one definition. Never a percent (2026-09-23).
+  const _tmFlatDep=_geiIsTM?_tmDeposit():0;
   const _tmFields=_geiIsTM?{
     isTM:true,
     tmRateOnly:!!_tmRateOnly,
@@ -4843,17 +7234,21 @@ function saveGenericEstimate(draft){
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
-    tmDepositPct:_tmRateOnly?0:_geiDepositPct(),
-    tmDepositAmt:_tmRateOnly?_tmFlatDep:Math.round(total*_geiDepositPct()/100),
+    tmDepositPct:0,
+    tmDepositAmt:_tmFlatDep,
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_geiDepositPct()/100);
   // State max-deposit cap (home-improvement compliance). Parse state from client
   // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
-  if(typeof _maxDeposit==='function'){
-    const _depAddrM=(v('gei-addr')||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-    const _depState=(_depAddrM?_depAddrM[1]:null)||(typeof S!=='undefined'&&S.state)||'KS';
+  // T&M is measured against its ceiling by _tmLegal and refused at Send and
+  // Sign, with the fix, rather than quietly cut here; a draft may hold a
+  // figure he is still deciding on.
+  if(!_geiIsTM&&typeof _maxDeposit==='function'){
+    // stateFromAddr (js/legal.js), the same reader the price rule uses, so the
+    // deposit cap and the T&M rule can never be read off two different states.
+    const _depState=(typeof stateFromAddr==='function'?stateFromAddr(v('gei-addr')||''):null)||(typeof S!=='undefined'&&S.state)||'KS';
     // A rate sheet's contract price is 0 by design, and _maxDeposit ends in
     // Math.min(cap, amount), so running it here would clamp every mobilization
     // deposit to nothing. _maxDepositNoTotal applies the arm that can still be
@@ -4896,6 +7291,7 @@ function saveGenericEstimate(draft){
       // bid reaches a job with nothing to measure it against.
       b.estHours=_estLaborHours();
       b.estCrew=[..._estCrew];
+  b.estCrewRates=Object.assign({},_estCrewRates);
       b.estCrewSize=_estCrew.length||1;
       b.exclusions=[..._geiExclusions];
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
@@ -4954,7 +7350,9 @@ function saveGenericEstimate(draft){
 // is deliberately NOT a clause here, it's already its own line in the
 // proposal's deposit/balance summary.
 function _geiBuildTermsHtml(){
-  const bname=S.bname||getBusinessName()||'';
+  // His name, never the 'TradeDesk' fallback in getBusinessName(): these are
+  // his terms; with no name set they say "Contractor".
+  const bname=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   const _party=bname||'Contractor';
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
@@ -4971,7 +7369,7 @@ function _geiBuildTermsHtml(){
     :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
   // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
   // shape: preserved verbatim by the renderer below.
-  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)})${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorDays)?`, or within ${STATE_CANCEL[_stateKey].seniorDays} business days if Buyer is 65 or older (${STATE_CANCEL[_stateKey].seniorStatute})`:''}, for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
   // The cadence the contractor actually picked. This used to be a two-way
   // ternary against 'weekly', so the two cadences the rail has always offered
   // BESIDES weekly, milestone and completion, both told the client "Bi-weekly
@@ -5000,13 +7398,19 @@ function _geiBuildTermsHtml(){
   // is what the trade says happens without it: the contractors who got burned
   // on T&M were not burned by showing a rate, they were burned by never fixing
   // one in writing and then arguing about it afterwards.
-  const _tmRateClause=(_geiIsTM&&Number(_tmRatePerMan)>0)?[['Rate',
-    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time actually worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate. Materials are billed at actual cost.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+  // Hidden means hidden: the clause that states the rate is the main place the
+  // customer reads it, so it comes out entirely rather than being softened.
+  // _tmCanHideRate is consulted and not just the flag, so a proposal carried
+  // across a state line cannot arrive with a required term missing.
+  const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
+    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
-    ['Billing',`${_tmBillTerm} with time sheets and material receipts attached.`],
+    // Time sheets, not receipts: receipts never go on a bill (owner,
+    // 2026-09-23), so the contract does not promise them.
+    ['Billing',`${_tmBillTerm} with time sheets attached.`],
   ]:[
     ['Cancellation &amp; Deposits',_cancelClause],
   ];
@@ -5031,6 +7435,265 @@ function _geiBuildTermsHtml(){
   return _clausesHtml+_customTermsBlock;
 }
 
+// ── THE PROPOSAL HAS TO CLOSE (owner, 2026-09-23) ─────────────────────────
+//
+// "on any proposal that goes to the client, psychologically it has to make
+// sense and close them on looks and how things are worded ... people see a
+// price go too high, and can say I'll do it myself for 100 bucks but it's the
+// most frustrating shit ever." Two readers decide whether it gets signed:
+// the cheapskate, who wants to see every dollar buys something and that the
+// number cannot creep, and the do-it-yourselfer, who wants to see everything
+// he would have to do, rent, haul and warranty himself. Both are answered by
+// the same thing: what the price includes, said plainly, from the steps he
+// already wrote. Never from a claim he did not make: no permit line without a
+// permit step, no licence line without a licence in Settings.
+const _PROP_STAGE_NAMES={access:'Before we start',protect:'Protecting your home',demo:'Out with the old',
+  rough:'The new work',repair:'Repairs',prep:'Getting it ready',install:'The new work',
+  finish:'Finishing and testing',restore:'Putting it back',clean:'Clean-up and walk-through'};
+// Groups steps (already in work order) into runs under a customer's heading.
+// A step Tim cannot place rides with the one before it. Returns null when
+// grouping would add nothing: a short list, or one heading over all of it.
+const _PROP_TEST_RX=/\b(test|tested|testing|start (it )?up|startup|pull a vacuum)/;
+function _propStageGroups(texts){
+  if(!Array.isArray(texts)||texts.length<4||typeof timStageOf!=='function')return null;
+  const groups=[];let cur=null;
+  texts.forEach((t,i)=>{
+    const k=timStageOf(t);
+    let nm=k&&_PROP_STAGE_NAMES[k]?_PROP_STAGE_NAMES[k]:(cur?cur.name:_PROP_STAGE_NAMES.access);
+    // "Testing" over "Paint two coats" read as a pasted form (read-through,
+    // 2026-09-23: "You watch it dry, do you?"). It says testing only when a
+    // step in the job is one.
+    if(k==='finish'&&!texts.some(x=>_PROP_TEST_RX.test(String(x).toLowerCase())))nm='Finishing';
+    if(!cur||cur.name!==nm){cur={name:nm,idx:[]};groups.push(cur);}
+    cur.idx.push(i);
+  });
+  // One step between two runs under the same heading ("Scrape" between the
+  // wash and the caulk) joins them: the customer reads one "Getting it ready",
+  // not the same heading twice.
+  for(let i=1;i<groups.length-1;i++){
+    if(groups[i].idx.length===1&&groups[i-1].name===groups[i+1].name){
+      groups[i-1].idx.push(...groups[i].idx,...groups[i+1].idx);
+      groups.splice(i,2);i--;
+    }
+  }
+  return groups.length>1?groups:null;
+}
+// What the price buys, read off the steps. Each entry needs its evidence.
+function _propIncluded(texts,tm){
+  const all=' '+(texts||[]).join(' . ').toLowerCase()+' ';
+  // On time and materials the labor and materials are billed as used, so
+  // "included" would contradict the price box (read-through, 2026-09-23).
+  const out=tm?[]:['All labor and materials'];
+  if(/\bpermits?\b/.test(all))out.push('Permit and inspection');
+  // Protection, testing, the walk-through and the haul-away are steps in the
+  // scope right above; listed again here they read as padding (read-through,
+  // 2026-09-23). What stays is what the steps cannot say: who pays for the
+  // permit, the warranty, the licence.
+  const haul=/\b(haul|dispos|dumpster|debris|magnet|sweep|clean ?-?up|broom clean)/.test(all);
+  const wp=String((typeof S!=='undefined'&&S&&S.warrantyPeriod)||'').trim();
+  const wm=wp.match(/^(\d+)\s*(day|week|month|year)s?$/i);
+  if(wp)out.push((wm?wm[1]+'-'+wm[2].toLowerCase():wp)+' warranty on the work');
+  // Every warranty clause in the terms already passes these through; said
+  // here because "and the heater itself?" was the next question.
+  if(wp)out.push('Manufacturer warranties pass to you');
+  if(typeof S!=='undefined'&&S&&String(S.blic||'').trim())out.push('Licensed contractor, Lic.\u00a0'+String(S.blic).trim().replace(/^(#|lic\.?|license|licence)\s*/i,''));
+  return {items:out,haul};
+}
+// The project, named from his own steps (read-through, 2026-09-23: "Plumbing
+// service. Well, that tells me nothing."). Only from what he said: the thing
+// coming out, or which side of the house a paint job is on. Nothing found,
+// null, and the trade name stays.
+function _propProjectTitle(texts,trade){
+  const t=(texts||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  for(const x of t){
+    const m=x.match(/^(?:pull|remove|tear out|tear off|rip out|take out|swap out|replace)\s+(?:the\s+)?old\s+([a-z0-9][a-z0-9 \-]{1,40}?)(?:\s+(?:and|with|from|in|on)\b.*)?$/i);
+    if(m){
+      let w=m[1].trim().toLowerCase();
+      if(/[^s]s$/.test(w))w=w.slice(0,-1);
+      return w.charAt(0).toUpperCase()+w.slice(1)+' replacement';
+    }
+  }
+  // A repair, said the way a repair is said ("cut out leaky kitchen sink
+  // drain", "fix the broken shutoff"): the thing, and the word repair. Short
+  // things only, so a whole sentence never ends up as the title.
+  for(const x of t){
+    const m=x.match(/^(?:fix|repair|patch|cut out)\s+(?:the\s+|a\s+|an\s+)?(?:leaky|leaking|broken|cracked|clogged|damaged|failed|bad|rotted|old)?\s*([a-z][a-z \-]{2,40}?)\s*$/i);
+    if(m&&m[1].trim().split(/\s+/).length<=4){
+      const w=m[1].trim().toLowerCase();
+      return w.charAt(0).toUpperCase()+w.slice(1)+' repair';
+    }
+  }
+  const all=t.join(' ').toLowerCase();
+  // The steps decide, not the trade: a general contractor paints too.
+  if(trade==='painting'||/\bpaint(ing)?\b/.test(all)){
+    if(/\b(house|siding|exterior|outside|soffits?|fascia|deck|fence|pressure wash)\b/.test(all))return 'Exterior painting';
+    if(/\b(walls?|ceilings?|rooms?|kitchen|bedroom|bathroom|interior|cabinets?)\b/.test(all))return 'Interior painting';
+  }
+  return null;
+}
+// ── THE MASTHEAD, WHITE-LABEL (owner, 2026-09-23: "I want a redesign, it has
+// to look great and be white labeled for business logos") ───────────────────
+//
+// His logo on white paper. The old navy slab put every logo on dark, which
+// swallows the dark logos most shops have and forced a light version nobody
+// made; on white nearly any logo reads. No logo, and his name is the mark, in
+// his colour. His colour is the band across the top and the one accent below.
+// The price bar. One cell across the width: the label and the figure share a
+// line that wraps under itself on a phone, and the fine print runs the full
+// width beneath instead of being squeezed into a column beside the number.
+function _propPriceRow(label,fine,figure,accent){
+  return `<tr style="background:${accent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;white-space:nowrap;background:${accent};color:#fff;background-image:linear-gradient(135deg,${accent} 0%,${_PT.deep||accent} 100%)">`+
+    `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">${label}</div>`+
+    `<div style="font-weight:800;font-size:42px;letter-spacing:-.035em;line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums">${figure}</div>`+
+    (fine?`<div style="white-space:normal;font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:12px;max-width:520px">${fine}</div>`:'')+
+  `</td></tr>`;
+}
+// His words, printed the way a document is written. A line typed in Title
+// Case ("Replace With Pvc") reads as a form field; sentence case with the
+// trade's acronyms in capitals reads as a letter. Only the printed copy
+// changes; what he typed is kept as he typed it.
+const _PROP_ACRONYMS=/\b(pvc|cpvc|pex|abs|gfci|afci|hvac|ac|led|osb|mdf|psi|btu|prv|tpr|gpm|cfm|erv|hrv|lvp|lvt|csst|epa|rrp)\b/gi;
+function _propSentence(t){
+  let s=String(t==null?'':t).trim();
+  const words=s.split(/\s+/).filter(w=>/[a-z]/i.test(w));
+  const title=words.length>=2&&words.filter(w=>/^[A-Z][a-z']*$/.test(w.replace(/[^A-Za-z']/g,''))).length>=Math.ceil(words.length*0.8);
+  if(title)s=s.charAt(0)+s.slice(1).toLowerCase();
+  return s.replace(_PROP_ACRONYMS,m=>m.toUpperCase());
+}
+// ── THE LETTERHEAD SYSTEM (owner, 2026-09-23: "It needs to be next level
+// gorgeous in the white label. Needs to be perfect.") ─────────────────────
+// Every colour on the page comes from his brand: the accent itself, a wash of
+// it for panels, a deeper shade for the price card's gradient. Set once per
+// document by sendGenericProposal; read by every piece below.
+let _PT={a:'#1a365d',rgb:[26,54,93]};
+function _propTheme(accent,rgb){
+  const r=rgb||[26,54,93];
+  const dk=r.map(x=>Math.round(x*0.72));
+  _PT={a:accent,rgb:r,wash:'rgba('+r.join(',')+',.045)',tint:'rgba('+r.join(',')+',.10)',line:'rgba('+r.join(',')+',.18)',deep:'rgb('+dk.join(',')+')'};
+  return _PT;
+}
+// Small line icons in his colour, one per kind of promise.
+function _propIcon(kind,col,size){
+  const P={
+    check:'<path d="M5 12.5l4.2 4.2L19 7"></path>',
+    tools:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6z"></path>',
+    doc:'<path d="M7 3h7l5 5v13H7z"></path><path d="M14 3v5h5M10 13h6M10 17h6"></path>',
+    shield:'<path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"></path><path d="M9 12l2.2 2.2L15.5 10"></path>',
+    tag:'<path d="M3 12V4h8l10 10-8 8z"></path><circle cx="7.5" cy="8.5" r="1.3"></circle>',
+    badge:'<circle cx="12" cy="9" r="5"></circle><path d="M8.5 13.2L7 21l5-2.6 5 2.6-1.5-7.8"></path>',
+    pin:'<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.3"></circle>',
+    clock:'<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
+    phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"></path>',
+  };
+  return `<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="${col||_PT.a}" stroke-width="${size>16?1.75:1.9}" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:0 0 auto">${P[kind]||P.check}</svg>`;
+}
+// A step: a dot in his colour and the words.
+function _propLi(inner){
+  return `<li style="display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:#1e293b;line-height:1.5;padding:4px 0;overflow-wrap:anywhere"><span style="flex:0 0 6px;width:6px;height:6px;border-radius:50%;background:${_PT.a};margin-top:9px;opacity:.85"></span><span style="min-width:0">${inner}</span></li>`;
+}
+function _propUl(lis){return `<ul style="list-style:none;margin:0;padding:0">${lis}</ul>`;}
+// The plan: numbered stages down a rail, the steps under each.
+function _propTimeline(groups){
+  return groups.map((g,i)=>{
+    const last=i===groups.length-1;
+    return `<div class="prop-stage" data-steps="${g.lis.length}" style="display:flex;gap:14px">`+
+      `<div style="flex:0 0 30px;display:flex;flex-direction:column;align-items:center">`+
+        `<div style="width:30px;height:30px;border-radius:50%;background:${_PT.tint};color:${_PT.a};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums">${i+1}</div>`+
+        (last?'':`<div style="flex:1;width:2px;border-radius:2px;background:${_PT.tint};margin:6px 0 0;min-height:14px"></div>`)+
+      `</div>`+
+      `<div style="flex:1;min-width:0;padding:4px 0 ${last?'2':'20'}px">`+
+        `<div style="font-size:15.5px;font-weight:700;color:#0b1220;letter-spacing:-.005em;line-height:1.35">${escHtml(g.name)}</div>`+
+        `<div style="margin-top:4px">${_propUl(g.lis.join(''))}</div>`+
+      `</div>`+
+    `</div>`;
+  }).join('');
+}
+function _propSection(eyebrow,title,body,extra){
+  return `<div style="margin:0 24px;padding:${extra&&extra.noRule?'18':'26'}px 0 ${extra&&extra.pb||22}px;${extra&&extra.noRule?'':'border-top:1px solid #eceef2'}">`+
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${_PT.a}">${eyebrow}</div>`+
+    (title?`<div style="font-size:21px;font-weight:800;letter-spacing:-.02em;color:#0b1220;margin:6px 0 16px;line-height:1.25">${title}</div>`:'<div style="height:12px"></div>')+
+    body+`</div>`;
+}
+function _propLogoSrc(){
+  if(typeof S==='undefined'||!S)return '';
+  const cur=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
+  return cur||S.logoData||'';
+}
+// Dates the way a letter writes them: "Sep 23, 2026". Accepts mm/dd/yyyy or
+// a date key; anything else passes through untouched.
+function _propDate(t){
+  const x=String(t||'').trim();let d=null;
+  let m=x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(m)d=new Date(+m[3],+m[1]-1,+m[2]);
+  if(!d){m=x.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m)d=new Date(+m[1],+m[2]-1,+m[3]);}
+  return d&&!isNaN(d)?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):x;
+}
+// THE COVER (design review, 2026-09-23: the "signature moment"). The document
+// opens on his colour, full bleed, the way a bound proposal opens on its
+// cover: his mark, who it is for, the job as the headline. His logo sits on a
+// white plate, so a dark logo, a light one, or a logo on its own black square
+// all read the same on any brand colour.
+function _propCover(o){
+  const logo=_propLogoSrc();
+  const name=escHtml(o.bname||'');
+  const lic=String(o.blic||'').trim();
+  const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
+  const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  const meta=(typeof S!=='undefined'&&S&&S.logoMeta)||null;
+  const tile=!!(logo&&typeof tdLogoIsTile==='function'&&tdLogoIsTile(meta));
+  // THE LOGO HERO (owner 2026-09-25, "A, but make black fade to blue"): a logo
+  // that is its own dark square opens the document big and centred on its own
+  // background, which fades down into his colour, the way the boot screen
+  // opens on it. The logo already carries his name, so the line under it is
+  // just how to reach him.
+  const heroBg=tile&&/^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$/.test(String(meta.bg||''))?meta.bg:'#000';
+  const nameBlock=`<div style="min-width:0">${name?`<div style="font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2;color:#fff">${name}</div>`:''}`+
+    (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:3px;line-height:1.45">${contact}</div>`:'')+`</div>`;
+  const ring='box-shadow:0 0 0 1px rgba(255,255,255,.35),0 8px 22px rgba(0,0,0,.22)';
+  // No logo: his name is the mark, set large. No letter monogram: the owner
+  // removed it from the client hub as filler (2026-09), and the proposal
+  // follows the same rule.
+  const mark=tile
+    ?`<div style="text-align:center"><img src="${escHtml(logo)}" alt="${name}" style="display:block;width:min(210px,62vw);height:auto;object-fit:contain;margin:0 auto">`+
+      (contact?`<div style="font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
+    :!logo
+    ?`<div style="min-width:0">${name?`<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#fff">${name}</div>`:''}`+
+      (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
+    // Any other logo, on its white plate, at a size a client notices.
+    :`<div style="display:inline-block;background:#fff;border-radius:18px;padding:14px 18px;${ring}"><img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:76px;max-width:240px;width:auto;height:auto;object-fit:contain"></div>`+
+      `<div style="margin-top:12px">${nameBlock}</div>`;
+  const chip=(icon,txt)=>`<span style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:rgba(255,255,255,.9);line-height:1.4">${_propIcon(icon,'rgba(255,255,255,.75)')}<span>${txt}</span></span>`;
+  const coverBg=tile
+    ?`background:${heroBg};color:#fff;background-image:linear-gradient(180deg,${heroBg} 0%,${heroBg} 50%,${o.accent} 100%)`
+    :`background:${o.accent};color:#fff;background-image:radial-gradient(120% 90% at 100% 0%,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 55%),linear-gradient(140deg,${o.accent} 0%,${_PT.deep||o.accent} 100%)`;
+  return `<div class="prop-cover" style="${coverBg};padding:24px 22px 24px">`+
+    `<div style="display:flex;flex-wrap:wrap;${tile?'flex-direction:column;align-items:center':'align-items:flex-start;justify-content:space-between'};gap:14px">`+
+      // Not .brand-logo-slot: applyBrandLogo rewrites every one of those on
+      // the page with the app bar's 32px logo, and would wipe this letterhead
+      // if it ran with a preview open.
+      `<div class="prop-mark" style="min-width:0;${tile?'width:100%':'flex:1 1 220px'}">${mark}</div>`+
+      `<span style="flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);padding:5px 10px;border-radius:999px">${o.label}</span>`+
+    `</div>`+
+    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">Prepared for <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
+    `<div style="font-size:32px;font-weight:800;letter-spacing:-.032em;line-height:1.08;margin-top:6px;color:#fff">${o.project}</div>`+
+    `<div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px">`+
+      (o.addr?chip('pin',o.addr):'')+(o.phone?chip('phone',o.phone):'')+
+      (o.duration?chip('clock','Est. duration: '+o.duration):'')+
+      chip('clock','Valid until: '+_propDate(o.until))+
+    `</div>`+
+    `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
+  `</div>`;
+}
+function _propIncludedHtml(texts,accent,title,tm,tint){
+  const inc=_propIncluded(texts,tm);
+  if(inc.items.length<3)return '';
+  const kind=x=>/permit/i.test(x)?'doc':/manufacturer/i.test(x)?'tag':/warranty/i.test(x)?'shield':/licen/i.test(x)?'badge':/labor/i.test(x)?'tools':'check';
+  const tiles=inc.items.map((x,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 4px;${i?`border-top:1px solid ${_PT.line};`:''}">`+
+    `<span style="flex:0 0 36px;width:36px;height:36px;border-radius:11px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.06);display:flex;align-items:center;justify-content:center">${_propIcon(kind(x),accent,18)}</span>`+
+    `<span style="font-size:14.5px;font-weight:600;color:#0b1220;line-height:1.35">${escHtml(x).replace(/Lic\.\u00a0(\S+)/,'Lic.\u00a0<span style="white-space:nowrap">$1</span>')}</span></div>`).join('');
+  return `<div class="prop-included" style="margin:0 16px 8px;padding:20px 16px 12px;border-radius:18px;background:${tint||'#f8fafc'}">`+
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${accent};margin:0 4px 12px">${title||'Included in your price'}</div>`+
+    `<div>${tiles}</div></div>`;
+}
 async function sendGenericProposal(previewOnly,opts){
   saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
   _saveToLineHistory();
@@ -5038,7 +7701,14 @@ async function sendGenericProposal(previewOnly,opts){
     // BYO line items already define the scope; chips are optional summary only.
     // Only block if there are no chips, no line items, and the contractor hasn't explicitly skipped.
     const _hasLineItems=_geiIsFreeForm?_byoItems.some(it=>it.on):_geiLines.length>0;
-    if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){zAlert('Add scope items or tap "None" to skip scope on this proposal.',{title:'Scope required'});return;}
+    if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){
+      // One button that lands him in the box, not a paragraph about a "None"
+      // chip that a three-year-old, or a tired foreman, will not find.
+      zConfirm('The customer needs to know what you are doing. Say it or type it in a sentence.',
+        ()=>{const t=document.getElementById('gei-scope-say');if(t){try{t.scrollIntoView({block:'center'});}catch(_e){}t.focus();}},
+        {title:'What is the job?',yes:'Say the job',danger:false});
+      return;
+    }
     // A proposal needs a price. That is the whole list.
     //
     // It used to need a line in Materials AND a line in Interior or Exterior,
@@ -5055,8 +7725,12 @@ async function sendGenericProposal(previewOnly,opts){
       // estimated-days figure here is what forced a man to invent a number he
       // would then be held to on every service call he could not honestly put
       // a day count on (see the _tmRateOnly header).
-      if(!_tmRatePerMan){zAlert('Enter your hourly rate in the Rates & crew section.',{title:'Rate required'});return;}
-      if(!_tmRateOnly&&!_tmEstHours){zAlert('Enter your estimated days, or turn on Rate sheet to send this without a total.',{title:'Estimated days required'});return;}
+      // THE STATE FIRST. Before 2026-09-23 nothing on this button asked it, so
+      // a California T&M sent, and a cap state sent with its ceiling box empty.
+      const _L=_tmLegal();
+      if(_L.problems.length){_tmLegalStop(_L);return;}
+      if(!_tmRatePerMan){zConfirm('A time and materials proposal needs your hourly rate.',()=>_tmStepAct('rate'),{title:'One thing first',yes:'Put in your rate',danger:false});return;}
+      if(!_tmRateOnly&&!_tmEstHours){zConfirm('You turned on an estimate, so it needs a number of days.',()=>_tmStepAct('est'),{title:'One thing first',yes:'Say how many days',danger:false});return;}
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
       if(!_byoOn.length){zAlert('Add at least one line before you send this.',{title:'Nothing to send yet'});return;}
@@ -5089,10 +7763,19 @@ async function sendGenericProposal(previewOnly,opts){
   const trade=_geiTrade||getActiveTrade();
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
-  const _bnameRaw=S.bname||getBusinessName()||'';const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
+  // His name only. getBusinessName() falls back to 'TradeDesk', which must
+  // never print on a white-label document.
+  const _bnameRaw=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
   const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
   const _clientRec=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
-  const clientPhone=escHtml(_clientRec?.phone||'');
+  // Printed the way a phone number is written, not as ten bare digits. Only a
+  // clean US number is reshaped (a leading 1 dropped); anything else prints
+  // exactly as he typed it, because a wrong reformat is worse than none.
+  const clientPhone=escHtml((()=>{
+    const raw=String(_clientRec?.phone||'');let d=raw.replace(/\D/g,'');
+    if(d.length===11&&d[0]==='1')d=d.slice(1);
+    return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
+  })());
   // The Project line is the CLIENT's header, so it only carries a name the
   // contractor actually chose. The auto name (_geiAutoName) is derived from the
   // first line item and exists so he can find the proposal in his own list,
@@ -5116,7 +7799,8 @@ async function sendGenericProposal(previewOnly,opts){
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
-  const _tmDepAmt=Math.round(total*_tmDepPct)/100;
+  // T&M: the flat figure or nothing (_tmDepositState), never a percent.
+  const _tmDepAmt=_geiIsTM?_tmDeposit():Math.round(total*_tmDepPct)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it, TDZ if declared after
@@ -5127,7 +7811,7 @@ async function sendGenericProposal(previewOnly,opts){
   // boot overlay, so a branded account's proposal actually looks like THEIRS
   // instead of generic navy. Falls back to the original navy when unset, zero
   // visual change for every account that hasn't picked a brand color.
-  let _pAccent='#1a365d',_pAccent2='#2a4a7f';
+  let _pAccent='#1a365d',_pAccent2='#2a4a7f',_pRGB=[26,54,93];
   if(S&&S.brandColor){
     // adaBrand clamp: the accent renders as text on white AND as a bg under
     // white text, a light brand pick would fail WCAG both ways. Belt for
@@ -5137,11 +7821,15 @@ async function sendGenericProposal(previewOnly,opts){
     if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
       _pAccent='rgb('+_br+','+_bg+','+_bb+')';
       _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
+      _pRGB=[_br,_bg,_bb];
     }
   }
+  // The brand as a wash and a hairline, for the panels that carry it quietly.
+  const _pTint='rgba('+_pRGB.join(',')+',.06)',_pLine='rgba('+_pRGB.join(',')+',.20)';
+  _propTheme(_pAccent,_pRGB);
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">${_geiIsTM?'Up Front, Before Work Begins':`Deposit (${_tmDepPct}%)<div style="font-size:12.5px;font-weight:400;color:#64748b;margin-top:2px">Due before work begins</div>`}</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -5159,19 +7847,44 @@ async function sendGenericProposal(previewOnly,opts){
   // deposit. Set neither and it carries no money at all, which is the point.
   // Crew size and a day rate are both routes back to the rate, so neither
   // ships either.
+  // CONTINGENT ON WHAT NOBODY CAN SEE (owner, 2026-09-23: "they need to know
+  // the max price it could be, contingent on unknowns"). The ceiling holds
+  // unless hidden damage turns up, and even then only by a change order they
+  // sign: said here in their words, and in the contract terms in full.
+  // Widened the same day (owner): work the customer adds or changes, and a
+  // rush that takes more crew, raise it too, by the same signed change order.
+  const _tmCapFineTxt='Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.';
+  const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
-  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg};color:${fg}"><td style="padding:8px 18px;font-size:11px;font-weight:600">${lbl}</td><td style="padding:8px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${val}</td></tr>`;
+  const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:15px 24px;font-size:14px;font-weight:500;border-top:1px solid #eceef2">${lbl}</td><td style="padding:15px 24px;text-align:right;font-size:14.5px;font-weight:700;white-space:nowrap;border-top:1px solid #eceef2">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
-  const _rsFlatDep=Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0);
-  const _rateFooterRows=
-    `<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">TIME &amp; MATERIALS<div style="font-size:10px;font-weight:600;opacity:.75;letter-spacing:0;margin-top:2px">Billed for the time actually worked and the materials actually used</div></td></tr>`+
-    _rsRow('Billing',_rsCadence,'#f8fafc','#334155')+
+  const _rsFlatDep=_tmDeposit();
+  // THE CEILING LEADS WHEN THERE IS ONE (read-through as two sceptical
+  // customers, 2026-09-23). "TIME & MATERIALS" in the big bar read as "the
+  // meter runs" before they ever reached the cap at the bottom, and the cap
+  // was the only thing on the page that answered them. Same figure, same
+  // condition; it just comes first. With no cap nothing changes.
+  const _rsCapLeads=_tmNteCap>0;
+  const _rateFooterRows=_rsCapLeads
+    ?`${_propPriceRow('Most you&apos;ll pay',_tmCapFineTxt,_rsMoney(_tmNteCap),_pAccent)}`+
+      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}</strong> for the hours worked and the materials used, with the time sheet on every bill.</td></tr>`+
+      (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
+    // A rate with no ceiling has no number to put here, so the card says how
+    // it bills, as its headline, instead of standing empty over a "Billing"
+    // row that repeated it (design review, 2026-09-23).
+    :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;background:${_pAccent};color:#fff;background-image:linear-gradient(135deg,${_pAccent} 0%,${_PT.deep} 100%)">`+
+      `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">TIME &amp; MATERIALS</div>`+
+      `<div style="font-weight:800;font-size:26px;letter-spacing:-.025em;line-height:1.15;margin-top:8px">${_rsCadence}</div>`+
+      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">For the hours worked and the materials used, with the time sheet on every bill.</div></td></tr>`+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The
     // phrase the statutes use lives in the terms, where it has to.
-    (_tmNteCap>0?_rsRow('The most this can cost you, unless you approve more in writing',_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
-    (_rsFlatDep>0?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
+    // SHORT, AND THE CONDITION SMALL (owner, 2026-09-23: "the way it's worded
+    // sucks"). The whole sentence was the label, five lines deep beside one
+    // figure. Three words say it; the condition sits under them.
+    (_tmNteCap>0?_rsRow('<span style="white-space:nowrap">Most you&apos;ll pay</span>'+_tmCapFine,_rsMoney(_tmNteCap),'#fffbeb','#92400e'):'')+
+    (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'');
   // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
@@ -5187,7 +7900,21 @@ async function sendGenericProposal(previewOnly,opts){
     // up a lot of extra room. Suppressed for regular BYO lines; RRP and T&M lines have
     // no scope-of-work duplicate, so their notes still need to show here.
     const notesHtml=(l.notes&&!suppressNotes)?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td colspan="2" style="padding:9px 18px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td></tr>`;
+    // THE CUSTOMER READS ENGLISH, NOT THE LINE'S STORAGE FORMAT. The labor line
+    // is stored as "Labor: 1 worker @ $45/hr" with qty 24, and printed exactly
+    // that way it reached a homeowner as "Labor: 1 worker @ $45/hr ×24": an
+    // at-sign, a slash and a multiplication sign with no unit, which is a
+    // spreadsheet row and not a bid (2026-09-23). The stored words are
+    // untouched (other code reads them); only the printed line changes, and an
+    // hourly quantity says "hours".
+    const _isHr=String(l.unit||'').toLowerCase()==='hr';
+    const _desc=l._tmLabor
+      ?String(l.desc||'').replace(/^Labor:\s*/,'Labor, ').replace(/\s@\s/,' at ').replace(/\/hr\b/,' an hour')
+      :(l.desc||'');
+    const _qty=(l.qty!==1&&l.qty!=null)
+      ?(_isHr?` · ${Number(l.qty).toLocaleString('en-US')} hours`:` ×${l.qty}`)
+      :'';
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td colspan="2" style="padding:9px 18px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(_desc)}${_qty?`<span style="color:#94a3b8;font-size:11px">${_qty}</span>`:''}</div>${notesHtml}</td></tr>`;
   };
   let lineRows;
   if(_geiIsFreeForm){
@@ -5208,14 +7935,17 @@ async function sendGenericProposal(previewOnly,opts){
     // T&M and other flows: flat list
     lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>_mkLineRow(l,l._rrp||false)).join('');
   }
-  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
+  const notesHtml=v('gei-notes')?`<div style="margin:0 24px;padding:18px 0 22px;border-top:1px solid #e2e8f0;font-size:13.5px;color:#334155;line-height:1.55;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'-')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
     _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule, ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'Time &amp; Materials':_tradeProposalLabel(trade);
+  // What the document IS, for every type: "Plumbing Proposal". How it bills
+  // (time and materials) is a term, said on the price card and in the
+  // contract, not the name on the cover (owner, 2026-09-24).
+  const _hdrLabel=_tradeProposalLabel(trade);
   // No standalone NTE pricing row, the cap is already disclosed in the Terms &
   // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
   // one less dollar figure sitting in the pricing table.
@@ -5234,12 +7964,18 @@ async function sendGenericProposal(previewOnly,opts){
   const _chipsToPrint=_geiScopeChips.filter(l=>!_itemLabelKeys.has(_pbKey(l)));
   if(_chipsToPrint.length&&!_geiScopeNoScope){
     const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
-    const _listItems=_chipsToPrint.map(l=>{
+    const _chipLi=l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
-      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096">, ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
-    }).join('');
-    _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
+      const desc=chip&&chip.clientDesc?`<span style="font-size:12.5px;color:#64748b">, ${escHtml(chip.clientDesc)}</span>`:'';
+      return _propLi(`${escHtml(_propSentence(l))}${desc}`);
+    };
+    // In work order, under the customer's words for each stage, so a long job
+    // reads as a plan they can follow instead of a wall of steps. Numbering
+    // runs on across the headings: step 7 is still step 7.
+    const _grp=_propStageGroups(_chipsToPrint);
+    _scopeBlocks.push(_grp
+      ?_propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_chipLi(_chipsToPrint[i]))})))
+      :_propUl(_chipsToPrint.map(_chipLi).join('')));
   }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
@@ -5248,20 +7984,34 @@ async function sendGenericProposal(previewOnly,opts){
       const its=_byoWorkItems2.filter(it=>it.section===sec);
       // Items without notes get a quiet section-appropriate descriptor, a bare
       // one-word line ("1. Room") next to fully-described scope items reads as an
-      // unfinished document to the client.
+      // unfinished document to the client. Only for a bare one-word name ("Room"). A line that already says what
+      // is being done reads as padding with it: "Set the new tankless, Labor
+      // and materials per agreed scope" on every row is what a careful buyer
+      // circles and asks about.
       const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
+      const _needsFill=it=>!String(it.notes||'').trim()&&!/\s/.test(String(it.label||'').trim());
       // The count is part of the scope, not a pricing detail: "12 doors" and
       // "1 door" are different jobs and the client should read which one they
       // agreed to. The RATE stays off the proposal, same one-price rule the
       // document already follows.
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>{
-        const _q=(Number(it.qty)>1)?` <span style="font-size:10.5px;color:#718096">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${_q}<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span></li>`;
-      }).join('')+'</ol>';
+      const _li=it=>{
+        const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
+        return _propLi(`${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:13px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}`);
+      };
+      // One section is the usual Build Your Own: everything Tim built lands in
+      // it, and one heading over the lot says nothing. The customer's stage
+      // headings say more, same as the time and materials steps.
+      // Steps Tim added land at the end of the list on the screen; on the
+      // customer's copy they go where the work happens.
+      const _ord=(_scopeSecs2.length===1&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
+      const _grp=_scopeSecs2.length===1?_propStageGroups(_ord.map(it=>it.label)):null;
+      if(_grp)return _propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_li(_ord[i]))})));
+      const rows=_propUl(its.map(_li).join(''));
       // Sub-section headers match the document's one header style (accent, same
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
-      return `<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
+      if(_scopeSecs2.length===1)return rows;
+      return `<div style="margin-bottom:14px"><div style="font-size:15.5px;font-weight:700;color:#0b1220;margin-bottom:4px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
     _scopeBlocks.push(_secBlocks2);
   }
@@ -5277,10 +8027,10 @@ async function sendGenericProposal(previewOnly,opts){
     const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&String(l.desc||'').trim()
       &&!_chipsToPrint.some(c=>_pbKey(c)===_pbKey(l.desc)));
     if(_lineScope.length){
-      const _rows='<ol style="margin:0 0 10px;padding-left:18px">'+_lineScope.map(l=>{
+      const _rows=_propUl(_lineScope.map(l=>{
         const d=String(l.notes||'').trim();
-        return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.desc)}${d?`<span style="font-size:10.5px;color:#718096">, ${escHtml(d)}</span>`:''}</li>`;
-      }).join('')+'</ol>';
+        return _propLi(`${escHtml(_propSentence(l.desc))}${d?`<span style="font-size:13px;color:#64748b">, ${escHtml(d)}</span>`:''}`);
+      }).join(''));
       _scopeBlocks.push(_rows);
     }
   }
@@ -5326,7 +8076,7 @@ async function sendGenericProposal(previewOnly,opts){
           ? `<a href="${escHtml(_u)}" target="_top" style="${_box};text-decoration:none;color:inherit">${_inner}</a>`
           : `<div style="${_box}">${_inner}</div>`;
       }).join('');
-      _optionsSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
+      _optionsSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:${_pAccent};margin-bottom:12px">Your options</div>${_rows}<div style="font-size:10.5px;color:#718096;margin-top:4px">Tap any option to read it. Sign the one you want, and the others simply close out.</div></div>`;
     }
   }
 
@@ -5335,7 +8085,7 @@ async function sendGenericProposal(previewOnly,opts){
   // instead of in the terms accordion where nobody looks until there is an
   // argument.
   const _exclSection=_geiExclusions.length
-    ?`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
+    ?`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #eceef2"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
     :'';
 
   // ── What the other options add ──────────────────────────────────────────
@@ -5363,7 +8113,7 @@ async function sendGenericProposal(previewOnly,opts){
         const _amt=Number(x.amount)||0;
         const _seen=new Set();
         const _li=_extra.filter(l=>{const k=_pbKey(l.label);if(_seen.has(k))return false;_seen.add(k);return true;})
-          .slice(0,6).map(l=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l.label)}</li>`).join('');
+          .slice(0,6).map(l=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(l.label)}</li>`).join('');
         // The option NAME is the way into it. Telling a client what they are
         // missing and leaving them to text about it is how a proposal turns
         // into an evening of back and forth: the answer has to be a tap that
@@ -5372,13 +8122,22 @@ async function sendGenericProposal(previewOnly,opts){
         const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
         return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
       }).filter(Boolean).join('');
-      if(_blocks)_optDiffSection=`<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;background:#fbfcfe"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
+      if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
     }
   }
 
-  const _scopeSection=_scopeBlocks.length
-    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
-    :'';
+  // What the price buys, straight under what the work is (_propIncludedHtml).
+  // Time and materials and Build Your Own only: the other estimate types have
+  // their own trade-written clientDesc lines doing this job.
+  const _incTexts=_geiIsFreeForm?_byoWorkItems2.map(it=>it.label+' '+(it.notes||'')):_chipsToPrint.slice();
+  const _includedSection=((_geiIsTM||_geiIsFreeForm)&&!_geiScopeNoScope&&_incTexts.length)
+    ?_propIncludedHtml(_incTexts,_pAccent,_geiIsTM?'Included':'Included in your price',_geiIsTM,_pTint):'';
+  // The plan reads as a plan: a title in his words for what the stages add
+  // up to, only when there are stages to add up.
+  const _scopeHasStages=_scopeBlocks.some(b=>String(b).indexOf('class="prop-stage"')>=0);
+  const _scopeSection=(_scopeBlocks.length
+    ?_propSection('Scope of work',_scopeHasStages?'How the work goes':'',_scopeBlocks.join(''),{noRule:true})
+    :'')+_includedSection;
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
   // address this estimate is for (bid addr, else client primary), not the client
@@ -5394,9 +8153,40 @@ async function sendGenericProposal(previewOnly,opts){
   // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
   // amount display uses), not just another table row.
+  // ON A T&M JOB WITH A CEILING, THE CEILING IS THE NUMBER.
+  //
+  // This used to print ESTIMATED TOTAL in the accent bar in 21px, the exact
+  // slot a fixed price occupies on a fixed-price proposal, while the cap
+  // appeared nowhere in the money footer at all: it was one clause of eleven in
+  // the terms, in 11px. So the figure a customer remembered was a guess at the
+  // hours, and the promise that actually protected them was fine print. Then
+  // the job runs 20% over and the guess is what gets argued about.
+  //
+  // With a cap, the cap leads and the estimate drops to a quiet row above it,
+  // so nothing is hidden and only one number is loud. Without a cap, nothing
+  // changes.
+  const _tmCapLeads=_geiIsTM&&!_tmRateOnly&&_tmNteCap>0;
+  const _estQuietRow=_tmCapLeads
+    ?`<tr style="background:#f8fafc"><td style="padding:9px 18px;font-size:11px;font-weight:600;color:#64748b">Estimated at today&apos;s scope (not a fixed price)</td><td style="padding:9px 18px;text-align:right;font-size:12px;font-weight:700;color:#334155;white-space:nowrap">${totalFmt}</td></tr>`
+    :'';
+  // BUILD YOUR OWN SAYS WHAT IT IS (owner, 2026-09-23). A quoted price is a
+  // fixed price: it does not drop if the job goes quick, and it does not rise
+  // because it took more hands; only added or changed work moves it. "This is
+  // an estimate" was tried and dropped the same day, because it tells the
+  // customer to expect it to come down. Owner: "yes go with your price".
+  const _byoEst=!_geiIsTM&&_geiIsFreeForm;
+  // Every dollar has a due date (owner, 2026-09-23, the cheapskate test). On
+  // a fixed price the deposit row alone leaves the rest of the money floating:
+  // the question a careful buyer asks next is when the rest is due, and the
+  // answer is only once the work is done. In words, not a third figure: the
+  // client's copy carries two dollar amounts, the price and the deposit
+  // (owner's standing rule, e2e-layout-integrity-regression).
+  const _balRow=(_byoEst&&_tmDepAmt>0&&_tmDepAmt<(Number(total)||0))?`<tr class="prop-balance" style="background:#fff"><td colspan="2" style="padding:14px 24px 16px;font-size:13.5px;font-weight:400;color:#475569;line-height:1.5;border-top:1px solid #eceef2;background:#fafbfc">The rest is due when the work is done. Nothing else is due before then.</td></tr>`:'';
+  const _bigLabel=_tmCapLeads?'MOST YOU&apos;LL PAY':(_geiIsTM?'ESTIMATED TOTAL':(_byoEst?'YOUR PRICE':'TOTAL'));
+  const _bigFigure=_tmCapLeads?_rsMoney(_tmNteCap):totalFmt;
   const _totalFooterRows=(_geiIsTM&&_tmRateOnly)
     ?_rateFooterRows
-    :`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+    :`${_estQuietRow}${_propPriceRow(_bigLabel,_tmCapLeads?_tmCapFineTxt:(_byoEst?'Fixed price for the work listed. Anything added or changed is a change order you sign.':''),_bigFigure,_pAccent)}${_tmDepRow}`+_balRow;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -5432,8 +8222,22 @@ async function sendGenericProposal(previewOnly,opts){
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     // A "Description" header over an empty tbody is a heading for nothing, and a
     // rate sheet with no material categories is exactly that case.
-    :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+    :`<table style="width:100%;border-collapse:collapse;font-size:12px">${lineRows?`<thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">${_geiIsTM?(_tmRateOnly?'Materials':'What the estimate is made of'):'Description'}</th></tr></thead>`:''}<tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
+  const _projectTitle=`${jobDesc||escHtml(((_geiIsTM||_geiIsFreeForm)&&_propProjectTitle(_geiIsFreeForm?_byoWorkItems2.map(it=>it.label):_chipsToPrint,_geiTrade))||tradeName+' service')}`;
+  // The sign-off: his mark small, his name, and a thank-you. Courtesy, not a
+  // claim, and the last thing read before the signature.
+  // The sign-off: centred, his name, a thank-you. Courtesy, not a claim, and
+  // the last thing read before the signature.
+  const _propFooter=(()=>{
+    const nm=String(_bnameRaw||'').trim();
+    if(!nm)return '';
+    return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">Thank you for considering <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
+  })();
+  const proposalHtml=`<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">`+
+    _propCover({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr,name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD})+
+    `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
+    `<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px ${_PT.line}">${_lineItemsSection}</div>`+
+    `${notesHtml}${_propPanelHtml}${_propFooter}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows
@@ -5459,9 +8263,13 @@ async function sendGenericProposal(previewOnly,opts){
     // money at signing is the mobilization deposit, which is a flat figure, not
     // a percent of the zero above.
     amount:(_geiIsTM&&_tmRateOnly)?0:total,
-    deposit:(_geiIsTM&&_tmRateOnly)?_rsFlatDep:_tmDepAmt,
+    deposit:_geiIsTM?_tmDeposit():_tmDepAmt,
     rateOnly:!!(_geiIsTM&&_tmRateOnly),
-    hourlyRate:_geiIsTM?_tmRatePerMan:0,
+    // THIS JSON LANDS IN THE CUSTOMER'S BROWSER. Nothing in sign.html reads
+    // hourlyRate today, but a number he deliberately kept off the document has
+    // no business riding along in the payload behind it where a devtools tab
+    // reads it back. Hidden is hidden in the file as well as on the page.
+    hourlyRate:(_geiIsTM&&!(_tmHideRate&&_tmCanHideRate()))?_tmRatePerMan:0,
     crewCount:_geiIsTM?_tmCrewCount:0,
     nteCap:_geiIsTM?_tmNteCap:0,
     billingCycle:_geiIsTM?(_tmBillingCycle||'weekly'):'',
@@ -5479,6 +8287,9 @@ async function sendGenericProposal(previewOnly,opts){
     state:_stateKey,
     cancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3,
     cancelStatute:_cancelCitation(_stateKey),
+    // California only today: five business days for a buyer 65 or older (Civ. Code §1689.6).
+    seniorCancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorDays)||0,
+    seniorCancelStatute:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey]&&STATE_CANCEL[_stateKey].seniorStatute)||'',
     lienStatute:(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_stateKey])?STATE_LIEN[_stateKey].statute:'applicable mechanic\'s lien statutes',
     yearBuilt:_geiYearBuilt,
     epaRequired:_geiEpaRequired,
@@ -5978,19 +8789,46 @@ async function _drainSignatureQueue(){
   }
   if(dirty){try{saveAll();}catch(_e){}}
 }
+// How it bills, in two words, for the in-person summary. The full sentence
+// lives in the terms; this is the line a man reads over the customer's
+// shoulder while the tablet is being handed across.
+function _tmBillTermShort(){
+  const c=(typeof _tmBillingCycle!=='undefined'&&_tmBillingCycle)||'weekly';
+  return c==='milestone'?'By milestone':c==='completion'?'On completion':'Weekly';
+}
+
 function _geiSignInPerson(){
   saveGenericEstimate(true);
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Save your proposal first','⚠️');return;}
   if(!bid.client_id){showToast('Link this proposal to a client first','⚠️');return;}
   const{total}=calcGeiTotal();
-  if(!total){showToast('Add items to your proposal before signing','⚠️');return;}
+  // A RATE SHEET HAS NO TOTAL, AND THAT IS THE POINT. Owner, 2026-09-22:
+  // "tried to sign in person and got a toast that said add items before
+  // signing". He had scope and a rate on it, which is a complete T&M proposal
+  // and in most states a legal one, and this gate would not let him sign the
+  // exact shape the whole rate-sheet feature exists to produce.
+  //
+  // Same fault the SEND button had in September and the same fix: the question
+  // is whether there is anything to sign, not whether there is a dollar total.
+  // Scope, a rate, or a ceiling each make this a document.
+  const _ipRateOnly=!!(_geiIsTM&&_tmRateOnly);
+  const _ipHasSomething=total>0
+    ||(_geiIsTM&&(Number(_tmRatePerMan)>0||_tmCapVal()>0))
+    ||(typeof _geiScopeChips!=='undefined'&&(_geiScopeChips||[]).length>0);
+  if(!_ipHasSomething){showToast('Put a scope or a rate on it before signing','⚠️');return;}
+  // Same law as Send, from the same function. A contract signed at the kitchen
+  // table is the one that most needs to be right, because there is no link to
+  // re-send and no second look before the customer's name is on it.
+  if(_geiIsTM){const _L=_tmLegal();if(_L.problems.length){_tmLegalStop(_L);return;}}
   const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
   const depPct=_geiDepositPct();
-  const depAmt=Math.round(total*depPct/100*100)/100;
-  const bal=Math.round((total-depAmt)*100)/100;
+  // On a rate sheet the deposit is the FLAT mobilization figure, not a percent
+  // of a total that does not exist, exactly as sendGenericProposal does it.
+  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
+  const bal=_ipRateOnly?0:Math.max(0,Math.round((total-depAmt)*100)/100);
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const depLabel=_geiIsTM?'Mobilization deposit ('+depPct+'%)':'Deposit ('+depPct+'%)';
+  const depLabel=_geiIsTM?'Up front, before work begins':'Deposit ('+depPct+'%)';
   document.getElementById('_gei-ip-ov')?.remove();
   const ov=document.createElement('div');
   ov.id='_gei-ip-ov';
@@ -6004,11 +8842,20 @@ function _geiSignInPerson(){
       '<div style="padding:14px 18px 28px">'+
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
           '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+escHtml(cname)+'</div>'+
-          '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>'+
+          // The headline says what this contract IS. A rate sheet has no total,
+          // so printing "$0.00" next to the words "Contract total" is the lie
+          // the rate sheet exists to stop, on the one screen where the
+          // customer is looking over his shoulder.
+          (_ipRateOnly
+            ?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Time &amp; materials</span><strong style="color:var(--blue)">'+
+              (_tmCapVal()>0?('Up to '+fmt(_tmCapVal())):'No total')+'</strong></div>'
+            :'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>')+
           (depAmt>0
             ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+depLabel+'</span><strong style="color:var(--green)">'+fmt(depAmt)+'</strong></div>'+
               '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Balance on completion</span><strong>'+fmt(bal)+'</strong></div>'
-            :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
+            :(_ipRateOnly
+              ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Billed</span><strong>'+escHtml(_tmBillTermShort())+'</strong></div>'
+              :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>')
           )+
         '</div>'+
         // THE DOCUMENT THEY ARE SIGNING (owner 2026-09-06: "I want it done and
@@ -6055,9 +8902,12 @@ async function _geiConfirmInPerson(){
   if(!bid){showToast('Proposal not found','⚠️');return;}
   const{total}=calcGeiTotal();
   const depPct=_geiDepositPct();
-  const depAmt=Math.round(total*depPct/100*100)/100;
+  // T&M: the flat figure (_tmDepositState), and a rate sheet keeps its zero
+  // amount. This used to write a percent over the mobilization deposit.
+  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
   const ts=new Date().toISOString();
-  bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
+  bid.amount=(_geiIsTM&&_tmRateOnly)?0:total;bid.deposit=depAmt;
+  if(_geiIsTM){bid.tmDepositAmt=depAmt;bid.tmDepositPct=0;}bid.status='Closed Won';bid.draft=false;
   bid.signedAt=ts;bid.estStatus='signed';
   // Same rule the remote path applies (cloud.js _applySigStatusToBid): the
   // options he did not pick close out instead of sitting in Pending. AFTER

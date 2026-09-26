@@ -36,9 +36,28 @@ function renderPriceBookSettings(){
   const list=document.getElementById('pb-list');
   if(!list)return;
   const trades=_pbSettingsTrades();
+  // WHAT HE HAS ALREADY SENT IS A PRICE BOOK, it was just never read as one.
+  // Everything written before the book existed taught it nothing, so a man with
+  // fourteen proposals in the app still opened this screen to an empty list.
+  // Tim offers to read them, and only when there is something in them worth
+  // reading (js/tim-book.js).
+  let _offer='';
+  try{
+    const from=(typeof timBookNew==='function')?timBookNew():null;
+    if(from&&from.offer.length)_offer=
+      '<button type="button" onclick="openTimBook()" style="display:flex;align-items:center;gap:10px;width:100%;margin:0 0 14px;padding:13px 14px;border:0;border-radius:var(--rl);background:var(--bg2);box-shadow:0 0 0 1px var(--border);cursor:pointer;font-family:inherit;text-align:left">'+
+        (typeof timMark==='function'?timMark(24):'')+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">'+from.offer.length+' price'+(from.offer.length===1?'':'s')+' in proposals you already sent</span>'+
+          '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px">Read off '+from.proposals+' of them, with what you actually charged</span>'+
+        '</span>'+
+        '<span style="font-size:12px;font-weight:700;color:var(--blue);flex-shrink:0">Read them</span>'+
+      '</button>';
+  }catch(_e){_offer='';}
+
   if(!trades.length){
     if(tabs)tabs.innerHTML='';
-    list.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
+    list.innerHTML=_offer+'<div style="padding:'+(_offer?'4px':'22px')+' 4px 22px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
       '</div>';
     return;
@@ -51,7 +70,7 @@ function renderPriceBookSettings(){
   }).join(''):'';
   const rows=(S.priceBook[_pbTradeTab]||[]).slice()
     .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
-  list.innerHTML=rows.map((r,i)=>{
+  list.innerHTML=_offer+rows.map((r,i)=>{
     const used=(r.n||1)>=2?((r.n||1)+'x'):'once, not offered yet';
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
@@ -317,7 +336,13 @@ function _licStatusBadge(lic){
 const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
-function detectStateFromAddr(addr){if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+// Delegates to stateFromAddr (js/legal.js), the one reader every statute
+// lookup uses. The first-match regex this used to run read the street before
+// the state ("300 Ca Ave, Phoenix, AZ" was California). See legal.js.
+function detectStateFromAddr(addr){
+  if(typeof stateFromAddr==='function')return stateFromAddr(addr);
+  if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;
+}
 function _initServiceStates(){
   // Auto-populate from existing client + bid addresses on first use
   const found=new Set();
@@ -1035,9 +1060,49 @@ function _renderLogoPreview(){
   document.querySelectorAll('.set-logo-btn').forEach(el=>{el.textContent=src?'Change logo':'Upload image';});
   document.querySelectorAll('.set-logo-rm').forEach(el=>{el.style.display=src?'':'none';});
 }
+// WHAT THE LOGO IS, measured once and kept (proposal letterhead, 2026-09-23:
+// "look at the ugliness on jacks logo"). A logo drawn on its own solid tile,
+// Jack's black square, is laid out on the proposal as a rounded tile beside
+// the name, like an app icon; a transparent or white-backed one as a
+// wordmark. Measured here because the proposal is built synchronously and
+// cannot wait on an image to decode.
+function _logoEnsureMeta(){
+  const src=(typeof S!=='undefined'&&S&&S.logoData)||'';
+  if(!src){if(S&&S.logoMeta)S.logoMeta=null;return Promise.resolve(null);}
+  const h=String(typeof _hubHash==='function'?_hubHash(src):src.length);
+  if(S.logoMeta&&S.logoMeta.hash===h)return Promise.resolve(S.logoMeta);
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const w=img.naturalWidth||img.width||1,hh=img.naturalHeight||img.height||1;
+        const N=48,c=document.createElement('canvas');c.width=N;c.height=N;
+        const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
+        const px=(a,b)=>x.getImageData(a,b,1,1).data;
+        const cs=[px(1,1),px(N-2,1),px(1,N-2),px(N-2,N-2)];
+        const avg=[0,1,2].map(i=>Math.round(cs.reduce((t,p)=>t+p[i],0)/4));
+        const solid=cs.every(p=>p[3]>235)&&cs.every(p=>[0,1,2].every(i=>Math.abs(p[i]-avg[i])<40));
+        const lum=(0.2126*avg[0]+0.7152*avg[1]+0.0722*avg[2])/255;
+        S.logoMeta={hash:h,ratio:Math.round(w/hh*100)/100,solid,light:lum>0.92,bg:'rgb('+avg.join(',')+')'};
+      }catch(_e){S.logoMeta={hash:h,ratio:1,solid:false,light:true,bg:''};}
+      try{if(typeof _settingsChanged==='function')_settingsChanged();}catch(_e){}
+      res(S.logoMeta);
+    };
+    img.onerror=()=>res(null);
+    img.src=src;
+  });
+}
 function applyBrandLogo(){
+  // Measure the logo once; the first time it lands, paint again so a square
+  // emblem gets its badge without waiting for the next render.
+  try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
+  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData){
+    if(S.logoData&&tile){
+      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
+        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
+        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
+    } else if(S.logoData){
       el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
     } else {
       el.textContent=S.bname||'TradeDesk';
@@ -1045,35 +1110,25 @@ function applyBrandLogo(){
   });
 }
 function _updateBootPreview(){
-  const color=(document.getElementById('set-brandcolor')||{}).value||S.brandColor||'';
+  // A thumbnail of the real boot screen (tdBootFill, js/brand-look.js): the
+  // logo on its own background, else the business name, else TradeDesk.
   const logo=S.logoData||'';
   const bname=S.bname||'';
   const bg=document.getElementById('boot-preview-bg');
-  const bar=document.getElementById('boot-preview-bar');
-  const wordmark=document.getElementById('boot-preview-wordmark');
-  const pro=document.getElementById('boot-preview-pro');
   const logoEl=document.getElementById('boot-preview-logo');
   if(!bg)return;
-  if(color){
-    bg.style.background=color;
-    if(bar){
-      const hex=color.replace('#','');
-      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
-      const lum=(0.299*r+0.587*g+0.114*b)/255;
-      bar.style.background=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
-    }
+  const dark='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+  bg.style.background=dark;
+  if(!logoEl)return;
+  if(logo){
+    logoEl.innerHTML='<img src="'+logo+'" style="max-height:74px;max-width:160px;object-fit:contain">';
+    const im=logoEl.querySelector('img');
+    const paint=()=>{const lk=(typeof tdLogoLook==='function')?tdLogoLook(im):null;if(lk)bg.style.background=lk.bg;};
+    if(im.complete)paint();else im.onload=paint;
+  }else if(bname){
+    logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
   }else{
-    bg.style.background='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-    if(bar)bar.style.background='#2D5DA8';
-  }
-  if(logoEl){
-    if(logo){
-      logoEl.innerHTML='<img src="'+logo+'" style="max-height:36px;max-width:120px;object-fit:contain">';
-    }else if(bname){
-      logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
-    }else{
-      logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span>';
-    }
+    logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span>';
   }
 }
 function handleLogoUpload(input){
@@ -1085,8 +1140,23 @@ function handleLogoUpload(input){
   reader.onload=e=>{
     S.logoData=e.target.result;_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
     showToast('Logo saved, proposals will use your logo','🎨');
+    // Read the logo's own colours once it decodes (owner 2026-09-24: white
+    // label follows the logo). A brand colour they already picked is kept.
+    try{const im=new Image();im.onload=()=>_tdBrandFromLogo(typeof tdLogoLook==='function'?tdLogoLook(im):null);im.src=S.logoData;}catch(_e){}
   };
   reader.readAsDataURL(file);
+}
+// Fill the brand colour from the logo when the contractor has not picked one.
+// Never overwrites a choice. Returns true when it set one.
+function _tdBrandFromLogo(look){
+  if(!look||!look.accent||S.brandColor)return false;
+  S.brandColor=(typeof adaBrand==='function'?adaBrand(look.accent):look.accent)||'';
+  if(!S.brandColor)return false;
+  const inp=document.getElementById('set-brandcolor');if(inp)inp.value=S.brandColor;
+  try{_renderBrandSwatches(S.brandColor);}catch(_e){}
+  try{_updateBootPreview();}catch(_e){}
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
 }
 function clearLogoSetting(){
   S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();

@@ -18,6 +18,10 @@ function goPg(id){
   // so boot-time goPg('pg-dash') calls can never wipe the marker before
   // _maybeResumeActiveEstimate reads it.
   if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
+  // Leaving a page turns Tim's mic off. Nothing else would: the listening
+  // panel is fixed to the screen, so it followed him to the next page with
+  // the mic still open (owner, 2026-09-26).
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'&&document.querySelector('.pg.active')?.id!==id){try{_timTalkStop(true);}catch(_e){}}
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
@@ -43,14 +47,17 @@ function goPg(id){
     'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
   // Sync mobile bottom tab bar
-  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
-    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'};
+  // No mtb-clients any more: Clients moved into the More menu so Tim could be
+  // dead centre, so it lights More, the same as every other page in there. A
+  // client opened FROM Leads still lights Leads, which is where he came from.
+  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-jobs':'mtb-jobs',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':''};
   document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
   const _mtb=document.getElementById(_mtbMap[id]||'');
   if(_mtb)_mtb.classList.add('active');
   else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
   document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
+  const _mmiKey={'pg-clients':'mmi-clients','pg-client-detail':'mmi-clients','pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
   if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
@@ -92,6 +99,9 @@ function goPg(id){
   if(id==='pg-money')renderMoneyPage();
   if(id!=='pg-est-generic'){window._wakeLockRelease&&window._wakeLockRelease();}
   if(id==='pg-client-hub')renderClientHubPage();
+  // Tim's dock re-reads the screen he just landed on. What he found on the last
+  // page is not true on this one, and a stale pill is worse than no pill.
+  if(typeof timDockRefresh==='function')timDockRefresh();
 }
 
 // ── REPAINT WHAT IS ON SCREEN, WITHOUT NAVIGATING TO IT ─────────────────────
@@ -162,8 +172,17 @@ function _applyEmployeeNavGating(){
   // nb-taxes/mmi-taxes are owned exclusively by applyPermissions()'s canSeeTaxes() check
   // (a finer-grained owner/co-owner test), not listed here to avoid two functions
   // fighting over the same element.
+  // mmi-tim added 2026-09-21. Tim has been owner-only since he was built (the
+  // dock refuses to draw for a crew member, with the reason written beside it)
+  // but this button calls openTim() directly and was never gated, so it stayed
+  // a way in to every money answer he has: revenue, receivables, the best
+  // customer, the average job. None of those route through goPg, so the
+  // _empBlocked list above never saw them and pg-money being shut meant
+  // nothing. openTim and timAsk both refuse for crew now too; this only removes
+  // the invitation.
   const _gatedIds=['nb-tracker','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
    'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
+   'mmi-tim',
   ];
   const _show=!_isEmployee;
   _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_show?'':'none';});
@@ -309,7 +328,9 @@ function _hatSwitcherMenu(){
 }
 
 // ── Tab bar drag-to-reorder ────────────────────────────────────────────────
-const _MTB_DEFAULT_ORDER = ['dash','leads','clients','jobs'];
+// Clients left the bar so Tim could be dead centre (see index.html). Three
+// tabs, his seat, and More is five slots, and five has a middle.
+const _MTB_DEFAULT_ORDER = ['dash','leads','jobs'];
 
 function _getTabOrder() {
   const saved = S.navTabOrder;
@@ -324,6 +345,24 @@ function _applyTabOrder(order) {
     const btn = document.getElementById('mtb-' + id);
     if (btn) inner.appendChild(btn);
   });
+  // Tim's seat goes back to the middle of the row afterwards. appendChild above
+  // moves the four named tabs to the end, so without this the spacer ends up
+  // FIRST on every phone that has ever had its bar dragged, and the notch is
+  // cut on the left edge with Tim floating over the Home tab. Which of the four
+  // tabs ends up either side of him is the owner's business; that he is in the
+  // middle of them is not.
+  const seat = document.getElementById('mtb-tim-slot');
+  if (seat) {
+    // Where the seat goes is NOT the middle of the tabs, it is the middle of
+    // the BAR, and the bar has one more slot in it than this row does: More
+    // sits outside #mtb-inner. With n tabs the bar has n+2 slots and the middle
+    // one is index (n+1)/2, which is 2 for the three tabs shipped here. Using
+    // the middle of the tabs instead put him one slot left of centre.
+    const kids = [...inner.children].filter(el => el !== seat);
+    const mid = Math.floor((kids.length + 1) / 2);
+    if (kids[mid]) inner.insertBefore(seat, kids[mid]);
+    else inner.appendChild(seat);
+  }
 }
 
 function _initTabBarDrag() {

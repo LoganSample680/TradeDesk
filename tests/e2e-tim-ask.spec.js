@@ -1,0 +1,1339 @@
+// @ts-check
+// ── Tim answering questions about the owner's own books ──────────────────────
+//
+// Owner, 2026-09-20: he wants Tim to search the database, save the addresses,
+// ask about lead source, give insights, and do all of it in the pocket of a
+// contractor's beat-up phone. So every assertion below runs with no network and
+// no model: the answers are arithmetic over the arrays js/data.js already holds.
+//
+// The rule these tests exist to hold is narrower than "the maths is right". It
+// is that **a figure Tim says is the same figure the page that owns it says.**
+// He is quoting a man his own money back to him. A number that is close, or
+// stale, or computed a second way, is worse than no answer, because it still
+// sounds certain. So the owed tests below check against getBidBalance and the
+// Closed Won / completion_date shape renderMoneyPage uses, not against a
+// convenient fixture of my own design.
+//
+// That distinction is not theoretical. _timOwedByClient shipped filtering on
+// b.clientId and status 'invoiced'; the app uses b.client_id and 'Closed Won',
+// and 'invoiced' is not a status anywhere in the codebase. It matched zero rows
+// on every real job, and the nudge suite never caught it because those tests
+// hand timNudges() a snapshot object with the figure already in it. The last
+// group here is the seam test that was missing.
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+
+// Shaped the way the app shapes them, which is the whole point.
+const SEED = () => {
+  _activeTrade = 'painting';
+  clients.length = 0; bids.length = 0; payments.length = 0; expenses.length = 0;
+  clients.push(
+    { id: 7101, name: 'Dana Whitfield', phone: '316-555-0101', email: 'dana@ts.test',
+      addr: '1200 Elm St, Wichita KS 67203', source: 'Google' },
+    { id: 7102, name: 'Ray Kellerman', phone: '316-555-0144', email: 'ray@ts.test',
+      addr: '88 POPLAR AVE, Wichita KS 67211', source: 'Referral' },
+    { id: 7103, name: 'Marta Ochoa', phone: '316-555-0177', addr: '4 Vine Ct', source: 'Google' },
+    { id: 7104, name: 'Nobody Tagged', phone: '316-555-0199', addr: '9 Blank St' },
+  );
+  bids.push(
+    // Finished nine weeks ago, half paid. The oldest money out.
+    { id: 8801, client_id: 7101, status: 'Closed Won', amount: 4000, date: '2026-06-20',
+      completion_date: '2026-07-15', byoItems: [
+        { label: 'Remove and reset gutters', price: 340, unit: 'lot' },
+        { label: 'Body and trim, two coats', price: 0.78, unit: 'sq ft' }] },
+    // Finished recently, nothing paid.
+    { id: 8802, client_id: 7102, status: 'Closed Won', amount: 1500, date: '2026-08-30',
+      completion_date: '2026-09-14' },
+    // Won and fully paid: not owed.
+    { id: 8803, client_id: 7103, status: 'Closed Won', amount: 900, date: '2026-05-02',
+      completion_date: '2026-05-20' },
+    // Never won: not owed, and a loss against its source.
+    { id: 8804, client_id: 7103, status: 'Closed Lost', amount: 2600, date: '2026-08-01' },
+    // Still out: neither won nor lost.
+    { id: 8805, client_id: 7101, status: 'Pending', amount: 3300, date: '2026-09-10' },
+  );
+  payments.push(
+    { bid_id: 8801, amount: 2000 },
+    { bid_id: 8803, amount: 900 },
+  );
+  expenses.push(
+    { cat: 'marketing', lead_source: 'Google', amount: 600, date: '2026-07-01' },
+    { cat: 'marketing', lead_source: 'Truck wrap', amount: 2400, date: '2026-03-11' },
+    { cat: 'materials', amount: 812, date: '2026-07-02' },
+  );
+  S.priceBook = { painting: [
+    { desc: 'Remove and reset gutters', rate: 340, unit: 'lot', n: 4, last: '2026-06-11' },
+    { desc: 'Strip and repaint, west elevation', rate: 2180, unit: 'lot', n: 5, last: '2026-05-02' },
+  ] };
+
+  // ── The books the eight added answers read ────────────────────────────────
+  // income rows deliberately carry BOTH date shapes, '20260715' and
+  // '2026-08-02', because the real array does: the cloud importer strips the
+  // dashes and a man typing one does not. An answer that reads the year with a
+  // bare slice(0,4) gets '2026' out of one and '2026' out of the other only by
+  // luck of the dash count, and silently drops half the year the first time
+  // that luck runs out.
+  income.length = 0; mileage.length = 0; timeEntries.length = 0;
+  income.push(
+    { id: 9001, client_name: 'Dana Whitfield', date: '20260715', type: 'Job payment', amount: 1200 },
+    { id: 9002, client_name: 'Marta Ochoa', date: '2026-08-02', type: 'Job payment', amount: 300 },
+    { id: 9003, client_name: 'Old Money', date: '2025-11-01', type: 'Job payment', amount: 9999 },
+  );
+  // The two payments above get dates so they can be counted as money IN as
+  // well as against their bid's balance. A deposit lands in payments and never
+  // reaches income, which is why the answer has to read both arrays.
+  payments[0].date = '2026-07-20'; payments[0].client_name = 'Dana Whitfield';
+  payments[1].date = '2026-05-25'; payments[1].client_name = 'Marta Ochoa';
+  expenses.push(
+    { cat: 'materials', catLabel: 'Materials & Supplies', vendor: 'Sherwin-Williams #7043',
+      amount: 412, date: '2026-07-02', notes: 'Exterior acrylic' },
+    { cat: 'materials', catLabel: 'Materials & Supplies', vendor: 'Sherwin-Williams #7043',
+      amount: 188, date: '2026-08-14', notes: 'Sundries' },
+    { cat: 'fuel', catLabel: 'Fuel', vendor: 'Kwik Shop', amount: 64, date: '2026-08-15' },
+  );
+  mileage.push(
+    { id: 9301, date: '2026-07-02', miles: 14.2, purpose: 'Business' },
+    { id: 9302, date: '2026-08-14', miles: 22.5, purpose: 'Business' },
+    { id: 9303, date: '2026-08-15', miles: 100, purpose: 'Personal' },
+    { id: 9304, date: '2025-08-15', miles: 500, purpose: 'Business' },
+  );
+  // Clocked against the app's own clock, not a hardcoded week. todayKey() is
+  // what the answer counts back from, so fixed dates here would pass today and
+  // fail whenever the suite is next run more than a week from now.
+  const _d = (back) => {
+    const x = new Date(Date.parse(todayKey()) - back * 86400000);
+    return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') +
+      '-' + String(x.getUTCDate()).padStart(2, '0');
+  };
+  timeEntries.push(
+    { id: 9401, date: _d(1), minutes: 255, logged_by_name: 'Sample Owner', open: false },
+    { id: 9402, date: _d(2), minutes: 215, logged_by_name: 'Andre Ruiz', open: false },
+    { id: 9403, date: _d(30), minutes: 480, logged_by_name: 'Sample Owner', open: false },
+    { id: 9404, date: _d(0), minutes: null, logged_by_name: 'Sample Owner', open: true },
+  );
+};
+
+test.describe('tim answering off your own books', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    // A reconnect probe runs supaLoadFromCloud against the mock, which
+    // REPLACES the in-memory arrays and drops what SEED just wrote (webkit,
+    // 2026-09-25: "how many miles" came back with no rows, so no button).
+    // Nothing here tests cloud loading, so the load is parked once for the
+    // block, the same guard e2e-photo-capture's sheet block uses.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+  test.beforeEach(async () => { await page.evaluate(SEED); });
+
+  test.describe('hearing the question', () => {
+    test('each family is recognised in the words he would use', async () => {
+      const r = await page.evaluate(() => [
+        'who owes me money', 'what am I waiting on', 'whats owed',
+        'what did I charge the Kellermans for gutters',
+        'which lead source is actually worth it',
+        'whats the address for Dana',
+      ].map(s => (timAskKind(s) || {}).id));
+      expect(r).toEqual(['owed', 'owed', 'owed', 'charged', 'source', 'who']);
+    });
+
+    test('a longer phrase wins over a shorter one inside it', async () => {
+      const r = await page.evaluate(() => timAskKind('who owes me money').phrase);
+      expect(r).toBe('who owes me money');
+    });
+
+    test('describing work is not a question, so the estimate path keeps it', async () => {
+      const r = await page.evaluate(() => [
+        'strip and repaint the west elevation',
+        'three days, two men, scaffold on the west side',
+        'gutters come off first and go back after',
+        'five gallons of Duration in Iron Ore',
+      ].map(s => timAskKind(s)));
+      expect(r).toEqual([null, null, null, null]);
+    });
+  });
+
+  test.describe('what am I owed', () => {
+    test('only Closed Won with a balance counts, and it is grouped by customer', async () => {
+      const r = await page.evaluate(() => timOwedAll());
+      expect(r.length).toBe(2);
+      expect(r.map(x => x.name)).toEqual(['Dana Whitfield', 'Ray Kellerman']);
+      // 4000 billed less 2000 paid. Not the bid amount, not the payment.
+      expect(r[0].amount).toBe(2000);
+      expect(r[1].amount).toBe(1500);
+    });
+
+    test('a paid-up job, a lost one and a pending one are all absent', async () => {
+      const r = await page.evaluate(() => timOwedAll().map(x => x.name));
+      // Marta is paid in full and also has a Closed Lost; neither is money out.
+      expect(r).not.toContain('Marta Ochoa');
+      // Dana's Pending 3300 must not be added to her 2000.
+      const dana = await page.evaluate(() => timOwedAll()[0]);
+      expect(dana.amount).toBe(2000);
+    });
+
+    test('it agrees with getBidBalance, which is what the Collect page reads', async () => {
+      const r = await page.evaluate(() => {
+        const mine = timOwedAll().reduce((s, x) => s + x.amount, 0);
+        const theirs = bids.filter(b => b.status === 'Closed Won')
+          .reduce((s, b) => s + getBidBalance(b), 0);
+        return { mine, theirs };
+      });
+      expect(r.mine).toBe(r.theirs);
+    });
+
+    test('oldest money first, because that is the one going bad', async () => {
+      const r = await page.evaluate(() => timOwedAll().map(x => ({ n: x.name, d: x.days })));
+      expect(r[0].n).toBe('Dana Whitfield');
+      expect(r[0].d).toBeGreaterThan(r[1].d);
+    });
+
+    test('the days run from the day the work finished, not the proposal date', async () => {
+      const r = await page.evaluate(() => {
+        const days = timOwedAll()[0].days;
+        const fromDone = Math.floor((new Date(todayKey() + 'T12:00') - new Date('2026-07-15T12:00')) / 86400000);
+        const fromBid = Math.floor((new Date(todayKey() + 'T12:00') - new Date('2026-06-20T12:00')) / 86400000);
+        return { days, fromDone, fromBid };
+      });
+      expect(r.days).toBe(r.fromDone);
+      expect(r.days).not.toBe(r.fromBid);
+    });
+
+    test('the answer leads with the total and offers the screen that owns it', async () => {
+      const r = await page.evaluate(() => timAsk('who owes me money'));
+      expect(r.id).toBe('owed');
+      expect(r.title).toBe('$3,500');
+      expect(r.sub).toContain('2 customers');
+      expect(r.rows.length).toBe(2);
+      expect(r.go.fn).toContain('pg-money');
+    });
+
+    test('paid up is stated plainly, not as an empty list', async () => {
+      const r = await page.evaluate(() => {
+        payments.push({ bid_id: 8801, amount: 2000 }, { bid_id: 8802, amount: 1500 });
+        return timAsk('who owes me money');
+      });
+      expect(r.title).toBe('Nothing out');
+      expect(r.rows).toEqual([]);
+    });
+  });
+
+  test.describe('what did I charge', () => {
+    test('his book answers first, with how many it is built on', async () => {
+      const r = await page.evaluate(() => timAsk('what did I charge for gutters'));
+      expect(r.id).toBe('charged');
+      expect(r.title).toBe('$340');
+      expect(r.sub).toContain('Remove and reset gutters');
+      expect(r.sub).toContain('4');
+    });
+
+    test('a unit price carries its unit, because $0.78 alone is meaningless', async () => {
+      const r = await page.evaluate(() => {
+        S.priceBook = {};
+        return timAsk('what did I charge for body and trim');
+      });
+      expect(r.title).toContain('/ sq ft');
+    });
+
+    test('a line he only ever sent is still an answer, and says who got it', async () => {
+      const r = await page.evaluate(() => {
+        S.priceBook = {};
+        return timAsk('what did I charge for body and trim');
+      });
+      expect(r.sub).toContain('Dana Whitfield');
+    });
+
+    test('nothing matching is null, never a made up going rate', async () => {
+      const r = await page.evaluate(() => timAsk('what did I charge for helicopter rental'));
+      expect(r).toBe(null);
+    });
+  });
+
+  test.describe('which lead source pays', () => {
+    test('leads, wins and losses come off the real records', async () => {
+      const r = await page.evaluate(() => timBySource());
+      const g = r.find(x => x.source === 'Google');
+      expect(g.leads).toBe(2);      // Dana and Marta
+      expect(g.won).toBe(2);        // 8801 and 8803
+      expect(g.lost).toBe(1);       // 8804
+      expect(g.revenue).toBe(4900);
+      expect(g.close).toBe(67);     // 2 of 3 decided
+    });
+
+    test('an untagged customer is counted against no source', async () => {
+      const r = await page.evaluate(() => timBySource().reduce((s, x) => s + x.leads, 0));
+      expect(r).toBe(3); // Nobody Tagged is not in any bucket
+    });
+
+    test('cost per won job comes off the marketing expenses already tagged', async () => {
+      const r = await page.evaluate(() => timBySource().find(x => x.source === 'Google'));
+      expect(r.spend).toBe(600);
+      expect(r.perWon).toBe(300);
+    });
+
+    test('a channel he pays for and never wins off is shown, not hidden', async () => {
+      const r = await page.evaluate(() => timBySource().find(x => x.source === 'Truck wrap'));
+      expect(r).toBeTruthy();
+      expect(r.spend).toBe(2400);
+      expect(r.won).toBe(0);
+      expect(r.perWon).toBe(null);
+      const row = await page.evaluate(() =>
+        timAsk('which lead source is worth it').rows.find(x => x.lead === 'Truck wrap'));
+      expect(row.note).toContain('nothing won');
+    });
+
+    test('a non-marketing expense never lands in a channel', async () => {
+      const r = await page.evaluate(() => timBySource().reduce((s, x) => s + x.spend, 0));
+      expect(r).toBe(3000); // 600 + 2400, never the 812 of materials
+    });
+
+    test('nothing tagged says so and points at the fix', async () => {
+      const r = await page.evaluate(() => {
+        clients.forEach(c => { delete c.source; delete c.leadSource; });
+        expenses.length = 0;
+        return timAsk('which lead source is working');
+      });
+      expect(r.title).toContain('No sources tagged');
+      expect(r.sub).toContain('Put a source on a customer');
+    });
+  });
+
+  test.describe('who is this customer', () => {
+    test('the address, the phone and where they came from', async () => {
+      const r = await page.evaluate(() => timAsk('whats the address for Dana'));
+      expect(r.title).toBe('Dana Whitfield');
+      expect(r.rows.find(x => x.lead === 'Where').note).toContain('1200 Elm');
+      expect(r.rows.find(x => x.lead === 'Phone').right).toBe('316-555-0101');
+      expect(r.rows.find(x => x.lead === 'Came from').note).toBe('Google');
+    });
+
+    test('what they still owe rides on the card, because that is why he opened it', async () => {
+      const r = await page.evaluate(() => timAsk('whats the address for Dana'));
+      expect(r.sub).toContain('$2,000');
+      expect(r.sub).toContain('still out');
+    });
+
+    test('a customer who is square reads as paid up', async () => {
+      const r = await page.evaluate(() => timAsk('whats the address for Marta'));
+      expect(r.sub).toBe('Paid up');
+    });
+
+    test('a name he cannot place is null, not the wrong customer', async () => {
+      const r = await page.evaluate(() => timAsk('whats the address for Geronimo Blackwood'));
+      expect(r).toBe(null);
+    });
+  });
+
+  // ── The eight added 2026-09-20 ────────────────────────────────────────────
+  //
+  // Every question here is phrased with the year in it ("in 2026") on purpose.
+  // The answers default to the current year off todayKey(), which is correct
+  // behaviour and untestable against fixed seed rows: a suite that hardcodes
+  // 2026 bids and asks "how much did I make" passes all year and then fails
+  // every test in this block at midnight on New Year's Eve. Naming the year
+  // exercises the year parser as well, which is the part that can actually be
+  // wrong.
+  test.describe('the rest of what he can answer', () => {
+    test('all twelve families are heard, and none of them steals another', async () => {
+      const r = await page.evaluate(() => [
+        ['who owes me money', 'owed'],
+        ['what did I charge for gutters', 'charged'],
+        ['which lead source is worth it', 'source'],
+        ['whats the address for Dana', 'who'],
+        ['how much did I make in 2026', 'made'],
+        ['what did I spend at Sherwin Williams', 'spent'],
+        ['whats out right now', 'out'],
+        ['how many did I win in 2026', 'winrate'],
+        ['who is my best customer', 'best'],
+        ['how many miles did I drive in 2026', 'miles'],
+        ['how many hours did I work', 'hours'],
+        ['whats my average job in 2026', 'avg'],
+        // The three added 2026-09-21, on the owner's ask for a week he can
+        // invoice off. `sheet` has to beat `hours` on a sentence carrying both
+        // ("breakdown of my last week ... total up my hours"), which is what
+        // the longest-phrase rule is for.
+        ['give me a breakdown of my last week by person', 'sheet'],
+        ['what do I invoice', 'sheet'],
+        ['what time is it', 'clock'],
+        ['what day is it', 'clock'],
+      ].map(([s, want]) => [(timAskKind(s) || {}).id, want]));
+      r.forEach(([got, want]) => expect(got).toBe(want));
+    });
+
+    test('money in counts income AND payments, in both date shapes', async () => {
+      const r = await page.evaluate(() => timAsk('how much did I make in 2026'));
+      // income 1200 ('20260715') + 300 ('2026-08-02') + payments 2000 + 900.
+      // The 2025 row and its 9999 must not be in it.
+      expect(r.title).toBe('$4,400');
+      expect(r.sub).toContain('2026');
+      expect(r.sub).toContain('4 payments');
+    });
+
+    test('last year is a different answer, not the same one', async () => {
+      const r = await page.evaluate(() => timAsk('how much did I make in 2025'));
+      expect(r.title).toBe('$9,999');
+    });
+
+    test('spend comes back by category, biggest first', async () => {
+      const r = await page.evaluate(() => timAsk('what did I spend in 2026'));
+      // 600 + 2400 marketing, 812 + 412 + 188 materials, 64 fuel
+      expect(r.title).toBe('$4,476');
+      expect(r.rows[0].lead).toBe('Advertising & marketing');
+      expect(r.rows.map(x => x.lead)).toContain('Materials & Supplies');
+    });
+
+    test('naming a vendor asks about that vendor, not the whole year', async () => {
+      const r = await page.evaluate(() => timAsk('what did I spend at Sherwin Williams in 2026'));
+      // He says "sherwin williams", the receipt says "Sherwin-Williams #7043".
+      expect(r.title).toBe('$600');
+      expect(r.sub).toContain('Sherwin-Williams #7043');
+      expect(r.sub).toContain('2 receipts');
+    });
+
+    test('what is out is the pending bids, oldest first', async () => {
+      const r = await page.evaluate(() => timAsk('whats out right now'));
+      expect(r.title).toBe('$3,300');
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].lead).toBe('Dana Whitfield');
+    });
+
+    test('the win rate counts decided bids only, and says what is still out', async () => {
+      const r = await page.evaluate(() => timAsk('how many did I win in 2026'));
+      // Won 8801, 8802, 8803. Lost 8804. Pending 8805 is neither.
+      expect(r.title).toBe('75%');
+      expect(r.sub).toContain('3 of 4');
+      expect(r.rows.find(x => x.lead === 'Still out').right).toBe('1');
+    });
+
+    test('the best customer is by money won, not by job count', async () => {
+      const r = await page.evaluate(() => timAsk('who is my best customer'));
+      // Dana: one won job at 4000. Marta: 900 won plus a 2600 LOSS that must
+      // not count. Ray: 1500.
+      expect(r.title).toBe('Dana Whitfield');
+      expect(r.rows.map(x => x.lead)).toEqual(['Dana Whitfield', 'Ray Kellerman', 'Marta Ochoa']);
+    });
+
+    test('mileage counts business drives and leaves personal out of the figure', async () => {
+      const r = await page.evaluate(() => timAsk('how many miles did I drive in 2026'));
+      expect(r.title).toBe('36.7 mi');
+      expect(r.sub).toContain('2 drives');
+      expect(r.sub).toContain('1 personal not counted');
+    });
+
+    test('he does not turn mileage into a deduction', async () => {
+      // The IRS rate moves and splits mid-year. A number a man repeats to his
+      // accountant comes off the tax screen that owns it, not off Tim.
+      const r = await page.evaluate(() => timAsk('how many miles did I drive in 2026'));
+      expect(r.sub).not.toMatch(/deduct|write.?off|\$/i);
+      expect(r.title).not.toContain('$');
+    });
+
+    // ── 10.4: two assertions changed here, from one change ───────────────────
+    // The answer used to always count seven days back and REFUSED to understand
+    // "this week" or "last week", on the stated grounds that a man who starts
+    // Sunday means different days from one who starts Monday. Refusing was the
+    // wrong fix: the app had already decided, in _tlWeekKey, which is what
+    // groups the timesheet and the overtime line. So the window is parsed now,
+    // it is that same Sunday-keyed week, and every answer prints the two dates
+    // it used so nothing is left to be guessed at.
+    // WAS: sub said "2 entries" and named no span.
+    // NOW: it names the span, and counts the open clock as an ENTRY while still
+    // counting none of its minutes and none of its day.
+    test('hours are the last seven days by default, an open clock adds no minutes', async () => {
+      const r = await page.evaluate(() => timAsk('how many hours did I work'));
+      // 255 + 215 within the window. The 30-day-old 480 is out; the open entry
+      // is inside it and is reported, but contributes nothing.
+      expect(r.title).toBe('7.8 hrs');
+      expect(r.sub).toContain('the last 7 days');
+      expect(r.sub).toContain('3 entries');
+      expect(r.sub).toContain('1 still running');
+      // And the day it is running on is not a day worked, because no hours have
+      // landed on it yet.
+      expect(r.sub).toContain('over 2 days');
+      expect(r.rows.map(x => x.lead)).toEqual(['Sample Owner', 'Andre Ruiz']);
+    });
+
+    test('he says which days he counted, rather than leaving it to be guessed', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        ['how many hours did I work', 'my hours this week', 'total up my hours last week']
+          .forEach(s => { const a = timAsk(s); out[s] = a && a.sub; });
+        return out;
+      });
+      // Every one carries two real dates. Whatever the window means to him, it
+      // cannot be read wrong once it says which days it used.
+      Object.keys(r).forEach(k => {
+        expect(r[k], k).toMatch(/[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ to [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+/);
+      });
+      expect(r['my hours this week']).toContain('this week');
+      expect(r['total up my hours last week']).toContain('last week');
+    });
+
+    // The Sunday is not a preference, it is the app's own. _tlWeekKey groups the
+    // timesheet, the weekly running total and the FLSA overtime flag by it, and
+    // Tim reading a different week from the screen that owns the hours is the
+    // one way two right answers can disagree with each other.
+    test('his week is the timesheet own week, Sunday to Saturday', async () => {
+      const r = await page.evaluate(() => {
+        const w = _timWhen('what did we do last week');
+        return { from: w.from, sunKey: _tlWeekKey(w.from),
+          fromDay: parseD(w.from).getDay(), toDay: parseD(w.to).getDay(),
+          span: Math.round((parseD(w.to) - parseD(w.from)) / 86400000) };
+      });
+      expect(r.fromDay).toBe(0);      // Sunday
+      expect(r.toDay).toBe(6);        // Saturday
+      expect(r.span).toBe(6);         // seven days inclusive
+      expect(r.sunKey).toBe(r.from);
+    });
+
+    test('the average job carries the middle one too', async () => {
+      const r = await page.evaluate(() => timAsk('whats my average job in 2026'));
+      // Won: 4000, 1500, 900. Mean 2133, median 1500.
+      expect(r.title).toBe('$2,133');
+      expect(r.sub).toContain('$1,500');
+      expect(r.rows.find(x => x.lead === 'Middle job').right).toBe('$1,500');
+    });
+
+    test('empty books are an answer, not a crash and not a zero dressed as a fact', async () => {
+      const r = await page.evaluate(() => {
+        income.length = 0; payments.length = 0; expenses.length = 0;
+        mileage.length = 0; timeEntries.length = 0; bids.length = 0;
+        return ['how much did I make in 2026', 'what did I spend in 2026', 'whats out right now',
+          'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026']
+          .map(s => { const a = timAsk(s); return a && a.title; });
+      });
+      expect(r).toEqual([
+        'Nothing in 2026 yet', 'Nothing logged for 2026', 'Nothing out',
+        'Nothing decided in 2026', 'No won work yet', 'Nothing logged for 2026',
+        'Nothing clocked', 'No won work in 2026',
+      ]);
+    });
+
+    test('junk in every array is still an answer, never a throw', async () => {
+      const r = await page.evaluate(() => {
+        income.length = 0; income.push(null, {}, { date: 'x', amount: 'nope' });
+        expenses.length = 0; expenses.push(null, { amount: NaN });
+        mileage.length = 0; mileage.push(null, { date: '2026-01-01', miles: 'ten' });
+        timeEntries.length = 0; timeEntries.push(null, { date: null, minutes: 'x' });
+        bids.length = 0; bids.push(null, { status: 'Closed Won' });
+        return ['how much did I make in 2026', 'what did I spend in 2026', 'whats out right now',
+          'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026'].map(s => { try { return !!timAsk(s); } catch (e) { return 'THREW'; } });
+      });
+      expect(r).toEqual([true, true, true, true, true, true, true, true]);
+    });
+
+    test('describing work is still not a question, with twelve families listening', async () => {
+      const r = await page.evaluate(() => [
+        'strip and repaint the west elevation',
+        'three days, two men, scaffold on the west side',
+        'five gallons of Duration in Iron Ore',
+        'build a t and m for Logan Sample',
+      ].map(s => timAskKind(s)));
+      expect(r).toEqual([null, null, null, null]);
+    });
+  });
+
+  // ── The buttons on his answers are CLICKED here, not read ─────────────────
+  //
+  // Every answer carries a `go`, and `go.fn` is a string of JavaScript that
+  // gets written into an onclick. Nothing checks that the function it names
+  // exists, so a typo is a button that throws ReferenceError and leaves the man
+  // looking at a sheet that did nothing. That is not hypothetical: the
+  // who-is-this answer shipped calling openClient(id) for weeks. There is no
+  // openClient in this codebase and there never has been; the real one is
+  // openClientDetail(cid, origin). Every test above passed, because they all
+  // read the object and none of them pressed the button.
+  test.describe('the button on the answer actually works', () => {
+    const ANSWERS = [
+      ['who owes me money', 'pg-money'],
+      ['how much did I make in 2026', 'pg-tracker'],
+      ['what did I spend in 2026', 'pg-taxes'],
+      ['whats out right now', 'pg-leads'],
+      ['how many did I win in 2026', 'pg-leads'],
+      ['who is my best customer', 'pg-clients'],
+      ['how many miles did I drive in 2026', 'pg-taxes'],
+      ['how many hours did I work', 'pg-timelog'],
+      ['whats my average job in 2026', 'pg-leads'],
+    ];
+    for (const [said, want] of ANSWERS) {
+      test(`"${said}" lands on ${want}`, async () => {
+        const got = await page.evaluate((s) => {
+          goPg('pg-dash');
+          const ans = timAsk(s);
+          if (!ans || !ans.go) return 'NO GO BUTTON';
+          try { (0, eval)(ans.go.fn); } catch (e) { return 'THREW: ' + e.message; }
+          return (document.querySelector('.pg.active') || {}).id || 'NOTHING ACTIVE';
+        }, said);
+        expect(got).toBe(want);
+      });
+    }
+
+    test('the customer answer opens that customer, by the name that exists', async () => {
+      const got = await page.evaluate(() => {
+        goPg('pg-dash');
+        const ans = timAsk('whats the address for Dana');
+        try { (0, eval)(ans.go.fn); } catch (e) { return 'THREW: ' + e.message; }
+        return { pg: (document.querySelector('.pg.active') || {}).id, who: currentClientId };
+      });
+      expect(got).toEqual({ pg: 'pg-client-detail', who: 7101 });
+    });
+
+    // The cheap guard that would have caught it on day one, for every answer at
+    // once: the function each button names has to be a function.
+    test('every function an answer names exists', async () => {
+      const bad = await page.evaluate(() => {
+        const out = [];
+        ['who owes me money', 'what did I charge for gutters', 'which lead source is worth it',
+          'whats the address for Dana', 'how much did I make in 2026', 'what did I spend in 2026',
+          'whats out right now', 'how many did I win in 2026', 'who is my best customer',
+          'how many miles did I drive in 2026', 'how many hours did I work',
+          'whats my average job in 2026'].forEach(s => {
+          const a = timAsk(s);
+          if (!a || !a.go) return;
+          const name = String(a.go.fn).split('(')[0].trim();
+          if (typeof window[name] !== 'function') out.push(s + ' -> ' + name);
+        });
+        return out;
+      });
+      expect(bad).toEqual([]);
+    });
+  });
+
+  // ── The one he opens with ─────────────────────────────────────────────────
+  test.describe('where do I stand', () => {
+    test('the exact sentence the owner typed and got a miss on', async () => {
+      const r = await page.evaluate(() => timAsk("What's Going On Tim?"));
+      expect(r).not.toBeNull();
+      expect(r.id).toBe('brief');
+    });
+
+    // The bug underneath the miss, and it was never about this one family.
+    // _timkNorm turned every stray character into a SPACE, so "what's" became
+    // "what s" and matched nothing. iOS autocorrects "whats" TO "what's" as you
+    // type, so the keyboard was reliably rewriting his question into one Tim
+    // could not hear, across every phrase in the list written the plain way.
+    test('the apostrophe iOS insists on adding does not break the match', async () => {
+      const r = await page.evaluate(() => [
+        // straight, curly, and the plain form, for the phrases that carry one
+        ["what's going on", 'brief'],
+        ['what\u2019s going on', 'brief'],
+        ['whats going on', 'brief'],
+        ["what's owed", 'owed'],
+        ['what\u2019s owed', 'owed'],
+        ["what's out right now", 'out'],
+        ["what's the address for Dana", 'who'],
+        ["what's my average job", 'avg'],
+        ["how's business", 'brief'],
+      ].map(([said, want]) => [(timAskKind(said) || {}).id, want]));
+      r.forEach(([got, want]) => expect(got).toBe(want));
+    });
+
+    // The preview under the box reads from timParse, which knows doors, years
+    // and work and nothing at all about these twelve families. So the one
+    // question in the app most likely to be typed first previewed as "Not sure
+    // what that is yet" right up until you pressed send and got a full answer.
+    // A preview that contradicts what is about to happen talks a man out of
+    // asking.
+    test('the line under the box does not call it a miss before he answers it', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const el = document.getElementById('_tim-say');
+        const read = (v) => { el.value = v; _timPreview(); return document.getElementById('_tim-read').textContent; };
+        const out = {
+          brief: read("What's going on Tim?"),
+          owed: read('who owes me money'),
+          junk: read('qwertyuiop asdfgh'),
+          empty: read(''),
+          // A build outranks an ask in _timGoRun, so it has to here too.
+          build: read('build me a t and m for Dana Whitfield'),
+          // And a plain screen request is still a screen.
+          nav: read('open the schedule'),
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.brief).toBe('Answer that off your own books');
+      expect(r.owed).toBe('Answer that off your own books');
+      // And a genuine miss still says so, or the preview means nothing.
+      expect(r.junk).toBe('Not sure what that is yet');
+      expect(r.empty).toBe('');
+      expect(r.build).toContain('Dana');
+      expect(r.nav).toBe('Open Schedule');
+    });
+
+    test('it is the money he can do something about, worst first', async () => {
+      const r = await page.evaluate(() => timAsk('whats going on'));
+      // Owed 3,500 (Dana 2,000 of 4,000 unpaid + Ray 1,500). Out: the 3,300
+      // Pending. In: income 1,500 + payments 2,900.
+      expect(r.title).toBe('$3,500');
+      expect(r.sub).toContain('not in your account');
+      const leads = r.rows.map(x => x.lead);
+      expect(leads[0]).toBe('Waiting to be paid');
+      expect(leads).toContain('Out for an answer');
+      expect(leads).toContain('Taken in this year');
+    });
+
+    test('it never disagrees with the single question it is summarising', async () => {
+      // A brief that contradicts the detailed answer is the worst thing in this
+      // file: it is the one read fastest and trusted most.
+      const r = await page.evaluate(() => {
+        const brief = timAsk('where do I stand');
+        const owed = timAsk('who owes me money');
+        const out = timAsk('whats out right now');
+        return {
+          briefOwed: (brief.rows.find(x => x.lead === 'Waiting to be paid') || {}).right,
+          owedTitle: owed.title,
+          briefOut: (brief.rows.find(x => x.lead === 'Out for an answer') || {}).right,
+          outTitle: out.title,
+        };
+      });
+      expect(r.briefOwed).toBe(r.owedTitle);
+      expect(r.briefOut).toBe(r.outTitle);
+    });
+
+    test('an empty book says all square, it does not invent a number', async () => {
+      const r = await page.evaluate(() => {
+        bids.length = 0; payments.length = 0; income.length = 0;
+        return timAsk('how is business');
+      });
+      expect(r.title).toBe('All square');
+      expect(r.rows).toEqual([]);
+    });
+  });
+
+  // ── A CREW MEMBER GETS NOTHING ────────────────────────────────────────────
+  //
+  // Every answer in this file is owner-only business data. Tim has been
+  // owner-only since he was built, and timDockRender has refused to draw for a
+  // crew member from the start, but that was the ONLY thing enforcing it.
+  //
+  // Reproduced 2026-09-21, signed in as an employee with no permissions, on a
+  // seeded book: the dock was correctly hidden, and #mmi-tim in the More menu
+  // was still visible, still called openTim(), and every money question
+  // answered in full. $31,000 of revenue, $60,500 outstanding with the
+  // customer's name and how many days, the best customer and their share, the
+  // average job. pg-money, pg-tracker and pg-taxes were all correctly shut the
+  // whole time: none of these answers route through goPg, so the employee page
+  // block never saw them.
+  //
+  // This walks every family, because the leak was not that one answer was
+  // wrong, it was that nobody had ever asked this question of the set.
+  test.describe('a crew member cannot get a figure out of him', () => {
+    const asCrew = (fn) => page.evaluate((body) => {
+      const wasEmp = _isEmployee, wasRec = _employeeRecord;
+      _isEmployee = true; _employeeRecord = { role: 'employee', permissions: {} };
+      try { return (0, eval)('(' + body + ')')(); }
+      finally { _isEmployee = wasEmp; _employeeRecord = wasRec; }
+    }, fn.toString());
+
+    test('every question family answers null, not a number', async () => {
+      const r = await asCrew(() => [
+        'who owes me money',
+        'what did I charge for gutters',
+        'which lead source is worth it',
+        'whats the address for Dana',
+        'how much did I make in 2026',
+        'what did I spend in 2026',
+        'whats out right now',
+        'how many did I win in 2026',
+        'who is my best customer',
+        'how many miles did I drive in 2026',
+        'how many hours did I work',
+        'whats my average job in 2026',
+        'whats going on',
+      ].map(s => timAsk(s)));
+      expect(r).toEqual(new Array(13).fill(null));
+    });
+
+    test('the sheet will not open for him at all', async () => {
+      const r = await asCrew(() => {
+        document.getElementById('_tim-ov')?.remove();
+        openTim();
+        const opened = !!document.getElementById('_tim-sheet');
+        document.getElementById('_tim-ov')?.remove();
+        return opened;
+      });
+      expect(r).toBe(false);
+    });
+
+    test('and the More menu stops inviting him in', async () => {
+      const r = await page.evaluate(() => {
+        const wasEmp = _isEmployee, wasRec = _employeeRecord;
+        const el = document.getElementById('mmi-tim');
+        _isEmployee = true; _employeeRecord = { role: 'employee', permissions: {} };
+        applyPermissions();
+        const crew = getComputedStyle(el).display;
+        _isEmployee = wasEmp; _employeeRecord = wasRec;
+        applyPermissions();
+        const owner = getComputedStyle(el).display;
+        return { crew, ownerShown: owner !== 'none' };
+      });
+      expect(r.crew).toBe('none');
+      // And it comes back for the owner, or the fix costs the owner the feature.
+      expect(r.ownerShown).toBe(true);
+    });
+
+    test('the owner still gets every one of them, so the guard is not a wall', async () => {
+      const r = await page.evaluate(() => [
+        'who owes me money', 'how much did I make in 2026', 'who is my best customer',
+      ].map(s => { const a = timAsk(s); return a && a.title; }));
+      expect(r).toEqual(['$3,500', '$4,400', 'Dana Whitfield']);
+    });
+  });
+
+  // ── The week a man invoices off ───────────────────────────────────────────
+  //
+  // Owner, 2026-09-21: "one thing I want tim to do is know the time, give me a
+  // breakdown of my last week by person and total up my hours, need their
+  // address so I can wrap up invoicing ... I know for john, one huge thing is
+  // ending the hours it takes for him to do paperwork. The stuff we just rolled
+  // for time sheets is the key here."
+  //
+  // And, the same day, where it is going: "eventually I am going to want a
+  // function that somebody can click to generate a quick invoice for work done,
+  // even if we dont have a proposal in the system". That is why timWorkSheet is
+  // a pure function with no DOM in it and is tested here directly. The button,
+  // when it arrives, calls this and not a copy of it, so an invoice can never
+  // quietly disagree with the timesheet Tim just read out loud.
+  test.describe('the week, by person and by address', () => {
+    // Sunday-keyed, off the app's own clock, so this is the same week
+    // _tlWeekKey groups the timesheet by however far in the future it is run.
+    const WEEK = () => {
+      const today = todayKey();
+      const lastSat = addDays(today, -(parseD(today).getDay() + 1));
+      const d = n => addDays(lastSat, -n);
+      clients.length = 0; clients.push(
+        { id: 501, name: 'Rick Delaney', addr: '412 Maple St, Wichita, KS 67203' },
+        { id: 502, name: 'Sandra Ruiz', addr: '2100 Oak Ave, Wichita, KS 67208' });
+      bids.length = 0; bids.push(
+        { id: 601, client_id: 501, addr: '412 Maple St, Wichita, KS 67203' },
+        // No addr on the bid: the client's own address is the fallback, same
+        // precedence the job cards use (_tlJobClientInfo).
+        { id: 602, client_id: 502, addr: '' });
+      jobs.length = 0; jobs.push(
+        { id: 701, bid_id: 601, name: 'Water heater swap', client_id: 501 },
+        { id: 702, bid_id: 602, name: 'Faucet and disposal', client_id: 502 });
+      timeEntries.length = 0; timeEntries.push(
+        { id: 1, date: d(5), minutes: 480, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        { id: 2, date: d(4), minutes: 465, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        { id: 3, date: d(3), minutes: 300, job_id: 702, logged_by_name: 'John Reyes', logged_by_uid: 'u1' },
+        // A named meal break. Tracked, never paid, never billed, never OT.
+        { id: 4, date: d(3), minutes: 45, job_id: 702, logged_by_name: 'John Reyes', logged_by_uid: 'u1', unpaid: true },
+        { id: 5, date: d(4), minutes: 390, job_id: 702, logged_by_name: 'Andre Ruiz', logged_by_uid: 'u2' },
+        // Clocked against no job at all: real paid time with nobody to bill.
+        { id: 6, date: d(2), minutes: 255, job_id: null, logged_by_name: 'Andre Ruiz', logged_by_uid: 'u2' },
+        // THIS week, so it must not appear in last week's total.
+        { id: 7, date: todayKey(), minutes: 120, job_id: 701, logged_by_name: 'John Reyes', logged_by_uid: 'u1' });
+    };
+    test.beforeEach(async () => { await page.evaluate(WEEK); });
+
+    test('the total is last week only, and it is the same both ways he can read it', async () => {
+      const r = await page.evaluate(() =>
+        ['give me a breakdown of my last week by person', 'total up my hours last week']
+          .map(s => { const a = timAsk(s); return { id: a.id, title: a.title }; }));
+      // 480 + 465 + 300 + 390 + 255 = 1890 min. The 45 is unpaid; today's 120
+      // is this week. Both answers are built from one timWorkSheet call, which
+      // is the point: two totals for one week is worse than one.
+      expect(r).toEqual([
+        { id: 'sheet', title: '31.5 hrs' },
+        { id: 'hours', title: '31.5 hrs' },
+      ]);
+    });
+
+    test('by person, with the unpaid break out of the paid total', async () => {
+      const r = await page.evaluate(() => timAsk('total up my hours last week').rows);
+      expect(r.map(x => [x.lead, x.right])).toEqual([
+        ['John Reyes', '20.8 hrs'],    // 1245 min, the 45 not in it
+        ['Andre Ruiz', '10.8 hrs'],    // 645 min
+      ]);
+      expect(r[0].note).toContain('0.8 hrs unpaid');
+      expect(r[1].note).not.toContain('unpaid');
+    });
+
+    test('by address, which is the line an invoice is actually written against', async () => {
+      const r = await page.evaluate(() => timAsk('what do I invoice for last week').rows);
+      expect(r.map(x => [x.lead, x.right])).toEqual([
+        ['Rick Delaney · Water heater swap', '15.8 hrs'],
+        ['Sandra Ruiz · Faucet and disposal', '11.5 hrs'],
+        ['General time', '4.3 hrs'],
+      ]);
+      // The job-site address, through the same resolver the job card uses, so
+      // a property manager is never billed at his office for a rental.
+      expect(r[0].note).toContain('412 Maple St, Wichita, KS 67203');
+      // Bid has no addr, so the client's own is the fallback.
+      expect(r[1].note).toContain('2100 Oak Ave, Wichita, KS 67208');
+      // Two men on one address land on one line, both named.
+      expect(r[1].note).toContain('Andre Ruiz, John Reyes');
+    });
+
+    // Paid hours with nobody to bill them to is the single most useful thing on
+    // a Friday, so it is shown and flagged rather than quietly dropped. A total
+    // that leaves it out is the invoice looking better than the week was.
+    test('time on no job is still on the worksheet, and says it cannot be billed', async () => {
+      const r = await page.evaluate(() => timAsk('what do I invoice for last week'));
+      expect(r.sub).toContain('4.3 hrs is not on a job');
+      expect(r.rows[2].note).toContain('nothing to bill it to');
+    });
+
+    test('both pivots are on the card, off one set of numbers', async () => {
+      const r = await page.evaluate(() => {
+        const a = timAsk('give me a breakdown of my last week by person');
+        const byPerson = (a.groups || []).find(g => g.title === 'By person');
+        const sumOf = rows => rows.reduce((n, x) => n + parseFloat(x.right), 0);
+        return { titles: (a.groups || []).map(g => g.title),
+          person: sumOf(byPerson.rows), site: sumOf(a.rows), title: a.title };
+      });
+      expect(r.titles).toEqual(['By person']);
+      // The two pivots have to add to the same number or one of them is a lie.
+      // Each line is rounded to a tenth for reading, so a three-line pivot can
+      // land a tenth off a two-line one and off the headline; what must never
+      // happen is the two disagreeing with EACH OTHER, because then the payroll
+      // read and the billing read of one week are different weeks.
+      expect(r.person).toBeCloseTo(r.site, 1);
+      expect(r.person).toBeCloseTo(parseFloat(r.title), 0);
+      expect(r.site).toBeCloseTo(parseFloat(r.title), 0);
+    });
+
+    // The paperwork is the thing being ended. Reading a number off a screen and
+    // typing it into an invoice IS the paperwork, so the worksheet leaves as
+    // text, with tabs so it lands in a spreadsheet as columns.
+    test('it leaves as text he can paste, and the text agrees with the card', async () => {
+      const t = await page.evaluate(() => {
+        _timShowAsk(timAsk('give me a breakdown of my last week by person'));
+        const btn = [...document.querySelectorAll('#_tim-ask-sheet button')]
+          .find(b => b.textContent === 'Copy the worksheet');
+        const out = { has: !!btn, text: _timCopySheet(btn) };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(t.has).toBe(true);
+      expect(t.text).toContain('412 Maple St, Wichita, KS 67203');
+      expect(t.text).toContain('John Reyes\t20.8 hrs');
+      expect(t.text).toContain('TOTAL\t31.5 hrs');
+      // And it says what it could not see, in the text as well as on screen.
+      expect(t.text).toContain('Clocked time only');
+    });
+
+    // FLSA, and only FLSA: over 40 in a calendar week is the one overtime rule
+    // that is true in every state. Daily OT is state law, and asserting it as a
+    // default would be actively wrong for most contractors, which is the same
+    // line _tlComputeOT holds.
+    test('over forty in a week is flagged, at the same threshold the timesheet uses', async () => {
+      const r = await page.evaluate(() => {
+        // Three paid days at fifteen hours: 2700 minutes, past the 2400 that
+        // _tlComputeOT uses for the same flag on the same week.
+        timeEntries.forEach(e => { if (e.logged_by_uid === 'u1' && !e.unpaid) e.minutes = 900; });
+        const a = timAsk('total up my hours last week');
+        return { john: a.rows.find(x => x.lead.indexOf('John') === 0),
+          andre: a.rows.find(x => x.lead.indexOf('Andre') === 0) };
+      });
+      expect(r.john.lead).toContain('OT');
+      expect(r.john.note).toContain('over 40 in a week');
+      expect(r.andre.lead).not.toContain('OT');
+    });
+
+    // He reads timeEntries and nothing else, because job_time_entries is a
+    // Supabase fetch and he makes no network calls. A total that looks complete
+    // and is not is the one way a timesheet answer costs real money, so it says
+    // so every time rather than once in a help screen.
+    test('he says out loud that GPS-tracked time is not in the number', async () => {
+      const r = await page.evaluate(() => [
+        timAsk('total up my hours last week').foot,
+        timAsk('what do I invoice for last week').foot]);
+      r.forEach(f => {
+        expect(f).toContain('Clocked time only');
+        expect(f).toContain('Time Log');
+      });
+    });
+
+    test('an empty week is an answer, not a zero dressed up as one', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries.length = 0;
+        const a = timAsk('what do I invoice for last week');
+        const b = timAsk('total up my hours last week');
+        return [a.title, a.sub, b.title];
+      });
+      expect(r[0]).toBe('Nothing to invoice');
+      expect(r[1]).toContain('Nothing here is a claim about work that was never clocked');
+      expect(r[2]).toBe('Nothing clocked');
+    });
+
+
+    // ── Hours times rate is an invoice ────────────────────────────────────
+    //
+    // Owner, 2026-09-22: "we want rate because then Tim can feed a quick
+    // invoice." That is the whole chain, and it is why the rate stopped being
+    // one of six equal chips on the T&M screen and became the default: a T&M
+    // job with no rate on its bid gives Tim hours and nothing to bill them at,
+    // and that is discovered on the Friday somebody wants paying.
+    //
+    // Each of these lays its own books down. The describe's beforeEach resets
+    // clients, bids, jobs and timeEntries, so a test that leaned on the one
+    // before it passed alone and failed in the file, which is exactly what the
+    // first draft of this block did.
+    const RATED = () => {
+      const today = todayKey(), lastSat = addDays(today, -(parseD(today).getDay() + 1));
+      const d = n => addDays(lastSat, -n);
+      clients.length = 0; clients.push(
+        { id: 501, name: 'Rick Delaney', addr: '412 Maple St' },
+        { id: 502, name: 'Sandra Ruiz', addr: '2100 Oak Ave' });
+      bids.length = 0; bids.push(
+        // T&M at $95 the man-hour.
+        { id: 611, client_id: 501, addr: '412 Maple St', isTM: true, tmRatePerMan: 95 },
+        // Fixed price. A number was agreed; there is no hourly rate to apply.
+        { id: 612, client_id: 502, addr: '2100 Oak Ave', amount: 4000 });
+      jobs.length = 0; jobs.push(
+        { id: 701, bid_id: 611, client_id: 501 },
+        { id: 702, bid_id: 612, client_id: 502 });
+      timeEntries.length = 0; timeEntries.push(
+        { id: 1, date: d(4), minutes: 480, job_id: 701, logged_by_name: 'John Reyes' },
+        { id: 2, date: d(3), minutes: 300, job_id: 701, logged_by_name: 'Andre Ruiz' },
+        { id: 3, date: d(2), minutes: 420, job_id: 702, logged_by_name: 'John Reyes' });
+    };
+
+    test('a T&M job turns its hours into money at the bid rate', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const sh = timWorkSheet(_timWhen('last week'));
+        const site = sh.sites.filter(x => x.client === 'Rick Delaney')[0];
+        return { rate: site.rate, amount: site.amount, min: site.min,
+          billable: sh.billable, title: timAsk('what do I invoice for last week').title };
+      }, RATED.toString());
+      // 780 minutes is 13 hours, at $95 the man-hour.
+      expect(r.min).toBe(780);
+      expect(r.rate).toBe(95);
+      expect(r.amount).toBe(1235);
+      expect(r.billable).toBe(1235);
+      // And the money is the headline, because "what do I invoice" is a
+      // question with a dollar answer. The hours are the working.
+      expect(r.title).toBe('$1,235');
+    });
+
+    // The restriction that keeps the figure honest. A fixed-price customer
+    // agreed a number; multiplying his job's clock by an hourly rate invents a
+    // second one nobody signed.
+    test('a fixed-price job is reported in hours and kept out of the money', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const sh = timWorkSheet(_timWhen('last week'));
+        const a = timAsk('what do I invoice for last week');
+        return { billable: sh.billable, unrated: sh.unratedMin, sub: a.sub,
+          fixed: sh.sites.filter(x => x.client === 'Sandra Ruiz')[0] };
+      }, RATED.toString());
+      expect(r.fixed.rate, 'a fixed-price job must carry no hourly rate').toBe(0);
+      expect(r.fixed.amount).toBe(0);
+      expect(r.billable, 'the fixed-price hours got billed by the hour').toBe(1235);
+      expect(r.unrated).toBe(420);
+      // SAID OUT LOUD. A headline that quietly leaves out seven hours of the
+      // week is the one way this costs real money.
+      expect(r.sub).toContain('7 hrs has no rate behind it');
+    });
+
+    test('and the working is on the line, so the figure can be checked', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        return timAsk('what do I invoice for last week').rows.map(x => x.right + ' ~ ' + x.note);
+      }, RATED.toString());
+      expect(r[0]).toContain('$1,235');
+      expect(r[0]).toContain('13 hrs at $95/hr');
+    });
+
+    test('the text he pastes carries the rate and the money too', async () => {
+      const t = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        _timShowAsk(timAsk('what do I invoice for last week'));
+        const out = _timCopySheet(null);
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      }, RATED.toString());
+      expect(t).toContain('$95/hr');
+      expect(t).toContain('$1,235');
+      expect(t).toContain('TOTAL');
+      // The hours with nothing behind them are flagged in the paste as well,
+      // not only on screen: the paste is what reaches the customer.
+      expect(t).toContain('has no rate behind it');
+    });
+
+    // An unpaid break is tracked, never paid, and so never billed. It would be
+    // the worst of the three to get wrong, because it reaches a customer.
+    test('a named lunch break is never billed to anybody', async () => {
+      const r = await page.evaluate((fn) => {
+        eval('(' + fn + ')')();
+        const today = todayKey(), lastSat = addDays(today, -(parseD(today).getDay() + 1));
+        timeEntries.push({ id: 9, date: addDays(lastSat, -4), minutes: 60,
+          job_id: 701, logged_by_name: 'John Reyes', unpaid: true });
+        const sh = timWorkSheet(_timWhen('last week'));
+        return { billable: sh.billable,
+          min: sh.sites.filter(x => x.client === 'Rick Delaney')[0].min };
+      }, RATED.toString());
+      expect(r.min, 'the break got into the billable minutes').toBe(780);
+      expect(r.billable, 'the break got billed').toBe(1235);
+    });
+
+    test('junk in the entries changes nothing and throws nothing', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries.push(null, { date: null, minutes: 'x' }, { date: '2026-13-40', minutes: -5 },
+          { date: addDays(todayKey(), -3), minutes: NaN, job_id: 99999 });
+        const a = timAsk('what do I invoice for last week');
+        return { title: a.title, rows: a.rows.length };
+      });
+      expect(r.title).toBe('31.5 hrs');
+      expect(r.rows).toBe(3);
+    });
+  });
+
+  // ── Knowing what day it is ────────────────────────────────────────────────
+  // The smallest answer in the file and the one that makes the rest legible.
+  // "Last week" is a claim about a calendar, and a man cannot check a claim
+  // about a calendar against an assistant that does not know what day it is.
+  test.describe('he knows the time', () => {
+    test('he says the time, the day, and which clock he is reading', async () => {
+      const r = await page.evaluate(() => {
+        const a = timAsk('what time is it');
+        return { id: a.id, title: a.title, sub: a.sub,
+          rows: a.rows.map(x => x.lead), foot: a.foot, today: todayKey() };
+      });
+      expect(r.id).toBe('clock');
+      expect(r.title).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
+      expect(r.rows).toEqual(['Today', 'This week started', 'Time zone']);
+      // The business's zone, never the device's. The whole timesheet is pinned
+      // to it because a phone that lands in Denver must not move a shift worked
+      // in Topeka (js/timelog.js _tlBizTz), and an assistant reading a
+      // different clock from the timesheet is that same bug wearing a face.
+      expect(r.sub).toContain('the clock every hour on your timesheet is stamped in');
+      expect(r.foot).toContain('No clock is fetched');
+    });
+
+    test('the Sunday he names is the Sunday his weeks are counted from', async () => {
+      const r = await page.evaluate(() => {
+        const a = timAsk('what day is it');
+        const sun = a.rows.find(x => x.lead === 'This week started');
+        return { shown: sun.right, week: _timWhen('this week'), today: todayKey() };
+      });
+      expect(r.shown).toBe(await page.evaluate(d => _timDayLabel(d), r.week.from));
+      expect(await page.evaluate(d => parseD(d).getDay(), r.week.from)).toBe(0);
+    });
+
+    test('asking the date does not get mistaken for asking about a week of work', async () => {
+      const r = await page.evaluate(() => ['what time is it', 'whats todays date',
+        'what day is today'].map(s => (timAskKind(s) || {}).id));
+      expect(r).toEqual(['clock', 'clock', 'clock']);
+    });
+  });
+
+  test.describe('through the real door', () => {
+    // ── 10.4: this assertion changed, and it changed because it was wrong ───
+    // WAS: `#_tim-ask-sheet` had to exist and carry the figure. It did, and
+    // that was the bug. _timShowAsk swapped the WHOLE sheet for an answer card
+    // with a headline, a button and no input box, so asking him something he
+    // could answer was the one thing that ended the conversation, while asking
+    // something he could not was the only way to keep talking.
+    // Owner found it on his own phone, 2026-09-21: "why did the mileage
+    // question go to a section where I couldn't continue the convo".
+    // NOW: the answer lands in the thread as a bubble like everything else he
+    // says, and the box is still under his thumb. The INTENT is untouched: a
+    // question is answered where a navigation would have opened a screen, and
+    // the figure is on screen without another tap. Only where it lands moved.
+    test('a question answers in the thread, it does not navigate or end the conversation', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        const out = _timGo();
+        // He types before he answers (_TIM_TYPING_MS), which is the whole point
+        // of the thread looking like a thread. Waiting on the bubble rather
+        // than on a duration: a sleep here would be asserting the beat by
+        // proxy and would flake on a loaded runner.
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const sheet = document.getElementById('_tim-sheet');
+        const res = {
+          kind: out.kind, ask: out.ask,
+          // He is still open, on the same sheet, with somewhere to type.
+          stillOpen: !!sheet,
+          card: !!document.getElementById('_tim-ask-sheet'),
+          canType: !!document.getElementById('_tim-say'),
+          html: sheet ? sheet.innerHTML : '',
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return res;
+      });
+      expect(r.kind).toBe('ask');
+      expect(r.ask).toBe('owed');
+      expect(r.stillOpen).toBe(true);
+      expect(r.card, 'the answer must not replace the sheet').toBe(false);
+      expect(r.canType, 'there has to be somewhere to say the next thing').toBe(true);
+      expect(r.html).toContain('$3,500');
+    });
+
+    // The bubble is not just the figure. It carries the working under it and
+    // the button the old card had, so nothing was traded away for being able to
+    // keep talking.
+    test('the answer bubble carries the working and the way through', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const b = document.querySelector('.tim-msg.him.ans .tim-ans');
+        const out = {
+          fig: b ? b.querySelector('b').textContent : null,
+          sub: b ? !!b.querySelector('i') : false,
+          go: b ? (b.querySelector('.tim-ans-do button') || {}).textContent : null,
+          details: b ? [...b.querySelectorAll('.tim-ans-do button')]
+            .map(x => x.textContent).includes('Details') : false,
+        };
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r.fig).toBe('$3,500');
+      expect(r.sub).toBe(true);
+      expect(r.go).toBe('Open Collect');
+      expect(r.details).toBe(true);
+    });
+
+    // Details re-runs the sentence rather than storing the rows, because the
+    // log entry is capped and a twelve-row breakdown would evict the rest of
+    // the history. Every answer in tim-ask.js is a pure read of the local
+    // books, so a re-run gives the same answer or a newer one.
+    test('Details opens the full working, and leaves a way back to the thread', async () => {
+      const r = await page.evaluate(async () => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        await new Promise(res => {
+          const t = setInterval(() => {
+            if (document.querySelector('.tim-msg.him.ans')) { clearInterval(t); res(); }
+          }, 20);
+          setTimeout(() => { clearInterval(t); res(); }, 4000);
+        });
+        const btn = [...document.querySelectorAll('.tim-ans-do button')]
+          .find(x => x.textContent === 'Details');
+        btn.click();
+        const card = document.getElementById('_tim-ask-sheet');
+        const out = {
+          opened: !!card,
+          rows: card ? card.textContent.includes('Dana Whitfield') : false,
+          back: card ? card.textContent.includes('Back to Tim') : false,
+        };
+        // And the way back really goes back to a thread with a box in it.
+        card.querySelector('button').click();
+        out.backToThread = !!document.getElementById('_tim-say');
+        out.threadKept = document.querySelectorAll('.tim-msg').length > 0;
+        document.getElementById('_tim-ov')?.remove();
+        return out;
+      });
+      expect(r).toEqual({ opened: true, rows: true, back: true,
+        backToThread: true, threadKept: true });
+    });
+
+    test('it is logged as an answer, not as a miss', async () => {
+      const r = await page.evaluate(() => {
+        timLogClear();
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'who owes me money';
+        _timGo();
+        document.getElementById('_tim-ov')?.remove();
+        const e = timLogEntries()[0];
+        return { kind: e.kind, got: e.got };
+      });
+      expect(r.kind).toBe('ask');
+      // 10.4: this read `toContain('your own numbers')` while the log was only
+      // ever read by a diagnostics panel, where "Answered off your own numbers"
+      // was a fine description of what happened. The log is the conversation
+      // thread now, and in a thread that line is the app narrating itself. It
+      // records the FIGURE he gave, which is both the better assertion and the
+      // better thing to show a man reading back what he asked.
+      expect(r.got).toBe('$3,500');
+    });
+
+    test('saying a screen name still navigates, so nothing was stolen', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-dash');
+        openTim();
+        document.getElementById('_tim-say').value = 'show me my proposals';
+        const out = _timGo();
+        document.getElementById('_tim-ov')?.remove();
+        return out.kind;
+      });
+      expect(r).toBe('nav');
+    });
+  });
+
+  // ── The seam that had no test ──────────────────────────────────────────────
+  // timJobSnapshot is what feeds the nudge rules, and it is the only place the
+  // still-owes rule touches the database. e2e-tim-nudge tests the ranking with a
+  // hand-built snapshot, which is correct for what it covers and is why a filter
+  // matching zero rows looked exactly like a customer who had paid.
+  test.describe('the nudge engine reads the same books', () => {
+    // The three below state the books they need IN THE SAME EVALUATE that
+    // reads them, rather than trusting the describe's beforeEach to still be
+    // true by the time they run. getBidBalance is a live filter over `payments`
+    // with no cache, so an empty array reads exactly like a customer who paid:
+    // this failed in CI at owed 4000 (the bid's full amount, no payment found)
+    // while passing alone and in a full local run. Several paths reassign
+    // `payments` wholesale, so the fixture surviving the gap is a race, and a
+    // test about whether timJobSnapshot reads the books should not also be a
+    // test of whether anything cleared them first.
+    // Rebuilt, not topped up, so a stray push from an earlier test cannot
+    // double a balance either.
+    const BOOKS = `
+      payments.length = 0;
+      payments.push({ bid_id: 8801, amount: 2000, date: '2026-07-20', client_name: 'Dana Whitfield' });
+      payments.push({ bid_id: 8803, amount: 900, date: '2026-05-25', client_name: 'Marta Ochoa' });`;
+
+    test('a real Closed Won balance reaches the snapshot', async () => {
+      const r = await page.evaluate(`(() => {${BOOKS}
+        currentClientId = 7101;
+        return timJobSnapshot();
+      })()`);
+      expect(r.owed).toBe(2000);
+      expect(r.clientName).toBe('Dana Whitfield');
+      expect(r.clientFirst).toBe('Dana');
+      expect(r.owedDays).toBeGreaterThan(50);
+    });
+
+    test('and the rule fires on it, which it could not do before', async () => {
+      const r = await page.evaluate(`(() => {${BOOKS}
+        currentClientId = 7101;
+        S.timLearned = {}; timResetDismissals();
+        return timNudges(timJobSnapshot()).map(n => n.id);
+      })()`);
+      expect(r).toContain('still-owes');
+    });
+
+    test('a customer who is paid up raises nothing', async () => {
+      const r = await page.evaluate(`(() => {${BOOKS}
+        currentClientId = 7103;   // 8803, 900 billed and 900 paid
+        return timJobSnapshot().owed;
+      })()`);
+      expect(r).toBe(0);
+    });
+  });
+
+  test('no console errors, tim-ask.js', async () => { await assertNoErrors(page); });
+});
