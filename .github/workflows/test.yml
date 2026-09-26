@@ -163,6 +163,15 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-miles.sql
 
+      # A late tape changes a drive's key, and ingest never sweeps, so the
+      # fuller answer used to land BESIDE the old one and the day counted twice
+      # (Jack, 2026-09-23). 20261038 retires the older rows a write overlaps;
+      # this proves it does, and that it touches nothing it must not.
+      - name: A newer write retires the rows it re-describes
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-supersede.sql
+
   # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
   # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
   # feature/change that touches a real user flow, but until now that rule

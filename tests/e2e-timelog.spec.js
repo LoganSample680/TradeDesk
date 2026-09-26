@@ -56,6 +56,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Park the cloud load. Every fixture here lives in the page's own arrays,
+    // and a background reload (the reconnect probe, a foreground pull) swaps
+    // them for the mock's empty tables. When one landed inside "the drill
+    // opens on the current month" it rendered "No time logged" and left the
+    // month null (midnight clock job, 2026-09-23). Nothing in this file tests
+    // cloud loading; same park as e2e-photo-capture and e2e-geo-permission.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     // Name the business zone: every midnight below is a business midnight now
     // that the day-key helpers follow the business address rather than a
     // hardcoded Central (owner 2026-08-30). Left unset it comes from the
@@ -5742,7 +5749,109 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.on).toContain('>Edit<');
       expect(r.off, 'no flag, no Edit').not.toContain('fixauto');
       // Not work is on both: that never depended on the row being fixable.
-      expect(r.off).toContain('notwork');
+      // WAS toContain('notwork'): the menu's first tap on Not work now only
+      // asks (owner 2026-09-24), so what the menu carries is the ask, and the
+      // answer lives one step in (tested below).
+      expect(r.off).toContain('_tlRowMenuAskNotWork');
+      expect(r.on).toContain('_tlRowMenuAskNotWork');
+    });
+
+    // ── Not work is last, and asks first (owner 2026-09-24) ─────────────────
+    // Jack's 3:36 stop went Personal at 4:20:27 on 23 September out of this
+    // menu, seconds after he saved its address, with the red Not work sitting
+    // above "Save this address".
+    const openMenu = (raw, extra) => page.evaluate(({ raw, extra }) => {
+      document.getElementById('_tl-row-menu')?.remove();
+      const b = document.createElement('button');
+      b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = raw;
+      b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+      Object.assign(b.dataset, extra || {});
+      document.body.appendChild(b);
+      const keep = window._mileStopCoord;
+      window._mileStopCoord = () => ({ lat: 39, lng: -95 });
+      try { _tlRowMenu(b); } finally { window._mileStopCoord = keep; b.remove(); }
+      const ov = document.getElementById('_tl-row-menu');
+      const labels = ov ? [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent) : [];
+      return { labels, html: ov ? ov.innerHTML : '' };
+    }, { raw, extra });
+
+    test('on an unsaved stop, Save this address comes before Not work', async () => {
+      const r = await openMenu('unsaved', { rowKey: 'd-j-1', rowDate: '2026-09-23' });
+      const iSave = r.labels.indexOf('Save this address'), iNot = r.labels.indexOf('Not work');
+      expect(iSave).toBeGreaterThan(-1);
+      expect(iNot).toBeGreaterThan(iSave);
+      await page.evaluate(() => document.getElementById('_tl-row-menu')?.remove());
+    });
+
+    test('the first tap on Not work only asks: nothing is answered until Yes', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          document.getElementById('_tl-row-menu')?.remove();
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved';
+          b.dataset.rowFix = ''; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          const ov = document.getElementById('_tl-row-menu');
+          const not = [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Not work'));
+          not.click();
+          await new Promise(r => setTimeout(r, 20));
+          const afterFirst = { calls: calls.length, open: !!document.getElementById('_tl-row-menu'),
+            labels: [...ov.querySelectorAll('.tl-menu-act-t')].map(x => x.textContent),
+            ask: (ov.querySelector('.tl-menu-ask') || {}).textContent || '' };
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Yes, not work')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { afterFirst, calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; document.getElementById('_tl-row-menu')?.remove(); }
+      });
+      expect(r.afterFirst.calls, 'one tap answers nothing').toBe(0);
+      expect(r.afterFirst.open).toBe(true);
+      expect(r.afterFirst.labels).toEqual(['Yes, not work', 'Back']);
+      expect(r.afterFirst.ask).toContain('off your hours');
+      expect(r.calls).toEqual([['x9', 'personal']]);
+      expect(r.open).toBe(false);
+    });
+
+    test('Back puts the menu away and answers nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        const real = window._visitHoldAnswer;
+        window._visitHoldAnswer = async (id, m) => { calls.push([id, m]); };
+        try {
+          const b = document.createElement('button');
+          b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+          document.body.appendChild(b); _tlRowMenu(b); b.remove();
+          _tlRowMenuAskNotWork('x9', 'unsaved');
+          const ov = document.getElementById('_tl-row-menu');
+          [...ov.querySelectorAll('.tl-menu-act')].find(x => x.textContent.startsWith('Back')).click();
+          await new Promise(r => setTimeout(r, 20));
+          return { calls, open: !!document.getElementById('_tl-row-menu') };
+        } finally { window._visitHoldAnswer = real; }
+      });
+      expect(r.calls).toEqual([]);
+      expect(r.open).toBe(false);
+    });
+
+    test('asking with no menu open, or with junk arguments, never throws and never answers', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_tl-row-menu')?.remove();
+        const out = [];
+        for (const args of [['x', 'unsaved'], [null, null], [undefined], ["x');alert(1);('", 'y']]) {
+          try { out.push(_tlRowMenuAskNotWork(...args)); } catch (e) { out.push('threw'); }
+        }
+        const b = document.createElement('button');
+        b.dataset.rowId = 'x9'; b.dataset.rowSrc = 'auto'; b.dataset.rowRaw = 'unsaved'; b.dataset.rowLabel = 'A stop';
+        document.body.appendChild(b); _tlRowMenu(b); b.remove();
+        const ok = _tlRowMenuAskNotWork('x9', 'unsaved');
+        const html = document.getElementById('_tl-row-menu').innerHTML;
+        document.getElementById('_tl-row-menu').remove();
+        return { out, ok, carries: html.includes("_tlRowMenuDo('notwork','x9','unsaved')") };
+      });
+      expect(r.out).toEqual([false, false, false, false]);
+      expect(r.ok).toBe(true);
+      expect(r.carries, 'Yes answers the same row, through the same door').toBe(true);
     });
 
     // AMENDED 2026-09-14 (10.4). There were two functions when this was
@@ -6050,7 +6159,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('the stop offers Save, wired to the leg and the day it belongs to', async () => {
       const h = await render();
-      expect(h).toMatch(/Save this address/);
+      // WAS "Save this address". The row now asks business or personal
+      // (owner 2026-09-24) and the save IS the business answer, so the chip
+      // is labelled Business.
+      expect(h).toMatch(/> Business<\/button>/);
       expect(h, 'the same chip the question row uses, not a new control').toMatch(/class="tl-rail-chip"/);
       expect(h).toMatch(/_mileSaveStopAddress\('j-abc:s0','2026-09-09'\)/);
     });
@@ -6100,6 +6212,104 @@ test.describe('timelog.js: exhaustive coverage', () => {
         try { return String(_tlRailRow(r)); } finally { window._tlViewOnly = false; }
       }, STOP);
       expect(h).not.toMatch(/_mileSaveStopAddress/);
+    });
+  });
+
+  // ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ──────────────────
+  // "It should just pop the address up and have it greyed so it asks if it
+  // was personal or business ... anything marked as personal says personal
+  // but doesn't show what was there, having the business name in the day
+  // rail would be killer."
+  test.describe('the rail names an unsaved stop by itself', () => {
+    const STOP = { source: 'auto', rawSource: 'unsaved', rawId: 'row-1', clientName: 'Unsaved address',
+                   clientKey: 'd-j-hd', date: '2026-09-09', minutes: 16, personUid: null,
+                   startTime: '2026-09-09T19:05:42.000Z', endTime: '2026-09-09T19:21:26.000Z' };
+    const LEG = { legKey: 'j-hd', id: 'j-hd', gps: true, date: '2026-09-09',
+      toCoord: { lat: 39.0451214, lng: -95.7584343 } };
+    // Apple is stood in for at its one door (_stopNameLookup), and the cache
+    // starts empty on every test.
+    const run = (over, answer, legs) => page.evaluate(async ([r, ans, L]) => {
+      // `mileage` is a script-level let (js/data.js), so it is assigned by
+      // name: window.mileage would be a different variable.
+      const keep = { mile: mileage, look: window._stopNameLookup };
+      const asked = [];
+      mileage = L;
+      const reset = () => { clearTimeout(_stopNameTimer); _stopNameTimer = null;
+        _stopNameQueue.length = 0; _stopNameBusy.clear();
+        localStorage.removeItem('zp3_stop_names'); _stopNames = null; };
+      reset();
+      window._stopNameLookup = (c) => { asked.push(c); return Promise.resolve(ans === 'cannot' ? undefined : ans); };
+      try {
+        const first = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const second = String(_tlRailRow(r));
+        await new Promise(res => setTimeout(res, 150));
+        const third = String(_tlRailRow(r));
+        return { first, second, third, asked: asked.length, stored: localStorage.getItem('zp3_stop_names') };
+      } finally { mileage = keep.mile; window._stopNameLookup = keep.look; reset(); }
+    }, [Object.assign({}, STOP, over || {}), answer, legs === undefined ? [LEG] : legs]);
+
+    test('the business Apple finds shows greyed, with its street, once looked up', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '5900 SW Huntoon St, Topeka, KS 66604, United States' });
+      expect(r.first, 'nothing yet on the first paint').not.toContain('The Home Depot');
+      expect(r.second).toContain('The Home Depot');
+      expect(r.second).toMatch(/style="color:var\(--text3\)">The Home Depot/);
+      expect(r.second).toContain('5900 SW Huntoon St, Topeka');
+      expect(r.asked, 'one lookup, not one per paint').toBe(1);
+    });
+
+    test('it asks business or personal, and neither answer is a new control', async () => {
+      const r = await run({}, { name: 'The Home Depot', addr: '' });
+      expect(r.second).toMatch(/> Business<\/button>/);
+      expect(r.second).toMatch(/_mileSaveStopAddress\('d-j-hd','2026-09-09'\)/);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+    });
+
+    test('a spot with only a street shows the street', async () => {
+      const r = await run({}, { name: null, addr: '1100 SW Wanamaker Rd, Topeka, KS' });
+      expect(r.second).toContain('1100 SW Wanamaker Rd');
+    });
+
+    test('a stop answered Personal still says what was there', async () => {
+      const r = await run({ rawSource: 'dismissed', unpaid: true }, { name: 'Lowe\'s', addr: '' });
+      expect(r.second).toContain('Lowe');
+      expect(r.second, 'and it is still a Personal row').toContain('Personal');
+    });
+
+    test('nothing found is remembered, so the rail never asks again all day', async () => {
+      const r = await run({}, null);
+      expect(r.asked).toBe(1);
+      expect(r.third).not.toMatch(/color:var\(--text3\)">/);
+      expect(r.stored).toContain('"name":""');
+    });
+
+    test('MapKit not ready is not a miss: nothing is remembered, it asks again later', async () => {
+      const r = await run({}, 'cannot');
+      expect(r.stored === null || r.stored === '{}').toBe(true);
+      expect(r.asked).toBeGreaterThanOrEqual(2);
+    });
+
+    test('a named row keeps its own name and never looks anything up', async () => {
+      const r = await run({ rawSource: 'client', clientName: 'John Doe' }, { name: 'Nope', addr: '' });
+      expect(r.asked).toBe(0);
+      expect(r.second).not.toContain('Nope');
+    });
+
+    test('a stop with no spot behind it asks nothing and still offers Personal', async () => {
+      const r = await run({}, { name: 'Nope', addr: '' }, []);
+      expect(r.asked).toBe(0);
+      expect(r.second).toMatch(/_visitHoldAnswer\('row-1','personal'\)/);
+      expect(r.second).not.toMatch(/_mileSaveStopAddress/);
+    });
+
+    test('a corrupted cache is ignored, never thrown', async () => {
+      const ok = await page.evaluate(() => {
+        localStorage.setItem('zp3_stop_names', '{BROKEN{{'); _stopNames = null;
+        try { _stopNameFor('d-x', '2026-09-09'); _stopNameFor(null, null); _stopNameFor(); return true; }
+        catch (e) { return String(e.message); }
+        finally { localStorage.removeItem('zp3_stop_names'); _stopNames = null; }
+      });
+      expect(ok).toBe(true);
     });
   });
 

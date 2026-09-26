@@ -109,6 +109,27 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // taskIdentifier -> the batch's max ts, persisted so a delegate callback
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
+    // ── SENT IS A QUESTION OF ORDER RECORDED, NOT OF WHEN IT HAPPENED ──────
+    // (owner 2026-09-23: "I want to see on time shit within 10 seconds 100%
+    // of the time.")
+    //
+    // The watermark above is a CAPTURE time, and it silently threw away every
+    // flip the backfill recovered. A recovered flip is stamped with the moment
+    // it happened, which is by definition before whatever this phone had
+    // already sent, so the instant it was recorded it sat below the mark and
+    // flushNow never considered it fresh. It waited in the buffer until the
+    // app was opened and JS swept it up: Jack's 9:01 walk into his dad's shop
+    // reached the server at 10:26, three seconds after he unlocked the phone,
+    // and 80% of his late flips over three days did the same.
+    //
+    // So every row gets a sequence number when it is RECORDED, and the flush
+    // tracks that instead. A row is fresh when it was recorded after the last
+    // acknowledged one, whatever instant it describes. Rows written before
+    // this change carry no number and keep the old rule, so an upgrade neither
+    // re-sends history nor drops the tail it had not sent yet.
+    private let recordSeqKey = "td_geo_record_seq"
+    private let flushSeqMarkKey = "td_geo_flush_seq"
+    private let flushInflightSeqKey = "td_geo_flush_inflight_seq"
     private var flushPending = false
     // ── A FAILED UPLOAD USED TO WAIT FOR THE NEXT EVENT (owner 2026-09-11) ──
     //
@@ -510,6 +531,23 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         m.pausesLocationUpdatesAutomatically = false
         locationManager = m
         return m
+    }
+
+    // Which buffered rows still need to go. A numbered row is fresh when it was
+    // recorded after the last acknowledged number; a row from before numbering
+    // existed falls back to its capture time, exactly as every row used to.
+    // A seq that is missing, zero, negative or not a number is "not numbered".
+    static func freshRows(_ buf: [[String: Any]], tsMark: Double, seqMark: Double) -> [[String: Any]] {
+        func n(_ v: Any?) -> Double? {
+            if let x = v as? NSNumber { return x.doubleValue }
+            if let x = v as? Double { return x }
+            if let x = v as? Int { return Double(x) }
+            return nil
+        }
+        return buf.filter { e in
+            if let q = n(e["seq"]), q.isFinite, q > 0 { return q > seqMark }
+            return (n(e["ts"]) ?? 0) > tsMark
+        }
     }
 
     private func num(_ v: Any?) -> Double? {
@@ -1649,6 +1687,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // bookkeeping (one in-flight entry per batch, the completion handoff).
     func flushNowForTest() { flushNow() }
     var flushInflightKeyForTest: String { flushInflightKey }
+    var recordSeqKeyForTest: String { recordSeqKey }
+    var flushSeqMarkKeyForTest: String { flushSeqMarkKey }
+    var flushInflightSeqKeyForTest: String { flushInflightSeqKey }
     var flushSessionForTest: URLSession { flushSession }
     var liveSessionForTest: URLSession { liveSession }
     func inflightKeyForTest(_ s: URLSession, _ t: URLSessionTask) -> String { inflightKey(s, t) }
@@ -1658,7 +1699,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private func record(_ ev: [String: Any]) {
         let d = UserDefaults.standard
         var buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
-        buf.append(ev)
+        var row = ev
+        let seq = max(d.double(forKey: recordSeqKey), 0) + 1
+        d.set(seq, forKey: recordSeqKey)
+        row["seq"] = seq
+        buf.append(row)
         if buf.count > bufferCap { buf.removeFirst(buf.count - bufferCap) }
         d.set(buf, forKey: bufferKey)
         notifyListeners("geoEvent", data: ev)
@@ -2409,8 +2454,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
               let urlStr = cfg["url"], let target = URL(string: urlStr),
               let userId = cfg["userId"], let deviceId = cfg["deviceId"], let key = cfg["key"] else { return }
         let mark = d.double(forKey: flushMarkKey)
+        let seqMark = d.double(forKey: flushSeqMarkKey)
         let buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
-        let fresh = buf.filter { (num($0["ts"]) ?? 0) > mark }
+        let fresh = TdGeoPlugin.freshRows(buf, tsMark: mark, seqMark: seqMark)
         // ── A QUIET WAKE STILL HAS SOMETHING TO SAY ────────────────────────
         // An empty buffer used to end the flush here, which is right for
         // events and wrong for coverage: "nothing happened since you last
@@ -2427,12 +2473,18 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if fresh.isEmpty && !coverageWorthSending { return }
         let batch = Array(fresh.prefix(400))
         let maxTs = batch.compactMap { num($0["ts"]) }.max() ?? mark
+        let maxSeq = batch.compactMap { num($0["seq"]) }.filter { $0.isFinite && $0 > 0 }.max() ?? 0
         // One upload per batch. Timers frozen through a suspension all fire
         // together on the wake, and each one used to send the same batch:
         // eleven identical POSTs inside 200 ms at 17:01:06 today. The batch
-        // already on its way is identified by its newest event.
+        // already on its way is identified by its newest ROW when its rows are
+        // numbered, and by its newest event when they are not: a batch of
+        // recovered flips can share a newest timestamp with one already sent.
         let inflightNow = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
-        if inflightNow.values.contains(maxTs) { return }
+        let inflightSeqNow = (d.dictionary(forKey: flushInflightSeqKey) as? [String: Double]) ?? [:]
+        if maxSeq > 0 {
+            if inflightSeqNow.values.contains(maxSeq) { return }
+        } else if inflightNow.values.contains(maxTs) { return }
         var payload: [String: Any] = [
             "user_id": userId, "device_id": deviceId, "key": key, "events": batch
         ]
@@ -2458,7 +2510,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         } else {
             // Background upload tasks require a file, not a data body.
             let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("td-geo-flush-\(Int(maxTs)).json")
+                .appendingPathComponent("td-geo-flush-\(Int(maxTs))-\(Int(maxSeq)).json")
             do { try body.write(to: tmp) } catch { return }
             session = flushSession
             task = flushSession.uploadTask(with: req, fromFile: tmp)
@@ -2472,6 +2524,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         var inflightCov = (d.dictionary(forKey: flushInflightCovKey) as? [String: Double]) ?? [:]
         inflightCov[inflightKey(session, task)] = covered
         d.set(inflightCov, forKey: flushInflightCovKey)
+        if maxSeq > 0 {
+            var inflightSeq = (d.dictionary(forKey: flushInflightSeqKey) as? [String: Double]) ?? [:]
+            inflightSeq[inflightKey(session, task)] = maxSeq
+            d.set(inflightSeq, forKey: flushInflightSeqKey)
+        }
         task.resume()
         countWake("flushSent")
         countWake(live ? "flushLive" : "flushDeferred")
@@ -2518,9 +2575,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         inflightCov.removeValue(forKey: tid)
         inflightCov.removeValue(forKey: bare)
         d.set(inflightCov, forKey: flushInflightCovKey)
+        var inflightSeq = (d.dictionary(forKey: flushInflightSeqKey) as? [String: Double]) ?? [:]
+        let sentSeq = inflightSeq[tid] ?? 0
+        inflightSeq.removeValue(forKey: tid)
+        d.set(inflightSeq, forKey: flushInflightSeqKey)
         let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         if error == nil && status >= 200 && status < 300 {
             if maxTs > d.double(forKey: flushMarkKey) { d.set(maxTs, forKey: flushMarkKey) }
+            if sentSeq > d.double(forKey: flushSeqMarkKey) { d.set(sentSeq, forKey: flushSeqMarkKey) }
             // Same contract as the event watermark: the server has it, so the
             // phone may stop re-claiming it.
             if sentCov > d.double(forKey: flushCoveredKey) { d.set(sentCov, forKey: flushCoveredKey) }
@@ -2569,8 +2631,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let readThrough = Date()
         guard from < readThrough else { return }
         let wakeLoc = mgr().location
+        // ── STAY AWAKE FOR THE ANSWER, THEN SEND IT ─────────────────────────
+        // Every wake called this and then flushUrgently() on the very next
+        // line. The query answers asynchronously, so the upload always left
+        // BEFORE the recovered flips existed, and nothing held the process
+        // awake for the answer: iOS suspended it, the flips landed in the
+        // buffer on some later resume, and they went out whenever the app next
+        // had real runtime. Held here until CoreMotion replies, and the flush
+        // runs from the reply, so a wake's recovered tape leaves on that wake.
+        var bg = UIBackgroundTaskIdentifier.invalid
+        let endBg = {
+            if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }
+        }
+        bg = UIApplication.shared.beginBackgroundTask(withName: "td.geo.backfill") { endBg() }
         motionMgr.queryActivityStarting(from: from, to: readThrough, to: .main) { [weak self] acts, err in
-            guard let self = self else { return }
+            guard let self = self else { endBg(); return }
+            // Whatever happens below, the recovered rows go now and the
+            // assertion is handed back: flushUrgently takes its own for the
+            // upload, so this one only had to last until the reply.
+            defer {
+                self.countWake(err != nil ? "pull-err" : ((acts ?? []).isEmpty ? "pull-empty" : "pull-ok"))
+                self.flushUrgently()
+                endBg()
+            }
             var last = ""
             var newest = mark
             for a in acts ?? [] {

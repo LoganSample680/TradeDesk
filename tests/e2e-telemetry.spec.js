@@ -688,3 +688,158 @@ test.describe('app_presence: the dormant state', () => {
     expect(sql).toMatch(/revoke all on function app_presence\(\) from anon, authenticated;/);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+//  A restart must not eat the last taps (owner 2026-09-24)
+//  Jack's 4:20:27 "not work" answer reached the server and the tap that sent
+//  it never reached this table: the batch had just gone on its 30 s tick, the
+//  login failed at 4:20:32 and the app rebooted at 4:20:42. The batch is now
+//  on disk as it grows, and a send stays on disk until the function answers.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('telemetry survives a restart', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+
+  function makeStore(opts) {
+    const m = new Map();
+    return {
+      map: m,
+      getItem: (k) => { if (opts && opts.throwOnRead) throw new Error('blocked'); return m.has(k) ? m.get(k) : null; },
+      setItem: (k, v) => { if (opts && opts.throwOnWrite) throw new Error('quota'); m.set(k, String(v)); },
+      removeItem: (k) => { m.delete(k); },
+    };
+  }
+  // One page load. `answer` decides what the edge function says to each send.
+  function boot(store, { uid = 'u1', answer = 'ok', perf = 1234 } = {}) {
+    const invocations = [];
+    const listeners = { window: {}, document: {} };
+    let intervalFn = null;
+    const resolvers = [];
+    const supa = { functions: { invoke: (name, o) => {
+      invocations.push({ name, body: o && o.body });
+      return { then(ok, bad) {
+        const r = { ok, bad };
+        resolvers.push(r);
+        if (answer === 'ok') ok({ data: { ok: true }, error: null });
+        else if (answer === 'error') ok({ data: null, error: { message: 'boom' } });
+        else if (answer === 'reject') bad(new Error('offline'));
+        return this;
+      } };
+    } } };
+    const documentObj = { addEventListener(t, f) { (listeners.document[t] ||= []).push(f); },
+      querySelector: () => ({ id: 'pg-timelog' }), body: {}, visibilityState: 'visible' };
+    const windowObj = { addEventListener(t, f) { (listeners.window[t] ||= []).push(f); }, open() {} };
+    const prev = globalThis.localStorage;
+    globalThis.localStorage = store;
+    try {
+      new Function('window', 'location', 'document', 'console', 'performance', 'setInterval', 'setTimeout',
+        'MutationObserver', 'XMLHttpRequest', '_supa', '_supaUser', 'Date', src)(
+        windowObj, { hostname: 'tradedeskpro.app', href: 'https://tradedeskpro.app/' }, documentObj,
+        { error() {}, log() {}, warn() {} }, { now: () => perf },
+        (f) => { intervalFn = f; return 0; }, () => 0,
+        function () { return { observe() {}, disconnect() {} }; }, function () {},
+        supa, uid ? { id: uid } : null, Date);
+    } finally { globalThis.localStorage = prev; }
+    const withStore = (fn) => { const p = globalThis.localStorage; globalThis.localStorage = store; try { return fn(); } finally { globalThis.localStorage = p; } };
+    return {
+      invocations,
+      tap: (onclick) => withStore(() => (listeners.document.click || []).forEach((f) =>
+        // '#id' taps a control by its id, anything else by its onclick.
+        f({ target: { closest: () => (/^#/.test(onclick)
+          ? { id: onclick.slice(1), getAttribute: () => null, tagName: 'BUTTON' }
+          : { getAttribute: (a) => (a === 'onclick' ? onclick : null), tagName: 'BUTTON' }) } }))),
+      tick: () => withStore(() => intervalFn && intervalFn()),
+      events: () => invocations.filter((i) => i.name === 'ingest-telemetry').map((i) => i.body),
+    };
+  }
+  const ctls = (body) => (body.events || []).map((e) => e.ctl).filter(Boolean);
+  const pend = (store) => JSON.parse(store.getItem('zp3_obs_pending') || '[]');
+
+  test('a tap is on disk the moment it happens, before any send', () => {
+    const store = makeStore();
+    const a = boot(store);
+    a.tap("_tlRowMenuDo('notwork','x')");
+    expect(a.events().length).toBe(0);
+    const cur = JSON.parse(store.getItem('zp3_obs_current'));
+    expect(cur.uid).toBe('u1');
+    expect(cur.events.map((e) => e.ctl)).toEqual(['_tlRowMenuDo']);
+  });
+
+  test('the tap a restart would have eaten goes out on the next page, under its own session', () => {
+    const store = makeStore();
+    const a = boot(store, { perf: 1 });
+    a.tap("event.stopPropagation();_tlRowMenu(this)");
+    a.tap("_tlRowMenuDo('notwork','x')");
+    // No tick: the app restarts here, the way it did at 4:20:42.
+    const b = boot(store, { perf: 2 });
+    b.tap("#mtb-more");
+    b.tick();
+    const sent = b.events();
+    const recovered = sent.find((p) => ctls(p).includes('_tlRowMenuDo'));
+    expect(recovered, 'the lost tap is sent').toBeTruthy();
+    expect(ctls(recovered)).toEqual(['stopPropagation', '_tlRowMenuDo']);
+    const fresh = sent.find((p) => ctls(p).includes('#mtb-more'));
+    expect(fresh.session_id).not.toBe(recovered.session_id);
+    expect(pend(store), 'both answered OK, nothing left on disk').toEqual([]);
+  });
+
+  test('a send stays on disk until the function answers, and goes again after a failure', () => {
+    const store = makeStore();
+    const a = boot(store, { answer: 'error', perf: 1 });
+    a.tap("_mileWhoPick('1')");
+    a.tick();
+    expect(a.events().length).toBe(1);
+    expect(pend(store).length, 'a refused send is kept').toBe(1);
+    const b = boot(store, { answer: 'reject', perf: 2 });
+    b.tick();
+    expect(pend(store).length, 'a network failure is kept too').toBe(1);
+    const c = boot(store, { answer: 'ok', perf: 3 });
+    c.tick();
+    expect(c.events().some((p) => ctls(p).includes('_mileWhoPick'))).toBe(true);
+    expect(pend(store)).toEqual([]);
+  });
+
+  test("another login's taps are dropped, never filed under the new login", () => {
+    const store = makeStore();
+    const a = boot(store, { uid: 'jack', perf: 1 });
+    a.tap("_tlRowMenuDo('notwork','x')");
+    const b = boot(store, { uid: 'logan', perf: 2 });
+    b.tap('#mtb-dash');
+    b.tick();
+    expect(b.events().some((p) => ctls(p).includes('_tlRowMenuDo'))).toBe(false);
+    expect(store.getItem('zp3_obs_current')).toBeNull();
+    expect(pend(store).every((x) => x.uid === 'logan')).toBe(true);
+  });
+
+  test('the disk copy is bounded: a phone offline for days keeps its ten newest sends', () => {
+    const store = makeStore();
+    const a = boot(store, { answer: 'reject' });
+    for (let i = 0; i < 25; i++) { a.tap('#t' + i); a.tick(); }
+    const l = pend(store);
+    expect(l.length).toBe(10);
+    expect(ctls(l[9].payload)).toEqual(['#t24']);
+  });
+
+  test('no storage, storage that throws, no login: nothing throws and taps still send', () => {
+    const none = boot(null);
+    none.tap('#a'); none.tick();
+    expect(none.events().length).toBe(1);
+    for (const opts of [{ throwOnRead: true }, { throwOnWrite: true }]) {
+      const s = makeStore(opts);
+      const x = boot(s);
+      expect(() => { x.tap('#b'); x.tick(); }).not.toThrow();
+      expect(x.events().length).toBe(1);
+    }
+    const out = boot(makeStore(), { uid: null });
+    expect(() => { out.tap('#c'); out.tick(); }).not.toThrow();
+    expect(out.events().length).toBe(0);
+  });
+
+  test('a replay of the same page never sends its own live batch twice', () => {
+    const store = makeStore();
+    const a = boot(store);
+    a.tap('#x'); a.tick(); a.tick(); a.tick();
+    expect(a.events().filter((p) => ctls(p).includes('#x')).length).toBe(1);
+  });
+});

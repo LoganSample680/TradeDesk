@@ -705,6 +705,153 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.some(d => d[0] === 'job')).toBe(true);
       expect(r.every(d => d[1] === false)).toBe(true);
     });
+
+    // ── RULE 25: TIME OFF HOLDS THE DAY (owner 2026-09-24) ────────────────
+    // "does calendar vacation stop mileage and addresses from counting?" It
+    // did not: Jack blocked 24 to 27 September, drove 275 miles, and the
+    // evening at the rental read as three hours on his rail. Owner:
+    // "calendar should block off auto mileage too."
+    test.describe('rule 25: a Time off day is held end to end', () => {
+      const TUE = '2026-09-01';
+      const OFF = [{ start: '2026-08-31', end: '2026-09-03', label: 'Vacation' }];
+      const shape = (inp) => page.evaluate((i) => {
+        const r = geoDeriveDay(i);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+        return {
+          timeOff: r.timeOff,
+          dwells: r.dwells.map(d => [d.kind, !!d.held]),
+          legs: r.legs.map(l => !!l.held),
+          time: rows.job_time_entries.map(x => x.source),
+          shop: rows.shop_time_entries.length,
+          miles: rows.td_mileage.map(m => ({ pending: !!m.pendingPurpose, purpose: m.purpose })),
+          open: r.open ? { counts: r.open.counts } : null,
+          openRows: rows.open.length,
+        };
+      }, inp);
+
+      test('an ordinary Tuesday at a customer counts, and the same Tuesday on Time off is all held', async () => {
+        // The baseline first, so the comparison means something: the visit
+        // and the drives count on a plain working day.
+        const work = await shape(visit(TUE, 10, 12));
+        expect(work.timeOff).toBe(false);
+        expect(work.time).toContain('client');
+        expect(work.miles.length).toBeGreaterThan(0);
+        expect(work.miles.some(m => !m.pending), 'a working day has counted miles').toBe(true);
+
+        const off = await shape(visit(TUE, 10, 12, { timeOff: OFF }));
+        expect(off.timeOff).toBe(true);
+        expect(off.time).not.toContain('client');
+        expect(off.time).toContain('client-held');
+        expect(off.time.filter(x => /^drive/.test(x)).every(x => x === 'drive-held')).toBe(true);
+        expect(off.legs.every(Boolean)).toBe(true);
+        // The miles stay on the log and count toward nothing until answered.
+        expect(off.miles.length).toBe(work.miles.length);
+        expect(off.miles.every(m => m.pending && m.purpose === '')).toBe(true);
+        await assertNoErrors(page);
+      });
+
+      test('a morning at the yard on a day off writes no yard time', async () => {
+        // Home, the yard 7:50 to 10, John Doe, the yard again, home. The yard
+        // has no held form, and a vacation is not a shift at your own place.
+        const { ds, t } = dayOf(TUE);
+        const YARD = { id: 'place-y25', kind: 'shop', name: 'The yard', lat: 39.0600, lng: -95.6500 };
+        const inp = { day: TUE, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', fences: [YARD, HOME, DOE],
+          tape: [mo(t(7), 'onFoot'), mo(t(7, 30), 'automotive'), mo(t(7, 50), 'onFoot'),
+            mo(t(10), 'automotive'), mo(t(10, 20), 'onFoot'), mo(t(12), 'automotive'), mo(t(12, 20), 'onFoot'),
+            mo(t(15), 'automotive'), mo(t(15, 20), 'onFoot')],
+          fixes: [fix(t(7, 10), HOME), fix(t(7, 50) + 5000, YARD), fix(t(9), YARD), fix(t(9, 55), YARD),
+            fix(t(10, 20) + 5000, DOE), fix(t(11, 55), DOE), fix(t(12, 20) + 5000, YARD), fix(t(14, 55), YARD),
+            fix(t(15, 20) + 5000, HOME), fix(t(16), HOME)],
+          nowMs: ds + 86400000 + 3600000 };
+        const work = await shape(inp);
+        expect(work.shop, 'a working day has yard time').toBeGreaterThan(0);
+        const off = await shape(Object.assign({}, inp, { timeOff: OFF }));
+        expect(off.shop).toBe(0);
+        expect(off.time).toContain('client-held');
+        expect(off.miles.every(m => m.pending)).toBe(true);
+        await assertNoErrors(page);
+      });
+
+      test('a manual clock still counts on a day off: the person said it was work', async () => {
+        const { t } = dayOf(TUE);
+        const clocks = [{ start: t(8), end: t(14) }];
+        const work = await shape(visit(TUE, 10, 12, { clocks }));
+        const off = await shape(visit(TUE, 10, 12, { clocks, timeOff: OFF }));
+        expect(off.timeOff).toBe(true);
+        expect(off.time).toEqual(work.time);
+        expect(off.miles).toEqual(work.miles);
+        expect(off.shop).toBe(work.shop);
+      });
+
+      test('the live stop on a day off is on the map and off the clock', async () => {
+        // Shop, drive to John Doe at 10, still there at 11:30.
+        const { ds, t } = dayOf(TUE);
+        const now = { day: TUE, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', fences: [SHOP, HOME, DOE],
+          tape: [mo(t(9), 'onFoot'), mo(t(10), 'automotive'), mo(t(10, 20), 'onFoot')],
+          fixes: [fix(t(9, 30), SHOP), fix(t(10, 20) + 5000, DOE), fix(t(11), DOE), fix(t(11, 25), DOE)],
+          nowMs: t(11, 30) };
+        const work = await shape(now);
+        expect(work.open && work.open.counts, 'at a customer on a working day it counts').toBe(true);
+        expect(work.openRows).toBe(1);
+        const off = await shape(Object.assign({}, now, { timeOff: OFF }));
+        expect(off.open && off.open.counts).toBe(false);
+        expect(off.openRows, 'no running row is written for it').toBe(0);
+        // A clock running over it puts it back on the clock.
+        const clocked = await shape(Object.assign({}, now, { timeOff: OFF, clocks: [{ start: t(9), end: t(12) }] }));
+        expect(clocked.open && clocked.open.counts).toBe(true);
+      });
+
+      test('only the days inside a block: the day after it ends is a normal day', async () => {
+        const days = await page.evaluate(() => {
+          const b = [{ start: '2026-09-24', end: '2026-09-27' }];
+          const on = d => _gdTimeOffDay({ day: d, timeOff: b });
+          return [on('2026-09-23'), on('2026-09-24'), on('2026-09-26'), on('2026-09-27'), on('2026-09-28'),
+            // A one-day block written with no end is still that one day.
+            _gdTimeOffDay({ day: '2026-09-24', timeOff: [{ start: '2026-09-24' }] })];
+        });
+        expect(days).toEqual([false, true, true, true, false, true]);
+      });
+
+      test('the Time off window says it holds tracking, not just scheduling', async () => {
+        const txt = await page.evaluate(() => {
+          openTimeOffModal();
+          const el = document.getElementById('timeoff-modal-overlay');
+          const t = el ? el.textContent : '';
+          if (el) el.remove();
+          return t;
+        });
+        expect(txt).toContain('Blocks scheduling');
+        expect(txt).toContain('Automatic time and mileage');
+        expect(txt).not.toContain('Block dates from scheduling');
+        // And nothing in it runs off a phone screen (this page is 390 wide):
+        // the End date box used to hang past the right edge.
+        const lay = await page.evaluate(() => {
+          openTimeOffModal();
+          const r = ['to-start', 'to-end', 'to-label'].map(id => document.getElementById(id).getBoundingClientRect());
+          const out = { right: Math.max(...r.map(x => x.right)), w: innerWidth,
+            overlap: r[0].right > r[1].left, scroll: document.documentElement.scrollWidth };
+          document.getElementById('timeoff-modal-overlay').remove();
+          return out;
+        });
+        expect(lay.right).toBeLessThanOrEqual(lay.w);
+        expect(lay.overlap).toBe(false);
+        expect(lay.scroll).toBeLessThanOrEqual(lay.w + 1);
+        await assertNoErrors(page);
+      });
+
+      test('junk Time off never throws and never holds a day', async () => {
+        const r = await page.evaluate(() => [null, undefined, 'x', 7, {}, [null], ['2026-09-01'],
+          [{ start: 'x', end: 'y' }], [{ end: '2026-09-01' }], [{ start: 7, end: 8 }]]
+          .map(v => _gdTimeOffDay({ day: '2026-09-01', timeOff: v })));
+        expect(r.every(v => v === false)).toBe(true);
+        expect(await page.evaluate(() => _gdTimeOffDay({ day: 'nope', timeOff: [{ start: '2026-09-01', end: '2026-09-01' }] }))).toBe(false);
+        expect(await page.evaluate(() => _gdTimeOffDay(null))).toBe(false);
+        const off = await shape(visit(TUE, 10, 12, { timeOff: 'garbage' }));
+        expect(off.timeOff).toBe(false);
+        expect(off.time).toContain('client');
+        await assertNoErrors(page);
+      });
+    });
   });
 
   // ── Rule 18: a loop's two ends are one end, counted twice ────────────────
@@ -1352,6 +1499,162 @@ test.describe('geo-derive: the day deriver', () => {
   // The IRS commuting rule, which is why it is global: home to your regular
   // workplace is never claimable, everything from arrival onward is. Him not
   // owning the yard he reports to is incidental.
+  // ── RULE 24: A STOP THE TAPE SLEPT THROUGH IS STILL A STOP ─────────────
+  //
+  // Owner 2026-09-23: "he went to the shop and got parts, hell life 360 didnt
+  // even pick it up."
+  //
+  // His real 23 September, second for second:
+  //
+  //   08:53:51  automotive           leaves Treyton Schafer's
+  //   08:59:35  regionEnter shop     into the yard
+  //   09:00:08  fix inside the shop fence
+  //   09:06:47  regionExit shop      out with the parts
+  //   09:10:15  regionEnter Treyton  back at the job
+  //   09:11:52  walking              the tape's first word since 08:53
+  //
+  // CoreMotion never left automotive, so the tape read one drive out of
+  // Treyton's and back into it, rule 7 dropped it as a same-fence loop, and
+  // the rail showed 16 minutes of nothing.
+  test.describe('rule 24: a closed crossing in the middle of a drive is a stop', () => {
+    const TREY = { id: 'client-trey', kind: 'client', name: 'Treyton Schafer', clientId: 1789580040218, lat: 39.0254091, lng: -95.7088139 };
+    const YARD = { id: 'shop', kind: 'shop', name: 'Plumbing Solutions By JS shop', lat: 39.0456577, lng: -95.7151106 };
+    const F24 = [TREY, YARD];
+    // Where the readings actually fell. The yard fix is ~495 ft from the
+    // pin, inside the 600 ft circle; the road fixes are strung out between.
+    const ROAD1 = { lat: 39.03085, lng: -95.71094 }, INYARD = { lat: 39.04431, lng: -95.71479 };
+    const ROAD2 = { lat: 39.03981, lng: -95.71548 }, ATTREY = { lat: 39.02549, lng: -95.70874 };
+    const tape24 = [mo(T(8, 13, 41), 'walking'), mo(T(8, 51, 18), 'still'),
+      mo(T(8, 53, 51), 'automotive'), mo(T(9, 11, 52), 'walking')];
+    const fixes24 = [fix(T(8, 40), TREY), fix(T(8, 53, 53), TREY), fix(T(8, 55, 22), ROAD1),
+      fix(T(9, 0, 8), INYARD), fix(T(9, 6, 56), ROAD2), fix(T(9, 11, 57), ATTREY), fix(T(9, 30), TREY)];
+    const regions24 = [
+      { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+      { ts: T(8, 59, 35), id: 'shop', enter: true },
+      { ts: T(9, 6, 47), id: 'shop', enter: false },
+      { ts: T(9, 10, 15), id: 'client-trey', enter: true },
+    ];
+    const run24 = (over) => run(page, base(Object.assign({
+      tape: tape24, fixes: fixes24, fences: F24, regions: regions24, nowMs: T(10, 0),
+    }, over)));
+    const toShop = r => r.legs.find(l => l.to && l.to.name === YARD.name);
+    const fromShop = r => r.legs.find(l => l.from && l.from.name === YARD.name);
+
+    test('his morning: Treyton to the shop, the shop, and back, not a hole', async () => {
+      const r = await run24();
+      const a = toShop(r), b = fromShop(r);
+      expect(a, 'the drive to the yard exists').toBeTruthy();
+      expect(b, 'and the drive back').toBeTruthy();
+      expect(a.from.name).toBe(TREY.name);
+      expect(hm(a.startTs)).toBe(hm(T(8, 53, 51)));
+      expect(hm(a.endTs), 'ends where the OS saw him pull in').toBe(hm(T(8, 59, 35)));
+      expect(hm(b.startTs), 'leaves when the OS saw him pull out').toBe(hm(T(9, 6, 47)));
+      expect(b.to.name).toBe(TREY.name);
+      expect(hm(b.endTs), 'rule 21 still ends it at the crossing back in').toBe(hm(T(9, 10, 15)));
+    });
+
+    test('the seven minutes at the shop are a shop dwell', async () => {
+      const r = await run24();
+      const d = r.dwells.find(x => x.kind === 'shop' && x.startTs >= T(8, 50));
+      expect(d, 'he was at the yard').toBeTruthy();
+      expect(hm(d.startTs)).toBe(hm(T(8, 59, 35)));
+      expect(hm(d.endTs)).toBe(hm(T(9, 6, 47)));
+    });
+
+    test('both halves are real legs with miles, neither is a round trip', async () => {
+      const r = await run24();
+      for (const l of [toShop(r), fromShop(r)]) {
+        expect(l.miles).toBeGreaterThan(0);
+        expect(l.roundTrip).toBeFalsy();
+      }
+    });
+
+    test('the two halves carry different journey ids, and the same input gives the same ids', async () => {
+      const r1 = await run24(), r2 = await run24();
+      expect(toShop(r1).id).not.toBe(fromShop(r1).id);
+      expect(toShop(r1).id).toBe(toShop(r2).id);
+      expect(fromShop(r1).id).toBe(fromShop(r2).id);
+    });
+
+    test('driving PAST the yard is untouched: a pair under four minutes splits nothing', async () => {
+      const r = await run24({ regions: [
+        { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+        { ts: T(9, 0, 40), id: 'shop', enter: false },
+        { ts: T(9, 10, 15), id: 'client-trey', enter: true },
+      ] });
+      expect(toShop(r), 'a minute inside the circle is a drive-by').toBeFalsy();
+      expect(r.dwells.some(x => x.kind === 'shop' && x.startTs >= T(8, 50))).toBe(false);
+    });
+
+    test('the OS region alone is not enough: no fix inside the circle, no stop', async () => {
+      // iOS watches a wider circle than this file does (see _gdSettledAway).
+      // Seven minutes "inside" with every fix out on the road is a slow road.
+      const r = await run24({ fixes: fixes24.filter(f => f.ts !== T(9, 0, 8)) });
+      expect(toShop(r)).toBeFalsy();
+    });
+
+    test('an enter with no exit never splits a drive (that is rule 21\'s)', async () => {
+      const r = await run24({ regions: [
+        { ts: T(8, 54, 38), id: 'client-trey', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+      ] });
+      expect(fromShop(r), 'nothing says he ever left the yard by a crossing').toBeFalsy();
+    });
+
+    test('two stops the tape slept through in one drive are two stops', async () => {
+      const HD = { id: 'place-hd', kind: 'supply', name: 'The Home Depot', lat: 39.0451217, lng: -95.7584224 };
+      const r = await run24({
+        fences: [TREY, YARD, HD],
+        tape: [mo(T(8, 13, 41), 'walking'), mo(T(8, 53, 51), 'automotive'), mo(T(9, 40), 'walking')],
+        fixes: fixes24.concat([fix(T(9, 20), HD), fix(T(9, 41), TREY)]),
+        regions: regions24.slice(0, 3).concat([
+          { ts: T(9, 15), id: 'place-hd', enter: true },
+          { ts: T(9, 25), id: 'place-hd', enter: false },
+          { ts: T(9, 38), id: 'client-trey', enter: true },
+        ]),
+      });
+      expect(r.dwells.some(x => x.kind === 'shop' && hm(x.startTs) === hm(T(8, 59, 35)))).toBe(true);
+      expect(r.dwells.some(x => x.name === HD.name && hm(x.startTs) === hm(T(9, 15)))).toBe(true);
+    });
+
+    test('a stop inside a drive that is still going leaves the rest of it open', async () => {
+      const r = await run24({
+        tape: [mo(T(8, 13, 41), 'walking'), mo(T(8, 53, 51), 'automotive')],
+        // Nothing after "now": a fix from the future is not a fixture, it is
+        // a different day.
+        fixes: fixes24.filter(f => f.ts <= T(9, 8)),
+        regions: regions24.slice(0, 3), nowMs: T(9, 8),
+      });
+      expect(toShop(r), 'the drive to the yard is closed and written').toBeTruthy();
+      expect(r.journeys.some(j => j.open && j.startTs === T(9, 6, 47)), 'still driving since the exit').toBe(true);
+    });
+
+    test('no crossings at all is exactly the old behaviour', async () => {
+      const r = await run24({ regions: [] });
+      expect(toShop(r)).toBeFalsy();
+      expect(fromShop(r)).toBeFalsy();
+    });
+
+    test('junk crossings never throw and never invent a stop', async () => {
+      for (const junk of [null, undefined, [], [null], [{ ts: 'x', id: 'shop', enter: true }],
+                          [{ ts: T(8, 59), id: 'nobody', enter: true }, { ts: T(9, 8), id: 'nobody', enter: false }]]) {
+        const r = await run24({ regions: junk });
+        expect(toShop(r), JSON.stringify(junk)).toBeFalsy();
+      }
+    });
+
+    test('crossings delivered out of order are still the stop they describe', async () => {
+      // The ingest does not promise order and the span list sorts by time,
+      // so an exit that arrived before its enter is the same visit.
+      const r = await run24({ regions: [
+        { ts: T(9, 6, 47), id: 'shop', enter: false },
+        { ts: T(8, 59, 35), id: 'shop', enter: true },
+      ] });
+      expect(hm(toShop(r).endTs)).toBe(hm(T(8, 59, 35)));
+    });
+  });
+
   // ── RULE 21: THE CROSSING KNOWS WHEN HE ARRIVED ─────────────────────────
   //
   // Owner 2026-09-15: "I shouldn't be babysitting his day and telling you what

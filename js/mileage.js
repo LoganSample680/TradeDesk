@@ -472,6 +472,12 @@ let _mapkitReady=false;
 // (localhost, 127.0.0.1, the flow-test bridge) mapkit.init throws an origin-mismatch
 // console.error: which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
 const _mapkitAuthorizedOrigin=/(?:^|\.)tradedeskpro\.app$/.test(location.hostname)||/\.pages\.dev$/.test(location.hostname);
+// The token, for look-around.html's frame: Look Around needs MapKit's modular
+// bundle, which cannot share a window with the full one this page loads, so
+// it runs in a frame and asks for the token here rather than keeping a second
+// copy of it. Empty on an origin the token is not locked to, which is also
+// the frame's signal to load nothing.
+function _tdMapkitToken(){return _mapkitAuthorizedOrigin?_MAPKIT_TOKEN:'';}
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
   if(!_mapkitAuthorizedOrigin)return; // unauthorized origin, skip init so MapKit never throws
@@ -1650,6 +1656,86 @@ async function _poiAt(coord){
     if(p&&p.formattedAddress)return {name:null,category:'',addr:p.formattedAddress};
   }catch(_e){}
   return null;
+}
+// ── WHAT WAS THERE, WITHOUT A TAP (owner 2026-09-24) ────────────────────────
+// "Is there any way for an unsaved address that pulls itself in automatically
+// and attempts to look up the business ... having the business name in the
+// day rail would be killer."
+//
+// The same _poiAt the Save button already asks, asked once per spot when the
+// rail first draws the stop, and remembered. It NAMES the row and nothing
+// else: an unsaved stop still counts toward nothing until it is saved (owner
+// 2026-09-08, "only things with addresses saved should update any totals"),
+// so a guess from Apple can never move a number.
+//
+// Keyed by the spot rounded to about 11 m, not by the row: the same Home Depot
+// is one lookup however many times he goes, and a re-derive that re-keys the
+// row costs nothing. A spot Apple could not name is remembered as such for a
+// day, so the rail never asks the same question on every paint. Per device,
+// in localStorage, because it is a convenience and never a record.
+const _STOP_NAME_KEY='zp3_stop_names',_STOP_NAME_MAX=400,_STOP_NAME_MISS_MS=24*3600000;
+let _stopNames=null,_stopNameTimer=null;
+const _stopNameBusy=new Set(),_stopNameQueue=[];
+function _stopNamesLoad(){
+  if(_stopNames)return _stopNames;
+  try{_stopNames=JSON.parse(localStorage.getItem(_STOP_NAME_KEY)||'{}');}catch(_e){_stopNames=null;}
+  if(!_stopNames||typeof _stopNames!=='object'||Array.isArray(_stopNames))_stopNames={};
+  return _stopNames;
+}
+function _stopNamesSave(){
+  try{
+    const keep=Object.entries(_stopNamesLoad()).filter(e=>e[1]&&typeof e[1]==='object')
+      .sort((a,b)=>(b[1].ts||0)-(a[1].ts||0)).slice(0,_STOP_NAME_MAX);
+    _stopNames=Object.fromEntries(keep);
+    localStorage.setItem(_STOP_NAME_KEY,JSON.stringify(_stopNames));
+  }catch(_e){}
+}
+function _stopNameKey(c){return Number(c.lat).toFixed(4)+','+Number(c.lng).toFixed(4);}
+// The one door to Apple, so a test can stand in for it. undefined means "cannot
+// ask right now" (MapKit not loaded on this origin), which is not a miss and
+// must not be remembered as one.
+function _stopNameLookup(c){
+  if(!_mapkitReady)return undefined;
+  return _poiAt({lat:c.lat,lng:c.lng});
+}
+// Synchronous for the painter: the answer it already has, or null while it
+// asks. {name, addr}; either may be ''.
+function _stopNameFor(clientKey,day){
+  try{
+    const c=_mileStopCoord(clientKey,day);
+    if(!c||!isFinite(c.lat)||!isFinite(c.lng))return null;
+    const k=_stopNameKey(c);
+    const hit=_stopNamesLoad()[k];
+    if(hit&&(hit.name||hit.addr))return {name:String(hit.name||''),addr:String(hit.addr||'')};
+    if(hit&&Date.now()-(Number(hit.ts)||0)<_STOP_NAME_MISS_MS)return null;
+    if(!_stopNameBusy.has(k)){
+      _stopNameBusy.add(k);_stopNameQueue.push({k,c});
+      if(!_stopNameTimer)_stopNameTimer=setTimeout(_stopNameDrain,60);
+    }
+  }catch(_e){}
+  return null;
+}
+async function _stopNameDrain(){
+  _stopNameTimer=null;
+  let found=false;
+  while(_stopNameQueue.length){
+    const {k,c}=_stopNameQueue.shift();
+    let p;
+    try{p=await _stopNameLookup(c);}catch(_e){p=null;}
+    _stopNameBusy.delete(k);
+    if(p===undefined)continue;
+    const name=(p&&p.name)?String(p.name):'',addr=(p&&p.addr)?String(p.addr):'';
+    _stopNamesLoad()[k]={name,addr,ts:Date.now()};
+    if(name||addr)found=true;
+  }
+  _stopNamesSave();
+  // One repaint for the whole batch, from rows already in hand.
+  if(found){
+    try{
+      if(document.getElementById('pg-timelog')?.classList.contains('active')&&typeof renderTimeLog==='function')
+        renderTimeLog({cached:true});
+    }catch(_e){}
+  }
 }
 // Apple's POI categories mapped onto the kinds a contractor cares about.
 //
@@ -3857,12 +3943,53 @@ async function _mileSaveStopAddress(clientKey,day){
 // same journey id and the traced row is replaced by geo_replace_day.
 // Called by BOTH arms of the chooser: saveClient hands a client, savePlace
 // hands a place. All this needs from either is an address, so it takes either.
+// ── A SAVE IS FINISHED EVEN IF THE APP IS NOT (owner 2026-09-24) ─────────
+// Jack's 23 September, 4:20 pm: the customer record landed at 4:20:17, then
+// his login failed to refresh at 4:20:32 and the app rebooted at 4:20:42,
+// and the rest of this chain died in memory with the old page. The time row
+// was never named, so it still read "Unsaved address" and he went back into
+// its menu, which is where the stop became Personal. The chain is written
+// down before it starts and replayed on the next boot until it completes.
+const _MILE_SAVE_KEY='zp3_mile_save_pending';
+const _MILE_SAVE_MAX_AGE_MS=6*3600000;
+function _mileSavePendingWrite(p,client){
+  try{
+    localStorage.setItem(_MILE_SAVE_KEY,JSON.stringify({
+      uid:(window._supaUser&&_supaUser.id)||null,at:Date.now(),
+      p:{stopKey:p.stopKey||'',day:p.day||'',legKey:p.legKey||'',which:p.which||'to',
+         lat:Number(p.lat),lng:Number(p.lng)},
+      client:{id:client.id!=null?client.id:null,name:String(client.name||''),addr:String(client.addr||'')}
+    }));
+  }catch(_e){}
+}
+function _mileSavePendingClear(){try{localStorage.removeItem(_MILE_SAVE_KEY);}catch(_e){}}
+// Boot. A save another login started is not this login's to finish, and a
+// save from long ago is history, not a pending action: both are dropped.
+async function _mileResumeAddressSave(){
+  let s=null;
+  try{s=JSON.parse(localStorage.getItem(_MILE_SAVE_KEY)||'null');}catch(_e){s=null;}
+  if(!s||!s.p||!s.client){_mileSavePendingClear();return false;}
+  const me=(window._supaUser&&_supaUser.id)||null;
+  if(!me||s.uid!==me||!(Date.now()-Number(s.at)<_MILE_SAVE_MAX_AGE_MS)){_mileSavePendingClear();return false;}
+  if(!s.client.addr){_mileSavePendingClear();return false;}
+  _mileAddressPending=Object.assign({},s.p);
+  return _mileAddressSaved(s.client);
+}
 async function _mileAddressSaved(client){
   const p=_mileAddressPending;
   if(!p||!client||!client.addr)return false;
   _mileAddressPending=null;
+  _mileSavePendingWrite(p,client);
   try{
-    if(typeof _geoDeriveDayNow==='function')await _geoDeriveDayNow(p.day,null);
+    // ── THE ROW IS NAMED FIRST (owner 2026-09-24) ────────────────────────
+    // The name is what the person is waiting to see, and it is one write. The
+    // re-derive behind it can take several seconds against the tape and the
+    // server, and until 2026-09-24 the naming waited for it, which is the
+    // window Jack's reboot fell into. A derive that resolves the stop writes
+    // the same name under the same key, so going first costs nothing.
+    await _mileTellTheRail(p,client);
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
+    const derived=(typeof _geoDeriveDayNow==='function')?await _geoDeriveDayNow(p.day,null):null;
     // A day the deriver could not rebuild leaves the row exactly as it was,
     // so ask the row itself whether the answer landed rather than trusting
     // the derive to have run. This also covers the day it DID rebuild and
@@ -3892,7 +4019,11 @@ async function _mileAddressSaved(client){
     // is what saving an address means, and it happens on both branches.
     // Nothing here stamps fixed_at, for the reason _mileNameStopRow already
     // gives at length: a rebuild must stay free to correct these rows.
-    await _mileTellTheRail(p,client);
+    //
+    // Already told once, before the derive. Told AGAIN only when the derive
+    // actually rebuilt the day, since that is the only thing that can have
+    // rewritten the row in between; a day it refused changed nothing.
+    if(derived)await _mileTellTheRail(p,client);
     // AND TELL THE SCREEN HE IS LOOKING AT (owner 2026-09-20: "adding people
     // in the day rail didn't update in real time"). The save was landing: the
     // derive ran, the row changed in the database, and the Time Log went on
@@ -3908,6 +4039,7 @@ async function _mileAddressSaved(client){
     // landed on the server.
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh(true);}catch(_e2){}
     try{if(typeof renderMileage==='function')renderMileage();}catch(_e2){}
+    _mileSavePendingClear();
     const n=_mileTripNumberForLeg(p.day,p.legKey);
     if(typeof showToast==='function')showToast(n?('Trip '+n+' is on the books'):'Address saved, day re-derived');
   }catch(_e){}
