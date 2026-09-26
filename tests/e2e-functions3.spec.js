@@ -5305,6 +5305,205 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(r.setSessionCalled, 'the backup path must never be tried once getSession() itself recovers').toBe(false);
   });
 
+  // ── Jack, 2026-09-23: the backup must never outrank the SDK's own session.
+  // getSession() came back null for a moment after iOS relaunched the app, the
+  // tick fell through to zp3_session_backup, and that copy was two refreshes
+  // stale. Supabase read the reused refresh token as theft and revoked the
+  // whole login; every tap for the next two and a half hours saved to the phone
+  // alone. While the SDK still has a stored session, the tick waits.
+  const withSdkStore = (present) => {
+    const keep = {};
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('sb-') === 0 && /-auth-token$/.test(k)) keep[k] = localStorage.getItem(k); }
+    Object.keys(keep).forEach(k => localStorage.removeItem(k));
+    if (present) localStorage.setItem('sb-jacktest-auth-token', JSON.stringify({ access_token: 'live-at', refresh_token: 'live-rt' }));
+    return () => { localStorage.removeItem('sb-jacktest-auth-token'); Object.entries(keep).forEach(([k, v]) => localStorage.setItem(k, v)); };
+  };
+
+  test('_probeAndSync never sends the backup while the SDK still holds a session', async () => {
+    const r = await page.evaluate(async (fnSrc) => {
+      if (typeof _probeAndSync !== 'function' || typeof _sdkHasStoredSession !== 'function') return { skip: true };
+      const withSdkStore = eval(fnSrc);
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      let setSessionCalled = false, shown = 0;
+      window.supaShowLogin = () => { shown++; };
+      const restore = withSdkStore(true);
+      try {
+        localStorage.setItem('zp3_session_backup', JSON.stringify({ access_token: 'stale-at', refresh_token: 'retired-at-2-38pm' }));
+        _supa = { auth: {
+          getSession: () => Promise.resolve({ data: { session: null } }),
+          setSession: () => { setSessionCalled = true; return Promise.resolve({ data: { session: null } }); },
+        } };
+        _supaUser = null; _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, setSessionCalled, shown, released: _sessionRestoreInProgress === false };
+      } finally {
+        restore();
+        localStorage.removeItem('zp3_session_backup');
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    }, withSdkStore.toString());
+    if (r.skip) return;
+    expect(r.setSessionCalled, 'a stale backup revokes the whole login; it must not be sent').toBe(false);
+    expect(r.shown, 'a blip is not a dead login').toBe(0);
+    expect(r.released, 'and the next tick is free to try again').toBe(true);
+  });
+
+  test('_probeAndSync still tries the backup once the SDK has no session at all', async () => {
+    const r = await page.evaluate(async (fnSrc) => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const withSdkStore = eval(fnSrc);
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      let setSessionCalled = false;
+      window.supaShowLogin = () => {};
+      const restore = withSdkStore(false);
+      try {
+        localStorage.setItem('zp3_session_backup', JSON.stringify({ access_token: 'bk-at', refresh_token: 'bk-rt' }));
+        _supa = { auth: {
+          getSession: () => Promise.resolve({ data: { session: null } }),
+          setSession: () => { setSessionCalled = true; return Promise.resolve({ data: { session: null } }); },
+        } };
+        _supaUser = null; _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        await new Promise(res => setTimeout(res, 20));
+        return { skip: false, setSessionCalled };
+      } finally {
+        restore();
+        localStorage.removeItem('zp3_session_backup');
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    }, withSdkStore.toString());
+    if (r.skip) return;
+    expect(r.setSessionCalled).toBe(true);
+  });
+
+  test('_sdkHasStoredSession: present, absent, junk and a throwing store', async () => {
+    const r = await page.evaluate((fnSrc) => {
+      if (typeof _sdkHasStoredSession !== 'function') return { skip: true };
+      const withSdkStore = eval(fnSrc);
+      const out = {};
+      let restore = withSdkStore(true); out.present = _sdkHasStoredSession(); restore();
+      restore = withSdkStore(false); out.absent = _sdkHasStoredSession();
+      localStorage.setItem('sb-jacktest-auth-token', '{NOT JSON'); out.junk = _sdkHasStoredSession();
+      localStorage.setItem('sb-jacktest-auth-token', JSON.stringify({ access_token: 'only-at' })); out.noRefresh = _sdkHasStoredSession();
+      restore();
+      const origKey = Storage.prototype.key;
+      Storage.prototype.key = () => { throw new Error('blocked'); };
+      try { out.threw = _sdkHasStoredSession(); } finally { Storage.prototype.key = origKey; }
+      return out;
+    }, withSdkStore.toString());
+    if (r.skip) return;
+    expect(r).toEqual({ present: true, absent: false, junk: false, noRefresh: false, threw: false });
+  });
+
+  // The same afternoon's second half: when the server HAS ended the login (the
+  // SDK clears its stored session only on a server rejection), the dashboard
+  // must not carry on looking normal. He tapped Clock out on it.
+  test('a login the server ended asks to sign in, instead of a normal-looking dashboard', async () => {
+    const r = await page.evaluate(async (fnSrc) => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const withSdkStore = eval(fnSrc);
+      const origShowLogin = window.supaShowLogin;
+      const saved = { user: _supaUser, cache: localStorage.getItem('zp3_cloud_cache') };
+      const calls = [];
+      window.supaShowLogin = (o) => { calls.push(o || {}); };
+      const out = {};
+      try {
+        if (!saved.cache) localStorage.setItem('zp3_cloud_cache', JSON.stringify({ clients: [] }));
+        let restore = withSdkStore(false);
+        await window.__capturedAuthCallback('SIGNED_OUT', null);
+        out.dead = calls.length && calls[0].force === true;
+        restore();
+        calls.length = 0;
+        restore = withSdkStore(true);
+        await window.__capturedAuthCallback('SIGNED_OUT', null);
+        out.blip = calls.length;
+        restore();
+        return out;
+      } finally {
+        clearTimeout(window._offlineBannerTimer);
+        window.supaShowLogin = origShowLogin;
+        _supaUser = saved.user;
+        if (saved.cache == null) localStorage.removeItem('zp3_cloud_cache');
+      }
+    }, withSdkStore.toString());
+    if (r.skip) return;
+    expect(r.dead, 'server ended the login: sign in now').toBe(true);
+    expect(r.blip, 'SDK still holds a session: a blip, no login screen').toBe(0);
+  });
+
+  // Jack, 2026-09-23, part three: he tapped Clock out while the login was dead,
+  // and when he signed back in the cloud's still-open row replaced it. The op
+  // log read the null user as an account switch and wiped the field clocks,
+  // which are the only thing that lets a newer local field beat an older cloud
+  // row. It must treat the gap as the same account, in memory and across a
+  // relaunch (the durable log reloaded before the cloud rows land).
+  test('a Clock out tapped while signed out survives signing back in', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _opApplyIncoming !== 'function' || typeof _opOwner !== 'function' || !window._opLogShadow) return { skip: true };
+      const U = 'jack-gap-test';
+      const saved = { user: _supaUser, owner: _loadedDataOwner, merge: _mergeOnSignIn, te: timeEntries.slice(), clocks: _fieldClocks };
+      const id = 990000 + Math.floor(Math.random() * 1000);
+      const morning = '2026-09-23T12:44:00.000Z';
+      const cloudOpen = { id, date: '2026-09-23', open: true, job_id: null, minutes: null, start_time: morning, end_time: null, logged_by_uid: null, logged_by_name: 'Jack' };
+      const out = {};
+      try {
+        _supaUser = { id: U }; _loadedDataOwner = U; _mergeOnSignIn = false;
+        timeEntries.length = 0; timeEntries.push(Object.assign({}, cloudOpen));
+        _opRebaseline();
+        (_rowSyncedAt.td_time_entries || (_rowSyncedAt.td_time_entries = new Map())).set(String(id), Date.now() - 3600000);
+        // The server ends the login; the same account's data stays on screen.
+        _supaUser = null; _mergeOnSignIn = true;
+        out.ownerInGap = _opOwner();
+        const e = timeEntries.find(x => x.id === id);
+        e.open = false; e.end_time = '2026-09-23T21:44:00.000Z'; e.minutes = 540;
+        _opShadowDerive();
+        // He signs back in: same account.
+        _supaUser = { id: U };
+        _opShadowDerive();
+        const m1 = _opApplyIncoming('td_time_entries', e, Object.assign({}, cloudOpen), morning, 'full');
+        out.sameSession = { open: m1.open, end: m1.end_time };
+        // A relaunch in between: the in-memory clocks are gone, the durable log is not.
+        _fieldClocks = {};
+        await _opDbLoad();
+        const m2 = _opApplyIncoming('td_time_entries', e, Object.assign({}, cloudOpen), morning, 'full');
+        out.afterRelaunch = { open: m2.open, end: m2.end_time };
+        // Nothing edited locally: the cloud still wins.
+        const other = Object.assign({}, cloudOpen, { id: id + 1 });
+        out.untouched = _opApplyIncoming('td_time_entries', Object.assign({}, other, { open: false }), other, morning, 'full').open;
+        return out;
+      } finally {
+        _supaUser = saved.user; _loadedDataOwner = saved.owner; _mergeOnSignIn = saved.merge;
+        timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+        _fieldClocks = saved.clocks; _opRebaseline();
+      }
+    });
+    if (r.skip) return;
+    expect(r.ownerInGap, 'the gap is still Jack, not nobody').toBe('jack-gap-test');
+    expect(r.sameSession).toEqual({ open: false, end: '2026-09-23T21:44:00.000Z' });
+    expect(r.afterRelaunch, 'and it survives an app relaunch while signed out').toEqual({ open: false, end: '2026-09-23T21:44:00.000Z' });
+    expect(r.untouched, 'a row nobody edited locally still takes the cloud copy').toBe(true);
+  });
+
+  test('_opOwner: signed in, the gap, and a real sign-out', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _opOwner !== 'function') return { skip: true };
+      const saved = { user: _supaUser, owner: _loadedDataOwner, merge: _mergeOnSignIn };
+      try {
+        _supaUser = { id: 'a' }; _loadedDataOwner = 'a'; _mergeOnSignIn = false; const signedIn = _opOwner();
+        _supaUser = null; _mergeOnSignIn = true; const gap = _opOwner();
+        _mergeOnSignIn = false; const out = _opOwner();
+        _mergeOnSignIn = true; _loadedDataOwner = null; const noData = _opOwner();
+        return { signedIn, gap, out, noData };
+      } finally { _supaUser = saved.user; _loadedDataOwner = saved.owner; _mergeOnSignIn = saved.merge; }
+    });
+    if (r.skip) return;
+    expect(r).toEqual({ signedIn: 'a', gap: 'a', out: null, noData: null });
+  });
+
   test('supaSaveToCloud: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSaveToCloud !== 'function') return { skip: true };

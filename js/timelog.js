@@ -1837,7 +1837,25 @@ function _tlRailRow(r){
     // An empty title draws no element. An unsaved job site has no name to
     // give, and an empty <div> there would leave a blank line hanging off the
     // spine where a name would sit.
-    body=(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':'')+
+    // ── WHAT WAS THERE (owner 2026-09-24) ────────────────────────────────
+    // "It should just pop the address up and have it greyed so it asks if it
+    // was personal or business ... anything marked as personal says personal
+    // but doesn't show what was there."
+    //
+    // An unsaved stop, and a stop already answered Personal, name the place
+    // Apple says is at that spot (_stopNameFor, js/mileage.js), greyed: it is
+    // what the map says, not something anybody saved, and it counts toward
+    // nothing until it is saved. A row that already has a name keeps it.
+    const _noName=!_bareName||_bareName==='Unsaved address';
+    const _poi=((kind==='site'&&/^unsaved/.test(String(r.rawSource||'')))||kind==='personal')&&_noName&&
+      r.clientKey&&typeof _stopNameFor==='function'?_stopNameFor(r.clientKey,r.date):null;
+    const _poiName=_poi?(_poi.name||String(_poi.addr||'').split(',')[0]):'';
+    const _poiAddr=_poi&&_poi.name&&_poi.addr?String(_poi.addr).split(',').slice(0,2).join(','):'';
+    const _useGuess=!!_poiName&&(!ttl||ttl===m.word||ttl==='Unsaved address');
+    body=(_useGuess
+          ?'<div class="tl-rail-ttl" style="color:var(--text3)">'+escHtml(_poiName)+'</div>'+
+           (_poiAddr?'<div class="tl-rail-sub">'+escHtml(_poiAddr)+'</div>':'')
+          :(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':''))+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
     // SAVE IT FROM HERE TOO (owner 2026-09-09). A stop nobody saved is the
     // same fact on two screens: the mileage log has said "Unsaved address"
@@ -1878,12 +1896,19 @@ function _tlRailRow(r){
     // rest were controls that did nothing at all when pressed. One resolver
     // answers both questions now (_mileStopCoord, js/mileage.js): the chip
     // appears exactly when there is a coordinate behind it to save.
-    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)&&
-       (typeof _mileStopCoord!=='function'||_mileStopCoord(r.clientKey,r.date))){
-      body+='<div class="tl-rail-chips">'+
-        '<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
-        escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
-        svgIcon('📍',{size:11})+' Save this address</button></div>';
+    // BUSINESS OR PERSONAL (owner 2026-09-24): the row asks the question
+    // itself. Business is the save, because only a saved address counts;
+    // Personal is the same answer the row menu's Not work gives, through the
+    // same door (_visitHoldAnswer), and the Personal row it leaves behind
+    // offers "It was work" to take it back.
+    if(kind==='site'&&/^unsaved/.test(String(r.rawSource||''))&&r.clientKey&&_tlRowIsMine(r)){
+      const canSave=typeof _mileStopCoord!=='function'||!!_mileStopCoord(r.clientKey,r.date);
+      const chips=(canSave?'<button type="button" class="tl-rail-chip" onclick="_mileSaveStopAddress(\''+
+          escHtml(String(r.clientKey))+'\',\''+escHtml(String(r.date||''))+'\')">'+
+          svgIcon('📍',{size:11})+' Business</button>':'')+
+        (r.rawId!=null?'<button type="button" class="tl-rail-chip" onclick="_visitHoldAnswer(\''+
+          escHtml(String(r.rawId))+'\',\'personal\')">Personal</button>':'');
+      if(chips)body+='<div class="tl-rail-chips">'+chips+'</div>';
     }
   }
   // The word rides with the icon in every case, so the colour is never doing
@@ -2047,18 +2072,35 @@ function _tlRowMenu(btn){
       // The raw source rides along as the second argument: it is what tells
       // the dispatcher which of the two tables this row lives in, and the
       // button is the only thing that knows.
+      // THE SAME GUARD THE CHIP HAS (owner 2026-09-22, on Jack's 11:58 to
+      // 1:17 on the 21st: "cant save, why?").
+      //
+      // The chip on the row stopped being drawn without a coordinate behind
+      // it on 2026-09-20, for exactly this complaint. This copy of the same
+      // action never got the check, so the row quietly offered a Save the
+      // chip had already withdrawn, and pressing it called
+      // _mileSaveStopAddress, which returns false and does nothing. Jack's
+      // row is keyed d-j-987ebc83-mubhcq0a and no leg or via stop on that day
+      // carries that id, so there is no pin to open a lead on. One resolver,
+      // asked in both places, or the second place is a dead button again.
+      if(/^unsaved/.test(raw)&&d.rowKey&&
+         (typeof _mileStopCoord!=='function'||_mileStopCoord(d.rowKey,d.rowDate||''))){
+        acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
+          'Save this address','Then it names itself here and everywhere after');
+      }
       if(raw==='dismissed'){
         // The undo, in the menu as well as on the chip, because this is where
         // a person goes when a row looks wrong.
         acts+=act('_tlRowMenuDo(\'iswork\',\''+escHtml(String(id))+'\')','It was work',
           'Puts this stop back on your hours and your miles.');
       }else{
-        acts+=act('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
+        // ASKED TWICE, AND LAST (owner 2026-09-24). Jack's 3:36 stop went
+        // Personal at 4:20:27 on 23 September out of this menu, seconds after
+        // he saved its address, with Not work sitting red above "Save this
+        // address". It is the one action here that takes time off somebody's
+        // hours, so it is below the save and its first tap only asks.
+        acts+=act('_tlRowMenuAskNotWork(\''+escHtml(String(id))+'\',\''+escHtml(raw)+'\')','Not work',
           'Keeps it off your hours and your miles. Just this one, not the place.',true);
-      }
-      if(/^unsaved/.test(raw)&&d.rowKey){
-        acts+=act('_tlRowMenuDo(\'save\',\''+escHtml(String(d.rowKey))+'\',\''+escHtml(String(d.rowDate||''))+'\')',
-          'Save this address','Then it names itself here and everywhere after');
       }
     }
     box.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:2px">'+escHtml(label)+'</div>'+
@@ -2069,6 +2111,25 @@ function _tlRowMenu(btn){
         'onclick="this.closest(\'.zmodal-overlay\').remove()">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
   }catch(_e){}
+}
+// Not work's second tap. Same menu, same buttons, so the question sits
+// exactly where the finger already is and there is no second overlay to
+// style or to leave behind. Back puts the menu away without answering.
+function _tlRowMenuAskNotWork(id,raw){
+  try{
+    const ov=document.getElementById('_tl-row-menu');
+    const acts=ov&&ov.querySelector('.tl-menu-acts');
+    if(!acts)return false;
+    const b=(fn,label,sub,danger)=>'<button type="button" class="tl-menu-act'+(danger?' is-danger':'')+'" onclick="'+fn+'">'+
+      '<span class="tl-menu-act-t">'+escHtml(label)+'</span>'+
+      (sub?'<span class="tl-menu-act-s">'+escHtml(sub)+'</span>':'')+'</button>';
+    acts.innerHTML=
+      '<div class="tl-menu-ask" style="font-size:13px;font-weight:700;margin:0 0 8px">Take this off your hours and miles?</div>'+
+      b('_tlRowMenuDo(\'notwork\',\''+escHtml(String(id))+'\',\''+escHtml(String(raw||''))+'\')',
+        'Yes, not work','It stays on the timeline, greyed out, and counts toward nothing.',true)+
+      b('document.getElementById(\'_tl-row-menu\')?.remove()','Back','Leave it as it is');
+    return true;
+  }catch(_e){return false;}
 }
 // One door per action, and every one of them is a function that already
 // existed and already re-checks permission for itself (7.3).

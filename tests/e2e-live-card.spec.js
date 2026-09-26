@@ -329,6 +329,37 @@ test.describe('the browser card and the server card say the same thing', () => {
     }
   });
 
+  // RULE 25 (owner 2026-09-24): "still counting his hours even after the
+  // vacation fix". Jack's lock screen ran ON SITE from 3:48pm at the rental,
+  // on a Time off day the deriver had already called not counted.
+  test('a stop the deriver says does not count is no ON SITE card on either side', async () => {
+    const d = dwell({ kind: 'unsaved', name: '', counts: false, fence: null });
+    const b = await browserCard(d);
+    expect(b.ended).toBe(true);
+    expect(b.got, 'nothing was set').toBe(null);
+    expect(mod.railCardFor({ open: d }, {}).event).toBe('end');
+    // A counted stop still draws, so this is the flag and not the kind.
+    expect(mod.railCardFor({ open: dwell({ counts: true }) }, {}).state.kind).toBe('ON SITE');
+  });
+
+  test('not counted, but on the road: both sides show the drive', async () => {
+    const pend = { startTs: SINCE - 11 * 60000, origin: { name: 'TradeDesk shop' } };
+    const d = dwell({ counts: false });
+    const b = await browserCard(d, pend);
+    const s = mod.railCardFor({ open: d, pending: pend }, {});
+    expect(s.state.kind).toBe('DRIVING');
+    expect(b.got.st.kind).toBe(s.state.kind);
+    expect(b.got.st.startedAt).toBe(s.state.startedAt);
+  });
+
+  test('home that is not counted is still no card, drive or not', async () => {
+    const pend = { startTs: SINCE - 11 * 60000, origin: { name: 'TradeDesk shop' } };
+    const d = dwell({ atHome: true, counts: false });
+    expect(mod.railCardFor({ open: d, pending: pend }, {}).event).toBe('end');
+    const b = await browserCard(d, pend);
+    expect(b.got, 'home keeps its own answer').toBe(null);
+  });
+
   test('no console errors', () => { assertNoErrors(page, 'live-card'); });
 });
 

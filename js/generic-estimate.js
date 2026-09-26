@@ -413,7 +413,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();
@@ -700,7 +700,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     _geiScanId=seed.scanId||null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
       _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
-      if(typeof showToast==='function')showToast(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan','📐');
+      // A seed that is not a scan says what it is (Tim, a spoken estimate):
+      // "loaded from the scan" on a job nobody scanned reads as a bug.
+      if(typeof showToast==='function')showToast(seed.say||(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan'),seed.say?'✅':'📐');
     }else{
     // Billing: room total = measured wall footage x the contractor's per-sq-ft
     // rate (Settings). Rate unset = rooms load with the quantity measured and
@@ -2651,8 +2653,8 @@ const _PKG_MIN_BIDS=3;      // below this there is no "usually", only a last tim
 const _PKG_SHARE=0.5;       // in at least half his bids to count as usual
 function _pkgBidLines(b){
   const out=[];
-  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
-  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
+  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&!it._supply&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
+  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&!l._supply&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
   return out;
 }
 // His own bids for this trade, newest first, drafts and empties excluded: a
@@ -2759,16 +2761,31 @@ let _attachSkipped=[];      // "not this time", for this estimate only
 function _attachCurrent(){
   const out=new Map();
   if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-    if(!it||it._rrp||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
+    if(!it||it._rrp||it._supply||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
   });
   if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-    if(!l||l._tmLabor||l._rrp||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
+    if(!l||l._tmLabor||l._rrp||l._supply||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
   });
   return out;
 }
 function _attachSuggestions(trade){
   const cur=_attachCurrent();
   if(!cur.size)return [];
+  const learned=_attachLearned(cur,trade);
+  // ── AND WHAT THE TRADE KNOWS GOES WITH IT (owner 2026-09-25) ───────────
+  // "filling in the gaps contractors miss." His own history comes first,
+  // because it is his; the trade library (js/trade-knowledge.js) fills in
+  // behind it, so a contractor with no bids yet still hears that a water
+  // heater wants an expansion tank. Same card, same Add, same "not this
+  // time", because it is the same question (7.3).
+  const lib=(typeof tkMissedFor==='function')
+    ?tkMissedFor(cur,trade||(typeof _pbTrade==='function'?_pbTrade():''),_attachSkipped)
+      .filter(x=>!learned.some(l=>l.key===x.key||_pbKey(l.line.label)===_pbKey(x.line.label)))
+    :[];
+  return learned.concat(lib).slice(0,_ATTACH_MAX);
+}
+const _ATTACH_MAX=6;
+function _attachLearned(cur,trade){
   const hist=_pkgHistory(trade).slice(0,_ATTACH_SCAN);
   if(hist.length<_ATTACH_MIN)return [];
   // One key->line map per past bid, built once. Everything below is set math
@@ -2868,10 +2885,12 @@ function _attachCardHTML(){
     '<div style="display:flex;align-items:center;gap:8px;padding:10px 0'+(i?';border-top:1px solid var(--border)':'')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);overflow-wrap:anywhere">'+escHtml(s.line.label)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">'+(s.lib
+          ?escHtml(s.why||('Often left off '+s.anchorLabel))
+          :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
-      '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
+      '<button class="att-skip" onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
     '</div>').join('');
   return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
     '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
@@ -2984,10 +3003,12 @@ function _byoRenderSections(){
   const sections=[..._defSecs,...new Set(allExtra)];
   // Only the sections with something in them, plus any he made himself. With
   // one in use, no heading at all: a list does not need a title.
-  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec)||_byoCustomSections.includes(sec));
+  // The supply house line is drawn by its own card (js/supply-list.js), not
+  // as a row: the card is where its list, markup and quote live.
+  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec&&!it._supply)||_byoCustomSections.includes(sec));
   const titled=used.length>1||_byoCustomSections.length>0;
   const lines=!_byoItems.length?'':used.map(sec=>{
-    const rows=_byoItems.filter(it=>it.section===sec);
+    const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
@@ -3022,7 +3043,7 @@ function _byoRenderSections(){
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+(_byoItems.length?_attachCardHTML():'')+group+terms;
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3939,7 +3960,12 @@ function _byoUpdateRail(){
   _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
+  _geiLines=selected.map(it=>{
+    const l={desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false};
+    // Supply house materials already taxed at the counter are not taxed again.
+    if(it._supply){l._supply=true;if(it._taxPaid)l._taxPaid=true;}
+    return l;
+  });
 
   // Sales tax
   let salesTax=0;
@@ -3953,7 +3979,7 @@ function _byoUpdateRail(){
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
         const sec=(l._byoSection||'').toLowerCase();
-        const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+        const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
         return {desc:l.desc,total:l.total,lineType};
       })});
     salesTax=_stResult.taxAmount||0;
@@ -4544,7 +4570,10 @@ function _presentShell(inner){
   return ov;
 }
 function _presentHdr(sub){
-  const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
+  // WHITE LABEL: his name or nothing. getBusinessName() falls back to
+  // "TradeDesk", which put our name across the top of the screen his customer
+  // is holding (2026-09-26), the same leak the proposal had.
+  const biz=(typeof S!=='undefined'&&S.bname)||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   // Clear of the Dynamic Island, same as the preview bar: the exit is up here.
   return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
     '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
@@ -5000,15 +5029,16 @@ function _tmRenderMoneyRows(n){
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
-  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
+  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
+  const sup=(typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
   if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
+    el.innerHTML=sup+'<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
     return;
   }
   // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
   // same way a fixed-price one does, and one renderer is what keeps the two
   // from drifting apart again.
-  el.innerHTML=mats.map(({l,i})=>{
+  el.innerHTML=sup+mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
     return _geiItemRowHtml({
       label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
@@ -7182,7 +7212,7 @@ function calcGeiTotal(){
     const _liItems=_geiLines.map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
       const sec=(l._byoSection||'').toLowerCase();
-      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
       return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
     });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,

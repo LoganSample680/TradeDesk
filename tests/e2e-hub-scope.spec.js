@@ -61,29 +61,17 @@ test.describe('the hub content hash ignores the clock', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-  });
-  test.afterAll(async () => { await page.context().close(); });
-
-  // Seeded per test, and idempotently, rather than once in beforeAll.
-  // waitForAppBoot returning does not mean every boot task has landed: the
-  // restore path ASSIGNS clients (clients = _cd.clients) rather than filling
-  // it, so a late task swaps the array out from under a push made before it ran
-  // and takes the seeded row with it. _buildClientHubSnapshot then returns null
-  // for a client it cannot find, JSON.stringify(null) is the string "null", and
-  // the assertion that generatedAt is in that JSON fails with no hint of why.
-  // Seen on WebKit shard 3: the first test in this group passed and the second
-  // did not, so the wipe landed between them. Re-seeding costs nothing and does
-  // not care when the boot finishes.
-  test.beforeEach(async () => {
+    // A background cloud load can land after boot and replace the arrays,
+    // taking this fixture with it: the snapshot then comes back null and has
+    // no generatedAt to find (WebKit, shard 3, 2026-09-25). Same parking the
+    // time log and photo specs use.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     await page.evaluate(() => {
-      if (!clients.some(c => c && c.id === 96100)) {
-        clients.push({ id: 96100, name: 'Hash Client', phone: '3165550111', addr: '9 Hash St' });
-      }
-      if (!bids.some(b => b && b.id === 961000)) {
-        bids.push({ id: 961000, client_id: 96100, amount: 1200, status: 'Sent', type: 'Interior' });
-      }
+      clients.push({ id: 96100, name: 'Hash Client', phone: '3165550111', addr: '9 Hash St' });
+      bids.push({ id: 961000, client_id: 96100, amount: 1200, status: 'Sent', type: 'Interior' });
     });
   });
+  test.afterAll(async () => { await page.context().close(); });
 
   // Hash the snapshot exactly as _uploadClientHub does.
   const hash = () => page.evaluate(() =>

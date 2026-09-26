@@ -14,7 +14,8 @@ const fs            = require('fs');
 const path          = require('path');
 const os            = require('os');
 const readline      = require('readline');
-const { execFile }  = require('child_process');
+const zlib          = require('zlib');
+const { parseSSTRates, combineBoundaryRecord, createZipAggregator, countyRows } = require('./sst-rates');
 
 // Accept either explicit URL+key OR project-ref+access-token (matches existing CI secrets)
 const SUPABASE_URL         = process.env.SUPABASE_URL
@@ -189,12 +190,36 @@ function downloadFile(url, destPath, timeoutMs = 300000) {
   });
 }
 
+// Unzip with Node's own zlib. It used to shell out to `unzip`, which the
+// self-hosted runner does not have: every zipped SST state failed with
+// "spawn unzip ENOENT" from June on while the job still reported success.
+// SST zips hold one or two plain files, stored or deflated, so reading the
+// central directory is all this needs.
 function unzipTo(zipPath, destDir) {
-  return new Promise((resolve, reject) => {
-    execFile('unzip', ['-o', '-q', zipPath, '-d', destDir], err => {
-      if (err) reject(err); else resolve();
-    });
-  });
+  const buf = fs.readFileSync(zipPath);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('not a zip: ' + path.basename(zipPath));
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  fs.mkdirSync(destDir, { recursive: true });
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('bad zip directory');
+    const method = buf.readUInt16LE(p + 10);
+    const csize = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28), extraLen = buf.readUInt16LE(p + 30), commLen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.slice(p + 46, p + 46 + nameLen).toString('utf8');
+    p += 46 + nameLen + extraLen + commLen;
+    if (name.endsWith('/')) continue;
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.slice(start, start + csize);
+    const out = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data) : null;
+    if (!out) throw new Error('unsupported zip method ' + method);
+    fs.writeFileSync(path.join(destDir, path.basename(name)), out);
+  }
 }
 
 // Simple CSV/pipe parser, handles quoted fields
@@ -284,14 +309,13 @@ const _boundaryDirRef = {};
 function getSSTRateDir()     { return getSSTDirectory(SST_RATE_DIR,     _rateDirRef); }
 function getSSTBoundaryDir() { return getSSTDirectory(SST_BOUNDARY_DIR, _boundaryDirRef); }
 
-const MAX_RATE_FILE_MB = 30; // rate files are small; boundary files are streamed
 
 async function _downloadAndExtract(fileEntry, destPath, stateDir) {
   await downloadFile(fileEntry.url, destPath);
   const isZip = fileEntry.name.toLowerCase().endsWith('.zip');
   if (isZip) {
     fs.mkdirSync(stateDir, { recursive: true });
-    await unzipTo(destPath, stateDir);
+    unzipTo(destPath, stateDir);
     const innerFiles = fs.readdirSync(stateDir);
     return innerFiles.filter(f => /\.(csv|txt)$/i.test(f)).map(f => path.join(stateDir, f));
   }
@@ -328,225 +352,32 @@ async function updateSSTState(st, _unused, tmpDir) {
     }
   }
 
-  // No boundary file available, download rate file and attempt combined parse
-  const rateCsvs = await _downloadAndExtract(rateEntry, ratePath, stateDir);
-  process.stdout.write(`    → ${rateEntry.name}\n`);
-
-  // Check if a single rate ZIP contained both boundary + rate CSVs
-  if (rateCsvs.length >= 2) {
-    const boundaryFile = rateCsvs.find(f => /boundary/i.test(path.basename(f)));
-    const rateFile     = rateCsvs.find(f => !/boundary/i.test(path.basename(f)));
-    if (boundaryFile && rateFile) return _processSSTFiles(st, boundaryFile, rateFile);
-  }
-
-  if (rateCsvs.length >= 1) return _processSSTCombinedCsv(st, rateCsvs[0]);
-  throw new Error(`No CSVs extracted for ${st}`);
+  // A rate file alone names jurisdictions, not ZIPs: without the boundary file
+  // there is nothing to key a row on, so the state is skipped, not guessed.
+  throw new Error(`No boundary file for ${st}`);
 }
 
-function _processSSTCombinedCsv(st, filePath) {
-  const fSize = fs.statSync(filePath).size / (1024 * 1024);
-  if (fSize > MAX_RATE_FILE_MB) {
-    process.stdout.write(`[skip: rate-only ${fSize.toFixed(1)}MB > ${MAX_RATE_FILE_MB}MB] `);
-    return [];
-  }
-  let text = fs.readFileSync(filePath, 'utf8');
-  text = text.replace(/^﻿/, ''); // strip UTF-8 BOM
-  const delim = text.slice(0, 500).includes('|') ? '|' : ',';
-  const rows_raw = parseDelimited(text, delim);
-  if (!rows_raw.length) return [];
-  const col = (row, ...names) => {
-    for (const n of names) {
-      const k = Object.keys(row).find(k => k.toLowerCase().replace(/[_\s-]/g,'') === n.toLowerCase().replace(/[_\s-]/g,''));
-      if (k !== undefined && row[k] !== undefined) return row[k];
-    }
-    return '';
-  };
-  const rows = [];
-  const seen = new Set();
-  for (const r of rows_raw) {
-    const zip = (col(r,
-      'ZIPCODE','ZIP5','ZIP','POSTALCODE','ZIPCODES','ZIPCD','ZIP_CODE','POSTAL'
-    ) || '').replace(/\D/g, '').slice(0, 5);
-    if (!zip || zip.length !== 5 || seen.has(zip)) continue;
-    const stRate = parseFloat(col(r,
-      'STATETAXRATE','STATERATE','STATE_RATE','STATESALESTAXRATE',
-      'STATE_SALES_TAX_RATE','STATETAX','STRATE','STATRATE'
-    )) || 0;
-    const lcRate = parseFloat(col(r,
-      'LOCALTAXRATE','LOCALRATE','LOCAL_RATE','LOCALSALESTAXRATE',
-      'LOCAL_SALES_TAX_RATE','LOCALTAX','LCRATE','LOCALRATE'
-    )) || 0;
-    const combined = parseFloat(col(r,
-      'COMBINEDTAXRATE','COMBINEDRATE','COMBINED_RATE','TOTALTAXRATE',
-      'TOTAL_RATE','TOTALSALESTAXRATE','TOTAL_SALES_TAX_RATE','TOTALRATE','COMBINEDTOTAL'
-    )) || (stRate + lcRate);
-    seen.add(zip);
-    rows.push({
-      zip, state: st,
-      state_rate: Math.round(stRate * 100 * 10000) / 10000,
-      local_rate: Math.round((combined - stRate) * 100 * 10000) / 10000,
-      source: `SST_${st}`, updated_at: new Date().toISOString(),
-    });
-  }
-  if (!rows.length && rows_raw.length > 0) {
-    process.stdout.write(`[cols: ${Object.keys(rows_raw[0]).join('|')}] `);
-  }
-  return rows;
-}
-
+// Rate + boundary → one row per ZIP (the combined rate most addresses pay, with
+// the low and high) and one row per county (state plus county, no city). The
+// parsing rules live in scripts/sst-rates.js, which says why they changed.
 async function _processSSTFiles(st, boundaryPath, ratePath) {
-  const rSize = fs.statSync(ratePath).size / (1024 * 1024);
-  if (rSize > MAX_RATE_FILE_MB) {
-    process.stdout.write(`[skip: rate ${rSize.toFixed(1)}MB too large] `);
+  const asOf = new Date();
+  const rates = parseSSTRates(fs.readFileSync(ratePath, 'utf8'), asOf);
+  const stateKey = Object.keys(rates).find(k => k.startsWith('45:'));
+  if (!stateKey) {
+    process.stdout.write('[no state rate in rate file] ');
     return [];
   }
-
-  // Rate file is small, load fully to build jCode → {state_rate, local_rate}
-  let rText = fs.readFileSync(ratePath, 'utf8').replace(/^﻿/, '');
-  const rDelim = rText.slice(0, 500).includes('|') ? '|' : ',';
-  const rLines = rText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n').filter(l => l.trim());
-  rText = null;
-
-  if (!rLines.length) return [];
-
-  // Build rate map keyed by jCode as integer string (no leading zeros) for fuzzy match
-  const rateMap = {}; // key = parseInt(jCode).toString()
-
-  const firstRField = rLines[0].split(rDelim)[0].replace(/["']/g, '').trim();
-  if (!/^\d+$/.test(firstRField)) {
-    // Has headers
-    const parsed = parseDelimited(rLines.join('\n'), rDelim);
-    const col = (row, ...names) => {
-      for (const n of names) {
-        const k = Object.keys(row).find(k => k.toLowerCase().replace(/[_\s-]/g,'') === n.toLowerCase().replace(/[_\s-]/g,''));
-        if (k !== undefined && row[k] !== undefined) return row[k];
-      }
-      return '';
-    };
-    for (const r of parsed) {
-      const jc = col(r,'JURISDICTIONCODE','COMPOSITESERCODE','JURISCD','JURCODE','SERIALIZEDCOMPOSITE','COMPOSITECODE');
-      const stRate = parseFloat(col(r,'STATETAXRATE','GENERALRATESTATEPORTION','STATERATE','STATE_RATE')) || 0;
-      const combined = parseFloat(col(r,'COMBINEDTAXRATE','GENERALRATE','COMBINEDRATE','TOTALRATE')) || stRate;
-      const k = jc ? String(parseInt(jc, 10)) : null;
-      if (k && k !== 'NaN') rateMap[k] = { state_rate: stRate * 100, local_rate: Math.max(0, combined - stRate) * 100 };
-    }
-  } else {
-    // Headerless positional format. SST R files use two layouts:
-    // Layout A (2-digit state FIPS first): stateFIPS|startDate|endDate|countyType|jCode|rate
-    // Layout B (large serial first):       jSerial|startDate|endDate|stateFIPS|localType|rate
-    // In both cases: find rate fields (0.0–0.2 with decimal), derive jCode from remaining cols.
-    const jCodeCandidatesBySerial = {}; // for Layout B: serial → rate
-    for (const line of rLines) {
-      const fields = line.split(rDelim).map(f => f.replace(/["']/g, '').trim());
-      const rateFields = fields.filter(f => {
-        const v = parseFloat(f);
-        return f.includes('.') && !isNaN(v) && v >= 0 && v <= 0.25;
-      });
-      // Skip lines with no rate
-      if (!rateFields.length) continue;
-      const total = rateFields.reduce((a,b) => a + parseFloat(b), 0);
-
-      // Find all numeric non-date non-state-FIPS fields as candidate jCodes
-      for (let fi = 0; fi < fields.length; fi++) {
-        const f = fields[fi];
-        if (!/^\d+$/.test(f)) continue;          // must be all digits
-        if (/^\d{8}$/.test(f)) continue;          // skip dates
-        if (f.includes('.')) continue;            // skip rates
-        const n = parseInt(f, 10);
-        if (n < 1) continue;                      // skip zero
-        const k = String(n);
-        if (!rateMap[k]) {
-          const stRate = rateFields.length >= 2 ? parseFloat(rateFields[0]) : 0;
-          rateMap[k] = { state_rate: stRate * 100, local_rate: Math.max(0, total - stRate) * 100 };
-        }
-      }
-    }
-  }
-
-  // Stream boundary file line-by-line, handles 300MB+ without OOM
-  const rows = [];
-  const seen = new Set();
-  let bDelim = ',', lineCount = 0, bHasHeaders = false;
-  let zipCol = -1, jCodeCol = -1;
-
+  const stFips = stateKey.slice(3);
+  const agg = createZipAggregator();
+  // Stream the boundary file: KS alone is 105MB and 685k records.
   const rl = readline.createInterface({ input: fs.createReadStream(boundaryPath, { encoding: 'utf8' }), crlfDelay: Infinity });
-
-  for await (const rawLine of rl) {
-    const line = lineCount === 0 ? rawLine.replace(/^﻿/, '') : rawLine;
-    if (!line.trim()) { lineCount++; continue; }
-
-    if (lineCount === 0) {
-      bDelim = line.includes('|') ? '|' : ',';
-      const f0 = line.split(bDelim)[0].replace(/["']/g, '').trim();
-      bHasHeaders = !/^[A-Za-z0-9]{1}$/.test(f0) && !/^\d+$/.test(f0);
-    }
-
-    const fields = line.split(bDelim).map(f => f.replace(/["']/g, '').trim());
-
-    if (lineCount === 0 && bHasHeaders) {
-      const lower = fields.map(f => f.toLowerCase().replace(/[_\s-]/g,''));
-      zipCol = lower.findIndex(h => ['zipcode','zip5','zip','postalcode'].includes(h));
-      jCodeCol = lower.findIndex(h => ['compositesercode','jurisdictioncode','compositecode','serializedcomposite','juriscd'].includes(h));
-      lineCount++;
-      continue;
-    }
-
-    // Headerless SST boundary: detect record type from col 0
-    // SST standard column layout (applies to both old and new format files):
-    //   A-type (street address):  ZIP at col 15, jCode candidates at col 24 and col 25
-    //   Z/z/4-type (ZIP range):   ZIP at col 17 (new) or col 14 (old), jCode at col 24
-    if (!bHasHeaders) {
-      const recType = fields[0].toLowerCase();
-      if (recType === 'a') {
-        // Street-level record
-        zipCol = 15;
-        // Try col 24, 25 as jCode candidates (col 24 = county juris code, col 25 = composite serial)
-        const jc24 = fields[24] || '';
-        const jc25 = fields[25] || '';
-        const k24 = jc24 ? String(parseInt(jc24, 10)) : '';
-        const k25 = jc25 ? String(parseInt(jc25, 10)) : '';
-        const rEntry = (k24 && rateMap[k24]) || (k25 && rateMap[k25]);
-        const zip = (fields[15] || '').replace(/\D/g,'').slice(0,5);
-        if (zip && zip.length === 5 && !seen.has(zip) && rEntry) {
-          seen.add(zip);
-          rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
-        }
-      } else if (recType === 'z' || recType === '4') {
-        // ZIP-range record: ZIP at col 17 (new format) or col 14 (old format)
-        const zip17 = (fields[17] || '').replace(/\D/g,'').slice(0,5);
-        const zip14 = (fields[14] || '').replace(/\D/g,'').slice(0,5);
-        const zip = /^\d{5}$/.test(zip17) ? zip17 : /^\d{5}$/.test(zip14) ? zip14 : '';
-        if (zip && !seen.has(zip)) {
-          const jc24 = fields[24] || '';
-          const k24 = jc24 ? String(parseInt(jc24, 10)) : '';
-          const rEntry = k24 && rateMap[k24];
-          if (rEntry) {
-            seen.add(zip);
-            rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
-          }
-        }
-      }
-    } else if (zipCol >= 0) {
-      // Has headers, use detected column positions
-      const zip = (fields[zipCol] || '').replace(/\D/g,'').slice(0,5);
-      const jc = jCodeCol >= 0 ? (fields[jCodeCol] || '') : '';
-      const k = jc ? String(parseInt(jc, 10)) : '';
-      const rEntry = k && rateMap[k];
-      if (zip && zip.length === 5 && !seen.has(zip) && rEntry) {
-        seen.add(zip);
-        rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
-      }
-    }
-
-    lineCount++;
+  for await (const line of rl) {
+    if (line) agg.add(combineBoundaryRecord(line.split(','), rates, asOf));
   }
-
-  if (!rows.length && lineCount > 5) {
-    // Log what jCode candidates from B matched (or didn't) in rateMap for debugging
-    const rKeys = Object.keys(rateMap).slice(0, 5).join(',');
-    process.stdout.write(`[rateMap(${Object.keys(rateMap).length}):${rKeys}] `);
-  }
-  return rows;
+  const now = new Date().toISOString();
+  const stamp = r => Object.assign(r, { source: `SST_${st}`, updated_at: now });
+  return agg.zipRows(st).map(stamp).concat(countyRows(st, stFips, rates).map(stamp));
 }
 
 async function updateSSTStates() {
@@ -571,6 +402,14 @@ async function updateSSTStates() {
     } catch (e) {
       process.stdout.write(`SKIP, ${e.message}\n`);
       skipped.push(st);
+      // A state that throws is a broken updater, not a quiet month. Fail the
+      // job so it shows red: the unzip failure hid for three months behind a
+      // green check.
+      process.exitCode = 1;
+    }
+    // Boundary files run to 100MB+ unzipped; 23 of them at once fills the runner.
+    for (const p of [path.join(tmpDir, st), path.join(tmpDir, st + '_R.zip'), path.join(tmpDir, st + '_B.zip')]) {
+      try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) {}
     }
   }
 
@@ -578,7 +417,7 @@ async function updateSSTStates() {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 
   console.log(`  SST complete: ${totalRows} ZIP rows across ${SST_STATES.length - skipped.length} states`);
-  if (skipped.length) console.log(`  Skipped states (not found in SST directory): ${skipped.join(', ')}`);
+  if (skipped.length) console.log(`  Skipped states: ${skipped.join(', ')}`);
 }
 
 // ── Phase 2: Texas Comptroller ───────────────────────────────────────────────
