@@ -101,7 +101,7 @@ test.describe('Timesheet', () => {
       expect(r.days.every(d => d.chev)).toBe(true);
       expect(r.days[2].h).toBe('9h 54m');
       expect(r.total).toBe('39h 27m');
-      expect(r.split).toContain('On site');
+      expect(r.split).toContain('Job site');
       expect(r.btns).toEqual(['Submit and send', 'Cancel']);
       expect(r.sub).toBe('Check each day, then submit. Submitted hours are locked. Fix a day later and submit it again.');
       // No manager-reopen copy, no send-without-submitting (owner 2026-09-05).
