@@ -104,5 +104,50 @@ test.describe('Talk to Tim through a pause', () => {
     expect(await page.evaluate(() => !!document.getElementById('_tim-listen'))).toBe(false);
   });
 
+  // ── WORDS ARE ONLY EVER ADDED (owner, 2026-09-26) ─────────────────────────
+  //
+  // "It did then half of them disappeared and when I stopped never put them in
+  // the description bar". After a pause the phone's text starts over with the
+  // new words, and at the stop it can hand back nothing at all. Both used to
+  // be written straight into the box.
+  test('the phone starting over after a pause keeps the first half; an empty result at the end wipes nothing', async () => {
+    await setup('granted', 99204);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => _geiScopeTalk());
+    await page.waitForTimeout(300);
+    const box = () => page.evaluate(() => document.getElementById('gei-scope-say').value);
+    // Refining its guess replaces, it does not repeat.
+    await page.evaluate(() => window.__say('pull the old'));
+    await page.evaluate(() => window.__say('Pull the old water heater run new pex'));
+    expect(await box()).toBe('Pull the old water heater run new pex');
+    // The pause: the next result has only the new words.
+    await page.evaluate(() => window.__say('to the'));
+    expect(await box(), 'the first half stays').toBe('Pull the old water heater run new pex to the');
+    await page.evaluate(() => window.__say('to the manifold and set a tankless'));
+    expect(await box()).toBe('Pull the old water heater run new pex to the manifold and set a tankless');
+    // A result that is only the start of what is shown changes nothing.
+    await page.evaluate(() => window.__say('to the manifold'));
+    expect(await box()).toBe('Pull the old water heater run new pex to the manifold and set a tankless');
+    // An empty result, then Done talking with the phone returning nothing.
+    await page.evaluate(() => window.__say(''));
+    expect(await box()).toBe('Pull the old water heater run new pex to the manifold and set a tankless');
+    await page.evaluate(() => { window.__fake.latest = ''; });
+    await page.evaluate(() => _timTalkStop(true));
+    await page.waitForTimeout(200);
+    expect(await box(), 'every word is in the box after Done talking').toBe('Pull the old water heater run new pex to the manifold and set a tankless');
+  });
+
+  test('Done talking builds the steps from everything said, both halves', async () => {
+    await setup('granted', 99205);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => _geiScopeTalk());
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { window.__say('Pull the old water heater'); window.__say('set a tankless'); window.__fake.latest = ''; });
+    await page.evaluate(() => _timTalkToggle());
+    await page.waitForTimeout(600);
+    const chips = await page.evaluate(() => _geiScopeChips.slice());
+    expect(chips).toEqual(expect.arrayContaining(['Pull the old water heater', 'Set a tankless']));
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'voice keepalive'); });
 });
