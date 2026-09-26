@@ -1784,8 +1784,24 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-tb{width:70px;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:rgba(255,255,255,.9);font:500 10px var(--pc-font);touch-action:manipulation}
 .pc-tb.danger{color:var(--pc-red)}
 .pc-tb:disabled{opacity:.35}
-.pc-stage-menu{right:auto;left:50%;top:auto;bottom:72px;transform:translateX(-50%)}
-.pc-stage-menu.open{animation:none}
+.pc-menu.pc-stage-menu{right:auto;left:50%;top:auto;bottom:72px;transform:translateX(-50%)}
+.pc-pick-chips .fb.active{background:var(--blue);border-color:var(--blue);color:#fff}
+/* Photos page (js/photo-gallery.js): year, month, then one row per address. */
+.ph-search{padding:0 0 10px}
+.ph-search input{width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:15px;font-family:inherit}
+.ph-pick{display:flex;gap:8px;padding:0 0 10px}
+.ph-pick select{flex:1}
+.ph-year{font-size:22px;font-weight:800;letter-spacing:-.02em;padding:14px 2px 2px}
+.ph-month{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:12px 2px 6px}
+.ph-place{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-width:0;padding:10px;margin:0 0 8px;border:1px solid var(--border);border-radius:12px;background:var(--bg2);text-align:left;cursor:pointer;font-family:inherit;color:var(--text)}
+.ph-thumbs{display:grid;grid-template-columns:repeat(2,28px);grid-auto-rows:28px;gap:2px;flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--bg3)}
+.ph-th{background:var(--bg3) center/cover no-repeat}
+.ph-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ph-addr{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-who{font-size:12.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-chev{font-size:22px;color:var(--text3);flex-shrink:0}
+.ph-empty{padding:40px 12px;text-align:center;color:var(--text3);font-size:14px}
+.pc-menu.pc-stage-menu.open{animation:none}
 .pc-conf.pc-rev-foot{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));flex-direction:column;align-items:stretch;gap:0;border-radius:30px;padding:18px 18px 8px;background:rgba(36,36,40,.72);z-index:3}
 .pc-conf .pc-side.go{background:var(--pc-blue)}
 .pc-side.pc-link{background:none;color:var(--pc-blue);font:600 16px var(--pc-font);padding:13px 0 10px;min-width:0}
@@ -3219,6 +3235,15 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 </div>
+<div class="pg" id="pg-photos">
+  <div class="tbar">
+    <div><div class="tbar-title">Photos</div><div class="tbar-sub" id="ph-sub"></div></div>
+  </div>
+  <div class="ph-search"><input id="ph-q" type="search" placeholder="Search address, customer, month" autocomplete="off" oninput="tdPhotosSearch(this.value)"></div>
+  <div id="ph-picker"></div>
+  <div id="ph-list"></div>
+</div>
+
 <div class="pg" id="pg-timelog">
   <div class="tbar" style="flex-direction:column;align-items:stretch;gap:6px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -4573,6 +4598,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Books</span>
   </button>
 
+  <button class="nb" id="nb-photos" onclick="goPg('pg-photos')">
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+    <span>Photos</span>
+  </button>
+
   <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
     <span>Taxes</span>
@@ -4708,6 +4738,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="mmi" id="mmi-contracts" onclick="mobileNavTo('pg-contracts')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
+    <button class="mmi" id="mmi-photos" onclick="mobileNavTo('pg-photos')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Photos
+    </button>
     <button class="mmi" id="mmi-timelog" onclick="mobileNavTo('pg-timelog')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Timesheet
     </button>
@@ -4749,6 +4782,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
 <script src="js/photo-capture.js"></script>
+<script src="js/photo-gallery.js"></script>
 <script src="js/mileage.js"></script>
 <!-- The day deriver: pure, loads before the engine that calls it. -->
 <script src="js/geo-derive.js"></script>
