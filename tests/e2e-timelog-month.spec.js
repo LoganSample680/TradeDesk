@@ -436,7 +436,7 @@ test.describe('month bars: pure helpers', () => {
     // rather than trusting whatever the caller handed it.
     expect(t).toContain('Total: 97h 42m');
     expect(t).not.toContain('September');
-    expect(t).toContain('On site');
+    expect(t).toContain('Job site');
   });
 
   test('_tlMonthShareText degrades on junk instead of throwing', async ({ page }) => {
