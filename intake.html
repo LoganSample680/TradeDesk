@@ -154,7 +154,7 @@ let _qrLabel='';
 // before this page even loaded) → form_opened → submitted, plus which
 // field someone got stuck on if they leave without submitting. No-ops
 // entirely when there's no ?src= (a plain shared intake link, not a QR
-// scan) — this is instrumentation, never load-bearing for the form itself.
+// scan): this is instrumentation, never load-bearing for the form itself.
 const FIELD_ORDER=['f-name','f-phone','f-street','f-notes'];
 let _furthestField='';
 let _qrSubmitted=false;
@@ -172,7 +172,7 @@ function _qrTrackField(){
 }
 // sendBeacon, not the normal invoke() call above: this fires as the page is
 // actually being torn down (tab close, back button), where a regular fetch
-// can get cancelled mid-flight before it lands. No custom headers needed —
+// can get cancelled mid-flight before it lands. No custom headers needed,
 // log-qr-event is deployed anon-callable, same as log-proposal-view.
 function _qrLogDropoffOnExit(){
   if(!QR_CODE||_qrSubmitted||!_furthestField)return;

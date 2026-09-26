@@ -45,8 +45,19 @@ test.describe('the lien datasets agree with each other', () => {
   const app = fs.readFileSync(path.join(root, 'js', 'constants.js'), 'utf8');
   const tool = fs.readFileSync(path.join(root, 'tools', 'lien-deadlines.html'), 'utf8');
 
-  const RULES = Object.fromEntries([...app.matchAll(
-    /^  ([A-Z]{2}):\{notice_days:(\d+),filing_deadline_days:(\d+)\}/gm)].map(m => [m[1], +m[3]]));
+  // Evaluate the real block rather than regexing the literal. Since 2026-09-13
+  // LIEN_RULES is DERIVED: a verified state's value comes from LIEN_LAW (the
+  // shortest window in that state), and the literal underneath it is only the
+  // fallback for states nobody has verified yet. Reading the literal would test
+  // a number the app no longer uses, which is worse than not testing at all.
+  const _block = (() => {
+    const a = app.indexOf('const LIEN_LAW=');
+    const b = app.indexOf('})(', a);
+    return app.slice(a, app.indexOf(');', b) + 2);
+  })();
+  const { LIEN_LAW, LIEN_RULES: _R } = new Function(_block + '; return {LIEN_LAW, LIEN_RULES};')();
+  const RULES = Object.fromEntries(
+    Object.entries(_R).filter(([k]) => /^[A-Z]{2}$/.test(k)).map(([k, v]) => [k, v.filing_deadline_days]));
   const TOOL = Object.fromEntries([...tool.matchAll(
     /^  ([A-Z]{2}):\['([^']*)','([^']*)'/gm)].map(m => [m[1], { name: m[2], deadline: m[3] }]));
 
@@ -60,8 +71,12 @@ test.describe('the lien datasets agree with each other', () => {
     const conflicts = [];
     for (const st of Object.keys(RULES)) {
       if (NOT_A_DAY_COUNT.includes(st)) continue;
-      const days = toDays(TOOL[st].deadline);
-      expect(days, `${st}: the tool's "${TOOL[st].deadline}" must be a parseable span`).not.toBeNull();
+      // A role-split state shows both windows ("4 months (prime) / 3 months
+      // (sub)"). The app deliberately carries the SHORTER one, so compare
+      // against the shortest span the tool shows rather than the first.
+      const spans = TOOL[st].deadline.split('/').map(x => toDays(x.trim())).filter(n => n !== null);
+      expect(spans.length, `${st}: the tool's "${TOOL[st].deadline}" must contain a parseable span`).toBeGreaterThan(0);
+      const days = Math.min(...spans);
       if (days !== RULES[st]) conflicts.push(`${st}: app ${RULES[st]}d vs tool "${TOOL[st].deadline}"`);
     }
     expect(conflicts, `the app and the public tool disagree:\n  ${conflicts.join('\n  ')}`).toEqual([]);
@@ -77,8 +92,179 @@ test.describe('the lien datasets agree with each other', () => {
   });
 
   test('every state still cites a statute, so a claim can be checked', () => {
-    const block = app.slice(app.indexOf('const LIEN_RULES={'));
-    const cited = (block.slice(0, block.indexOf('\n};')).match(/\/\/.*§/g) || []).length;
-    expect(cited, 'states carrying a statute citation').toBeGreaterThanOrEqual(49);
+    // Two ways a state can carry a cite now: a verified LIEN_LAW entry, or the
+    // legacy comment on its fallback line. Both count; neither may vanish.
+    const legacy = (app.match(/\/\/ *[A-Z][^\n]*§/g) || []).length;
+    const verified = Object.keys(LIEN_LAW).length;
+    expect(legacy + verified, 'states carrying a statute citation').toBeGreaterThanOrEqual(49);
+  });
+
+  test('a verified state names the statute it was actually read from', () => {
+    // The Kansas defect this whole model came out of: the app cited K.S.A.
+    // 60-1105, which is the one-year ENFORCEMENT clock, as though it were the
+    // filing deadline. Verified entries carry the section that was read, and
+    // the source it was read from, so the claim can be checked by a person.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(L.cite, `${st} cite`).toBeTruthy();
+      expect(L.src, `${st} source`).toBeTruthy();
+      expect(L.prime && L.prime.d, `${st} prime deadline`).toBeGreaterThan(0);
+      expect(L.prime.anchor, `${st} anchor`).toBeTruthy();
+    }
+    expect(LIEN_LAW.KS.cite, 'Kansas cites the filing statutes, not 60-1105 alone')
+      .toContain('60-1102');
+    expect(RULES.KS, 'Kansas takes the shorter of prime 4 months and sub 3 months').toBe(90);
+  });
+
+  test('every jurisdiction was read from a statute, none left on a guess', () => {
+    // On 2026-09-13 all 51 were verified against primary statutory text. This
+    // test is the ratchet: a new jurisdiction, or one whose cite or source gets
+    // dropped in a refactor, fails here rather than quietly shipping a number
+    // nobody can check.
+    const states = Object.keys(RULES);
+    const missing = states.filter(st => !LIEN_LAW[st]);
+    expect(missing, `jurisdictions with no verified entry: ${missing.join(', ')}`).toEqual([]);
+    expect(states.length).toBe(51);
+  });
+
+  // ── Sourcing, added 2026-09-14 ───────────────────────────────────────────
+  //
+  // The 51-state pass was real research but it was not all PRIMARY research. A
+  // third of it came from FindLaw, LawServer, and in Colorado's case a 2012
+  // edition of the CRS sitting on law.resource.org, fourteen years stale. Those
+  // republishers are usually right and are nobody's system of record: when one
+  // of them is wrong there is no way to tell from our side, because the thing we
+  // would check against is the thing we skipped.
+  //
+  // The states were re-pulled from the legislatures themselves. These tests are
+  // the ratchet that keeps them there, and the reason is narrow: a contractor who
+  // wants to check our number has to be able to land on the statute, not on a
+  // site that is also just quoting it.
+
+  const REPUBLISHER = /findlaw|lawserver|law\.resource\.org|justia|nolo|avvo/i;
+
+  // No exceptions any more. Vermont was the last one: its site answered nothing
+  // but errors for hours, then came back, and the statute confirmed the numbers
+  // we already had. The list stays here because the next outage will need it,
+  // and an exception belongs in the open where it can be seen and removed.
+  const UNREACHABLE_SOURCE = [];
+
+  test('no state is sourced from a commercial republisher', () => {
+    const bad = Object.entries(LIEN_LAW)
+      .filter(([st, L]) => !UNREACHABLE_SOURCE.includes(st) && REPUBLISHER.test(L.src || ''))
+      .map(([st, L]) => `${st} (${L.src})`);
+    expect(bad, `sourced below primary:\n  ${bad.join('\n  ')}`).toEqual([]);
+  });
+
+  test('a state we could not reach admits it, in the data itself', () => {
+    // The exception is only tolerable while it is visible to the reader.
+    for (const st of UNREACHABLE_SOURCE) {
+      expect(LIEN_LAW[st].unverified, `${st} must record why it is unverified`).toBeTruthy();
+      expect(LIEN_LAW[st].confirm, `${st} must not print a confident date`).toBe(true);
+    }
+  });
+
+  test('every state links the page the statute was read from', () => {
+    const missing = Object.entries(LIEN_LAW)
+      .filter(([st, L]) => !UNREACHABLE_SOURCE.includes(st) && !/^https:\/\//.test(L.url || ''))
+      .map(([st]) => st);
+    expect(missing, `states with no source URL: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  // ── The anchor, added 2026-09-14 ─────────────────────────────────────────
+  //
+  // A deadline is two facts, not one: how long the window is, and what opens it.
+  // We had been publishing the first as though it settled the second. Idaho 45-507(2)
+  // gives ninety days "after the completion of the labor or services" and never says
+  // whose completion, and on a job of any size the distance between the claimant's
+  // own last day and the project's last day is months. Where the statute leaves that
+  // open the state carries confirm:true, and everything that would print a calendar
+  // date has to decline.
+  test('an unresolved anchor is flagged, not hidden behind a number', () => {
+    // Idaho is the type case. 45-507(2) reads "within ninety (90) days after the
+    // completion of the labor or services, or furnishing of materials" and never
+    // says WHOSE completion. Ninety is certain; the calendar date is not, and the
+    // gap between "your last day" and "the project's last day" is months on a
+    // job of any size. A state in that position carries confirm:true and owes the
+    // reader an explanation of what they have to go find out.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.confirm) continue;
+      expect(L.note, `${st} is flagged confirm but explains nothing`).toBeTruthy();
+      expect(L.note.length, `${st} note is too short to be useful`).toBeGreaterThan(30);
+    }
+  });
+
+  test('a flagged state still carries its window, it is the DATE that is unknown', () => {
+    // confirm:true must never degrade into "we do not know anything." The number
+    // of days is in the statute and stays gated by the same sanity range.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.confirm) continue;
+      expect(RULES[st], `${st} still needs a day count`).toBeGreaterThanOrEqual(30);
+      expect(RULES[st], `${st} still needs a day count`).toBeLessThanOrEqual(400);
+    }
+  });
+
+  test('the confirm flag reaches the app, not just the research file', () => {
+    // LIEN_RULES is what js/dashboard.js actually reads when it prints a Notice
+    // of Intent. If the flag stops at LIEN_LAW the document still prints a
+    // confident date and the whole exercise bought nothing.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(_R[st].confirm, `${st} confirm flag did not survive derivation`).toBe(!!L.confirm);
+      expect(_R[st].url, `${st} URL did not survive derivation`).toBe(L.url || '');
+    }
+  });
+
+  test('the Notice of Intent refuses to print a date it cannot stand behind', () => {
+    // The guard itself, read from source: printNoticeOfIntent must gate the
+    // computed calendar date on the flag. A printed legal document is read as a
+    // statement of fact, so a guessed date on one is worse than no date at all.
+    const dash = fs.readFileSync(path.join(root, 'js', 'dashboard.js'), 'utf8');
+    expect(dash, 'printNoticeOfIntent must read the confirm flag').toMatch(/lienUnsure\s*=\s*!!\(rules&&rules\.confirm\)/);
+    expect(dash, 'the computed deadline must be gated on it').toMatch(/fileDeadline=\(rules&&!lienUnsure\)/);
+  });
+
+  // The tool carries its own copy of the rows, so every field added to one side
+  // is a new way for the two to drift. The original seven-state drift was caught
+  // by comparing deadlines; these compare the rest.
+  // The comma is optional on purpose: the last row in the literal has none, and
+  // requiring it silently dropped DC from every comparison below.
+  const TOOLROW = Object.fromEntries([...tool.matchAll(/^  ([A-Z]{2}):\[(.*?)\],?$/gm)]
+    .map(m => [m[1], new Function('return [' + m[2] + ']')()]));
+
+  test('where the app links a statute, the tool links the same one', () => {
+    const drift = [];
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      const toolUrl = TOOLROW[st] && TOOLROW[st][6];
+      if (!L.url && !toolUrl) continue;
+      if ((L.url || '') !== (toolUrl || '')) drift.push(`${st}: app "${L.url || '(none)'}" vs tool "${toolUrl || '(none)'}"`);
+    }
+    expect(drift, `the two surfaces cite different pages:\n  ${drift.join('\n  ')}`).toEqual([]);
+  });
+
+  test('a state the app flags, the tool explains', () => {
+    // If the app declines to print a date but the public tool still shows a
+    // confident one, we have moved the problem rather than fixed it.
+    const silent = Object.entries(LIEN_LAW)
+      .filter(([st, L]) => L.confirm && !(TOOLROW[st] && TOOLROW[st][7]))
+      .map(([st]) => st);
+    expect(silent, `flagged in the app, unexplained in the tool: ${silent.join(', ')}`).toEqual([]);
+  });
+
+  test('no em dash reaches either lien surface', () => {
+    // The house rule, and these notes are long enough to forget it in.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      expect(L.note || '', `${st} note`).not.toContain('\u2014');
+    }
+    for (const [st, row] of Object.entries(TOOLROW)) {
+      expect(row.join(' '), `${st} tool row`).not.toContain('\u2014');
+    }
+  });
+
+  test('a role-split state takes the SHORTER window, never the longer', () => {
+    // Filing early costs nothing. Filing late loses the money.
+    for (const [st, L] of Object.entries(LIEN_LAW)) {
+      if (!L.sub) continue;
+      expect(RULES[st], `${st} must use the shorter of ${L.prime.d} and ${L.sub.d}`)
+        .toBe(Math.min(L.prime.d, L.sub.d));
+    }
   });
 });
