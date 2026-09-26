@@ -4520,6 +4520,11 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
         }) } };
       };
       window.__reset = async () => {
+        // An offline save arms the 60s retry (_pcFlushSoon). On a slow runner the
+        // one an earlier test armed fires mid-test and sends photos before the
+        // test's own flush, so that flush counts only the leftovers. Start clean.
+        if (_pcFlushTimer) { clearTimeout(_pcFlushTimer); _pcFlushTimer = null; }
+        if (_pcFlushing) { try { await _pcFlushing; } catch (e) { } }
         window.supaEnabled = window.__saved.en; window._supa = window.__saved.supa; window._supaUser = { id: 'acct-me' };
         for (const r of await _pcOutboxAll()) await _pcOutboxDel(r.id);
         photos.length = 0; jobs.length = 0; clients.length = 0;

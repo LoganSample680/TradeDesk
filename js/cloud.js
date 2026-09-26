@@ -2032,14 +2032,29 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  // Render the real content underneath the shimmer, then let each card swap
+  // over (js/dashboard.js _dashRevealSkeletons).
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   // Pour only if the boot overlay already lifted. A fast sync that settles
   // while the overlay is still up must leave the pour to _removeBootOverlay
   // (skel mode is off now, so the lift arms it), or the once-guard would burn
   // the cascade invisibly behind the overlay.
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
+  // A logo with no brand colour yet: take it from the logo, read at boot by
+  // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
+  // so a colour picked on another device is never overwritten.
+  try{
+    // Cache the logo's look and boot-sized copy (js/brand-look.js), so the next
+    // boot paints the real logo even when it is too big for the settings cache.
+    // An account with a logo but no brand colour takes it from the logo.
+    if(_authSettingsLoaded&&S.logoData&&typeof tdBootCacheLogo==='function'){
+      tdBootCacheLogo(S.logoData,'zp3_boot_look',lk=>{
+        if(!S.brandColor&&typeof _tdBrandFromLogo==='function')_tdBrandFromLogo(lk);
+      });
+    }
+  }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
   // Well after the pour so it never competes with the boot render.
   try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
@@ -2078,9 +2093,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
-        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
+        const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
@@ -2090,15 +2111,17 @@ function _removeBootOverlay(immediate){
     // _bootSyncSettled pours the cascade then. Everything else pours now.
     // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
     // if no render has run yet this boot.
+    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
+    // EVEN while the first sync is in flight, as shimmer cards; the data then
+    // lands in place (_bootSyncSettled). One pour either way.
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
-    }else{
-      try{_armBootCascade();}catch(_e){}
     }
+    try{_armBootCascade();}catch(_e){}
   }
   o.classList.add('td-fadeout');
+  setTimeout(()=>{try{o.remove();}catch(_e){}},640);
   setTimeout(()=>{
-    o.remove();
     const resumeBid=localStorage.getItem('_sw_resume_bid');
     if(resumeBid){
       localStorage.removeItem('_sw_resume_bid');
@@ -9967,39 +9990,15 @@ function showDailyBriefing(){
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
   // Reload bridge, painted SYNCHRONOUSLY before the save/reload so a version
-  // update NEVER shows the dashboard flashing between the old and new build. Uses
-  // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
-  // gradient glowing bar) so old-build → reload → new-build reads as ONE
-  // continuous loading screen instead of two separate boots.
+  // update NEVER shows the dashboard flashing between the old and new build.
+  // Built by the same tdBootFill as the boot screen (js/brand-look.js), so
+  // old-build -> reload -> new-build reads as ONE continuous loading screen.
   if(document.getElementById('_update-ov'))return;
-  const logo=S?.logoData||'';
-  const bname=(S?.bname||'').trim();
-  const brand=S?.brandColor||'';
-  const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-  let r=45,g=93,b=168,lr=115,lg=163,lb=238;
-  if(brand){const h=brand.replace('#','');r=parseInt(h.substr(0,2),16)||0;g=parseInt(h.substr(2,2),16)||0;b=parseInt(h.substr(4,2),16)||0;lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);}
-  const bg='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-  const barFg='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';
-  const barGlow='0 0 12px rgba('+r+','+g+','+b+',.55)';
-  const markTile=brand?'background:linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)':'';
-  const mark=logo?'':(bname
-    ?'<div class="sbo-mark" style="'+markTile+'"><span class="sbo-monogram">'+esc((bname[0]||'').toUpperCase())+'</span></div>'
-    :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
-  const nameBlock=logo
-    ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>':'')
-    :bname
-      ?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>'
-      :'<div style="display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span></div>';
   const ov=document.createElement('div');
   ov.id='_update-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
-  ov.innerHTML=
-    '<div class="sbo-glow"'+(brand?' style="background:radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)"':'')+'></div>'+
-    '<div class="sbo-center">'+mark+nameBlock+'<div class="sbo-tag">Updating…</div></div>'+
-    '<div class="sbo-foot">'+
-      '<div class="sbo-track"><div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:1.6s"></div><div class="sbo-sheen"></div></div>'+
-      '<div class="sbo-hint">Loading the latest version…</div>'+
-    '</div>';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden';
+  if(typeof tdBootFill==='function')tdBootFill(ov,{logo:S?.logoData||'',name:S?.bname||'',brand:S?.brandColor||'',
+    status:'Updating…',cacheKey:'zp3_boot_look'});
   document.body.appendChild(ov);
 }
 let _reloadPending=false;

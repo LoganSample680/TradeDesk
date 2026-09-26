@@ -1093,9 +1093,16 @@ function _logoEnsureMeta(){
   });
 }
 function applyBrandLogo(){
-  try{_logoEnsureMeta();}catch(_e){}
+  // Measure the logo once; the first time it lands, paint again so a square
+  // emblem gets its badge without waiting for the next render.
+  try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
+  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData){
+    if(S.logoData&&tile){
+      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
+        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
+        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
+    } else if(S.logoData){
       el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
     } else {
       el.textContent=S.bname||'TradeDesk';
@@ -1103,35 +1110,25 @@ function applyBrandLogo(){
   });
 }
 function _updateBootPreview(){
-  const color=(document.getElementById('set-brandcolor')||{}).value||S.brandColor||'';
+  // A thumbnail of the real boot screen (tdBootFill, js/brand-look.js): the
+  // logo on its own background, else the business name, else TradeDesk.
   const logo=S.logoData||'';
   const bname=S.bname||'';
   const bg=document.getElementById('boot-preview-bg');
-  const bar=document.getElementById('boot-preview-bar');
-  const wordmark=document.getElementById('boot-preview-wordmark');
-  const pro=document.getElementById('boot-preview-pro');
   const logoEl=document.getElementById('boot-preview-logo');
   if(!bg)return;
-  if(color){
-    bg.style.background=color;
-    if(bar){
-      const hex=color.replace('#','');
-      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
-      const lum=(0.299*r+0.587*g+0.114*b)/255;
-      bar.style.background=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
-    }
+  const dark='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+  bg.style.background=dark;
+  if(!logoEl)return;
+  if(logo){
+    logoEl.innerHTML='<img src="'+logo+'" style="max-height:74px;max-width:160px;object-fit:contain">';
+    const im=logoEl.querySelector('img');
+    const paint=()=>{const lk=(typeof tdLogoLook==='function')?tdLogoLook(im):null;if(lk)bg.style.background=lk.bg;};
+    if(im.complete)paint();else im.onload=paint;
+  }else if(bname){
+    logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
   }else{
-    bg.style.background='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-    if(bar)bar.style.background='#2D5DA8';
-  }
-  if(logoEl){
-    if(logo){
-      logoEl.innerHTML='<img src="'+logo+'" style="max-height:36px;max-width:120px;object-fit:contain">';
-    }else if(bname){
-      logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
-    }else{
-      logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span>';
-    }
+    logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span>';
   }
 }
 function handleLogoUpload(input){
@@ -1143,8 +1140,23 @@ function handleLogoUpload(input){
   reader.onload=e=>{
     S.logoData=e.target.result;_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
     showToast('Logo saved, proposals will use your logo','🎨');
+    // Read the logo's own colours once it decodes (owner 2026-09-24: white
+    // label follows the logo). A brand colour they already picked is kept.
+    try{const im=new Image();im.onload=()=>_tdBrandFromLogo(typeof tdLogoLook==='function'?tdLogoLook(im):null);im.src=S.logoData;}catch(_e){}
   };
   reader.readAsDataURL(file);
+}
+// Fill the brand colour from the logo when the contractor has not picked one.
+// Never overwrites a choice. Returns true when it set one.
+function _tdBrandFromLogo(look){
+  if(!look||!look.accent||S.brandColor)return false;
+  S.brandColor=(typeof adaBrand==='function'?adaBrand(look.accent):look.accent)||'';
+  if(!S.brandColor)return false;
+  const inp=document.getElementById('set-brandcolor');if(inp)inp.value=S.brandColor;
+  try{_renderBrandSwatches(S.brandColor);}catch(_e){}
+  try{_updateBootPreview();}catch(_e){}
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
 }
 function clearLogoSetting(){
   S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();

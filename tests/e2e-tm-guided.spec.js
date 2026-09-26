@@ -52,7 +52,9 @@ test.describe('the bar walks him to Send', () => {
     // The bar takes him to them, with the cursor in the unit's box: the way to
     // add the model after Add all.
     await tap();
-    expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('tim-ask-detail-model');
+    // The cursor lands on a 350ms timer after the scroll; wait for it rather
+    // than betting a fixed sleep beats it on a busy runner.
+    await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('tim-ask-detail-model');
     await page.locator('#gei-tm-page .ios-tim .ios-no', { hasText: /^No$/ }).first().click();
     await page.fill('#tim-ask-detail-model', 'Navien NPE-240A');
     await page.locator('#gei-tm-page .ios-tim .ios-ask-row .ios-pill').click();

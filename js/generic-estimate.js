@@ -6086,7 +6086,10 @@ function _geiGoTimAsks(){
   const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
   _geiGuideTo(card);
   // A question with a box (the unit) gets the cursor, so he can just type.
-  setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+  // Look the box up when the timer fires: the card can re-render in between,
+  // and focusing the old, detached one lands the cursor nowhere.
+  const sel=(_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim .ios-ask-in';
+  setTimeout(()=>{const f=document.querySelector(sel);if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
 }
 // ── Walk notes: keep, place, save ─────────────────────────────────────────
 function _geiWalkAdd(said,notes){
@@ -7886,27 +7889,38 @@ function _propCover(o){
   const licTxt=lic?((/^\s*(lic|license|licence|#)/i.test(lic)?'':'Lic. ')+escHtml(lic)):'';
   const contact=[o.bphone?escHtml(o.bphone):'',licTxt].filter(Boolean).join(' &nbsp;·&nbsp; ');
   const meta=(typeof S!=='undefined'&&S&&S.logoMeta)||null;
-  const tile=!!(logo&&meta&&meta.solid&&!meta.light&&meta.ratio<=1.6);
+  const tile=!!(logo&&typeof tdLogoIsTile==='function'&&tdLogoIsTile(meta));
+  // THE LOGO HERO (owner 2026-09-25, "A, but make black fade to blue"): a logo
+  // that is its own dark square opens the document big and centred on its own
+  // background, which fades down into his colour, the way the boot screen
+  // opens on it. The logo already carries his name, so the line under it is
+  // just how to reach him.
+  const heroBg=tile&&/^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$/.test(String(meta.bg||''))?meta.bg:'#000';
   const nameBlock=`<div style="min-width:0">${name?`<div style="font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1.2;color:#fff">${name}</div>`:''}`+
     (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:3px;line-height:1.45">${contact}</div>`:'')+`</div>`;
   const ring='box-shadow:0 0 0 1px rgba(255,255,255,.35),0 8px 22px rgba(0,0,0,.22)';
   // No logo: his name is the mark, set large. No letter monogram: the owner
   // removed it from the client hub as filler (2026-09), and the proposal
   // follows the same rule.
-  const mark=!logo
+  const mark=tile
+    ?`<div style="text-align:center"><img src="${escHtml(logo)}" alt="${name}" style="display:block;width:min(210px,62vw);height:auto;object-fit:contain;margin:0 auto">`+
+      (contact?`<div style="font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
+    :!logo
     ?`<div style="min-width:0">${name?`<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#fff">${name}</div>`:''}`+
       (contact?`<div style="font-size:12.5px;color:rgba(255,255,255,.78);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
-    :tile
-    ?`<div style="display:flex;align-items:center;gap:12px"><img src="${escHtml(logo)}" alt="${name}" style="display:block;height:56px;width:auto;max-width:96px;border-radius:15px;${ring}">${nameBlock}</div>`
-    :`<div style="display:inline-block;background:#fff;border-radius:15px;padding:10px 14px;${ring}"><img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain"></div>`+
-      `<div style="margin-top:10px">${nameBlock}</div>`;
+    // Any other logo, on its white plate, at a size a client notices.
+    :`<div style="display:inline-block;background:#fff;border-radius:18px;padding:14px 18px;${ring}"><img src="${escHtml(logo)}" alt="${name}" style="display:block;max-height:76px;max-width:240px;width:auto;height:auto;object-fit:contain"></div>`+
+      `<div style="margin-top:12px">${nameBlock}</div>`;
   const chip=(icon,txt)=>`<span style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:rgba(255,255,255,.9);line-height:1.4">${_propIcon(icon,'rgba(255,255,255,.75)')}<span>${txt}</span></span>`;
-  return `<div class="prop-cover" style="background:${o.accent};color:#fff;background-image:radial-gradient(120% 90% at 100% 0%,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 55%),linear-gradient(140deg,${o.accent} 0%,${_PT.deep||o.accent} 100%);padding:24px 22px 24px">`+
-    `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px">`+
+  const coverBg=tile
+    ?`background:${heroBg};color:#fff;background-image:linear-gradient(180deg,${heroBg} 0%,${heroBg} 50%,${o.accent} 100%)`
+    :`background:${o.accent};color:#fff;background-image:radial-gradient(120% 90% at 100% 0%,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 55%),linear-gradient(140deg,${o.accent} 0%,${_PT.deep||o.accent} 100%)`;
+  return `<div class="prop-cover" style="${coverBg};padding:24px 22px 24px">`+
+    `<div style="display:flex;flex-wrap:wrap;${tile?'flex-direction:column;align-items:center':'align-items:flex-start;justify-content:space-between'};gap:14px">`+
       // Not .brand-logo-slot: applyBrandLogo rewrites every one of those on
       // the page with the app bar's 32px logo, and would wipe this letterhead
       // if it ran with a preview open.
-      `<div class="prop-mark" style="min-width:0;flex:1 1 220px">${mark}</div>`+
+      `<div class="prop-mark" style="min-width:0;${tile?'width:100%':'flex:1 1 220px'}">${mark}</div>`+
       `<span style="flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);padding:5px 10px;border-radius:999px">${o.label}</span>`+
     `</div>`+
     `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">Prepared for <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
