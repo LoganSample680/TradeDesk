@@ -1594,6 +1594,7 @@ function populateSchedSelect(){
 
 function setSchedType(type,btn){
   schedType=type;
+  window._schedPrefill=null;
   const isEst=type==='estimate';
   document.querySelectorAll('#pg-schedule .sf-seg .sf-seg-btn').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
@@ -1833,7 +1834,10 @@ function scheduleJob(){
   if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
     _schedErr('This job is already scheduled. Edit or cancel the existing one first.','s-bid-sel');return;}
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
-  const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:null);
+  // A job with no proposal behind it still belongs to a client when something
+  // opened the scheduler FOR that client (the water heater board, js/wh-board.js).
+  const _pre=window._schedPrefill||null;
+  const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:(_pre&&_pre.clientId!=null?_pre.clientId:null));
   const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
   const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):(v('s-time')||'');
   const jobHours=schedType==='estimate'?parseFloat(v('s-hours')||'2'):null;
@@ -1841,6 +1845,7 @@ function scheduleJob(){
   // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
   const _asgnTo=_crewId||null;
   jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  if(_pre&&_pre.whEqId!=null&&!bid&&typeof whFlushBooked==='function')try{whFlushBooked(_pre.whEqId,jobs[jobs.length-1]);}catch(_e){}
   // Booked. Estimate VISITS are a different milestone than the job being booked.
   try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
   // Photos shot while writing the estimate become this job's Before set, with
@@ -1857,6 +1862,7 @@ function scheduleJob(){
   if(schedType==='estimate'&&clientId){openClientDetail(clientId);}else{goPg('pg-cal');}
 }
 function resetSched(){
+  window._schedPrefill=null;
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
   const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
