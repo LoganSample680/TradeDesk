@@ -128,7 +128,7 @@ function getJobTaxTreatment(state, tradeType, scope, propertyType) {
  * @param {string} params.propertyType    - 'residential'|'commercial'
  * @param {number} params.taxRate         - combined rate as a percentage (e.g. 9.35)
  * @param {Array}  params.lineItems       - [{desc, total, lineType}]
- *                                          lineType: 'labor'|'materials'|'equipment'|null
+ *                                          lineType: 'labor'|'materials'|'equipment'|'taxpaid'|null
  * @param {number} params.flatTotal       - used when no line items
  * @param {number} params.laborTotal      - labor portion (painting estimates)
  * @param {number} params.materialsTotal  - materials portion (painting estimates)
@@ -152,6 +152,9 @@ function calcSalesTax({state, tradeType, scope, propertyType, taxRate, lineItems
       lineItems.forEach(li => {
         const t = li.lineType || 'materials'; // unclassified defaults to materials (conservative)
         if (t === 'labor') { if (treatment.laborTaxable) taxableBase += (li.total||0); }
+        // Materials the supply house already charged tax on: he paid it at the
+        // counter, so the client is not taxed on them again (owner 2026-09-26).
+        else if (t === 'taxpaid') { /* not taxed twice */ }
         else { taxableBase += (li.total||0); }
       });
     } else if (materialsTotal !== undefined) {
