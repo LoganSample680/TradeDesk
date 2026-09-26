@@ -22,7 +22,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 begin
-  if auth.uid() is null then raise exception 'timesheet_set_pay: not signed in'; end if;
+  if auth.uid()::text is null then raise exception 'timesheet_set_pay: not signed in'; end if;
   update td_timesheets
      set pay_rate = case when coalesce(p_pay_rate, 0) > 0 then round(p_pay_rate, 2) else null end,
          updated_at = now()
