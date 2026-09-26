@@ -317,6 +317,19 @@ never decides on their behalf that their testing is finished.
   asks on a real conflict between two sessions, and it tells the stamp apart
   from real code by reading the conflict hunks rather than trusting the
   filename. That is the part that is easy to get wrong by hand.
+- **The roll must never DELETE what is already on `uat`** (found 2026-09-23,
+  owner: "I bet it has"). It had. The stamp resolver used `git checkout
+  --theirs`, which swaps in the whole file: the conflict HUNKS were only the
+  version line, but every other change git had already auto-merged into
+  `js/cloud.js` went with it. An audit of all 53 roll merges found it had
+  deleted the Tim session's sign-out privacy fix once and the county
+  property sync call once, silently both times. Two fixes, both in the script:
+  the stamp is now resolved inside the conflict markers only, and after the
+  merge and BEFORE the push the roll checks that no line `uat` added since
+  the branches last met has disappeared, stopping and naming the lines if one
+  has. `UAT_ROLL_ALLOW_DROP=1` lets a deliberate loss through. **This is also
+  why hand-rolling is banned:** both losses came from a merge done by hand or
+  by a resolver nobody had read, and the gate only runs inside the script.
 - **Never `--force` a push to `uat`, and never `checkout -B uat <branch>`.**
   That pair is a branch REPLACEMENT, and until 2026-09-21 this section called
   it a "fast-forward" and gave it as the command. Measured that day: running it
@@ -360,6 +373,7 @@ never decides on their behalf that their testing is finished.
   CODE is gated by the merge to `main`. Therefore migrations must stay
   additive (never rename/drop what production code still reads), and new code
   must never rewrite existing records into shapes production can't read.
+
 
 ### 3.2 Minimum iOS Builds (owner rule, 2026-08-09)
 
@@ -1964,6 +1978,24 @@ supposed to be. That design is gone. The rule now:
   `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
   come back.
 
+### 17.1 On Time Is Measured Every Workday (owner rule 2026-09-23)
+
+Owner: *"I want to see on time shit within 10 seconds 100% of the time."* The
+goal is every motion flip on the server within 10 seconds of happening, for
+every user, during working hours. It is measured, not guessed.
+
+- **One definition:** `scripts/ops/on-time-report.sql`. Read-only, one row per
+  person per Central day, 6am to 6pm, last seven days. Change the definition
+  there and nowhere else, and say so in the report when you do.
+- **A routine runs it at 7pm Central, Monday to Saturday**, into the session
+  that owns geo work. The report to the owner is short: each person's % within
+  10s today against the week, the biggest cause of the misses, and ONE proposed
+  fix. Nothing gets built until the owner says go; this is a loop run together.
+- **Find the cause in the data before proposing a fix.** `late_on_open` means
+  the phone held the flip until someone opened the app; `recovered` means the
+  native backfill found it. A fix must name which bucket it moves.
+- A day that gets worse is reported the same way as a day that gets better.
+
 ---
 
 ## 18. Metrics Are Data: One Definition, Many Mouths (owner rule 2026-09-17)
@@ -2026,6 +2058,15 @@ preference.
 
 - ~~**Tim owns no trade knowledge and must not grow any.**~~ Reversed by the
   owner on 2026-09-19, see §18.3. Everything else in this section stands.
+- **Tim knows the trade, as data, in one place (owner 2026-09-25, reversing
+  the 2026-09-17 line "Tim owns no trade knowledge"): "Tim should know trade
+  knowledge ... filling in the gaps contractors miss."** It lives in
+  `js/trade-knowledge.js`: per job, the professional scope text and the
+  commonly missed items. Tim, the spoken estimate and the estimate builder's
+  "Usually goes with this" card all read that one table; nobody grows a private
+  copy. Still no model and no network. Missed items are OFFERED, never added
+  silently, and PRICES STAY HIS: the library's rate is a starting point and the
+  price book wins the moment he has priced the item.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.

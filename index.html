@@ -822,9 +822,14 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 
 /* The listening panel when there is no sheet to sit in: dictating the scope
    happens on the estimate page. Fixed to the bottom so the Done button is
-   where the thumb already is, above the tab bar so it is not half covered. */
-#_tim-listen-host{position:fixed;left:0;right:0;bottom:0;z-index:70}
-#_tim-listen-host #_tim-listen{margin:0}
+   where the thumb already is, above the tab bar so it is not half covered.
+   Above the T&M and BYO bottom bar too (z-index 1002): at 70 the bar sat on
+   the lower half of the panel and hid Done talking (owner, 2026-09-26). */
+#_tim-listen-host{position:fixed;left:0;right:0;bottom:0;z-index:1010}
+/* !important: the panel carries margin-bottom:-28px inline for when it sits
+   in Tim's sheet, and inline beats this rule, so on its own the panel hung
+   28px off the bottom of the screen. */
+#_tim-listen-host #_tim-listen{margin:0!important}
 
 /* ── Talking is the easy way in ─────────────────────────────────────────────
    Owner, 2026-09-22: "I really want people to use Tim to speak it since speak
@@ -926,6 +931,34 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    Time Log, whose skeleton is visible longer than most while it reconciles
    against mileage before painting). */
 .td-skel,.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.1s linear infinite;border-radius:6px}
+/* County facts on a property card (_cdCountyFactsHtml, js/clients.js): stat
+   tiles, then warnings, then iOS inset-grouped rows. Tokens only, so dark mode
+   follows body.dark with no second copy of these rules. */
+.cdf{margin-bottom:12px}
+.cdf-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.cdf-tile{min-width:0;background:var(--bg2);border-radius:12px;padding:10px 8px;text-align:center}
+.cdf-tile-warn{background:var(--red-lt)}
+.cdf-tile-warn .cdf-big{color:var(--red)}
+.cdf-big{font-size:20px;font-weight:800;color:var(--text);line-height:1.1;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cdf-slash{color:var(--text3);font-weight:600;margin:0 2px}
+.cdf-cap{font-size:11px;font-weight:600;color:var(--text3);margin-top:3px}
+.cdf-sub{font-size:10px;color:var(--text3);margin-top:1px}
+.cdf-warn{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;margin-bottom:8px}
+.cdf-warn-ic{flex-shrink:0;display:inline-flex;margin-top:1px}
+.cdf-warn-t{font-size:14px;font-weight:700;line-height:1.3}
+.cdf-warn-b{font-size:13px;line-height:1.4;color:var(--text2);margin-top:2px}
+.cdf-warn-red{background:var(--red-lt)}.cdf-warn-red .cdf-warn-t,.cdf-warn-red .cdf-warn-ic{color:var(--red)}
+.cdf-warn-blue{background:var(--blue-lt)}.cdf-warn-blue .cdf-warn-t,.cdf-warn-blue .cdf-warn-ic{color:var(--blue)}
+.cdf-warn-amber{background:var(--amber-lt)}.cdf-warn-amber .cdf-warn-t,.cdf-warn-amber .cdf-warn-ic{color:var(--amber)}
+.cdf-hd{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin:14px 4px 6px}
+.cdf-grp{background:var(--bg2);border-radius:12px;overflow:hidden}
+.cdf-row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:11px 12px;font-size:15px;min-width:0}
+.cdf-row+.cdf-row{border-top:1px solid var(--border)}
+.cdf-k{color:var(--text2);flex-shrink:0}
+.cdf-v{color:var(--text);font-weight:500;text-align:right;min-width:0;overflow-wrap:anywhere}
+.cdf-row-stack{flex-direction:column;align-items:stretch;gap:2px}
+.cdf-row-stack .cdf-k{font-size:12px}
+.cdf-row-stack .cdf-v{text-align:left}
 .met-skel-lbl{height:10px;width:60%;border-radius:4px;margin-bottom:10px}
 .met-skel-bar{height:22px;width:80%}
 /* One clean boot: while the first sync of a signed-in page load is in flight,
@@ -1540,6 +1573,10 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:#2C74C9}
 :is(#gei-tm-page,#gei-byo-page) #tm-nte-sub:empty{display:none}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .n{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2);color:var(--ios-2);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{background:var(--ios-tint);border-color:var(--ios-tint);color:#fff}
+/* Dark: the tint is a light blue there, and white on it read at 2.8:1. The
+   step being worked on is now common (How it bills waits for his check), so
+   its number has to read. Dark ink on the light tint. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{color:#0b1220}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .n{background:var(--c-green,#117841);border-color:var(--c-green,#117841);color:#fff}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .n svg{width:14px;height:14px}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .t{flex:1;min-width:0;font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.15;color:var(--text)}
@@ -1551,6 +1588,13 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{co
 :is(#gei-tm-page,#gei-byo-page) .ios-links.left{justify-content:flex-start;padding:0 16px;margin-top:4px}
 /* Tim's finds are a list of step names. The reason opens on a tap. */
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
+/* The No beside Tim's Add, and Skip under a question with a box (2026-09-26). */
+:is(#gei-tm-page,#gei-byo-page) .ios-no{flex:0 0 auto;border:0;background:none;color:var(--text2);font:inherit;font-size:15px;font-weight:600;padding:8px 10px;cursor:pointer;min-height:44px;min-width:48px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip{padding-top:0;min-height:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip .ios-no{padding-left:0;font-size:14px}
+/* Where the bar sends him: lit for a moment so he sees what he is checking. */
+@keyframes tmGuide{0%{box-shadow:0 0 0 0 rgba(37,99,235,.0)}20%{box-shadow:0 0 0 4px rgba(37,99,235,.35)}100%{box-shadow:0 0 0 4px rgba(37,99,235,.18)}}
+:is(#gei-tm-page,#gei-byo-page) .tm-guide{border-radius:14px;animation:tmGuide 1.2s ease-out forwards}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-swipe.why .ios-lbl small{display:block}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl{cursor:pointer}
 /* The stepper shows the count; "solo" under it said it again. */
@@ -2328,6 +2372,32 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-row.req:hover{background:transparent}
 .byo-row-hd{display:flex;align-items:center;gap:12px}
 .byo-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line-2);background:var(--bg-card);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:12px;font-weight:900}
+/* Supply house materials (js/supply-list.js) */
+.sup-list{display:flex;flex-direction:column}
+.sup-row{display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);min-width:0}
+.sup-row:last-child{border-bottom:none}
+.sup-row.off{opacity:.45}
+.sup-row.flag{background:rgba(217,119,6,.06)}
+.sup-row .byo-check{cursor:pointer;margin-top:1px}
+.sup-row .byo-check.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.sup-qty{flex:0 0 58px;font-size:12px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
+.sup-desc{flex:1 1 auto;min-width:0;font-size:13px;color:var(--text);overflow-wrap:anywhere}
+.sup-cost{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;background:none;border:none;padding:0 2px;cursor:pointer;font-family:inherit}
+.sup-cost-add{font-size:11px;font-weight:600;color:var(--blue)}
+.sup-del{flex:0 0 auto;background:none;border:none;color:var(--text3);padding:2px 4px;cursor:pointer}
+.sup-markup{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.sup-markup label{font-size:13px;font-weight:700;color:var(--text)}
+.sup-totals{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums}
+.sup-actions{display:flex;gap:8px;margin-top:12px}
+.sup-actions .btn{flex:1 1 0;min-width:0;white-space:normal;line-height:1.2}
+.sup-bare .card-hd{padding:0 0 6px}
+/* On the T&M and BYO iPhone screens (2026-09-26 merge) every control a thumb
+   lands on is 44px, the rule Earl's tests hold the rest of those screens to. */
+:is(#gei-tm-page,#gei-byo-page) .sup-row{align-items:center}
+:is(#gei-tm-page,#gei-byo-page) .sup-del{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+:is(#gei-tm-page,#gei-byo-page) .sup-cost{min-height:44px;min-width:44px;padding:0 6px}
+:is(#gei-tm-page,#gei-byo-page) #sup-markup{min-height:44px;box-sizing:border-box}
+:is(#gei-tm-page,#gei-byo-page) .att-skip{min-width:44px;min-height:44px}
 .byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
 .byo-label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .byo-meta{font-size:10px;color:var(--text-3);margin-top:5px;margin-left:32px;font-weight:600;letter-spacing:.04em;overflow-wrap:anywhere}
@@ -2352,39 +2422,62 @@ body.dark .cal-cell.other{background:var(--cream)}
    viewfinder has to own the whole screen: a camera in a centered card is a
    camera nobody frames a shot in. Everything BELOW the viewfinder follows
    the app's normal control sizing so the thumb lands where it always does. */
-.pc-sheet{position:fixed;inset:0;z-index:99990;background:#0E1116;display:flex;flex-direction:column;color:#fff;font-family:var(--font-ui);animation:fadein .16s ease}
-.pc-vf{flex:1;position:relative;overflow:hidden;background:#1a1f26}
+/* TrueShot is always dark, like the Camera and Photos apps, so it carries
+   Apple's own dark system palette rather than the app's light/dark tokens. */
+:root{--pc-font:-apple-system,BlinkMacSystemFont,"SF Pro Text",var(--font-ui);--pc-blue:#0A84FF;--pc-green:#30D158;--pc-red:#FF453A;--pc-yellow:#FFD60A;
+  --pc-g1:#1C1C1E;--pc-g2:#2C2C2E;--pc-g3:#3A3A3C;--pc-l2:rgba(235,235,245,.6);--pc-sep:rgba(84,84,88,.55)}
+.pc-sheet{position:fixed;inset:0;z-index:99990;background:#000;display:flex;flex-direction:column;color:#fff;font-family:var(--pc-font);animation:fadein .16s ease}
+/* Liquid Glass: a real blur, a lit top edge and a soft drop. The one material
+   every floating TrueShot control is made of. */
+.pc-glass{background:rgba(40,40,44,.42);-webkit-backdrop-filter:blur(24px) saturate(1.8);backdrop-filter:blur(24px) saturate(1.8);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.26),inset 0 -1px 0 rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.28);border:none;color:#fff}
+.pc-ic{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;display:block;flex:none}
+.pc-ic .f{fill:currentColor;stroke:none}
+.pc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pc-cam-top{display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;min-height:56px}
+.pc-cam-top-r{display:flex;gap:8px;align-items:center}
+.pc-import-btn{display:inline-flex;align-items:center;gap:6px;border-radius:999px;font:600 13px var(--pc-font);padding:8px 13px;touch-action:manipulation}
+.pc-import-btn .pc-ic{width:17px;height:17px}
+.pc-stamp-toggle,.pc-ghost-btn{display:inline-flex;align-items:center;gap:6px;border-radius:999px;font:600 13px var(--pc-font);padding:8px 13px;touch-action:manipulation}
+.pc-stamp-toggle.off{color:rgba(255,255,255,.55)}
+.pc-stamp-toggle .dot{width:7px;height:7px;border-radius:50%;background:var(--pc-yellow)}
+.pc-stamp-toggle.off .dot{background:rgba(255,255,255,.35)}
+.pc-vf{position:relative;overflow:hidden;background:#111;width:100%;aspect-ratio:3/4;max-height:calc(100% - 250px);margin:0 auto;flex:none}
 .pc-vf video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
 .pc-sheet.pc-live .pc-vf video{display:block}
-.pc-grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.13) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.13) 1px,transparent 1px);background-size:33.33% 33.33%}
+.pc-grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.2) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.2) 1px,transparent 1px);background-size:33.33% 33.33%;background-position:-1px -1px}
+.pc-ghostframe{position:absolute;inset:12px;display:none;border:2px dashed rgba(255,214,10,.9);border-radius:14px;pointer-events:none}
+.pc-attach{position:absolute;top:14px;left:50%;transform:translateX(-50%);max-width:calc(100% - 28px);border-radius:999px;padding:7px 14px 7px 11px;display:flex;align-items:center;gap:7px;font:600 13px var(--pc-font);white-space:nowrap;z-index:2}
+.pc-attach-t{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pc-attach-near{font-weight:500;color:var(--pc-l2);overflow:hidden;text-overflow:ellipsis}
+.pc-attach-near:empty{display:none}
+.pc-dot{width:7px;height:7px;border-radius:50%;background:var(--pc-green,#30D158);box-shadow:0 0 8px var(--pc-green,#30D158);flex-shrink:0}
+.pc-dot.idle{background:rgba(255,255,255,.45);box-shadow:none}
+.pc-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);border-radius:999px;padding:6px 13px;font:600 12px var(--pc-font);background:rgba(28,28,30,.72);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
+.pc-hint.gold{background:var(--pc-yellow);color:#241c00}
+.pc-seg{display:flex;justify-content:center;gap:22px;padding:16px 14px 0}
+.pc-seg-btn{border:none;background:none;padding:6px 2px;font:600 13px var(--pc-font);letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.62);touch-action:manipulation}
+.pc-seg-btn.on{color:var(--pc-yellow)}
+.pc-shutrow{flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 30px calc(18px + env(safe-area-inset-bottom,0px));max-height:170px}
+.pc-last{width:48px;height:48px;border-radius:9px;border:none;padding:0;background:#1c1c1e center/cover no-repeat;position:relative;touch-action:manipulation}
+.pc-last.empty{visibility:hidden}
+.pc-last-n{position:absolute;right:3px;bottom:3px;font:600 11px var(--pc-font);color:#fff;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:6px}
+.pc-last.marked:after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--pc-yellow)}
+.pc-shut{width:78px;height:78px;border-radius:50%;background:transparent;border:3.5px solid #fff;padding:0;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+.pc-shut i{display:block;width:64px;height:64px;border-radius:50%;background:#fff;transition:transform .12s cubic-bezier(.22,1,.36,1)}
+.pc-shut:active i{transform:scale(.9)}
+.pc-done{width:48px;height:48px;border-radius:50%;border:none;background:var(--pc-g2);color:#fff;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+.pc-done .pc-ic{width:24px;height:24px;stroke-width:2.2}
 /* The Before shot, ghosted over the live frame. multiply (not screen) keeps a
    pale After frame readable under it; screen washed both out to white. */
 .pc-ghost{position:absolute;inset:0;display:none;opacity:.42;background-size:cover;background-position:center;pointer-events:none}
-.pc-ghostframe{position:absolute;inset:12px;display:none;border:2px dashed rgba(242,168,28,.95);border-radius:var(--r-md);pointer-events:none}
-.pc-attach{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:12px;right:12px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:var(--r-pill);padding:9px 14px;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700}
-.pc-attach-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pc-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.2);flex-shrink:0}
-.pc-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);border-radius:var(--r-pill);padding:6px 14px;font-size:12px;font-weight:800;background:rgba(10,13,17,.74);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
 /* Literal, not a token: the gold Tim uses for his badge is defined on another
    branch, and var() on an undefined token fails SILENTLY to no background at
    all (seen in a local screenshot, 2026-09-21). A capture sheet is chrome over
    a camera, so its two accents live here where they cannot go missing. */
-.pc-hint.gold{background:#F2A81C;color:#3a2600}
 .pc-flash{position:absolute;inset:0;background:#fff;animation:pc-flash .2s ease both;pointer-events:none}
 @keyframes pc-flash{from{opacity:.85}to{opacity:0}}
 @media (prefers-reduced-motion:reduce){.pc-flash{animation:none;opacity:0}}
-.pc-seg{display:flex;gap:6px;padding:12px 14px 6px}
-.pc-seg-btn{flex:1;border:none;border-radius:var(--r-pill);padding:10px 0;font-size:13px;font-weight:800;background:rgba(255,255,255,.1);color:rgba(255,255,255,.72);font-family:var(--font-ui);touch-action:manipulation}
-.pc-seg-btn.on{background:#fff;color:#0E1116}
-.pc-seg-btn.on.b4{background:#F2A81C;color:#3a2600}
-.pc-seg-btn.on.af{background:#4ade80;color:#04341c}
-.pc-strip{display:flex;gap:6px;padding:10px 14px;align-items:center;min-height:56px;overflow-x:auto}
-.pc-thumb{width:52px;height:52px;flex:0 0 auto;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat}
-.pc-strip-lbl{font-size:12px;color:rgba(255,255,255,.55);font-weight:700;white-space:nowrap}
-.pc-shutrow{display:flex;align-items:center;justify-content:space-between;padding:8px 22px calc(26px + env(safe-area-inset-bottom,0px))}
-.pc-shut{width:74px;height:74px;border-radius:50%;background:#fff;box-shadow:0 0 0 5px rgba(255,255,255,.26);border:none;padding:0;touch-action:manipulation}
-.pc-shut i{display:block;width:100%;height:100%;border-radius:50%;border:4px solid #0E1116}
-.pc-shut:active{transform:scale(.94)}
 .pc-side{font-size:13px;font-weight:800;color:#fff;background:rgba(255,255,255,.12);border:none;border-radius:var(--r-pill);padding:11px 16px;font-family:var(--font-ui);min-width:92px;touch-action:manipulation}
 .pc-side.go{background:var(--denim)}
 /* The After prompt on job completion */
@@ -2392,7 +2485,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-prompt-thumb{position:relative;aspect-ratio:1;border-radius:var(--r-md);background:var(--cream) center/cover no-repeat}
 .pc-prompt-tag{position:absolute;left:5px;bottom:5px;background:rgba(159,91,0,.94);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800}
 /* The unfiled tray on the dashboard */
-.pc-uf-count{background:var(--c-amber-soft);color:var(--c-amber);border-radius:var(--r-pill);padding:3px 10px;font-size:12px;font-weight:800}
+.pc-uf-count{border:none;font-family:inherit;cursor:pointer;background:var(--c-amber-soft);color:var(--c-amber);border-radius:var(--r-pill);padding:3px 10px;font-size:12px;font-weight:800}
 .pc-uf-row{display:flex;gap:11px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:var(--r-md);margin-bottom:8px}
 .pc-uf-row:last-child{margin-bottom:0}
 .pc-uf-thumb{width:60px;height:60px;flex:0 0 auto;border-radius:var(--r-md);background:var(--cream) center/cover no-repeat}
@@ -2402,48 +2495,174 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-uf-thumb.stack{box-shadow:3px -3px 0 -1px var(--bg-card),3px -3px 0 0 var(--line),6px -6px 0 -1px var(--bg-card),6px -6px 0 0 var(--line)}
 .pc-uf-n{position:absolute;right:3px;bottom:3px;background:rgba(10,13,17,.82);color:#fff;border-radius:var(--r-pill);padding:1px 7px;font-size:11px;font-weight:800}
 /* ── The burst review sheet (shoot → triage → attach, all on site) ───────── */
-.pc-rev{position:fixed;inset:0;z-index:10050;background:#0E1116;color:#fff;display:flex;flex-direction:column;animation:fadein .16s ease}
-.pc-rev-top{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px}
-.pc-rev-title{flex:1;text-align:center;font-size:15px;font-weight:900}
-.pc-rev-sp{min-width:92px}
-.pc-rev-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:4px 12px 12px;align-content:start}
+.pc-rev{position:fixed;inset:0;z-index:10050;background:#000;color:#fff;display:flex;flex-direction:column;font-family:var(--pc-font);animation:fadein .16s ease}
+.pc-rev-top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 8px}
+/* Over the hero: the bar floats on the photo instead of sitting on a black
+   band above it, and Close stops being the heaviest thing on the screen. */
+.pc-rev-top.ghost{position:absolute;top:0;left:0;right:0;z-index:2;background:none}
+.pc-rev-title{flex:1;text-align:center;font:700 15px var(--pc-font)}
+.pc-rev-sp{flex:1}
+.pc-rev-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:0 0 190px;align-content:start}
 /* ── The property folder: the visit is the folder ───────────────────────── */
-.pc-rev-grid.flat{flex:none;overflow:visible;padding:9px 0 4px}
-.pc-fold{flex:1;overflow-y:auto;padding:2px 14px calc(24px + env(safe-area-inset-bottom,0px))}
-.pc-fold-addr{font-size:20px;font-weight:900;line-height:1.15}
-.pc-fold-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
-.pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px}
+.pc-rev-grid.flat{flex:none;overflow:visible;padding:0;grid-template-columns:repeat(4,1fr);gap:2px}
+.pc-rev-grid.flat .pc-rev-cell{aspect-ratio:1}
+.pc-fold{flex:1;overflow-y:auto;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))}
+/* The album opens ON the property. The newest shot runs full bleed behind the
+   address, under a scrim heavy enough at the base to keep the type legible on
+   a bright photo and light enough at the top to let the image read. The top
+   bar sits over it, so .pc-rev-top.ghost drops its background. */
+.pc-fold-hero{position:relative;padding:calc(84px + env(safe-area-inset-top,0px)) 16px 16px;background:#20262e center/cover no-repeat;display:flex;align-items:flex-end;min-height:250px}
+.pc-fold-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
+.pc-fold-hd{position:relative;z-index:2;width:100%}
+.pc-fold-addr{font:700 30px var(--pc-font);line-height:1.1;letter-spacing:-.025em;text-shadow:0 1px 14px rgba(0,0,0,.5)}
+.pc-fold-sub{font:500 14px var(--pc-font);color:rgba(255,255,255,.82);margin-top:4px;text-shadow:0 1px 10px rgba(0,0,0,.5)}
+.pc-fold-chips{display:flex;gap:6px;overflow-x:auto;padding:13px 16px 2px}
 .pc-fold-chips .fb{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.75)}
 .pc-fold-chips .fb.active{background:#fff;color:#0E1116;border-color:#fff}
-.pc-fold-ba{margin-top:14px;border:1px solid var(--c-amber);background:rgba(242,168,28,.14);border-radius:var(--r-md);padding:11px}
+.pc-fold-ba{margin:14px 16px 0;border:1px solid var(--c-amber);background:rgba(242,168,28,.14);border-radius:var(--r-md);padding:11px}
 .pc-fold-ba-hd{display:flex;align-items:center;gap:9px;margin-bottom:9px}
 .pc-fold-ba-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#F2A81C}
 .pc-fold-ba-name{font-size:13px;font-weight:800;color:#fff}
 .pc-fold-ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pc-fold-ba-grid .pc-rev-cell{aspect-ratio:1}
-.pc-fold-visit{border-top:1px solid rgba(255,255,255,.1)}
-.pc-fold-visit-hd{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:13px 0 2px;color:inherit;font-family:inherit;text-align:left;touch-action:manipulation}
+.pc-fold-visit{margin:0 0 6px}
+.pc-fold-ba-ft{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:5px}
+.pc-fold-ba-ft span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.55);text-align:center}
+.pc-fold-visit-hd{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:16px 16px 8px;color:inherit;font-family:inherit;text-align:left;touch-action:manipulation}
 .pc-fold-visit-t{flex:1;min-width:0}
-.pc-fold-visit-day{display:block;font-size:14px;font-weight:800;color:#fff}
-.pc-fold-visit-what{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:1px}
-.pc-fold-visit-n{font-size:11px;font-weight:800;color:rgba(255,255,255,.55)}
+.pc-fold-visit-day{display:block;font:600 16px var(--pc-font);color:#fff;letter-spacing:-.01em}
+.pc-fold-visit-what{display:block;font:500 13px var(--pc-font);color:var(--pc-l2);margin-top:1px}
+.pc-fold-visit-n{font:500 14px var(--pc-font);color:var(--pc-l2)}
 .pc-fold-caret{font-size:17px;line-height:1;color:rgba(255,255,255,.5);transform:rotate(-90deg);display:inline-block}
 .pc-fold-caret.open{transform:rotate(0)}
-.pc-rev-cell{position:relative;aspect-ratio:1;border:none;padding:0;border-radius:var(--r-md);background:#2a3038 center/cover no-repeat;touch-action:manipulation}
-.pc-rev-tag{position:absolute;left:5px;bottom:5px;background:rgba(10,13,17,.8);color:#fff;border-radius:var(--r-pill);padding:2px 8px;font-size:10px;font-weight:800;text-transform:capitalize}
-.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px}
-.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md)}
+.pc-rev-cell{position:relative;aspect-ratio:1;border:none;padding:0;border-radius:0;background:#1c1c1e center/cover no-repeat;touch-action:manipulation}
+.pc-rev-tag{position:absolute;left:5px;top:5px;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#fff;border-radius:6px;padding:2px 6px;font:600 9.5px var(--pc-font);letter-spacing:.04em;text-transform:uppercase}
+.pc-rev-stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:0 8px;position:relative}
+/* Three panes wide, parked on the middle one, so the neighbour is already
+   rendered and follows the thumb instead of appearing after the gesture ends.
+   pan-y hands vertical back to the page: only the horizontal is ours. */
+/* ABSOLUTE, not a flex item. As a child of the flex stage it was shrunk to fit
+   like any other item, so width:300% collapsed and each pane rendered at a
+   third of nothing (caught in a local screenshot before this ever deployed). */
+.pc-rev-track{position:absolute;top:0;left:0;height:100%;width:300%;display:flex;transform:translate3d(-33.3333%,0,0);touch-action:pan-y;will-change:transform;cursor:grab}
+.pc-rev-track:active{cursor:grabbing}
+.pc-rev-track.snap{transition:transform .3s cubic-bezier(.22,1,.36,1)}
+/* The sheet itself animates when it is being put away, so the spring-back and
+   the dismissal both have motion rather than snapping. */
+.pc-rev-stage{touch-action:pan-y}
+.pc-rev-pane{flex:0 0 33.3333%;width:33.3333%;height:100%;display:flex;align-items:center;justify-content:center;padding:0 8px;box-sizing:border-box}
+.pc-rev-img{max-width:100%;max-height:100%;border-radius:var(--r-md);-webkit-user-select:none;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .pc-rev-foot{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px calc(20px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
 /* The confirmation Jack asked for: the app says the address out loud, in
    green, and a person agrees with it. Never an automatic filing. */
-.pc-rev-foot.col{flex-direction:column;align-items:stretch}
-.pc-rev-here{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:var(--r-md);background:rgba(74,222,128,.14);border:1px solid rgba(74,222,128,.45)}
+.pc-rev-here{display:flex;align-items:center;gap:12px;width:100%;margin-bottom:14px}
 .pc-rev-here-t{flex:1;min-width:0}
-.pc-rev-here-addr{font-size:15px;font-weight:900;color:#b9f6ca}
-.pc-rev-here-sub{font-size:12px;font-weight:700;color:rgba(255,255,255,.62);margin-top:1px}
-.pc-side.go.ok{background:#1f8a4c}
-.pc-rev-attach{flex:1;min-width:180px}
+.pc-rev-here-addr{font:600 19px var(--pc-font);letter-spacing:-.02em;color:#fff}
+.pc-rev-here-sub{font:500 14px var(--pc-font);color:var(--pc-l2);margin-top:1px}
+.pc-side.go.ok{background:var(--pc-blue)}
+.pc-rev-attach{width:100%;height:52px;border-radius:26px;font:600 17px var(--pc-font)}
 .pc-side.danger{background:rgba(229,72,77,.22);color:#ff9b9e}
+/* ── Grid screens: the after-shoot burst and the album ───────────────────── */
+.pc-side.pc-pill{min-width:0;height:36px;padding:0 15px;border-radius:18px;font:600 15px var(--pc-font);display:inline-flex;align-items:center}
+.pc-rev-top.ghost .pc-side.pc-pill{background:rgba(40,40,44,.42)}
+.pc-g-title{padding:6px 16px 14px}
+.pc-g-title .pc-rev-title{display:block;text-align:left;font:700 28px var(--pc-font);letter-spacing:-.025em}
+.pc-sel-n{text-align:center;font:600 15px var(--pc-font);text-shadow:0 1px 10px rgba(0,0,0,.5)}
+.pc-ck{position:absolute;right:5px;bottom:5px;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(255,255,255,.92);box-shadow:0 0 3px rgba(0,0,0,.45);background:rgba(0,0,0,.12)}
+.pc-rev-cell.sel::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,.28)}
+.pc-rev-cell.sel .pc-ck{background:var(--pc-blue);border-color:#fff;z-index:1}
+.pc-rev-cell.sel .pc-ck::after{content:'';position:absolute;left:6.5px;top:3px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.pc-selbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;align-items:center;gap:2px;height:62px;border-radius:31px;padding:0 8px}
+.pc-tb{width:70px;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:rgba(255,255,255,.9);font:500 10px var(--pc-font);touch-action:manipulation}
+.pc-tb.danger{color:var(--pc-red)}
+.pc-tb:disabled{opacity:.35}
+.pc-menu.pc-stage-menu{right:auto;left:50%;top:auto;bottom:72px;transform:translateX(-50%)}
+.pc-pick-chips .fb.active{background:var(--blue);border-color:var(--blue);color:#fff}
+/* Photos page (js/photo-gallery.js): year, month, then one row per address. */
+.ph-search{padding:0 0 10px}
+.ph-search input{width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:15px;font-family:inherit}
+.ph-pick{display:flex;gap:8px;padding:0 0 10px}
+.ph-pick select{flex:1}
+.ph-year{font-size:22px;font-weight:800;letter-spacing:-.02em;padding:14px 2px 2px}
+.ph-month{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:12px 2px 6px}
+.ph-place{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-width:0;padding:10px;margin:0 0 8px;border:1px solid var(--border);border-radius:12px;background:var(--bg2);text-align:left;cursor:pointer;font-family:inherit;color:var(--text)}
+.ph-thumbs{display:grid;grid-template-columns:repeat(2,28px);grid-auto-rows:28px;gap:2px;flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--bg3)}
+.ph-th{background:var(--bg3) center/cover no-repeat}
+.ph-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ph-addr{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-who{font-size:12.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-chev{font-size:22px;color:var(--text3);flex-shrink:0}
+.ph-empty{padding:40px 12px;text-align:center;color:var(--text3);font-size:14px}
+.pc-menu.pc-stage-menu.open{animation:none}
+.pc-conf.pc-rev-foot{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));flex-direction:column;align-items:stretch;gap:0;border-radius:30px;padding:18px 18px 8px;background:rgba(36,36,40,.72);z-index:3}
+.pc-conf .pc-side.go{background:var(--pc-blue)}
+.pc-side.pc-link{background:none;color:var(--pc-blue);font:600 16px var(--pc-font);padding:13px 0 10px;min-width:0}
+.pc-pinb{width:44px;height:44px;border-radius:50%;background:rgba(48,209,88,.18);color:var(--pc-green);display:flex;align-items:center;justify-content:center;flex:none}
+.pc-fold-chips .fb{border-radius:999px;font-family:var(--pc-font)}
+/* ── The viewer, edge to edge (owner 2026-09-23) ──────────────────────────
+   The photo takes the whole screen; everything else floats on .pc-glass and
+   fades out together when the photo is tapped (.pc-bare). */
+.pc-rev.pc-viewing{background:#000;font-family:var(--pc-font)}
+.pc-rev.pc-viewing .pc-rev-stage{position:absolute;inset:0;padding:0}
+.pc-rev.pc-viewing .pc-rev-pane{padding:0}
+.pc-rev.pc-viewing .pc-rev-img{border-radius:0;width:100%;height:100%;object-fit:contain}
+/* The viewer owns every direction a thumb can move: sideways steps, down puts
+   the photo away, up opens the details. pan-y (inherited from body) told iOS
+   that vertical drags were a scroll, so WebKit took the gesture and sent
+   pointercancel a few pixels in, which is why the swipe down never followed
+   the finger on a real phone while every synthetic-event test passed. */
+.pc-rev.pc-viewing .pc-rev-stage,.pc-rev.pc-viewing .pc-rev-track{touch-action:none}
+.pc-rev.pc-viewing .pc-rev-img{will-change:transform;transform-origin:50% 50%}
+.pc-rev-img.snap{transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .26s ease}
+.pc-rev.pc-viewing.snap{transition:background-color .28s ease}
+.pc-rev.pc-dragging .pc-v-top,.pc-rev.pc-dragging .pc-v-scrub,.pc-rev.pc-dragging .pc-v-bar,.pc-rev.pc-dragging .pc-undo{opacity:0;pointer-events:none}
+.pc-v-top,.pc-v-scrub,.pc-v-bar,.pc-undo{transition:opacity .18s ease}
+.pc-rev.pc-bare .pc-v-top,.pc-rev.pc-bare .pc-v-scrub,.pc-rev.pc-bare .pc-v-bar,.pc-rev.pc-bare .pc-undo{opacity:0;pointer-events:none}
+.pc-v-top{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 0}
+.pc-side.pc-round{min-width:0;width:44px;height:44px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:none}
+.pc-side.pc-round.pc-glass{background:rgba(40,40,44,.42)}
+.pc-side.pc-round.pc-big{width:52px;height:52px}
+.pc-side.pc-round.danger{color:#fff}
+.pc-v-title{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);max-width:calc(100% - 136px);text-align:center;padding:6px 16px;border-radius:22px}
+.pc-v-a{font:600 15px var(--pc-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-v-b{font:500 12px var(--pc-font);color:var(--pc-l2);margin-top:1px;white-space:nowrap}
+.pc-v-b em,.st-before,.st-progress,.st-after{font-style:normal}
+.st-before{color:#64D2FF}.st-progress{color:var(--pc-yellow)}.st-after{color:var(--pc-green)}
+.pc-v-b .pc-rev-title{font:inherit;flex:none}
+.pc-menu{position:absolute;right:16px;top:calc(62px + env(safe-area-inset-top,0px));border-radius:16px;padding:6px;display:none;flex-direction:column;min-width:170px;z-index:4;background:rgba(44,44,48,.82)}
+.pc-menu.open{display:flex;animation:pc-pop .18s cubic-bezier(.22,1,.36,1)}
+@keyframes pc-pop{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
+.pc-menu .pc-side{background:none;text-align:left;border-radius:10px;font:500 16px var(--pc-font);padding:11px 12px;min-width:0}
+.pc-menu .pc-side:active{background:rgba(255,255,255,.1)}
+.pc-v-scrub{position:absolute;left:0;right:0;bottom:calc(98px + env(safe-area-inset-bottom,0px));z-index:3;display:flex;justify-content:center;align-items:center;gap:2px}
+.pc-v-th{width:26px;height:38px;border:none;padding:0;border-radius:3px;background:#1c1c1e center/cover no-repeat;touch-action:manipulation}
+.pc-v-th.on{width:34px;height:44px;margin:0 5px;border-radius:5px}
+.pc-v-bar.pc-rev-foot{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;justify-content:space-between;align-items:center;flex-wrap:nowrap;padding:0 16px calc(22px + env(safe-area-inset-bottom,0px))}
+.pc-cap{display:flex;align-items:center;border-radius:26px;padding:0 6px}
+.pc-undo{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(152px + env(safe-area-inset-bottom,0px));z-index:3;min-width:0;border-radius:999px;font:600 14px var(--pc-font);padding:9px 16px}
+/* ── Details: swipe up on a photo ──────────────────────────────────────── */
+.pc-info{position:fixed;inset:0;z-index:10056;font-family:var(--pc-font);color:#fff}
+.pc-info-bd{position:absolute;inset:0;background:rgba(0,0,0,.25);animation:fadein .2s ease}
+.pc-info-sheet{position:absolute;left:0;right:0;bottom:0;max-height:78%;overflow-y:auto;background:var(--pc-g1);border-radius:34px 34px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 30px rgba(0,0,0,.35);animation:pc-rise .26s cubic-bezier(.22,1,.36,1);transition:transform .22s cubic-bezier(.22,1,.36,1);touch-action:pan-y}
+@keyframes pc-rise{from{transform:translateY(40%);opacity:.4}to{transform:none;opacity:1}}
+.pc-grab{width:36px;height:5px;border-radius:3px;background:var(--pc-g3);margin:0 auto 16px}
+.pc-info-when{font:700 20px var(--pc-font);letter-spacing:-.02em}
+.pc-info-sub{font:500 14px var(--pc-font);color:var(--pc-l2);margin:2px 0 14px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pc-onsite{display:inline-flex;align-items:center;gap:4px;color:var(--pc-green);font-weight:600}
+.pc-onsite .pc-ic{width:15px;height:15px;stroke-width:2.2}
+.pc-card{background:var(--pc-g2);border-radius:14px;overflow:hidden;margin-bottom:12px}
+.pc-info-map{height:132px;position:relative}
+.pc-map-dot{width:14px;height:14px;border-radius:50%;background:var(--pc-blue);border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transform:translate(-50%,-50%)}
+.pc-info-addr{padding:11px 14px 12px}
+.pc-info-addr .a{font:600 15px var(--pc-font)}
+.pc-info-addr .b{font:400 13px var(--pc-font);color:var(--pc-l2);margin-top:2px}
+.pc-li{display:flex;align-items:center;gap:10px;padding:0 14px;min-height:44px;position:relative}
+.pc-li+.pc-li::before{content:'';position:absolute;top:0;left:14px;right:0;height:.5px;background:var(--pc-sep)}
+.pc-li .k{font:400 15px var(--pc-font);color:var(--pc-l2);flex:1}
+.pc-li .v{font:500 15px var(--pc-font);text-align:right}
+.pc-li .v.mono{font:500 13px ui-monospace,"SF Mono",Menlo,monospace}
+.pc-chips{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px}
+.pc-chip-s{font:500 12px var(--pc-font);color:var(--pc-l2);background:var(--pc-g3);padding:4px 9px;border-radius:7px}
 .pc-uf-meta{flex:1;min-width:0}
 .pc-uf-when{font-size:14px;font-weight:800;color:var(--text)}
 .pc-uf-sub{font-size:12px;color:var(--text-3);margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2456,6 +2675,67 @@ body.dark .cal-cell.other{background:var(--cream)}
    be above THAT. Without this the card opens behind the album and the
    button looks dead (caught in a local screenshot, 2026-09-21). */
 #pc-att{z-index:10060}
+/* ── Look Around (look-around.html) ───────────────────────────────────────
+   A slot is invisible and takes no room until its frame reports that Apple
+   has imagery there; then it opens to its height. The frame loads while the
+   slot is closed, so no loading="lazy" (a lazy frame with no size never
+   loads at all). */
+.td-sv{position:relative;overflow:hidden;max-height:0;opacity:0;transition:max-height .18s cubic-bezier(.22,1,.36,1),opacity .18s ease}
+.td-sv iframe{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;background:#1c1c1e}
+.td-sv-tap{position:absolute;inset:0;z-index:2;border:0;background:transparent;padding:0;cursor:pointer}
+.td-sv-badge{position:absolute;right:10px;bottom:10px;z-index:3;display:inline-flex;align-items:center;gap:6px;padding:6px 11px 6px 9px;border-radius:999px;font:600 12px var(--pc-font);color:#fff;pointer-events:none}
+.td-sv-badge .pc-ic{width:15px;height:15px;stroke-width:2}
+.td-sv.sv-card{height:176px}
+.td-sv.sv-card.on{max-height:176px;opacity:1}
+.td-sv.hero{position:absolute;inset:0;z-index:1}
+.td-sv.hero.on{max-height:none;opacity:1}
+.td-sv.hero::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(14,17,22,.42) 0%,rgba(14,17,22,.06) 34%,rgba(14,17,22,.94) 100%)}
+.td-sv.hero .td-sv-badge{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
+.td-sv-full{position:fixed;inset:0;z-index:10058;background:#000;animation:fadein .18s ease}
+.td-sv-full iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.td-sv-x{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:16px;z-index:2;color:#fff}
+.td-sv-cap{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:2;padding:9px 16px;border-radius:999px;font:500 13px var(--pc-font);white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis}
+/* The TrueShot picker: a dark sheet, iOS inset-grouped rows. Scoped to
+   .pc-att-sheet because Tim's overlay reuses .pc-file-opt in the light theme. */
+.pc-att-ov{align-items:flex-end!important;justify-content:center;padding:0!important;background:rgba(0,0,0,.45)}
+.zmodal.pc-att-sheet{width:100%;max-width:560px;max-height:88vh;overflow-y:auto;margin:0;border-radius:34px 34px 0 0;background:var(--pc-g1);color:#fff;font-family:var(--pc-font);padding:8px 16px calc(24px + env(safe-area-inset-bottom,0px));border:none;box-shadow:0 -10px 30px rgba(0,0,0,.35);animation:pc-rise .26s cubic-bezier(.22,1,.36,1)}
+.pc-att-hd{display:flex;justify-content:space-between;align-items:center;margin:0 0 14px}
+.pc-att-t{font:700 20px var(--pc-font);letter-spacing:-.02em}
+.pc-att-x{width:32px;height:32px;border-radius:50%;border:none;background:var(--pc-g3);color:var(--pc-l2);display:flex;align-items:center;justify-content:center;padding:0}
+.pc-att-x .pc-ic{width:15px;height:15px;stroke-width:2.4}
+.pc-att-search{height:38px;border-radius:12px;background:var(--pc-g2);display:flex;align-items:center;gap:8px;padding:0 10px;margin-bottom:18px;color:var(--pc-l2)}
+.pc-att-search .pc-ic{width:17px;height:17px;stroke-width:2.2}
+.pc-att-sheet .pc-att-q{flex:1;min-width:0;border:none;background:none;margin:0;padding:0;font:400 16px var(--pc-font);color:#fff;outline:none}
+.pc-att-sheet .pc-att-q::placeholder{color:var(--pc-l2)}
+.pc-att-sheet .pc-att-lbl{font:500 13px var(--pc-font);color:var(--pc-l2);text-transform:uppercase;letter-spacing:.02em;padding:0 16px 7px;margin:0}
+.pc-att-group{background:var(--pc-g2);border-radius:14px;overflow:hidden;margin-bottom:20px;display:block;max-height:none;gap:0}
+.pc-att-sheet .pc-file-opt{display:flex;flex-direction:row;align-items:center;gap:12px;width:100%;min-height:60px;padding:0 14px;border:none;border-radius:0;background:none;color:#fff;font-family:var(--pc-font);text-align:left;position:relative}
+.pc-att-sheet .pc-file-opt+.pc-file-opt::before{content:'';position:absolute;top:0;left:62px;right:0;height:.5px;background:var(--pc-sep)}
+.pc-att-sheet .pc-file-opt:active{background:rgba(255,255,255,.06)}
+
+.pc-att-sheet .pc-av{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:600 14px var(--pc-font);color:#fff;background:linear-gradient(180deg,#a5a5ab,#7c7c82)}
+.pc-att-sheet .pc-av .pc-ic{width:20px;height:20px}
+.pc-att-sheet .pc-av.pin{background:rgba(48,209,88,.18);color:var(--pc-green)}
+.pc-att-sheet .pc-opt-m{flex:1;min-width:0;display:flex;flex-direction:column;color:#fff;overflow:visible;white-space:normal}
+.pc-att-sheet .pc-opt-m b{font:500 16px var(--pc-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-att-sheet .pc-opt-m span{font:400 13px var(--pc-font);color:var(--pc-l2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-att-sheet .pc-file-opt em{font:500 13px var(--pc-font);font-style:normal;color:var(--pc-l2);flex:none}
+.pc-chev{width:14px;height:14px;stroke-width:2.2;color:rgba(235,235,245,.3)}
+.pc-att-none{font:400 15px var(--pc-font);color:var(--pc-l2);padding:16px}
+.pc-att-sheet .pc-av.add{background:rgba(10,132,255,.18);color:var(--pc-blue)}
+.pc-att-sheet .pc-av.add .pc-ic{stroke-width:2.4}
+.pc-att-sheet .pc-att-new b{color:var(--pc-blue)}
+/* New customer: iOS form rows, label left, field right, in the same grouped
+   card as the lists above it. */
+.pc-att-form{overflow:visible}
+.pc-att-f{display:flex;align-items:center;gap:12px;min-height:50px;padding:0 16px;position:relative}
+.pc-att-f+.pc-att-f::before{content:'';position:absolute;top:0;left:16px;right:0;height:.5px;background:var(--pc-sep)}
+.pc-att-f>span{flex:none;width:76px;font:400 16px var(--pc-font);color:#fff}
+.pc-att-sheet .pc-att-f input,.pc-att-sheet .pc-att-f input:focus{flex:1;min-width:0;border:none;background:none;margin:0;padding:14px 0;font:400 16px var(--pc-font);color:#fff;outline:none;box-shadow:none;border-radius:0;-webkit-appearance:none}
+.pc-att-sheet .pc-att-f input::placeholder{color:var(--pc-l2)}
+.pc-att-err{font:400 13px var(--pc-font);color:var(--pc-red);padding:0 16px;margin:-12px 0 14px}
+.pc-att-go{display:block;width:100%;height:50px;border:none;border-radius:14px;background:var(--pc-blue);color:#fff;font:600 17px var(--pc-font)}
+.pc-att-back{display:block;width:100%;border:none;background:none;color:var(--pc-blue);font:400 16px var(--pc-font);padding:14px 0 4px}
 /* And so does the picker the card HANDS OFF to. pickClientAddress is the
    app's shared component (7.3) and it is a plain .zmodal-overlay at 9999, so
    asking which of a customer's properties opened it BEHIND the album: the
@@ -2463,13 +2743,23 @@ body.dark .cal-cell.other{background:var(--cream)}
    instead (owner, filing photos to a client with three addresses,
    2026-09-22). Raising the card alone was half a fix. */
 #_addrpick-ov{z-index:10060}
+/* Opened from TrueShot: the same picker as a dark bottom sheet, by swapping
+   the variables its inline styles read rather than restyling it by hand. */
+#_addrpick-ov.td-dark-sheet{align-items:flex-end;padding:0;background:rgba(0,0,0,.45)}
+#_addrpick-ov.td-dark-sheet .zmodal{--bg:#1C1C1E;--bg2:#2C2C2E;--bg-card:#2C2C2E;--text:#fff;--text2:rgba(235,235,245,.8);--text3:rgba(235,235,245,.6);
+  --border:rgba(84,84,88,.55);--border2:rgba(84,84,88,.8);--blue:#0A84FF;
+  max-width:560px!important;width:100%;margin:0;border-radius:34px 34px 0 0;background:#1C1C1E;color:#fff;border:none;
+  padding:14px 10px calc(22px + env(safe-area-inset-bottom,0px))!important;font-family:var(--pc-font);animation:pc-rise .26s cubic-bezier(.22,1,.36,1)}
+#_addrpick-ov.td-dark-sheet .btn{background:#2C2C2E;color:#fff;border-color:rgba(84,84,88,.8)}
+#_addrpick-ov.td-dark-sheet .btn-g{background:var(--pc-blue);border-color:var(--pc-blue);color:#fff}
+#_addrpick-ov.td-dark-sheet input{color:#fff}
+.pc-att-hint{font:400 13px var(--pc-font);color:var(--pc-l2);padding:0 16px;margin:-10px 0 16px}
+.pc-att-sheet .pc-att-owner .pc-av{background:rgba(48,209,88,.18);color:var(--pc-green)}
 .pc-att-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:6px}
 .pc-att-near{margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
 /* What the coordinates already prove, so it reads as an answer rather than
    one more row in a list of customers. */
-.pc-file-opt.near{border-color:var(--c-amber);background:var(--c-amber-soft)}
 /* The proof line is the point of this row, so it wraps rather than ending in an ellipsis. */
-.pc-file-opt.near span{white-space:normal;overflow:visible;text-overflow:clip}
 .pc-att-q{width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:var(--r-md);font-family:inherit;font-size:14px;background:var(--bg-2);color:var(--text)}
 .pc-file-opt span{font-size:12px;font-weight:500;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Mark-up editor. Same dark full-screen surface as the capture sheet: it is
@@ -2485,16 +2775,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-tool.on{background:#fff;color:#0E1116}
 /* A shot in the strip is tappable: that is where marking up starts, while the
    photo is still the thing in front of you. */
-.pc-thumb{cursor:pointer}
-.pc-thumb.marked:after{content:'✏';position:absolute;right:2px;bottom:1px;font-size:11px}
-.pc-thumb{position:relative}
 /* Bottom-left, not under the attach bar: at top:56px it collided with the
    subject pill on a 390px screen (caught in a screenshot). Down here it sits
    beside the hint and over the part of the frame nobody composes into. */
-.pc-stamp-toggle{display:inline-flex;align-items:center;gap:6px;background:rgba(10,13,17,.66);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:none;border-radius:var(--r-pill);color:#fff;font-size:11px;font-weight:800;padding:6px 11px;font-family:var(--font-ui);position:absolute;bottom:56px;left:12px;z-index:3}
-.pc-stamp-toggle.off{color:rgba(255,255,255,.55)}
-.pc-stamp-toggle .dot{width:7px;height:7px;border-radius:50%;background:#4ade80}
-.pc-stamp-toggle.off .dot{background:rgba(255,255,255,.35)}
 /* The photo chip that rides every estimate header */
 .pc-chip{display:inline-flex;align-items:center;gap:6px;background:var(--denim-soft);color:var(--denim-deep);border:1px solid var(--denim-edge);border-radius:var(--r-pill);padding:6px 12px 6px 9px;font-size:13px;font-weight:800;font-family:var(--font-ui);cursor:pointer;margin-left:auto;flex-shrink:0;touch-action:manipulation}
 .pc-chip .pc-chip-n{background:var(--denim);color:#fff;border-radius:var(--r-pill);min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;padding:0 5px}
@@ -3036,7 +3319,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="ios-group">
             <div id="tm-blk-rate" style="display:none">
               <label class="ios-row"><span class="ios-lbl" id="tm-lbl-rate">Hourly rate</span>
-                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmTouchedRate();_tmInputChange()"></span></label>
               <div class="ios-row"><span class="ios-lbl">People on site<small id="tm-i-crew-label">solo</small></span>
                 <span class="ios-step"><button onclick="_tmCrewStep(-1)" type="button" aria-label="One fewer">−</button><span id="tm-i-crew-count">1</span><button onclick="_tmCrewStep(1)" type="button" aria-label="One more">+</button></span></div>
               <label class="ios-row" id="tm-days-f"><span class="ios-lbl" id="tm-lbl-days">Days, estimated</span>
@@ -3654,6 +3937,15 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 </div>
+<div class="pg" id="pg-photos">
+  <div class="tbar">
+    <div><div class="tbar-title">Photos</div><div class="tbar-sub" id="ph-sub"></div></div>
+  </div>
+  <div class="ph-search"><input id="ph-q" type="search" placeholder="Search address, customer, month" autocomplete="off" oninput="tdPhotosSearch(this.value)"></div>
+  <div id="ph-picker"></div>
+  <div id="ph-list"></div>
+</div>
+
 <div class="pg" id="pg-timelog">
   <div class="tbar" style="flex-direction:column;align-items:stretch;gap:6px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -4101,12 +4393,12 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div class="set-form-lbl">Logo</div><div class="set-form-hint">Square PNG works best. Drop in here or paste from clipboard.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <div id="set-logo-preview-biz" style="width:56px;height:56px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden"></div>
+              <div id="set-logo-preview-biz" class="set-logo-tile" style="width:56px;height:56px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden"></div>
               <div>
                 <input type="file" id="set-logo-file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" onchange="handleLogoUpload(this)">
-                <div id="set-logo-filename" style="font-size:11px;color:var(--text3);margin-bottom:6px"></div>
-                <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()" id="set-logo-btn">Upload image</button>
-                <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
+                <div class="set-logo-filename" style="font-size:11px;color:var(--text3);margin-bottom:6px"></div>
+                <button class="btn btn-sm set-logo-btn" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
+                <button class="btn btn-sm set-logo-rm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
               </div>
             </div>
           </div>
@@ -4210,6 +4502,19 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-card-hd">
           <div style="font-size:28px;line-height:1"><span data-ico="🎨" data-ico-size="28"></span></div>
           <div><div style="font-size:15px;font-weight:800">Branding</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Applied to client hub, intake, proposals, and signature pages</div></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Logo</div><div class="set-form-hint">Shown on proposals, invoices, and your client hub. Tap it to change.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div id="set-logo-preview-brand" class="set-logo-tile" onclick="document.getElementById('set-logo-file').click()" style="width:56px;height:56px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;cursor:pointer"></div>
+              <div>
+                <div class="set-logo-filename" style="font-size:11px;color:var(--text3);margin-bottom:6px"></div>
+                <button class="btn btn-sm set-logo-btn" id="set-logo-btn-brand" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
+                <button class="btn btn-sm set-logo-rm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">Brand color</div><div class="set-form-hint">Used for primary buttons, links, and accents in client-facing surfaces.</div></div>
@@ -5026,6 +5331,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Books</span>
   </button>
 
+  <button class="nb" id="nb-photos" onclick="goPg('pg-photos')">
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+    <span>Photos</span>
+  </button>
+
   <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
     <span>Taxes</span>
@@ -5197,6 +5507,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="mmi" id="mmi-contracts" onclick="mobileNavTo('pg-contracts')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
+    <button class="mmi" id="mmi-photos" onclick="mobileNavTo('pg-photos')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Photos
+    </button>
     <button class="mmi" id="mmi-timelog" onclick="mobileNavTo('pg-timelog')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Timesheet
     </button>
@@ -5238,6 +5551,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
 <script src="js/photo-capture.js"></script>
+<script src="js/photo-gallery.js"></script>
 <script src="js/mileage.js"></script>
 <!-- The day deriver: pure, loads before the engine that calls it. -->
 <script src="js/geo-derive.js"></script>
@@ -5268,6 +5582,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/timesheet.js"></script>
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
+<script src="js/trade-knowledge.js"></script>
 <script src="js/estimate-speak.js"></script>
 <!-- What Tim knows, and when he is allowed to say it. Both load before tim.js,
      which is the only one of the three that touches the screen. -->
@@ -5303,6 +5618,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/lifecycle.js"></script>
 <script src="js/payroll-summary.js"></script>
 <script src="js/generic-estimate.js"></script>
+<script src="js/supply-list.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/agreements.js"></script>
 <script src="js/settings.js"></script>

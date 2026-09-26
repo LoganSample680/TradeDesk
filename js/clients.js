@@ -497,8 +497,18 @@ function _newcGateCreate(){
   const err=document.getElementById('_newc-gate-err');
   if(!name){if(err){err.textContent='A name, so the paperwork has somewhere to live.';err.style.display='block';}document.getElementById('_newc-gate-name')?.focus();return;}
   if(!addr){if(err){err.textContent='An address, so we know what property this is.';err.style.display='block';}document.getElementById('_newc-gate-addr')?.focus();return;}
-  const p=_parseAddrParts(addr);
-  const c=_clientCommitNew({id:Date.now(),name,phone:'',email:'',
+  const c=_clientQuickCreate(name,addr);
+  document.getElementById('_newc-gate-overlay')?.remove();
+  currentClientId=c.id;
+  _rrpGateThenEstimate(c);
+}
+// A customer from a name and (maybe) an address, with nothing else asked.
+// Shared by the proposal gate above and TrueShot's picker, so a customer made
+// in a driveway is the same record however it was started (7.3).
+function _clientQuickCreate(name,addr){
+  addr=String(addr||'').trim();
+  const p=addr?_parseAddrParts(addr):{street:'',city:'',state:'',zip:''};
+  const c=_clientCommitNew({id:Date.now(),name:String(name||'').trim(),phone:'',email:'',
     addr,street:p.street||'',city:p.city||'',state:p.state||'',zip:p.zip||'',
     ptype:'Single family home',partyType:'',source:'',ref:'',notes:'',
     created:todayKey(),createdAt:new Date().toISOString(),
@@ -510,13 +520,11 @@ function _newcGateCreate(){
   saveAll();
   // The blanks fill themselves in from here: year built (which decides the
   // pre-1978 lead-paint gate), property data, and the geofence warm-up all
-  // key off the address he just typed.
+  // key off the address.
   if(p.street&&p.city&&typeof _lookupPropertyData==='function')
     _lookupPropertyData(c.id,{street:p.street,city:p.city,state:p.state||'',zip:p.zip||''});
-  if(typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
-  document.getElementById('_newc-gate-overlay')?.remove();
-  currentClientId=c.id;
-  _rrpGateThenEstimate(c);
+  if(addr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
+  return c;
 }
 function _gateAddressThenEstimate(c,pickedAddr){
   if(!c)return;
@@ -994,6 +1002,18 @@ function getClientStage(cid){
     if(paid.length)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8};
   }
 
+  // WORK DONE, NO PAPERWORK (owner 2026-09-25: "after should bring them over
+  // as clients, even without jobs"). An After photo is proof the work
+  // happened. Jack shot After photos at four houses with no job, no signed
+  // proposal and no payment behind any of them, so all four sat in Leads,
+  // one of them as "Abandoned" over a draft proposal. Worked out here, when
+  // the list is drawn, rather than written onto the record, so every
+  // customer already photographed moves over the moment this ships and a
+  // deleted photo moves them back. A signed, scheduled, due or paid job still
+  // wins above, because those say more.
+  if(typeof tdClientHasAfterPhoto==='function'&&tdClientHasAfterPhoto(cid))
+    return{stage:'work_done',label:'Work done: no invoice yet',color:'var(--green)',priority:3};
+
   const pendingBids=cbids.filter(b=>b.status==='Pending');
   if(pendingBids.length){
     const sentBids=pendingBids.filter(b=>b.signingToken);
@@ -1029,11 +1049,12 @@ function renderClientList(){
   if(!el)return;
 
   // Clients page only shows contacts who have signed an estimate (or beyond)
-  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
+  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid','work_done'];
   const STAGE_BUCKETS={
     won:    c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
     active: c=>getClientStage(c.id).stage==='active',
-    collect:c=>getClientStage(c.id).stage==='balance_due',
+    // Work done with nothing invoiced is money still to collect.
+    collect:c=>['balance_due','work_done'].includes(getClientStage(c.id).stage),
     closed: c=>getClientStage(c.id).stage==='paid',
   };
 
@@ -1100,6 +1121,7 @@ function renderClientList(){
       balance_due: {cls:'sf-overdue',  label:'BALANCE DUE'},
       paid:        {cls:'sf-won',      label:'PAID'},
       signed:      {cls:'sf-deposit',  label:'SIGNED'},
+      work_done:   {cls:'sf-overdue',  label:'WORK DONE'},
       est_ready:   {cls:'sf-deposit',  label:'EST READY'},
     };
     const bdg=bdgMap[s.stage]||{cls:'sf-done',label:s.label.toUpperCase()};
@@ -3203,6 +3225,105 @@ function _cdQuoteAgain(bidId){
 // One property card = one address: county assessor facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
+// ── The county facts, laid out like an iOS Settings page ──────────────────
+//
+// Owner, 2026-09-23: "we may need a iOS style revamp on the property cards,
+// the county stuff seems slapped in and what about soil type and all that good
+// stuff and the year built?"
+//
+// It WAS slapped in: one run-on grey line ("Grocery store · 18,380 sqft · 2.76
+// ac lot · Owner: ALDI INC") that grew a clause every time a field was added,
+// with year built parked in the meta line under the street where nobody reads.
+//
+// Three layers, in the order a contractor needs them:
+//   1. Three stat tiles: the numbers you quote off (year built leads).
+//   2. Warnings, only when they apply: lead paint, flood hazard, tax sale.
+//      Each is a fact plus what rule it triggers, never advice.
+//   3. Grouped rows, label left and value right, the way iOS lists a device's
+//      details: The building, The lot & ground, Owner & value.
+//
+// Every row is omitted when the county gave nothing, so a sparse record reads
+// short rather than full of dashes, and a section with no rows is not drawn.
+function _cdCountyFactsHtml(p,money){
+  if(!p)return '';
+  const e=v=>escHtml(String(v).trim());
+  const num=v=>Number(v).toLocaleString();
+  const usd=v=>(typeof _cdCompactMoney==='function')?_cdCompactMoney(v):('$'+num(v));
+  const isCom=/commercial|industrial/i.test(String(p.propDataClass||''));
+
+  // ── 1. Stat tiles ──────────────────────────────────────────────────────
+  const tiles=[];
+  if(p.yearBuilt){
+    const to=(p.propDataYearTo&&p.propDataYearTo!==p.yearBuilt)?`<div class="cdf-sub">added to ${e(p.propDataYearTo)}</div>`:'';
+    tiles.push(`<div class="cdf-tile${p.yearBuilt<1978?' cdf-tile-warn':''}"><div class="cdf-big">${e(p.yearBuilt)}</div><div class="cdf-cap">Built</div>${to}</div>`);
+  }
+  if(p.sqft)tiles.push(`<div class="cdf-tile"><div class="cdf-big">${num(p.sqft)}</div><div class="cdf-cap">Sq ft</div></div>`);
+  if(!isCom&&(p.bedrooms||p.bathrooms)){
+    tiles.push(`<div class="cdf-tile"><div class="cdf-big">${e(p.bedrooms||'?')}<span class="cdf-slash">/</span>${e(p.bathrooms||'?')}</div><div class="cdf-cap">Bed / Bath</div></div>`);
+  }else if(p.lotSize){
+    tiles.push(`<div class="cdf-tile"><div class="cdf-big">${Number(p.lotSize).toFixed(2).replace(/\.?0+$/,'')}</div><div class="cdf-cap">Acres</div></div>`);
+  }
+  const tileRow=tiles.length?`<div class="cdf-tiles">${tiles.join('')}</div>`:'';
+
+  // ── 2. Warnings: fact first, then the rule it triggers ──────────────────
+  const warn=(tone,icon,title,body)=>`<div class="cdf-warn cdf-warn-${tone}"><span class="cdf-warn-ic">${svgIcon(icon,{size:16})}</span><div><div class="cdf-warn-t">${title}</div><div class="cdf-warn-b">${body}</div></div></div>`;
+  const warns=[];
+  if(p.yearBuilt&&p.yearBuilt<1978)warns.push(warn('red','⚠️','Built before 1978','Federal lead-safe rules (EPA RRP) apply before disturbing painted surfaces.'));
+  if(p.propDataFloodSfha===true)warns.push(warn('blue','🌊',`In a FEMA flood hazard area${p.propDataFloodZone&&p.propDataFloodZone!=='none'?' (zone '+e(p.propDataFloodZone)+')':''}`,'Work over half the building&rsquo;s value can bring the whole structure under floodplain rules.'));
+  if(p.propDataTaxSaleYear)warns.push(warn('amber','📋',`On the county tax-sale list (${e(p.propDataTaxSaleYear)})`,p.propDataTaxSaleCase?`Case ${e(p.propDataTaxSaleCase)}. Public record.`:'Public record.'));
+  const warnBlock=warns.join('');
+
+  // ── 3. Grouped rows ─────────────────────────────────────────────────────
+  // A short value sits on the right like an iOS settings row; a long one (a
+  // soil series, an LLC name) stacks under its label instead of wrapping into
+  // a ragged right-aligned column.
+  const row=(k,v)=>(v==null||v==='')?'':`<div class="cdf-row${String(v).replace(/&[a-z]+;/g,' ').length>26?' cdf-row-stack':''}"><span class="cdf-k">${k}</span><span class="cdf-v">${v}</span></div>`;
+  const group=(title,rows)=>{const r=rows.filter(Boolean).join('');return r?`<div class="cdf-hd">${title}</div><div class="cdf-grp">${r}</div>`:'';};
+
+  // Flood, stated plainly in every state it can be in, including "no".
+  let flood=null;
+  if(p.propDataFloodZone==='none')flood='Not in a mapped flood zone';
+  else if(p.propDataFloodSfha===true)flood=`Zone ${e(p.propDataFloodZone)} &middot; hazard area`;
+  else if(/0\.2/.test(String(p.propDataFloodZone||'')))flood='0.2% annual-chance zone';
+  else if(p.propDataFloodZone)flood=e(p.propDataFloodZone);
+
+  // "2022R20196" is the recorded deed: the leading year is when it last
+  // changed hands. Older book-page references ("4988-26-") carry no year and
+  // produce no row rather than a guess.
+  let bought=(String(p.propDataDeed||'').match(/^(\d{4})R/)||[])[1]||null;
+  // Legacy Zillow rows carry a real sale date and price instead of a deed.
+  if(!bought&&p.lastSaleDate)bought=new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'})+(money&&p.lastSalePrice?' &middot; '+usd(p.lastSalePrice):'');
+
+  const lot=p.lotSize?`${Number(p.lotSize).toFixed(2).replace(/\.?0+$/,'')} ac${p.propDataLotSqft?' &middot; '+num(Math.round(p.propDataLotSqft))+' sq ft':''}`:null;
+  const dims=(p.propDataFrontage&&p.propDataDepth)?`${e(p.propDataFrontage)} ft &times; ${e(p.propDataDepth)} ft`:(p.propDataFrontage?`${e(p.propDataFrontage)} ft frontage`:null);
+
+  // Built, size and bed/bath already lead as tiles, so they are not repeated
+  // here. The list carries only what the tiles do not.
+  const building=group('The building',[
+    row('Use',p.propDataUse?e(p.propDataUse):null),
+    row('Units',p.propDataUnits>1?e(p.propDataUnits):null),
+    row('Buildings',p.propDataBuildings>1?e(p.propDataBuildings):null),
+    row('Basement',p.propDataBasement?e(p.propDataBasement):null),
+  ]);
+  const ground=group('The lot &amp; ground',[
+    row('Lot',lot),
+    row('Frontage',dims),
+    row('Soil',p.propDataSoil?e(p.propDataSoil):null),
+    row('Flood',flood),
+  ]);
+  const owner=group('Owner &amp; value',[
+    row('Owner',p.ownerName?e(p.ownerName):null),
+    money?row(p.propDataSource==='county'?'Assessed':'Est. value',p.estimatedValue?usd(p.estimatedValue):null):'',
+    money?row('Building',p.propDataBldgValue?usd(p.propDataBldgValue):null):'',
+    money?row('Land',p.propDataLandValue?usd(p.propDataLandValue):null):'',
+    row('Last sold',bought),
+    row('Subdivision',p.propDataSubdivision?e(p.propDataSubdivision):null),
+    row('Parcel',p.propDataParcel?e(p.propDataParcel):null),
+  ]);
+
+  return `<div class="cdf">${tileRow}${warnBlock}${building}${ground}${owner}</div>`;
+}
+
 // Which of a customer's photos belong to THIS property. One definition, so
 // the card and its test cannot drift (§18): a test that re-implements the
 // rule proves only that it can copy the rule.
@@ -3229,11 +3350,12 @@ function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
   const hist=getPropertyHistory(c,a.addr);
-  // Research-backed: 1 property renders fully expanded (an accordion for one item
-  // is pure friction); 2+ collapse to accordion rows you tap to open.
+  // Research-backed: 1 property STARTS fully expanded (making someone open the
+  // only item is pure friction); 2+ start collapsed. Either way the header
+  // folds it (owner 2026-09-23: "there's no way to minimize the accordion").
   const single=(total===1);
   const openKey='_cdpropOpen_'+c.id+'_'+idx;
-  const isOpen=single||!!window[openKey];
+  const isOpen=single?window[openKey]!==false:!!window[openKey];
   const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
   const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
   const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
@@ -3272,31 +3394,9 @@ function _cdPropCardHtml(c,a,idx,total){
   // scraper failure, not an answer, so the address is still worth asking about.
   const noData=!_propAnswered(p)&&!p.yearBuilt&&!p.estimatedValue;
   const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap to look up property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
-  // All the property facts inline on the card, so the owner sees them without
-  // having to expand every address (owner ask: "see all property data").
-  // Open balance is computed up here because it decides whether the header stat
-  // slot is spoken for, which in turn decides whether est. value has to ride in
-  // the facts line instead.
+  // Open balance decides whether the header stat slot shows money owed or the
+  // property value; the value itself always sits in the facts block below.
   const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
-  const _facts=[];
-  // The county's classification leads, because on a commercial parcel it is the
-  // only thing that says what the building IS, and on a house it confirms it.
-  if(p.propDataUse)_facts.push(escHtml(String(p.propDataUse)));
-  if(p.sqft)_facts.push(`${Number(p.sqft).toLocaleString()} sqft`);
-  if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
-  // "0.27" on its own is not a lot size, it is a number. Acres is the unit the
-  // county publishes and the unit a contractor thinks in.
-  if(p.lotSize)_facts.push(`${Number(p.lotSize).toFixed(2).replace(/\.?0+$/,'')} ac lot`);
-  // Who the county says owns it. On a commercial bid this is the single most
-  // useful field on the card (ALDI INC, ADVISORS EXCEL LLC) and it was being
-  // fetched, stored, and then never shown to anybody.
-  if(p.ownerName)_facts.push(`Owner: ${escHtml(String(p.ownerName))}`);
-  if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
-  // Est. value normally sits in the header stat, but money owed at this address
-  // takes that slot. Without this, the value silently vanishes from the card the
-  // moment a proposal is outstanding, which is exactly when it's worth knowing.
-  if(value&&openBal>0.01)_facts.push(`${value} ${valueLabel.toLowerCase()}`);
-  const factsLine=_facts.length?`<div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.5">${_facts.join('  ·  ')}</div>`:'';
   // Collapsed row identifier: single shows the full meta, multi shows just the city.
   const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
   // One decision-relevant stat on the row: open balance if owed here, else est. value.
@@ -3306,16 +3406,15 @@ function _cdPropCardHtml(c,a,idx,total){
   // Down-caret chevron matching the Overview section dropdown, so the property
   // rows read as the same control (owner: "accordion should look like the
   // overview accordion"). Rotates to point up when the row is expanded.
-  const chevron=single?'':`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
-  const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
-  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
+  const chevron=`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+  const _hdrClick=`onclick="window['${openKey}']=${isOpen?'false':'true'};renderCDAddresses()"`;
+  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;cursor:pointer">
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
       <div style="font-size:16px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
       <div style="font-size:13px;color:var(--text2);margin-top:3px">${metaShown}</div>
-      ${single?factsLine:''}
-      ${chipRow}
+      ${isOpen?'':chipRow}
     </div>
     ${statBlock}
     ${chevron}
@@ -3324,7 +3423,6 @@ function _cdPropCardHtml(c,a,idx,total){
   // ── Expanded body ────────────────────────────────────────────────────────
   let body='';
   if(isOpen){
-    const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:13px;line-height:1.45"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
     // Site-access note lives here, PER PROPERTY (owner: "site access notes really
     // need to roll under a property"). Editable inline; crew sees it on this
     // address's job. Keyed by this property's address via _cdSavePropNote(idx).
@@ -3457,7 +3555,7 @@ function _cdPropCardHtml(c,a,idx,total){
         <div style="font-size:13px;font-weight:700;color:var(--text)">${_propPhotos.length?_propPhotos.length+(_propPhotos.length===1?' photo':' photos'):'None yet'}</div>
       </div>
       ${_propPhotos.length?`<button onclick="event.stopPropagation();tdOpenPropertyFolder(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--text)">Open</button>`:''}
-      <button onclick="event.stopPropagation();tdCaptureForClient(${c.id})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
+      <button onclick="event.stopPropagation();tdAddPhotos(${c.id},${escHtml(JSON.stringify(a.addr||''))})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--blue)">Add photos</button>
     </div>`;
     // Footer: data source / lookup + map + remove.
     //
@@ -3499,9 +3597,13 @@ function _cdPropCardHtml(c,a,idx,total){
       ${editBtn}
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${_cdCountyFactsHtml(p,money)}${noteRow}${workBlock}${pastBlock}${_photoBlock}${footer}</div>`;
   }
-  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
+  // The house from the street across the top of an OPEN card (owner
+  // 2026-09-23), from Apple Look Around. A collapsed card stays one calm row,
+  // and a house Apple has never driven past gets nothing rather than a gap.
+  const svSlot=(isOpen&&typeof tdStreetSlotHTML==='function')?tdStreetSlotHTML(c,a.addr,'sv-card'):'';
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${svSlot}${header}${body}</div>`;
 }
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
@@ -3642,14 +3744,26 @@ function saveAddClientAddress(editIdx){
     // THE PROPERTY RECORD MOVES WITH IT. Year built, value, owner and the
     // pre-1978 lead trigger are keyed BY address (client.properties, data.js),
     // so a corrected typo would otherwise orphan every fact anybody looked up.
+    //
+    // But only what the CONTRACTOR said about it. The county's facts describe
+    // the old parcel, and carrying them over stamps the new address as already
+    // answered, so it is never asked. That is exactly how Jack's 6912 to 6908
+    // correction kept 6912's house on the card (owner 2026-09-22). County
+    // fields are dropped and the new address is asked for its own.
     if(was&&was!==addr&&typeof getProperty==='function'&&typeof setPropertyData==='function'){
-      const old=getProperty(c,was)||{};
+      const old={...(getProperty(c,was)||{})};
+      const wasCounty=old.propDataSource==='county';
+      if(wasCounty){
+        for(const k of Object.keys(old))if(/^propData/.test(k))delete old[k];
+        for(const k of ['yearBuilt','sqft','bedrooms','bathrooms','lotSize','estimatedValue','ownerName','assessorUrl','lastSalePrice','lastSaleDate'])delete old[k];
+      }
       if(Object.keys(old).length)setPropertyData(c,addr,old);
+      if(typeof _lookupPropertyData==='function'){
+        const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(addr):null;
+        if(pp&&pp.street)_lookupPropertyData(c.id,pp);
+      }
     }
   }else{
-    // One door (addClientAddress above): pushes AND asks the county, so an
-    // extra address is not blank forever. The EDIT branch above is left
-    // exactly as written by the session that built it.
     addClientAddress(c,label,addr);
   }
   if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
@@ -3696,13 +3810,20 @@ function removeClientAddress(idx){
 // inline and auto-picks it. Callers only open it when clientAddresses(c).length
 // > 1; a single-address client skips it entirely (zero extra taps). Speed is the
 // goal: search/choose the client, then one tap on the right property.
-let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null;
-function pickClientAddress(clientId,onPick){
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null,_addrPickSuggest='',_addrPickKind='';
+// opts.suggest: an address the caller already believes is right (TrueShot
+// knows where the photos were taken). It names the add row and fills the
+// new-address field, so adding the house he is standing at is two taps.
+function pickClientAddress(clientId,onPick,opts){
   const c=getClientById(clientId);if(!c)return;
+  _addrPickSuggest=String((opts&&opts.suggest)||'').trim();
   _addrPickList=(typeof clientAddresses==='function')?clientAddresses(c):[{label:'Primary',addr:c.addr}];
   _addrPickCb=onPick;_addrPickClientId=clientId;
   document.getElementById('_addrpick-ov')?.remove();
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addrpick-ov';
+  // opts.dark: TrueShot's dark bottom sheet. Same component, same rows; the
+  // stylesheet swaps the colour variables its inline styles already read.
+  if(opts&&opts.dark)ov.classList.add('td-dark-sheet');
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const pin='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--blue)" stroke-width="2.2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
   const rows=_addrPickList.map((a,i)=>{
@@ -3717,7 +3838,7 @@ function pickClientAddress(clientId,onPick){
   sheet.innerHTML=
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
     rows+
-    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New address for this client</div>';
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>'+(_addrPickSuggest?'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Add '+escHtml(_addrPickSuggest.split(',')[0])+'</span>':'New address for this client')+'</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
 function _addrPickFire(addr){
@@ -3726,19 +3847,49 @@ function _addrPickFire(addr){
   if(cb)cb(addr);
 }
 function _addrPickChoose(i){const a=_addrPickList[i];if(a)_addrPickFire(a.addr);}
+// What the new property IS, in one tap (owner 2026-09-23: "I go in and
+// select is it a rental, secondary home etc."). The chip becomes the label
+// the card and the mileage log already show, and the two that change how the
+// app treats a house (rental, commercial) also set the property type, the
+// same field "Add property address" writes (saveAddClientAddress).
+const _ADDR_KINDS=[
+  {k:'Rental',ptype:'Rental property'},
+  {k:'Second home'},
+  {k:'Vacation home'},
+  {k:'Commercial',ptype:'Commercial'},
+  {k:'Family'},
+  {k:'Other'},
+];
+function _addrPickSetKind(k){
+  _addrPickKind=(_addrPickKind===k)?'':k;
+  document.querySelectorAll('#_addrpick-kinds button').forEach(b=>{
+    const on=b.dataset.k===_addrPickKind;
+    b.setAttribute('aria-pressed',on?'true':'false');
+    b.style.background=on?'var(--blue)':'var(--bg2)';
+    b.style.color=on?'#fff':'var(--text)';
+    b.style.borderColor=on?'var(--blue)':'var(--border2)';
+  });
+}
 function _addrPickAddNew(){
   const sheet=document.getElementById('_addrpick-sheet');if(!sheet)return;
   const cid=_addrPickClientId;
+  _addrPickKind='';
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;padding:10px 12px 8px">New address</div>'+
     '<div style="padding:0 12px 12px">'+
       '<input id="_addrpick-new" placeholder="123 Main St, City ST" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:14px 0 8px">What is it?</div>'+
+      '<div id="_addrpick-kinds" style="display:flex;flex-wrap:wrap;gap:6px">'+
+        _ADDR_KINDS.map(o=>'<button type="button" data-k="'+escHtml(o.k)+'" aria-pressed="false" onclick="_addrPickSetKind(this.dataset.k)" '+
+          'style="padding:8px 13px;border-radius:999px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">'+escHtml(o.k)+'</button>').join('')+
+      '</div>'+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button onclick="_addrPickSaveNew()" class="btn btn-g" style="flex:2">Add &amp; use</button>'+
         '<button onclick="pickClientAddress('+cid+',_addrPickCb)" class="btn" style="flex:1">Back</button>'+
       '</div>'+
     '</div>';
   const inp=document.getElementById('_addrpick-new');
+  if(inp&&_addrPickSuggest)inp.value=_addrPickSuggest;
   if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
   setTimeout(()=>inp&&inp.focus(),60);
 }
@@ -3746,7 +3897,11 @@ function _addrPickSaveNew(){
   const val=(document.getElementById('_addrpick-new')?.value||'').trim();
   if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
   const c=getClientById(_addrPickClientId);if(!c)return;
-  addClientAddress(c,'Additional property',val);
+  const kind=_ADDR_KINDS.find(o=>o.k===_addrPickKind);
+  addClientAddress(c,(kind&&kind.k!=='Other')?kind.k:'Additional property',val);
+  if(kind&&kind.ptype&&typeof setPropertyData==='function')
+    setPropertyData(c,val,{propertyType:kind.ptype,isRental:/rental/i.test(kind.ptype)||undefined});
+  _addrPickKind='';
   if(typeof saveAll==='function')saveAll();
   _addrPickFire(val);
 }
@@ -3797,6 +3952,14 @@ function _propAddrString(c,addrParts){
 // fix. Gating on propDataSource==='county' re-asks every Zillow-era record once,
 // for free, because the county lookup is a SQL join and not a network call.
 function _propAnswered(p){return p&&p.propDataSource==='county';}
+// What shape of county record the card expects. A record applied under an
+// older shape is re-read from td_county_parcels ONCE, which is a join against
+// our own table and never a request to the county. Raise this when
+// _propApplyMatch starts carrying a field it did not before, and every address
+// already on file picks the field up on its next sign-in (owner 2026-09-23:
+// "how can we get them all to re run a check?"). 2 = soil, flood, tax sale,
+// lot, deed and the value split.
+const _PROP_DATA_V=2;
 
 function _propApplyMatch(c,keyAddr,d){
   if(!c||!keyAddr)return false;
@@ -3860,7 +4023,32 @@ function _propApplyMatch(c,keyAddr,d){
               :null;
     if(_tag)pd.propertyType=_tag;
   }
+  // The rest of the county answer. These reached td_county_parcels and
+  // property_lookup returned them, and then this function dropped every one, so
+  // soil, flood and tax sale were in the database and never on a card (owner,
+  // 2026-09-23: "what about soil type and all that good stuff"). A new county
+  // column needs a line here AND in data.js _PROP_FIELDS, or it stops here.
+  const _cp=(k,v)=>{if(v!=null&&v!=='')pd[k]=v;};
+  _cp('propDataYearTo',d.year_built_to);
+  _cp('propDataUnits',d.living_units);
+  _cp('propDataBuildings',d.building_count);
+  _cp('propDataBasement',d.basement_desc?String(d.basement_desc).trim():null);
+  _cp('propDataFrontage',d.frontage_ft);
+  _cp('propDataDepth',d.depth_ft);
+  _cp('propDataLotSqft',d.land_sqft);
+  _cp('propDataSoil',d.soil_desc);
+  _cp('propDataFloodZone',d.flood_zone);
+  // false is an ANSWER (outside every mapped flood polygon) and must be kept.
+  if(d.flood_sfha===true||d.flood_sfha===false)pd.propDataFloodSfha=d.flood_sfha;
+  _cp('propDataTaxSaleYear',d.tax_sale_year);
+  _cp('propDataTaxSaleCase',d.tax_sale_case);
+  _cp('propDataSubdivision',d.subdivision);
+  _cp('propDataDeed',d.deed_book_page);
+  _cp('propDataLandValue',d.land_value);
+  _cp('propDataBldgValue',d.improvement_value);
+  _cp('propDataParcel',d.parcel_number);
   pd.propDataSource='county';
+  pd.propDataV=_PROP_DATA_V;
   pd.propDataCounty=[d.county_name,d.state].filter(Boolean).join(', ');
   pd.propDataExact=true;
   pd.propDataMiss=false;
@@ -3923,7 +4111,12 @@ async function _syncPropertyData(){
         // that on every failure, so an existing account's whole book reads as
         // "already looked up" while carrying no data at all. This asks the
         // county once about each of those, which is what backfills them.
-        if(_propAnswered(p))return;
+        // An answered address is skipped UNLESS its record predates the current
+        // shape (_PROP_DATA_V). Then it rides the same join to pick up the new
+        // fields, and a miss on that join changes nothing: it was answered.
+        // A recorded county miss has nothing to refresh.
+        const refresh=_propAnswered(p)&&!p.propDataMiss&&(Number(p.propDataV)||0)<_PROP_DATA_V;
+        if(_propAnswered(p)&&!refresh)return;
         // For the PRIMARY address prefer the composed string, because a client
         // with separate street/city/state/zip fields carries a zip there that
         // c.addr may not, and the zip is what stops two counties' identical
@@ -3931,7 +4124,7 @@ async function _syncPropertyData(){
         // ever stored as one string, so it is sent as it is.
         const isPrimary=a.addr===c.addr;
         const q=(isPrimary&&_propAddrString(c,null))||a.addr;
-        want.push({clientId:c.id,keyAddr:a.addr,q});
+        want.push({clientId:c.id,keyAddr:a.addr,q,refresh});
       });
     });
     if(!want.length)return;
@@ -3962,7 +4155,7 @@ async function _syncPropertyData(){
         // entitled to say {found:false}. So a miss is handed to the drip
         // below instead of being written down.
         if(hit){ if(_propApplyMatch(c,w.keyAddr,hit))touched=true; }
-        else unanswered.push(w);
+        else if(!w.refresh)unanswered.push(w);
       });
     }
     if(touched){
@@ -3998,7 +4191,19 @@ async function _syncPropertyData(){
       if(!c)continue;
       const pp=(typeof _parseAddrParts==='function')?_parseAddrParts(w.q):null;
       if(!pp||!pp.street)continue;
-      await _lookupPropertyData(c.id,pp);
+      // STOP ON THE FIRST ASK THAT COULD NOT HAPPEN. _countyProperty returns
+      // null for "no session", "county not loaded" and "the request failed",
+      // and all three are properties of the SESSION rather than of this one
+      // address: if the first could not ask, the next nine cannot either.
+      //
+      // Without this the loop sleeps four seconds ten times over, a forty
+      // second no-op, on every boot of a signed-out or offline session and in
+      // every offline test. Nothing waits on the drip, so that was invisible,
+      // which is exactly what makes it worth removing: a background loop
+      // holding timers for forty seconds is the kind of thing that turns up
+      // later as somebody else's flaky test.
+      const asked=await _lookupPropertyData(c.id,pp);
+      if(asked===false)break;
       // Paced. Nothing is waiting on this and the county should not see a
       // burst from one boot.
       await new Promise(r=>setTimeout(r,window._PROP_DRIP_GAP_MS||0));
@@ -4031,13 +4236,14 @@ async function _lookupPropertyData(clientId,addrParts){
     // the estimate builder's live address card. It returns null for every kind
     // of no-answer, which is deliberately NOT the same as a county miss.
     let d;try{d=await _countyProperty(addr,ctrl.signal);}finally{clearTimeout(t);}
+    // false means "could not ask", which the drip above reads as "stop".
     // A null here covers "not signed in", "county not loaded" and "the request
     // failed" as well as a genuine miss, and stamping on those would retire the
     // address permanently: nothing would ever ask again and the contractor gets
     // a blank card with no way to know why. Only an answer we can read is
     // applied; everything else leaves the address exactly as it was, to be
     // retried the next time it is saved or the button is tapped.
-    if(!d)return;
+    if(!d)return false;
     // {found:false} is the county answering that it has no such address, which
     // _propApplyMatch records as a miss so the card can say so and nothing asks
     // again. A null above is the opposite: we never got to ask.
@@ -4045,5 +4251,6 @@ async function _lookupPropertyData(clientId,addrParts){
       saveAll();
       if(currentClientId===clientId)renderClientDetail();
     }
-  }catch(e){console.warn('Property lookup failed:',e);}
+    return true;
+  }catch(e){console.warn('Property lookup failed:',e);return false;}
 }

@@ -413,7 +413,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();
@@ -700,7 +700,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     _geiScanId=seed.scanId||null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
       _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
-      if(typeof showToast==='function')showToast(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan','📐');
+      // A seed that is not a scan says what it is (Tim, a spoken estimate):
+      // "loaded from the scan" on a job nobody scanned reads as a bug.
+      if(typeof showToast==='function')showToast(seed.say||(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan'),seed.say?'✅':'📐');
     }else{
     // Billing: room total = measured wall footage x the contractor's per-sq-ft
     // rate (Settings). Rate unset = rooms load with the quantity measured and
@@ -728,6 +730,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
+  _geiChecking=false;
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
@@ -1809,7 +1812,7 @@ function _byoShowPage(){
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
-  _byoSayOpen=false;_byoMissed=[];
+  _byoSayOpen=false;_byoMissed=[];_geiChecking=false;
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
@@ -2077,35 +2080,7 @@ function _geiScopeBuild(containerId){
 // Tim guessed becomes a fact until the contractor accepts it.
 function _geiScopeMissedHtml(){
   if(!_geiScopeMissed.length)return '';
-  if(_geiIsTM){
-    // TIM'S OWN CARD (2026-09-23). The same white rows under a grey label made
-    // what Tim thinks was forgotten look like part of the job. Tinted, his mark
-    // on it, and a filled Add, so "in the job" and "Tim's idea" never blur.
-    const n=_timMissTakeable(_geiScopeMissed).length;
-    const ed=_tmScopeEditing;
-    return '<div class="ios-sec">'+
-      '<div class="ios-group ios-tim">'+
-        '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
-          '<span class="who">You did not say</span>'+
-          (n>1?'<button type="button" class="ios-pill" onclick="_geiScopeTakeAllMissed()">Add all '+n+'</button>':'')+
-        '</div>'+
-        _geiScopeMissed.map(im=>{
-          const id=escHtml(JSON.stringify(String(im.id||'')));
-          if(im.ask)return _timMissAskRow(im,'_geiScopeTakeMissed','_geiScopeDropMissed');
-          return '<div class="ios-swipe" data-kind="missed">'+
-            '<div class="ios-row">'+
-              (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="_geiScopeDropMissed('+id+')">−</button>':'')+
-              // The reason is a tap on the words away. Four paragraphs in a
-              // row was a manual; the step names alone read like a list.
-              '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-              '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
-            '</div>'+
-            '<button type="button" class="ios-del" tabindex="-1" onclick="_geiScopeDropMissed('+id+')">Not needed</button>'+
-          '</div>';
-        }).join('')+
-      '</div>'+
-    '</div>';
-  }
+  if(_geiIsTM)return _timMissCardHtml(_geiScopeMissed,'_geiScopeTakeMissed','_geiScopeDropMissed','_geiScopeTakeAllMissed',_tmScopeEditing);
   const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
     '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
@@ -2192,12 +2167,20 @@ function _geiScopePlace(text,stage,last){
 // A missed item with `ask` is a question (the unit's make and model): the
 // answer goes into his own install line, never a line of its own. One with
 // `optIn` (the permit) is his call, so Add all leaves it for him to tap.
+// The box on the screen he is on. T&M and Build Your Own both draw Tim's card,
+// so after a T&M a hidden copy of "Name the unit" stays on the T&M page with
+// the same id, and a plain getElementById read that empty one and said "Type
+// the make and model first" to a man who just had (2026-09-26).
+function _timMissAskEl(id){
+  const sel='[id="tim-ask-'+String(id).replace(/"/g,'')+'"]';
+  return document.querySelector((_geiIsTM?'#gei-tm-page ':'#gei-byo-page ')+sel)||document.querySelector(sel);
+}
 function _timMissAskVal(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   return el?String(el.value||'').trim():'';
 }
 function _timMissAskNeed(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   if(el){try{el.focus();}catch(_e){}}
   if(typeof showToast==='function')showToast('Type the make and model first');
 }
@@ -2216,6 +2199,36 @@ function _timMissLearn(im,yes){
 }
 // The question row: what Tim wants to know, why, and the field for the answer
 // with its own Add. Enter adds too, the way the keyboard's Done key should.
+// TIM'S CARD, ONE FOR BOTH SCREENS (2026-09-26). T&M and Build Your Own drew
+// the same card from two copies, and only T&M's got the No. Tinted, his mark
+// on it, a filled Add, and a visible No beside every Add: the bar walks him to
+// this card, so turning one down has to be one tap too, not a swipe.
+function _timMissCardHtml(list,take,drop,takeAll,ed){
+  const n=_timMissTakeable(list).length;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group ios-tim">'+
+      '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
+        '<span class="who">You did not say</span>'+
+        (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
+      '</div>'+
+      list.map(im=>{
+        const id=escHtml(JSON.stringify(String(im.id||'')));
+        if(im.ask)return _timMissAskRow(im,take,drop);
+        return '<div class="ios-swipe" data-kind="missed">'+
+          '<div class="ios-row">'+
+            (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="'+drop+'('+id+')">−</button>':'')+
+            // The reason is a tap on the words away. Four paragraphs in a
+            // row was a manual; the step names alone read like a list.
+            '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+            '<button type="button" class="ios-no" onclick="'+drop+'('+id+')">No</button>'+
+            '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="'+take+'('+id+')">Add</button>'+
+          '</div>'+
+          '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+        '</div>';
+      }).join('')+
+    '</div>'+
+  '</div>';
+}
 function _timMissAskRow(im,take,drop){
   const id=escHtml(JSON.stringify(String(im.id||'')));
   const fid='tim-ask-'+escHtml(String(im.id||''));
@@ -2227,6 +2240,7 @@ function _timMissAskRow(im,take,drop){
         'onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+take+'('+id+');}">'+
       '<button type="button" class="ios-pill" onclick="'+take+'('+id+')">Add</button>'+
     '</div>'+
+    '<div class="ios-row ios-ask-skip"><button type="button" class="ios-no" onclick="'+drop+'('+id+')">Skip this</button></div>'+
     '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
   '</div>';
 }
@@ -2639,8 +2653,8 @@ const _PKG_MIN_BIDS=3;      // below this there is no "usually", only a last tim
 const _PKG_SHARE=0.5;       // in at least half his bids to count as usual
 function _pkgBidLines(b){
   const out=[];
-  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
-  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
+  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&!it._supply&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
+  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&!l._supply&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
   return out;
 }
 // His own bids for this trade, newest first, drafts and empties excluded: a
@@ -2747,16 +2761,31 @@ let _attachSkipped=[];      // "not this time", for this estimate only
 function _attachCurrent(){
   const out=new Map();
   if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-    if(!it||it._rrp||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
+    if(!it||it._rrp||it._supply||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
   });
   if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-    if(!l||l._tmLabor||l._rrp||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
+    if(!l||l._tmLabor||l._rrp||l._supply||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
   });
   return out;
 }
 function _attachSuggestions(trade){
   const cur=_attachCurrent();
   if(!cur.size)return [];
+  const learned=_attachLearned(cur,trade);
+  // ── AND WHAT THE TRADE KNOWS GOES WITH IT (owner 2026-09-25) ───────────
+  // "filling in the gaps contractors miss." His own history comes first,
+  // because it is his; the trade library (js/trade-knowledge.js) fills in
+  // behind it, so a contractor with no bids yet still hears that a water
+  // heater wants an expansion tank. Same card, same Add, same "not this
+  // time", because it is the same question (7.3).
+  const lib=(typeof tkMissedFor==='function')
+    ?tkMissedFor(cur,trade||(typeof _pbTrade==='function'?_pbTrade():''),_attachSkipped)
+      .filter(x=>!learned.some(l=>l.key===x.key||_pbKey(l.line.label)===_pbKey(x.line.label)))
+    :[];
+  return learned.concat(lib).slice(0,_ATTACH_MAX);
+}
+const _ATTACH_MAX=6;
+function _attachLearned(cur,trade){
   const hist=_pkgHistory(trade).slice(0,_ATTACH_SCAN);
   if(hist.length<_ATTACH_MIN)return [];
   // One key->line map per past bid, built once. Everything below is set math
@@ -2856,10 +2885,12 @@ function _attachCardHTML(){
     '<div style="display:flex;align-items:center;gap:8px;padding:10px 0'+(i?';border-top:1px solid var(--border)':'')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);overflow-wrap:anywhere">'+escHtml(s.line.label)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">'+(s.lib
+          ?escHtml(s.why||('Often left off '+s.anchorLabel))
+          :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
-      '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
+      '<button class="att-skip" onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
     '</div>').join('');
   return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
     '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
@@ -2959,19 +2990,7 @@ function _byoDropMissed(id){
 }
 function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
-  const n=_timMissTakeable(_byoMissed).length;
-  return '<div class="ios-sec"><div class="ios-group ios-tim">'+
-    '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+'<span class="who">You did not say</span>'+
-      (n>1?'<button type="button" class="ios-pill" onclick="_byoTakeAllMissed()">Add all '+n+'</button>':'')+'</div>'+
-    _byoMissed.map(im=>{
-      const id=escHtml(JSON.stringify(String(im.id||'')));
-      if(im.ask)return _timMissAskRow(im,'_byoTakeMissed','_byoDropMissed');
-      return '<div class="ios-swipe" data-kind="missed"><div class="ios-row">'+
-        '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-        '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
-        '<button type="button" class="ios-del" tabindex="-1" onclick="_byoDropMissed('+id+')">Not needed</button></div>';
-    }).join('')+
-  '</div></div>';
+  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
 }
 function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
@@ -2984,10 +3003,12 @@ function _byoRenderSections(){
   const sections=[..._defSecs,...new Set(allExtra)];
   // Only the sections with something in them, plus any he made himself. With
   // one in use, no heading at all: a list does not need a title.
-  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec)||_byoCustomSections.includes(sec));
+  // The supply house line is drawn by its own card (js/supply-list.js), not
+  // as a row: the card is where its list, markup and quote live.
+  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec&&!it._supply)||_byoCustomSections.includes(sec));
   const titled=used.length>1||_byoCustomSections.length>0;
   const lines=!_byoItems.length?'':used.map(sec=>{
-    const rows=_byoItems.filter(it=>it.section===sec);
+    const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
@@ -3022,7 +3043,7 @@ function _byoRenderSections(){
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+(_byoItems.length?_attachCardHTML():'')+group+terms;
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3061,7 +3082,8 @@ function _byoRenderSteps(){
   };
   const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
   head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
-  head('byo-step-2',2,'The price',two?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  // Not ticked until he has looked at the total and the deposit.
+  head('byo-step-2',2,'The price',two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }
@@ -3125,6 +3147,7 @@ function _byoCostInput(el){
   _byoUpdateRail();_byoAutosave();
 }
 function _byoDepInput(el){
+  _geiNumsTouched();
   const v=String(el.value||'').replace(/[^0-9.]/g,'');
   const pct=document.getElementById('byo-deposit-pct');if(!pct)return;
   pct.value=v===''?'0':String(Math.max(0,Math.min(100,parseFloat(v)||0)));
@@ -3132,10 +3155,15 @@ function _byoDepInput(el){
 }
 function _byoDockNext(st){
   if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  // Tim before the prices: a step he adds is a line that needs a price, so
+  // pricing first would send him back to pricing (2026-09-26, shared walk).
+  const tim=_geiTimStep(_byoMissed);
+  if(tim)return tim;
   if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
-  return null;
+  return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
+    yes:'Yes: '+_byoMoney(st.total)+', '+D.pct+'% deposit'});
 }
 function _byoDockBuild(){
   const el=document.getElementById('byo-say');
@@ -3932,7 +3960,12 @@ function _byoUpdateRail(){
   _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
+  _geiLines=selected.map(it=>{
+    const l={desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false};
+    // Supply house materials already taxed at the counter are not taxed again.
+    if(it._supply){l._supply=true;if(it._taxPaid)l._taxPaid=true;}
+    return l;
+  });
 
   // Sales tax
   let salesTax=0;
@@ -3946,7 +3979,7 @@ function _byoUpdateRail(){
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
         const sec=(l._byoSection||'').toLowerCase();
-        const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+        const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
         return {desc:l.desc,total:l.total,lineType};
       })});
     salesTax=_stResult.taxAmount||0;
@@ -4537,7 +4570,10 @@ function _presentShell(inner){
   return ov;
 }
 function _presentHdr(sub){
-  const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
+  // WHITE LABEL: his name or nothing. getBusinessName() falls back to
+  // "TradeDesk", which put our name across the top of the screen his customer
+  // is holding (2026-09-26), the same leak the proposal had.
+  const biz=(typeof S!=='undefined'&&S.bname)||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   // Clear of the Dynamic Island, same as the preview bar: the exit is up here.
   return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
     '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
@@ -4775,6 +4811,7 @@ function _buildComparisonPreview(){
 }
 // ─── End comparison ──────────────────────────────────────────────────────────
 function _tmCrewStep(delta){
+  _tmTouchedRate();
   _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
   const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
   const lbl=document.getElementById('tm-i-crew-label');
@@ -4992,15 +5029,16 @@ function _tmRenderMoneyRows(n){
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
-  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
+  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
+  const sup=(typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
   if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
+    el.innerHTML=sup+'<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
     return;
   }
   // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
   // same way a fixed-price one does, and one renderer is what keeps the two
   // from drifting apart again.
-  el.innerHTML=mats.map(({l,i})=>{
+  el.innerHTML=sup+mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
     return _geiItemRowHtml({
       label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
@@ -5850,7 +5888,10 @@ function _tmRenderSteps(all,rule){
     const h=document.getElementById('tm-step-1');
     if(h)h.insertAdjacentHTML('beforeend','<button type="button" class="s" id="tm-scope-edit" onclick="_tmScopeEdit()">'+(_tmScopeEditing?'Done':'Edit')+'</button>');
   }
-  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?'done':'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  // Not ticked until he has looked at the numbers: a pre-filled rate is not a
+  // checked one.
+  const chk=!_tmLayers.has('rate')||_tmRateChecked();
+  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────
@@ -5873,8 +5914,90 @@ function _tmDockNext(st,rule,all){
     const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost',dep:'Lower the deposit'}[k]||'Finish How it bills';
     return {label:say,fn:'_tmStepAct(\''+k+'\')'};
   }
+  // HELD BY THE HAND TO SEND (owner, 2026-09-26: "even I would race to get
+  // the proposal done, there was a ton of shit I would've missed if my hand
+  // wasn't held, rate, how much my hourly number was, how many people, Tim's
+  // recommendations"). His rate and one person are filled in for him, so the
+  // bar went straight from Build the steps to Send it and none of them was
+  // ever looked at. Now the bar walks him through each before Send: Tim's
+  // questions (answered or turned down, one tap either way), then the rate and
+  // the people, confirmed in one tap that says the numbers out loud.
+  // Steps he left out are things Tim caught; the permit and the unit are
+  // questions only he can answer. The bar says which it is.
+  // Shared with Build Your Own (_geiTimStep, _geiNumsStep below).
+  const tim=_geiTimStep(_geiScopeMissed);
+  if(tim)return tim;
+  const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
+  return _geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
+    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+}
+// ── THE WALK TO SEND, SHARED BY T&M AND BUILD YOUR OWN (2026-09-26) ──────
+//
+// Owner: "BYO should carry over as much as possible with shared code". Both
+// bars run the same two steps before Send, from the same functions:
+//  1. What Tim caught, then Tim's questions (the permit, the unit), each
+//     answered or turned down on his card.
+//  2. The figures filled in for him, looked at once: T&M's rate and people,
+//     BYO's total and deposit. The first tap takes him there and lights them;
+//     the bar then says the numbers out loud as a Yes.
+// Confirmed once per proposal, remembered by bid; changing a figure counts.
+function _geiTimStep(miss){
+  miss=miss||[];
+  const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
   return null;
 }
+let _geiNumsOk={},_geiChecking=false;
+function _geiNumsChecked(){
+  const k=String(_geiEditBidId||'');
+  if(_geiNumsOk[k])return true;
+  try{return localStorage.getItem('td_nums_ok_'+k)==='1';}catch(_e){return false;}
+}
+// Changing a figure is looking at it: no Yes needed after. No repaint here,
+// the input's own handler repaints.
+function _geiNumsTouched(){
+  const k=String(_geiEditBidId||'');
+  _geiNumsOk[k]=true;_geiChecking=false;
+  try{localStorage.setItem('td_nums_ok_'+k,'1');}catch(_e){}
+}
+function _geiNumsMark(){
+  _geiNumsTouched();
+  document.querySelectorAll('.tm-guide').forEach(e=>e.classList.remove('tm-guide'));
+  _geiRepaint();
+}
+function _geiNumsStep(o){
+  if(!o.has||_geiNumsChecked())return null;
+  if(_geiChecking)return {label:o.yes,fn:'_geiNumsMark()'};
+  return {label:o.check,fn:'_geiNumsGo(\''+o.target+'\')'};
+}
+function _geiNumsGo(id){
+  _geiChecking=true;
+  _geiGuideTo(document.getElementById(id));
+  _geiRepaint();
+}
+function _geiRepaint(){
+  if(_geiIsTM){if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+  else if(typeof _byoRenderSteps==='function')_byoRenderSteps();
+}
+// Scroll to the thing and light it, so he sees WHAT he is saying yes to.
+function _geiGuideTo(el){
+  if(!el)return;
+  try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
+  el.classList.remove('tm-guide');void el.offsetWidth;el.classList.add('tm-guide');
+}
+function _geiGoTimAsks(){
+  const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
+  _geiGuideTo(card);
+  // A question with a box (the unit) gets the cursor, so he can just type.
+  setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+}
+// The T&M names, kept for Tim and the tests that call them.
+function _tmRateChecked(){return _geiNumsChecked();}
+function _tmMarkRateChecked(){_geiNumsMark();}
+function _tmTouchedRate(){_geiNumsTouched();}
+function _tmCheckRate(){_geiNumsGo('tm-blk-rate');}
+function _tmGoTimAsks(){_geiGoTimAsks();}
 function _tmDockBuild(){
   const el=document.getElementById('gei-scope-say');
   if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
@@ -6049,6 +6172,8 @@ function _tmSyncCadence(){
 function _tmPreviewClient(){_geiPreviewClient();}
 
 function _geiBack(){
+  // Back is leaving too: the mic goes off, and what he said stays in the box.
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){try{_timTalkStop(true);}catch(_e){}}
   // T&M skips step 1 on the way in, so Back does not walk into it on the way
   // out either. Step 1 is reached on purpose, from Change on the sub-line.
   // Build Your Own is the same full-screen page with the same Change, so its
@@ -6058,7 +6183,14 @@ function _geiBack(){
 }
 // Save the draft and go home. The draft stays in the pipeline to pick up
 // again; nothing he typed is lost on the way out.
-function _geiSaveAndExit(){
+// Tim still listening when he taps Save (owner, 2026-09-26: "he also doesn't
+// turn off if you save and exit"): the mic goes off first and what he said so
+// far lands in the box, so it is saved with the rest. Not built into steps: he
+// left, he did not ask for that.
+async function _geiSaveAndExit(){
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){
+    try{await Promise.race([_timTalkStop(true),new Promise(r=>setTimeout(r,1500))]);}catch(_e){}
+  }
   try{saveGenericEstimate(true);}catch(_e){}
   document.getElementById('gei-cart-bar')?.remove();
   goPg('pg-dash');
@@ -7080,7 +7212,7 @@ function calcGeiTotal(){
     const _liItems=_geiLines.map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
       const sec=(l._byoSection||'').toLowerCase();
-      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
       return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
     });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,

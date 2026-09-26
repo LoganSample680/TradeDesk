@@ -782,6 +782,9 @@ function _geoRestoreOpen(){
   // of park survived the reload, so JS's side has to as well or the off-switch
   // is unreachable (see _geoParkRestore).
   _geoParkRestore();
+  // An address save the last page did not live to finish (js/mileage.js
+  // _mileResumeAddressSave). Not awaited: boot must not wait on a re-derive.
+  try{if(typeof _mileResumeAddressSave==='function')_mileResumeAddressSave();}catch(_e){}
   try{
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
@@ -2736,6 +2739,8 @@ function _geoParkRegions(spot,spotRadius){
   const push=(id,lat,lng,radius)=>{
     if(out.length>=18||lat==null||lng==null)return;
     const here={lat:Number(lat),lng:Number(lng)};
+    // A region at NaN is a region at nowhere: iOS takes it and never fires it.
+    if(!isFinite(here.lat)||!isFinite(here.lng))return;
     const dupe=out.findIndex(p=>_geoDistFt({lat:p.lat,lng:p.lng},here)<=MERGE_FT);
     if(dupe>=0){
       // THE NAMED ONE WINS. The generic tiers are pushed first ('fence' for
@@ -2744,7 +2749,11 @@ function _geoParkRegions(spot,spotRadius){
       // address. regionName maps 'fence' to the literal string "Stop", which
       // is the whole reason his rows could not say where a drive began.
       if(!isNamed(id)||isNamed(out[dupe].id))return;
-      out[dupe]={id:String(id),lat:here.lat,lng:here.lng,radius:radius||out[dupe].radius||baseM};
+      // The name moves, the size does not when this is the kerb: the park
+      // spot's radius is the one the park chose to wake on (see
+      // _GEO_PARK_REGION_M), and the saved place's wider fence would undo it.
+      const r=out[dupe].id==='fence'?out[dupe].radius:(radius||out[dupe].radius||baseM);
+      out[dupe]={id:String(id),lat:here.lat,lng:here.lng,radius:r};
       return;
     }
     out.push({id:String(id),lat:here.lat,lng:here.lng,radius:radius||baseM});
@@ -3174,6 +3183,17 @@ async function _geoPermissionBanner(){
     el.innerHTML=_geoBannerHtml(np.title,np.sub,np.cta);
     return;
   }
+  // ON NATIVE, NO ANSWER YET MEANS SAY NOTHING (Jack, 2026-09-24: the boot
+  // showed "Turn on location" on a phone tracking fine, and the card fought
+  // the boot shimmer). _geoNativeAuth is null until the bridge answers, and
+  // falling through here read the WebView's own permission, which commonly
+  // says 'prompt' on a healthy iPhone: the exact mistake the natSaid branch
+  // above already refuses. _geoRefreshPermCache repaints this banner the
+  // moment iOS does answer, so a phone that is really off still hears it.
+  try{
+    const _cap=window.Capacitor;
+    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){el.style.display='none';return;}
+  }catch(_e){}
   let state='prompt';
   try{
     if(navigator.permissions&&navigator.permissions.query){
@@ -4680,6 +4700,7 @@ function _geoParkRestore(){
       if(s.spot)_geoParkSpot=s.spot;
       if(Number(s.radiusM)>0)_geoParkRadiusM=Number(s.radiusM);
       _geoParkNote('park-restored',s.spot&&s.spot.name?s.spot.name:'');
+      _geoWakeStreamOff('park restored, stream retired');
       return true;
     }
     // Nothing stored, or stale, or another login's: make sure the plugin is not
@@ -4819,7 +4840,14 @@ function _geoEnterParkMode(spot){
   // reports with real timestamps, no radio), the piece that stamps unfenced
   // stops while the app is dead. Older shells without it fall back to the
   // single-region park arm, exactly the old behavior.
-  const _regs=_geoParkRegions(_at,radiusM);
+  // The iOS region at the kerb is tighter than the park radius above. With
+  // no wake stream (owner 2026-09-23: "no arrow"), this region is the thing
+  // that wakes a sleeping phone when the truck leaves, and iOS only fires an
+  // exit well past the edge: his 13:30 pull-out from the shop woke the phone
+  // 830 m down the road, 95 s in, off a 243 m region. A foot stop keeps its
+  // 250 m floor for the reason given above.
+  const regionM=_at.name==='stop'?radiusM:Math.min(radiusM,_GEO_PARK_REGION_M);
+  const _regs=_geoParkRegions(_at,regionM);
   const _armReason='park: '+(_at.name||'stop');
   const _armCall=(typeof Td.startEvents==='function')
     ?Td.startEvents({regions:_regs,reason:_armReason})
@@ -4829,15 +4857,8 @@ function _geoEnterParkMode(spot){
       _geoParkModeOn=true;
       _geoParkPersist(spot);
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
-      // Parked is when the phone goes to sleep, and asleep is when CoreMotion
-      // cannot reach it (owner 2026-09-02: the 12:02 departure, flip on the
-      // tape, nothing on the phone for seven minutes). The iOS 17 stream
-      // pauses itself while still and relaunches the app the moment the
-      // truck moves; the first fix it hands back is the ping half of the
-      // drive pair. Held only while parked: stopAll on the park exit drops
-      // it. Older shells resolve supported:false and change nothing.
-      _geoWakeQuietSinceMs=Date.now();
-      _geoWakeOnMoveArm(Td,_at);
+      // The wake stream is retired: see _geoWakeStreamOff.
+      _geoWakeStreamOff('park armed, stream retired');
       // The shift heartbeat (owner 2026-08-27: catch the phone left in the
       // truck or set down all day). A park at a WORK spot keeps a 30-minute
       // liveness tick alive; a park at the likely-home pin is the end of the
@@ -4858,75 +4879,34 @@ function _geoEnterParkMode(spot){
       _geoArmParkTimer();
     });
 }
-// The decision lives here, not in Swift (3.2): one flag, flipped by a UAT
-// roll, turns the wake-on-movement stream off again if the indicator it
-// holds while parked is not worth the instant departure.
-const _GEO_WAKE_ON_MOVE=true;
-// ── The stream is bounded (owner 2026-09-08) ────────────────────────────────
-// Eight days of his own phone, measured on the server: 45 moving episodes, 2
-// of them a drive, 1 of 13 real departures led by the stream, the longest
-// episode 36.6 hours with every fix inside one foot. The stream is right that
-// a phone in a pocket on a job site is "not stationary" and wrong about what
-// that is worth. Four rules keep the phone-in-the-truck case (the 12:02
-// departure the stream exists for) and bound the radio:
-//   1. The tape outranks the stream. CoreMotion saying still for tapeGraceMs
-//      while the stream says moving is a pocket, not a truck. Native.
-//   2. Don't arm it where a phone is never still: at home, off-day, off-hours.
-//      That is _geoWakeArmOk, here.
-//   3. A moving episode with no drive window for maxMovingMs is a person, not
-//      a departure JS missed (a truck trips a fence in 0 to 1.6 min). Native.
-//   4. Re-arm on the next quiet ping, so a drop at 8am does not cost the 4pm
-//      departure. _geoWakeRearm, here, on the push-ping.
-// The numbers are JS's (3.2) and ride the arm; the plugin enforces them while
-// JS is asleep, exactly as it does the drive window's cap, and reports a drop
-// as a `wake-drop` event so JS can forget the arm and wait for quiet.
-const _GEO_WAKE_MAX_MOVING_MS=12*60000;
-const _GEO_WAKE_TAPE_GRACE_MS=2*60000;
-let _geoWakeArmed=false;        // JS's memory of the arm; the plugin's flag is the truth
-let _geoWakeQuietSinceMs=0;     // the tape must be all still since here for a re-arm
-function _geoWakeArmOk(spot){
+// ── The wake stream is retired (owner 2026-09-23: "no arrow") ──────────────
+// It was meant to rest while the truck sat and wake the app the instant it
+// moved. Fourteen days of every phone's ledger say iOS never rested it: about
+// 3,200 arms, not one "stationary". Every arm opened as "moving at stream
+// start", the two-minute tape grace then dropped it, and the phone slept on
+// the fences for the rest of the park, while the blue arrow showed for those
+// two minutes every single time. So the stream buys the arrow and nothing
+// else. Parked phones now wake on the kerb region (tightened to
+// _GEO_PARK_REGION_M in _geoEnterParkMode), and the native backfill stamps
+// the drive with the moment CoreMotion saw it begin.
+//
+// The OFF stays, because the ON was durable: shells that armed the stream
+// persisted it and re-arm it on every relaunch (TdGeoPlugin.load) until told
+// otherwise. Every park and every boot says off, so a phone still holding one
+// from an older UAT build lets go of it the first time this code runs.
+const _GEO_PARK_REGION_M=100;
+function _geoWakeStreamOff(why){
   try{
-    if(spot&&typeof _placeIsLikelyHome==='function'&&_placeIsLikelyHome({lat:spot.lat,lng:spot.lng},0))return 'home';
-    const why=_geoPingBurstOk();
-    return (why==='home'||why==='off-day'||why==='off-hours')?why:'';
-  }catch(_e){return '';}
-}
-function _geoWakeOnMoveArm(Td,spot,why){
-  try{
-    if(!_GEO_WAKE_ON_MOVE||!Td||typeof Td.setWakeOnMove!=='function')return false;
-    const skip=_geoWakeArmOk(spot);
-    if(skip){_geoParkNote('wake-skip',skip);return false;}
-    Promise.resolve(Td.setWakeOnMove({on:true,reason:String(why||'park armed'),
-      maxMovingMs:_GEO_WAKE_MAX_MOVING_MS,tapeGraceMs:_GEO_WAKE_TAPE_GRACE_MS})).then((r)=>{
-      _geoWakeArmed=!!(r&&r.on);
-      _geoParkNote('wake-on-move',(r&&r.supported===false)?'unsupported':((r&&r.on)?'on':'off'));
-    },(err)=>{_geoParkNote('wake-on-move-fail',(err&&(err.message||err.code))||err);});
-    return true;
-  }catch(_e){return false;}
-}
-// Rule 4. Parked, stream down (a drop, or a boot that forgot), the gate open,
-// and the coprocessor with nothing but still to say since the park or the
-// drop: that is a phone sitting in a truck, and the stream goes back up. A
-// tape with a walk on it is a phone on a person, and the fences keep watch
-// alone until the next ping asks again.
-async function _geoWakeRearm(){
-  try{
-    if(!_GEO_WAKE_ON_MOVE||!_geoParkModeOn||_geoWakeArmed||_geoDriveWinAt)return false;
     const Td=_geoTdPlugin();
     if(!Td||typeof Td.setWakeOnMove!=='function')return false;
-    if(_geoWakeArmOk(_geoParkSpot))return false;   // quietly: the ping asks every half hour
-    const since=_geoWakeQuietSinceMs||(Date.now()-30*60000);
-    const tape=await _geoMotionTape(since,0);
-    if(tape===null){_geoParkNote('wake-rearm-skip','no tape');return false;}
-    if(tape.some(t=>t.ts>=since&&String(t.kind)!=='still')){_geoParkNote('wake-rearm-skip','tape moved');return false;}
-    return _geoWakeOnMoveArm(Td,_geoParkSpot,'re-armed on a quiet ping');
+    Promise.resolve(Td.setWakeOnMove({on:false,reason:String(why||'stream retired')})).then(()=>{},()=>{});
+    return true;
   }catch(_e){return false;}
 }
 function _geoExitParkMode(){
   _geoClearParkTimer();
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
-  _geoWakeArmed=false;
   _geoParkRadiusM=0;
   _geoParkForget();
   // Fresh observation window on wake: if this exit was a real drive the next
@@ -5245,7 +5225,6 @@ function _geoDiagPanel(){
     ['Queue error',_geoQueueLastError||'none'],
     ['GPS watcher',_geoNativeWatcherId!=null?String(_geoNativeWatcherId):'off'],
     ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
-    ['Wake stream',_geoWakeArmed?'armed':'off'],
     ['Park countdown',_geoParkTimer?'running':'idle'],
     ['In fence',_geoLastFenceLoc?((_geoLastFenceLoc.name||_geoLastFenceLoc.kind||'yes')+(dwellMin!=null?' · '+dwellMin+' min':'')):'no'],
     ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
@@ -5394,17 +5373,11 @@ async function _geoTdEvent(ev,replay){
   // carries no position and must never touch the fence machine; it exists so
   // the journal and the server tape can both show when the radio was up, and
   // so JS learns about a cap it did not ask for.
-  // The plugin dropped the wake stream on its own (rules 1 and 3 at
-  // _geoWakeOnMoveArm): JS forgets the arm and the quiet clock restarts here,
-  // so the next ping can put it back up only if the tape stays still from
-  // this moment. Bookkeeping only: the position on it is whatever the
-  // manager last held, and it must never reach the fence machine.
+  // An older shell dropping a wake stream it still held (see
+  // _geoWakeStreamOff). Journalled, nothing more: the position on it is
+  // whatever the manager last held, and it must never reach the fence machine.
   if(ev.type==='wake-drop'){
-    if(!replay){
-      _geoWakeArmed=false;
-      _geoWakeQuietSinceMs=Number(ev.ts)||Date.now();
-      _geoParkNote('wake-drop',String(ev.reason||''));
-    }
+    if(!replay)_geoParkNote('wake-drop',String(ev.reason||''));
     return;
   }
   // The plugin's own word on whether a stop landed (owner 2026-09-08, the
@@ -5517,7 +5490,6 @@ async function _geoTdEvent(ev,replay){
       if(ev.blind===true||!hasFix)_geoPingBlindBurst();
       else _geoPingBurst();
     }
-    if(!replay&&ev.type==='push-ping')_geoWakeRearm();
     if(!replay&&ev.type==='push-ping')_geoRadioCheck();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     // And the day is re-derived on the same push, so an open dwell that a
@@ -6181,7 +6153,6 @@ function stopGeoTracking(){
   // woken by the previous account's fence.
   _geoClearParkTimer();
   _geoParkModeOn=false;
-  _geoWakeArmed=false;
   _geoParkForget();
   _geoFenceEnteredAtMs=null;
   _geoQuietSinceMs=null;_geoParkPrevFix=null;
@@ -8607,6 +8578,8 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       // Rule 13's two other witnesses: this person's manual clocks over the
       // day, and the company's working hours.
       clocks:_geoDeriveClocks(b.start,b.end),clockHistory:_geoClockHistory(),workHours:_geoWorkHours(),
+      // Rule 25: the account's Time off blocks, the same ones the server reads.
+      timeOff:(typeof S!=='undefined'&&S&&Array.isArray(S.timeOff))?S.timeOff:[],
     });
     // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
     // mileage gone for today when I should have four trips"). The tape had

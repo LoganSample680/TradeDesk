@@ -18,6 +18,10 @@ function goPg(id){
   // so boot-time goPg('pg-dash') calls can never wipe the marker before
   // _maybeResumeActiveEstimate reads it.
   if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
+  // Leaving a page turns Tim's mic off. Nothing else would: the listening
+  // panel is fixed to the screen, so it followed him to the next page with
+  // the mic still open (owner, 2026-09-26).
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'&&document.querySelector('.pg.active')?.id!==id){try{_timTalkStop(true);}catch(_e){}}
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
@@ -53,7 +57,7 @@ function goPg(id){
   if(_mtb)_mtb.classList.add('active');
   else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
   document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-clients':'mmi-clients','pg-client-detail':'mmi-clients','pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog'}[id];
+  const _mmiKey={'pg-clients':'mmi-clients','pg-client-detail':'mmi-clients','pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
   if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
@@ -85,6 +89,7 @@ function goPg(id){
   if(id==='pg-licensing')renderLicensing();
   if(id==='pg-contracts'){renderContracts();if(typeof refreshAgreementSignatures==='function')refreshAgreementSignatures();}
   if(id==='pg-timelog')renderTimeLog();
+  if(id==='pg-photos'&&typeof renderPhotosPage==='function')renderPhotosPage();
   if(id==='pg-checklist')renderChecklist();
   if(id==='pg-leads')renderLeadsPage();
   if(id==='pg-qr-leads'){renderQrLeadsPage();_qrLoadSources();}
@@ -135,6 +140,7 @@ function _refreshActivePage(){
   ({
     'pg-dash':()=>run('renderDash'),
     'pg-timelog':()=>run('renderTimeLog'),
+    'pg-photos':()=>run('renderPhotosPage'),
     'pg-money':()=>run('renderMoneyPage'),
     'pg-jobs':()=>run('renderJobsPage'),
     'pg-tracker':()=>run('renderTrackerTab'),

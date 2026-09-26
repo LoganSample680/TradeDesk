@@ -119,6 +119,12 @@ test.describe('the T&M screen, as an iPhone app', () => {
   test('two buttons at the bottom, both in the one tint', async () => {
     await open('Pull the old water heater');
     await page.evaluate(() => { const e = document.getElementById('tm-i-rate'); e.value = '45'; _tmInputChange(); });
+    // Changed 2026-09-26 (§10.4, owner: "even I would race to get the proposal
+    // done, there was a ton of shit I would've missed if my hand wasn't held,
+    // rate, how much my hourly number was, how many people, Tim's
+    // recommendations"). Send now waits until Tim's leftovers are answered and
+    // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmMarkRateChecked(); });
     const r = await page.evaluate(() => {
       const w = document.getElementById('tm-dock');
       const big = [...w.querySelectorAll('.ios-btn')];
@@ -228,6 +234,17 @@ test.describe('the T&M screen, as an iPhone app', () => {
   test('with a rate, step 2 is checked with its figure and the bar is Sign here and Send it', async () => {
     await open('Pull the old water heater and set a tankless');
     await setRate('45');
+    // Changed 2026-09-26 (§10.4, owner: "even I would race to get the proposal
+    // done, there was a ton of shit I would've missed if my hand wasn't held,
+    // rate, how much my hourly number was, how many people, Tim's
+    // recommendations"). Send now waits until Tim's leftovers are answered and
+    // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
+    // A rate filled in is not a rate looked at: step 2 stays on until the Yes.
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
+    const pre = await steps();
+    expect(pre[1].state).toBe('now');
+    expect(pre[2].buttons).toEqual(['Check your rate']);
+    await page.evaluate(() => _tmMarkRateChecked());
     const s = await steps();
     expect(s.map(x => x.state)).toEqual(['done', 'done', 'now']);
     expect(s[1].text).toContain('$45/hr');

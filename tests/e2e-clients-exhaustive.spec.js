@@ -3133,6 +3133,39 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.value).toBe(210000);
     });
 
+    // Owner 2026-09-22: Jack changed 6912 to 6908 and the new house never
+    // pulled in. A COUNTY record describes the old parcel; carrying it over
+    // stamped the new address answered, so it was never asked.
+    test('a corrected address sheds the old parcel\'s county facts and asks for its own', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970145;
+        const c = { id: cid, name: 'Jack Co', addr: '1 Main St, Topeka, KS 66604',
+          extraAddresses: [{ label: 'Rental', addr: '6912 SW 17th St, Topeka, KS 66615' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        setPropertyData(c, '6912 SW 17th St, Topeka, KS 66615', { yearBuilt: 2003, sqft: 1280, ownerName: 'SOMEONE ELSE',
+          propDataSource: 'county', propDataSoil: 'Old soil', propertyType: 'Rental property', isRental: true });
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        try {
+          openAddAddressModal(1);
+          document.getElementById('_aa-addr').value = '6908 SW 17th St, Topeka, KS 66615';
+          saveAddClientAddress(1);
+        } finally { window._lookupPropertyData = orig; }
+        const p = getProperty(c, '6908 SW 17th St, Topeka, KS 66615');
+        return { asked, year: p.yearBuilt, owner: p.ownerName, src: p.propDataSource, soil: p.propDataSoil, type: p.propertyType, rental: p.isRental };
+      });
+      expect(r.asked.length).toBe(1);
+      expect(r.asked[0]).toMatch(/6908/);
+      expect(r.year).toBeUndefined();
+      expect(r.owner).toBeUndefined();
+      expect(r.src).toBeUndefined();
+      expect(r.soil).toBeUndefined();
+      expect(r.type, 'what the contractor set still follows the address').toBe('Rental property');
+      expect(r.rental).toBe(true);
+    });
+
     test('a moved address drops its stale coordinates, so no fence stays on the old house', async () => {
       // geo_fences_for and _geoDeriveFences only build a fence when geoAddr
       // still equals addr. Leaving the old pair behind is exactly the "customer
@@ -3255,9 +3288,14 @@ test.describe('clients.js: exhaustive coverage', () => {
     const renameSetup = (o) => page.evaluate(async (o) => {
       const saved = { mile: (typeof mileage !== 'undefined') ? mileage : null,
                       supa: window._supa, user: window._supaUser,
-                      flush: window._flushSaveNow };
+                      flush: window._flushSaveNow, load: window.supaLoadFromCloud };
       const updates = [];
       try {
+        // The stub below only knows update(). A reconnect probe firing inside
+        // the 40ms wait would run a full cloud load against it and log
+        // "select is not a function" (CI shard 4, 2026-09-23), so the load is
+        // parked for the length of the stub.
+        window.supaLoadFromCloud = async () => { };
         window._supaUser = { id: 'own-rename' };
         window._flushSaveNow = () => { };
         window._supa = { from: (tbl) => ({
@@ -3284,7 +3322,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       } finally {
         if (saved.mile) mileage = saved.mile;
         window._supa = saved.supa; window._supaUser = saved.user;
-        window._flushSaveNow = saved.flush;
+        window._flushSaveNow = saved.flush; window.supaLoadFromCloud = saved.load;
       }
     }, o);
 
@@ -3449,6 +3487,36 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.finalCount).toBe(2);      // dedupe + empty never grow the list
     });
 
+    // Owner 2026-09-23: "there's no way to minimize the accordion". A lone
+    // property opened expanded with no chevron and a dead header, so it could
+    // never be folded. It still STARTS open; the header now folds it.
+    test('a single property card starts open and its header folds and unfolds it', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970141;
+        const c = { id: cid, name: 'Fold Co', addr: '9 Fold Ln, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        delete window['_cdpropOpen_' + cid + '_0'];
+        renderCDAddresses();
+        const list = () => document.getElementById('cd-addresses-list');
+        const hdr = () => list().querySelector('[onclick*="_cdpropOpen_' + cid + '_0"]');
+        const hasNote = () => !!document.getElementById('cd-propnote-0');
+        const startOpen = hasNote();
+        const hasChevron = /M6 9l6 6 6-6/.test(list().innerHTML);
+        const hdrExists = !!hdr();
+        hdr() && hdr().click();
+        const afterFold = hasNote();
+        hdr() && hdr().click();
+        const afterUnfold = hasNote();
+        return { startOpen, hasChevron, hdrExists, afterFold, afterUnfold };
+      });
+      expect(r.startOpen, 'one property still opens expanded').toBe(true);
+      expect(r.hasChevron, 'the lone card shows the fold chevron').toBe(true);
+      expect(r.hdrExists, 'the header is tappable').toBe(true);
+      expect(r.afterFold, 'tapping the header folds it').toBe(false);
+      expect(r.afterUnfold, 'tapping again opens it back up').toBe(true);
+    });
+
     test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {
       const r = await page.evaluate(() => {
         const cid = 970107;
@@ -3473,7 +3541,7 @@ test.describe('clients.js: exhaustive coverage', () => {
             mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
             // Regression guard: this address has an unpaid $4,200 proposal, so the
             // header stat slot shows "Owed". Est. value must still appear (in the
-            // facts line) rather than being silently pushed off the card.
+            // county facts block, "Owner & value") rather than being pushed off.
             mgrHasOwed: mgr.includes('Owed'),
           };
         } finally {
@@ -3490,6 +3558,146 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.mgrHasPaidTotal).toBe(true);
       // Owed and est. value coexist: one does not evict the other.
       expect(r.mgrHasOwed).toBe(true);
+    });
+
+    // Owner 2026-09-22: "the county stuff seems slapped in and what about soil
+    // type and all that good stuff and the year built?" Soil, flood and tax sale
+    // were fetched and stored but never reached the card, because
+    // _propApplyMatch dropped every field the card had no slot for.
+    test('_propApplyMatch: carries soil, flood, tax sale and the lot/deed facts onto the property', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970140;
+        const c = { id: cid, name: 'Ground Co', addr: '1 Ground St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '1 Ground St', {
+          year_built: 1880, year_built_to: 1995, sqft: 2026, soil_desc: 'Chase silt loam, occasionally flooded',
+          flood_zone: 'A', flood_sfha: true, tax_sale_year: 2025, tax_sale_case: '2025-TS-001',
+          frontage_ft: 88, depth_ft: 135, basement_desc: 'Full', deed_book_page: '2019R10360',
+          parcel_number: '0930600001001010', land_value: 33350, improvement_value: 292350, subdivision: 'HIDDEN VALLEY',
+          living_units: 1, building_count: 1, land_sqft: 82743.5, source: 'county',
+        });
+        return getProperty(c, '1 Ground St');
+      });
+      expect(r.propDataSoil).toBe('Chase silt loam, occasionally flooded');
+      expect(r.propDataFloodZone).toBe('A');
+      expect(r.propDataFloodSfha).toBe(true);
+      expect(r.propDataTaxSaleYear).toBe(2025);
+      expect(r.propDataTaxSaleCase).toBe('2025-TS-001');
+      expect(r.propDataYearTo).toBe(1995);
+      expect(r.propDataFrontage).toBe(88);
+      expect(r.propDataDeed).toBe('2019R10360');
+      expect(r.propDataBldgValue).toBe(292350);
+    });
+
+    test('_propApplyMatch: flood_sfha false is kept (a "no" is an answer), nulls are not written', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970144;
+        const c = { id: cid, name: 'Dry Co', addr: '2 Dry St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        _propApplyMatch(c, '2 Dry St', { year_built: 2003, flood_zone: 'none', flood_sfha: false, soil_desc: null, tax_sale_year: null, source: 'county' });
+        const p = getProperty(c, '2 Dry St');
+        return { sfha: p.propDataFloodSfha, zone: p.propDataFloodZone, hasSoil: 'propDataSoil' in p, hasTax: 'propDataTaxSaleYear' in p };
+      });
+      expect(r.sfha).toBe(false);
+      expect(r.zone).toBe('none');
+      expect(r.hasSoil).toBe(false);
+      expect(r.hasTax).toBe(false);
+    });
+
+    test('_cdCountyFactsHtml: null / empty input renders nothing and never throws', async () => {
+      const r = await page.evaluate(() => {
+        const out = {};
+        for (const [k, v] of [['null', null], ['undef', undefined], ['empty', {}]]) {
+          try { out[k] = _cdCountyFactsHtml(v, true); } catch (e) { out[k] = 'THREW ' + e.message; }
+        }
+        return out;
+      });
+      expect(r.null).toBe('');
+      expect(r.undef).toBe('');
+      expect(r.empty).toBe('<div class="cdf"></div>');
+    });
+
+    test('_cdCountyFactsHtml: flood hazard, soil, tax sale and lead all render; flood "no" is stated plainly', async () => {
+      const r = await page.evaluate(() => {
+        const wet = _cdCountyFactsHtml({ yearBuilt: 1880, sqft: 2026, bedrooms: 3, bathrooms: 2.5,
+          propDataSoil: 'Chase silt loam, occasionally flooded', propDataFloodZone: 'A', propDataFloodSfha: true,
+          propDataTaxSaleYear: 2025, propDataTaxSaleCase: '2025-TS-001', propDataDeed: '2019R10360' }, true);
+        const dry = _cdCountyFactsHtml({ yearBuilt: 2003, propDataFloodZone: 'none', propDataFloodSfha: false }, true);
+        return { wet, dry };
+      });
+      expect(r.wet).toContain('Chase silt loam');
+      expect(r.wet).toContain('FEMA flood hazard area');
+      expect(r.wet).toContain('zone A');
+      expect(r.wet).toContain('tax-sale list (2025)');
+      expect(r.wet).toContain('2025-TS-001');
+      expect(r.wet).toContain('EPA RRP');
+      expect(r.wet).toContain('cdf-tile-warn');          // the 1880 tile is flagged
+      expect(r.wet).toMatch(/Last sold<\/span><span class="cdf-v">2019</);
+      expect(r.dry).toContain('Not in a mapped flood zone');
+      expect(r.dry).not.toContain('FEMA flood hazard area');
+      expect(r.dry).not.toContain('EPA RRP');
+    });
+
+    test('_cdCountyFactsHtml: commercial shows acres not bed/bath; crew without money sees no dollars', async () => {
+      const r = await page.evaluate(() => {
+        const p = { yearBuilt: 2001, propDataYearTo: 2017, sqft: 18380, lotSize: 2.7635758, propDataClass: 'Commercial',
+          estimatedValue: 1617300, propDataLandValue: 651670, propDataBldgValue: 965630, propDataSource: 'county', ownerName: 'ALDI INC' };
+        return { mgr: _cdCountyFactsHtml(p, true), crew: _cdCountyFactsHtml(p, false) };
+      });
+      expect(r.mgr).toContain('Acres');
+      expect(r.mgr).not.toContain('Bed / Bath');
+      expect(r.mgr).toContain('added to 2017');
+      expect(r.mgr).toContain('Assessed');
+      expect(/\$\d/.test(r.mgr)).toBe(true);
+      expect(/\$\d/.test(r.crew)).toBe(false);
+      expect(r.crew).toContain('ALDI INC');           // the owner is not a money fact
+    });
+
+    test('_cdCountyFactsHtml: owner-supplied text is escaped', async () => {
+      const html = await page.evaluate(() => _cdCountyFactsHtml({ ownerName: '<img src=x onerror=alert(1)>', propDataSoil: '<b>x</b>' }, true));
+      expect(html).not.toContain('<img');
+      expect(html).not.toContain('<b>x</b>');
+    });
+
+    test('property card: the old run-on facts line is gone and the county block renders when open', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970142;
+        const c = { id: cid, name: 'Card Co', addr: '3 Card St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '3 Card St', { yearBuilt: 1940, sqft: 1012, bedrooms: 3, bathrooms: 1, lotSize: 0.27,
+          ownerName: 'SAMPLE TRUST', propDataSoil: 'Ladysmith silty clay loam', propDataFloodZone: 'none' });
+        currentClientId = cid;
+        renderCDAddresses();
+        const html = document.getElementById('cd-addresses-list').innerHTML;
+        return { html, leadCount: (html.match(/EPA RRP/g) || []).length };
+      });
+      expect(r.html).toContain('class="cdf"');
+      expect(r.html).toContain('Ladysmith silty clay loam');
+      expect(r.html).not.toContain('Owner: SAMPLE');   // the old "Owner: X · 0.27 ac lot" run-on line
+      expect(r.html).not.toContain('ac lot');
+      expect(r.html).not.toContain('PRE-1978 · LEAD');  // chip is for the collapsed row; open shows the banner
+      expect(r.leadCount).toBe(1);
+    });
+
+    test('property card layout: county block stays inside 390px with long soil and owner values', async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      const r = await page.evaluate(() => {
+        const cid = 970143;
+        const c = { id: cid, name: 'Wide Co', addr: '4 Wide St, Topeka, KS 66604' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '4 Wide St', { yearBuilt: 1880, sqft: 18380, bedrooms: 3, bathrooms: 2.5, lotSize: 1.9, propDataLotSqft: 82743.5,
+          ownerName: 'SAMPLE, LOGAN & BLAKE REVOCABLE LIVING TRUST OF THE LONG NAME', propDataSoil: 'Sogn-Vinland complex, 3 to 25 percent slopes, very stony and eroded',
+          propDataFloodZone: 'AE', propDataFloodSfha: true, propDataParcel: '0930600001001010' });
+        currentClientId = cid;
+        goPg('pg-client-detail');
+        renderCDAddresses();
+        const els = [...document.querySelectorAll('#cd-addresses-list .cdf, #cd-addresses-list .cdf-row, #cd-addresses-list .cdf-tile')];
+        const over = els.filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.right > innerWidth + 1; }).length;
+        return { n: els.length, over, bleed: document.documentElement.scrollWidth > innerWidth + 1 };
+      });
+      expect(r.n).toBeGreaterThan(3);
+      expect(r.over).toBe(0);
+      expect(r.bleed).toBe(false);
     });
   });
 
@@ -4254,7 +4462,9 @@ test.describe('clients.js: exhaustive coverage', () => {
       // assertion changed because the behaviour deliberately changed.
       const r = await withClients(page, [
         { id: 9004 },                                                                                        // no address at all
-        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1 } } }, // genuinely done
+        // propDataV added 2026-09-23: a county record in the CURRENT shape is
+        // done; one in an older shape is re-read once (tests below).
+        { id: 9005, addr: '5 Real St', properties: { '5 real st': { propDataSource: 'county', propDataFetchedAt: 1, propDataV: 2 } } }, // genuinely done
         { id: 9006, addr: '6 Real St' },                                                                     // the only work
       ]);
       expect(r.threw).toBeNull();
@@ -4363,6 +4573,51 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(p.sqft, 'but everything else still lands').toBe(900);
     });
 
+    // Owner 2026-09-23: "how can we get them all to re run a check?" Records
+    // applied before soil and flood existed carry none of it. They re-read our
+    // own table once; the county is never contacted for them.
+    test('a county record in an older shape re-reads once and picks up the new fields', async () => {
+      const r = await withClients(page,
+        [{ id: 9070, addr: '70 Old St', properties: { '70 old st': { propDataSource: 'county', yearBuilt: 1955, ownerName: 'HAND TYPED' } } }],
+        [{ q: '70 Old St', year_built: 1899, owner_name: 'COUNTY SAYS', soil_desc: 'Ladysmith silty clay loam', flood_zone: 'none', flood_sfha: false, county_name: 'Shawnee', state: 'KS' }]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['70 Old St']);
+      const p = r.after.find((c) => c.id === 9070).props['70 old st'];
+      expect(p.propDataSoil).toBe('Ladysmith silty clay loam');
+      expect(p.propDataFloodZone).toBe('none');
+      expect(p.propDataV).toBe(2);
+      expect(p.yearBuilt, 'a refresh never overwrites a hand-entered year').toBe(1955);
+      expect(p.ownerName).toBe('HAND TYPED');
+    });
+
+    test('a refresh that finds nothing in the table changes nothing and asks the county nothing', async () => {
+      const r = await page.evaluate(async () => {
+        window._PROP_DRIP_PER_SESSION = 10;
+        const asked = [];
+        const orig = window._lookupPropertyData;
+        window._lookupPropertyData = (id, pp) => { asked.push(pp && pp.street); return Promise.resolve(true); };
+        const saved = clients.slice(); const savedSupa = window._supa;
+        clients.length = 0;
+        clients.push({ id: 9071, addr: '71 Gone St', properties: { '71 gone st': { propDataSource: 'county', yearBuilt: 1990 } } });
+        window._supa = { ...savedSupa, rpc: async () => ({ data: [], error: null }) };
+        try { await _syncPropertyData(); return { asked, p: clients[0].properties['71 gone st'] }; }
+        finally { window._lookupPropertyData = orig; clients.length = 0; saved.forEach((c) => clients.push(c)); window._supa = savedSupa; }
+      });
+      expect(r.asked, 'the drip must not re-ask an answered address').toEqual([]);
+      expect(r.p.propDataSource).toBe('county');
+      expect(r.p.yearBuilt).toBe(1990);
+    });
+
+    test('a recorded county miss is not refreshed, and a current record is not re-read', async () => {
+      const r = await withClients(page, [
+        { id: 9072, addr: '72 Miss St', properties: { '72 miss st': { propDataSource: 'county', propDataMiss: true } } },
+        { id: 9073, addr: '73 New St', properties: { '73 new st': { propDataSource: 'county', propDataV: 2 } } },
+        { id: 9074, addr: '74 Old St', properties: { '74 old st': { propDataSource: 'county', propDataV: 1 } } },
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.asked).toEqual(['74 Old St']);
+    });
+
     test('EXISTING clients stamped by the dead Zillow scraper are re-asked', async () => {
       // The backfill, and the reason _propAnswered exists at all. The old
       // scraper stamped propDataFetchedAt on every FAILURE, deliberately, to
@@ -4400,6 +4655,19 @@ test.describe('clients.js: exhaustive coverage', () => {
     // ever, so an unstamped address re-collected on the next boot costs a
     // cheap 'already' rather than a county request. The drip is also capped
     // per session, so the queue drains without a burst.
+    test('the drip stops at the first address it could not ask about', async () => {
+      // _countyProperty returns null for "no session", "county not loaded" and
+      // "the request failed", and all three are properties of the SESSION, not
+      // of one address: if the first could not ask, the next nine cannot
+      // either. Without the break the loop sleeps four seconds ten times over,
+      // a forty second no-op on every signed-out boot and in every offline
+      // test, holding timers nothing is waiting on.
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
+      expect(src, '_lookupPropertyData must report whether it got to ask')
+        .toMatch(/if\(!d\)return false;/);
+      expect(src, 'and the drip must stop on that').toMatch(/if\(asked===false\)break;/);
+    });
+
     test('an unasked address is handed to the drip rather than written off', async () => {
       await page.evaluate(() => { window._PROP_DRIP_PER_SESSION = 0; });
       const r = await withClients(page, [{ id: 9044, addr: '44 Real St' }], []);
@@ -4408,7 +4676,7 @@ test.describe('clients.js: exhaustive coverage', () => {
       // The drip itself is asserted on the source, because the sandbox stubs
       // the RPC and never reaches the Edge Function.
       const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'clients.js'), 'utf8');
-      expect(src, 'a join miss must be queued').toMatch(/else unanswered\.push\(w\);/);
+      expect(src, 'a join miss must be queued').toMatch(/else if\(!w\.refresh\)unanswered\.push\(w\);/);
       expect(src, 'and chased, capped per session').toMatch(/_dripCap=window\._PROP_DRIP_PER_SESSION/);
       expect(src, 'the cap actually bounds the loop').toMatch(/i<unanswered\.length&&i<_dripCap/);
       expect(src, 'paced between asks').toMatch(/window\._PROP_DRIP_GAP_MS/);

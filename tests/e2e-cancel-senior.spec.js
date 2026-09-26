@@ -110,7 +110,7 @@ test.describe('the signing page asks, in California only', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'sign.html'), 'utf8');
     expect(src).toContain('buyer_senior:!!window._buyerSenior');
     expect(src).toContain('buyerSenior:!!window._buyerSenior');
-    const mig = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261038_buyer_senior.sql'), 'utf8');
+    const mig = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261042_buyer_senior.sql'), 'utf8');
     expect(mig).toMatch(/add column if not exists buyer_senior boolean/);
   });
 });

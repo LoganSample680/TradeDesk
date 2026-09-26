@@ -192,6 +192,32 @@ test.describe('the proposal, white-labelled', () => {
     expect(r.terms).toContain('Contractor');
   });
 
+  // Presenter mode ("Show them on this phone") put getBusinessName()'s
+  // "TradeDesk" fallback across the top of the screen his customer holds
+  // (2026-09-26). His name or nothing, same as the proposal.
+  test('presenter mode: no business name set, no TradeDesk on the customer\'s screen', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { bname: S.bname, acct: window._account };
+      S.bname = ''; try { _account = null; } catch (e) {}
+      bids.length = 0; clients.length = 0;
+      clients.push({ id: 97104, name: 'Hetty Green', addr: '412 Bell St, Topeka, KS 66603' });
+      currentClientId = 97104; _activeTrade = 'plumbing';
+      openGenericEstimate(getClientById(97104), null, null, { mode: 'byo' });
+      _geiIsFreeForm = true; _geiIsTM = false;
+      _byoItems = [{ id: 1, section: 'Work', label: 'Set the new water heater', price: 1800, on: true }];
+      _byoUpdateRail();
+      await _geiPresent();
+      await new Promise(res => setTimeout(res, 400));
+      const ov = document.getElementById('_gei-present-ov');
+      const txt = ov ? ov.innerText : '';
+      if (typeof _presentClose === 'function') _presentClose();
+      S.bname = keep.bname; try { _account = keep.acct; } catch (e) {}
+      return { open: !!ov, txt };
+    });
+    expect(r.open).toBe(true);
+    expect(r.txt).not.toMatch(/tradedesk/i);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'white label'); });
 });
 

@@ -50,28 +50,75 @@ async function _voiceStart(el,onText){
   if(!(await _voiceReady()))return false;
   _voiceTargetEl=el;
   _voiceBaseText=String(el.value||'');
+  _voiceSeg='';
+  _voiceOnText=onText;
   try{
     if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();
     _voiceListener=await P.addListener('partial',(ev)=>{
       const heard=(ev&&ev.text)||'';
-      const joined=_voiceJoin(_voiceBaseText,heard);
+      _voiceLastHeard=Date.now();
+      const joined=_voiceAccept(heard);
       if(_voiceTargetEl)_voiceTargetEl.value=joined;
-      if(typeof onText==='function')onText(joined,heard);
+      if(typeof _voiceOnText==='function')_voiceOnText(joined,heard);
+      // The phone closed this stretch of speech (a pause). Carry on listening
+      // from where the words are now.
+      if(ev&&ev.final&&_voiceActive)_voiceResume();
     });
     await P.start();
+    _voiceActive=true;_voiceLastHeard=Date.now();_voiceLastStart=Date.now();
+    _voiceWatch();
     if(typeof _tdHaptic==='function')_tdHaptic('tap');
     return true;
-  }catch(_e){return false;}
+  }catch(_e){_voiceActive=false;return false;}
+}
+
+// STAYING ON THROUGH A PAUSE (owner, 2026-09-26: "Talk to Tim failed to
+// pickup what I was doing just now"). iOS ends a recognition session on its
+// own: after a few seconds of silence, on an error, or when it decides the
+// sentence is over. The native side then stops the mic and says nothing, so the
+// panel went on saying "Tim is listening" while nothing after the pause was
+// heard. A man working while he talks pauses all the time.
+//
+// So while dictation is meant to be on, a session that has gone quiet is
+// started again. The field already holds every word heard so far (the partial
+// handler writes it), so a restart builds on it and loses nothing. Restarting
+// in silence costs nothing; words only stream while he is talking, so four
+// quiet seconds means either he is thinking or the phone gave up, and a fresh
+// session is right for both.
+let _voiceActive=false,_voiceLastHeard=0,_voiceLastStart=0,_voiceWatchTimer=null,_voiceOnText=null,_voiceResuming=false;
+function _voiceWatch(){
+  if(_voiceWatchTimer)clearInterval(_voiceWatchTimer);
+  _voiceWatchTimer=setInterval(()=>{
+    if(!_voiceActive){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;return;}
+    const now=Date.now();
+    if(now-_voiceLastHeard>4000&&now-_voiceLastStart>4000)_voiceResume();
+  },1000);
+}
+async function _voiceResume(){
+  const P=_voicePlugin();
+  if(!P||!_voiceActive||_voiceResuming||!_voiceTargetEl)return;
+  _voiceResuming=true;
+  try{
+    _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';
+    _voiceLastStart=Date.now();
+    await P.start();
+    // Stopped while this restart was on its way: turn the mic back off, or
+    // it would stay open with nobody listening to it.
+    if(!_voiceActive){try{await P.stop();}catch(_e){}}
+  }catch(_e){}
+  finally{_voiceResuming=false;}
 }
 
 async function _voiceStop(){
   const P=_voicePlugin();
+  _voiceActive=false;
+  if(_voiceWatchTimer){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;}
   if(!P)return '';
   let text='';
   try{const r=await P.stop();text=(r&&r.text)||'';}catch(_e){}
   try{if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();}catch(_e){}
-  _voiceListener=null;
-  const joined=_voiceJoin(_voiceBaseText,text);
+  _voiceListener=null;_voiceOnText=null;
+  const joined=_voiceAccept(text);
   if(_voiceTargetEl){
     _voiceTargetEl.value=joined;
     // Fire input so anything listening (autosave, validation, character
@@ -79,9 +126,37 @@ async function _voiceStop(){
     try{_voiceTargetEl.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
     try{_voiceTargetEl.dispatchEvent(new Event('change',{bubbles:true}));}catch(_e){}
   }
-  _voiceTargetEl=null;_voiceBaseText='';
-  if(typeof _tdHaptic==='function')_tdHaptic(text?'win':'warn');
+  _voiceTargetEl=null;_voiceBaseText='';_voiceSeg='';
+  if(typeof _tdHaptic==='function')_tdHaptic(joined?'win':'warn');
   return joined;
+}
+
+// WORDS ARE ONLY EVER ADDED (owner, 2026-09-26: "It did then half of them
+// disappeared and when I stopped never put them in the description bar").
+// The phone reports the words of the CURRENT stretch of speech, and after a
+// pause the on-device recogniser starts a new stretch: its text starts over
+// from the new words. Written straight into the field, that replaced the first
+// half of what he said; and a last empty result at the stop replaced the rest
+// with nothing.
+//
+// So each result is read against the one before it. The same start is the
+// recogniser refining its guess, and replaces it. A different start, shorter
+// than what was there, is a new stretch: what was there is kept for good and
+// the new words go after it. An empty result, or one that is only the start
+// of what is already shown, changes nothing.
+let _voiceSeg='';
+function _voiceWords(t){return String(t||'').toLowerCase().replace(/[^a-z0-9' ]+/g,' ').split(/\s+/).filter(Boolean);}
+function _voiceAccept(heard){
+  const h=String(heard||'').trim();
+  if(!h)return _voiceJoin(_voiceBaseText,_voiceSeg);
+  if(_voiceSeg){
+    const a=_voiceWords(_voiceSeg),b=_voiceWords(h);
+    let k=0;while(k<a.length&&k<b.length&&a[k]===b[k])k++;
+    if(k===b.length&&b.length<a.length)return _voiceJoin(_voiceBaseText,_voiceSeg);
+    if(k===0&&b.length<a.length)_voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);
+  }
+  _voiceSeg=h;
+  return _voiceJoin(_voiceBaseText,h);
 }
 
 // Join existing text and dictated text like a person would: one space, and a

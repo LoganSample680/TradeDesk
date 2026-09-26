@@ -12,6 +12,7 @@ function _openSetDetail(key) {
   _renderSetIndex();
   if (key === 'integrations') _renderIntegrations();
   if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
+  if (key === 'branding' || key === 'biz') _renderLogoPreview();
   if (key === 'truerates') loadTrueRatesForm();
   if (key === 'pricebook') renderPriceBookSettings();
   if (key === 'dev' && typeof _opsAdminRow === 'function') _opsAdminRow();
@@ -713,7 +714,7 @@ function openTimeOffModal(){
     const blocks=S.timeOff||[];
     box.innerHTML=
       '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('🏖',{size:17})+' Time off</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Block dates from scheduling</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Blocks scheduling. Automatic time and mileage on these days count only once you answer them.</div>'+
       (blocks.length?'<div style="margin-bottom:12px">'+blocks.map((b,i)=>
         '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--amber-lt);border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:6px">'+
           '<div>'+
@@ -725,9 +726,9 @@ function openTimeOffModal(){
       ).join('')+'</div>':'<div style="font-size:12px;color:var(--text3);margin-bottom:12px;text-align:center;padding:10px">No time off blocked</div>')+
       '<div style="background:var(--bg2);border-radius:var(--r);padding:12px;border:1px solid var(--border);margin-bottom:12px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Add block</div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
-          '<div><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Start</label><input type="date" id="to-start" style="width:100%;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
-          '<div><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">End</label><input type="date" id="to-end" style="width:100%;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:10px">'+
+          '<div style="min-width:0"><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Start</label><input type="date" id="to-start" style="width:100%;min-width:0;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
+          '<div style="min-width:0"><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">End</label><input type="date" id="to-end" style="width:100%;min-width:0;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
         '</div>'+
         '<input type="text" id="to-label" placeholder="Label (optional: Vacation, Holiday...)" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-family:inherit;margin-bottom:8px;box-sizing:border-box">'+
         '<button onclick="_toAdd()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">+ Add time off</button>'+
@@ -947,7 +948,6 @@ function loadSettingsForm(){
   const _scanR=document.getElementById('set-scan-rate');if(_scanR)_scanR.value=(S.scanRateSqFt!=null?S.scanRateSqFt:0);
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
   const wpEl=document.getElementById('set-warranty-period');if(wpEl)wpEl.value=S.warrantyPeriod||'1 year';
-  _renderLogoPreviewBiz();
   _renderSetIndex();
 }
 function saveSettings(){
@@ -1046,28 +1046,19 @@ function saveTrueRates(){
   _renderSetIndex();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
+// One logo, two places to change it (Business info and Branding). Both rows
+// share the one file input and render from S.logoData here.
 function _renderLogoPreview(){
-  const el=document.getElementById('set-logo-preview');if(!el)return;
   const src=S.logoData||'';
-  el.innerHTML=src
-    ?'<img src="'+src+'" style="height:48px;max-width:180px;object-fit:contain;display:block" alt="Logo preview">'
-    :'<span style="font-size:11px;color:rgba(255,255,255,.5)">No logo</span>';
-  _renderLogoPreviewBiz();
-}
-function _renderLogoPreviewBiz(){
-  const el=document.getElementById('set-logo-preview-biz');if(!el)return;
-  const fn=document.getElementById('set-logo-filename');
-  const btn=document.getElementById('set-logo-btn');
-  const src=S.logoData||'';
-  if(src){
-    el.innerHTML='<img src="'+src+'" style="width:100%;height:100%;object-fit:contain;display:block" alt="Logo">';
-    if(fn)fn.textContent='Logo uploaded';
-    if(btn)btn.textContent='Replace';
-  }else{
-    el.innerHTML='<span style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">'+(S.bname||'SP').split(' ').map(w=>w[0]||'').slice(0,2).join('')+'</span>';
-    if(fn)fn.textContent='';
-    if(btn)btn.textContent='Upload image';
-  }
+  const initials=(S.bname||'SP').split(' ').map(w=>w[0]||'').slice(0,2).join('');
+  document.querySelectorAll('.set-logo-tile').forEach(el=>{
+    el.innerHTML=src
+      ?'<img src="'+src+'" style="width:100%;height:100%;object-fit:contain;display:block" alt="Logo">'
+      :'<span style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">'+escHtml(initials)+'</span>';
+  });
+  document.querySelectorAll('.set-logo-filename').forEach(el=>{el.textContent=src?'Logo uploaded':'';});
+  document.querySelectorAll('.set-logo-btn').forEach(el=>{el.textContent=src?'Change logo':'Upload image';});
+  document.querySelectorAll('.set-logo-rm').forEach(el=>{el.style.display=src?'':'none';});
 }
 // WHAT THE LOGO IS, measured once and kept (proposal letterhead, 2026-09-23:
 // "look at the ugliness on jacks logo"). A logo drawn on its own solid tile,
@@ -1143,6 +1134,8 @@ function _updateBootPreview(){
 function handleLogoUpload(input){
   const file=input.files&&input.files[0];if(!file)return;
   if(!file.type.match(/^image\/(png|jpeg|svg\+xml)$/)){zAlert('Please upload a PNG, JPG, or SVG file.');input.value='';return;}
+  // Clear the input so picking a file again (even the same one) still fires.
+  try{input.value='';}catch(_e){}
   const reader=new FileReader();
   reader.onload=e=>{
     S.logoData=e.target.result;_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
@@ -1166,7 +1159,7 @@ function _tdBrandFromLogo(look){
   return true;
 }
 function clearLogoSetting(){
-  S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();_updateBootPreview();
+  S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
   showToast('Logo removed, proposals will show business name','✓');
 }
 // Crew "today"/contractor labor isn't a local store, it's cloud time-tracking

@@ -144,8 +144,16 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('the bar walks him to the unpriced line, then offers Sign here and Send it', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
+    // Changed 2026-09-26 (§10.4, owner: "BYO should carry over as much as
+    // possible with shared code"). The bar now walks Tim's leftovers first and
+    // asks him to check the total and deposit before Send, the same walk as
+    // T&M (e2e-tm-guided.spec.js). Tim's leftovers are answered here.
+    expect((await bar())[0]).toMatch(/^Tim caught \d+ things? you left out$/);
+    await page.evaluate(() => { _byoMissed.length = 0; _byoRenderSteps(); });
     expect(await bar()).toEqual(['Price every line']);
     await priceAll(900);
+    expect(await bar()).toEqual(['Check the price']);
+    await page.evaluate(() => _geiNumsMark());
     expect(await bar()).toEqual(['Sign here', 'Send it']);
   });
 
@@ -182,6 +190,11 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('the deposit is a percent with its dollars, held to the state limit', async () => {
     await open({ addr: '9 Elm St, Worcester, MA 01608' });
     await say('pull the old water heater, set a tankless');
+    // Changed 2026-09-26 (§10.4, owner: "BYO should carry over as much as
+    // possible with shared code"). The bar now walks Tim's leftovers first and
+    // asks him to check the total and deposit before Send, the same walk as
+    // T&M (e2e-tm-guided.spec.js). Tim's leftovers are answered here.
+    await page.evaluate(() => { _byoMissed.length = 0; });
     await priceAll(1500);
     await page.locator('#byo-dep-in').fill('50');
     await page.locator('#byo-dep-in').dispatchEvent('input');

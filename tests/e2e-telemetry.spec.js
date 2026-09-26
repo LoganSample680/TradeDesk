@@ -4,6 +4,8 @@
 // so it can never add load, noise, or console-wrapping during any test run,
 // and the app must tolerate its absence everywhere it's referenced.
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
 
 test.describe('Telemetry layer', () => {
   let page;
@@ -204,8 +206,12 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
   // resize handler triggers another resize within the same frame), not an
   // application bug. There is no app-code fix, every ResizeObserver user sees
   // it. Filtered at the shared _logError sink (same one both the console.error
-  // wrapper and window's 'error'/'unhandledrejection' listeners call), so this
-  // single test proves the filter for every capture path at once.
+  // wrapper and window's 'error'/'unhandledrejection' listeners call).
+  //
+  // This block used to claim that made "this single test prove the filter for
+  // every capture path at once". It did not, and error_log 223 is what that
+  // cost: the sink is shared, but the MESSAGE is not the same on every path,
+  // and the filter was anchored at ^. See the regression tests below.
   test('regression #64/65: ResizeObserver loop noise is NOT reported to error_log', () => {
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('ResizeObserver loop completed with undelivered notifications.');
@@ -216,6 +222,51 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('ResizeObserver loop limit exceeded');
     expect(invocations.length).toBe(0);
+  });
+
+  // ── Hotfix 223: the same noise, wearing a prefix ─────────────────────────
+  //
+  // js/e2e.js installs its OWN window 'error' listener that prefixes the text
+  // with "[TradeDesk JS Error] [file:line] " and logs it with console.error.
+  // That lands here as kind 'console' with the ResizeObserver sentence no
+  // longer at the START of the string, so the anchored /^ResizeObserver/ never
+  // matched and the noise re-paged the hot lane despite a filter written to
+  // stop exactly it.
+  //
+  // The literal message from error_log 223: prefix, doubled sentence and all.
+  test('regression #223: the noise is filtered even when another handler prefixed it', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[TradeDesk JS Error] [?_v=1790089984700:0] ResizeObserver loop completed with undelivered notifications. ResizeObserver loop completed with undelivered notifications.');
+    expect(invocations.length, 'a prefixed benign notification must not reach error_log').toBe(0);
+  });
+
+  test('regression #223: the prefixed "limit exceeded" wording is filtered too', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[TradeDesk JS Error] [index.html:0] ResizeObserver loop limit exceeded');
+    expect(invocations.length).toBe(0);
+  });
+
+  test('regression #223: the filter is no longer anchored to the start', () => {
+    // The DECLARATION, not the file: the comment above it quotes the old
+    // anchored pattern to explain the bug, and a whole-file scan would read
+    // that explanation as the bug itself.
+    const obs = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const decl = (obs.match(/var _BENIGN_BROWSER_NOISE\s*=\s*[^;]+;/) || [''])[0];
+    expect(decl, 'the benign-noise pattern must be declared').toBeTruthy();
+    expect(decl, 'an anchored pattern is the bug this replaced').not.toContain('/^ResizeObserver');
+    expect(decl, 'and it must still be the ResizeObserver wording only').toContain('ResizeObserver loop');
+  });
+
+  test('regression #223: the predicate is shared, not copied', () => {
+    // §7.3. js/e2e.js skips the red toast AND the console.error using THIS
+    // definition, so the noise is never generated rather than generated and
+    // then filtered. A second copy of the pattern there would drift, and the
+    // next wording change would fix one and miss the other.
+    const obs = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const e2e = fs.readFileSync(path.join(__dirname, '..', 'js', 'e2e.js'), 'utf8');
+    expect(obs, 'the predicate must be exported').toMatch(/window\._tdIsBenignBrowserNoise\s*=/);
+    expect(e2e, 'and used by the global handler').toMatch(/_tdIsBenignBrowserNoise\(e\.message\)/);
+    expect(e2e, 'e2e.js must not carry its own copy of the pattern').not.toMatch(/ResizeObserver loop \(completed/);
   });
 
   test('the ResizeObserver filter is narrow: unrelated messages mentioning it still report', () => {
@@ -548,7 +599,13 @@ test.describe('control telemetry: client → ingest → rollup contract', () => 
 
   test('every screen the app can show has a name, and none of them is the code name', () => {
     const mig = read(MIG);
-    const named = new Set([...mig.matchAll(/\('(pg-[a-z0-9-]+)',\s*'([^']+)'/g)].map((m) => m[1]));
+    // Names added by a later migration count too: a new screen gets its row in
+    // a new additive file, never by editing one that already ran.
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    const all = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+      .filter((sql) => /insert into analytics_screen_names/.test(sql)).join('\n');
+    const named = new Set([...all.matchAll(/\('(pg-[a-z0-9-]+)',\s*'([^']+)'/g)].map((m) => m[1]));
     const html = read('index.html');
     const shown = [...html.matchAll(/<div class="pg"[^>]*id="(pg-[a-z0-9-]+)"/g)].map((m) => m[1]);
     const missing = shown.filter((id) => !named.has(id));
@@ -635,5 +692,160 @@ test.describe('app_presence: the dormant state', () => {
   test('it is still admin-only and still revoked from anon', () => {
     expect(sql).toMatch(/if not is_ops_admin\(\) then/);
     expect(sql).toMatch(/revoke all on function app_presence\(\) from anon, authenticated;/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  A restart must not eat the last taps (owner 2026-09-24)
+//  Jack's 4:20:27 "not work" answer reached the server and the tap that sent
+//  it never reached this table: the batch had just gone on its 30 s tick, the
+//  login failed at 4:20:32 and the app rebooted at 4:20:42. The batch is now
+//  on disk as it grows, and a send stays on disk until the function answers.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('telemetry survives a restart', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+
+  function makeStore(opts) {
+    const m = new Map();
+    return {
+      map: m,
+      getItem: (k) => { if (opts && opts.throwOnRead) throw new Error('blocked'); return m.has(k) ? m.get(k) : null; },
+      setItem: (k, v) => { if (opts && opts.throwOnWrite) throw new Error('quota'); m.set(k, String(v)); },
+      removeItem: (k) => { m.delete(k); },
+    };
+  }
+  // One page load. `answer` decides what the edge function says to each send.
+  function boot(store, { uid = 'u1', answer = 'ok', perf = 1234 } = {}) {
+    const invocations = [];
+    const listeners = { window: {}, document: {} };
+    let intervalFn = null;
+    const resolvers = [];
+    const supa = { functions: { invoke: (name, o) => {
+      invocations.push({ name, body: o && o.body });
+      return { then(ok, bad) {
+        const r = { ok, bad };
+        resolvers.push(r);
+        if (answer === 'ok') ok({ data: { ok: true }, error: null });
+        else if (answer === 'error') ok({ data: null, error: { message: 'boom' } });
+        else if (answer === 'reject') bad(new Error('offline'));
+        return this;
+      } };
+    } } };
+    const documentObj = { addEventListener(t, f) { (listeners.document[t] ||= []).push(f); },
+      querySelector: () => ({ id: 'pg-timelog' }), body: {}, visibilityState: 'visible' };
+    const windowObj = { addEventListener(t, f) { (listeners.window[t] ||= []).push(f); }, open() {} };
+    const prev = globalThis.localStorage;
+    globalThis.localStorage = store;
+    try {
+      new Function('window', 'location', 'document', 'console', 'performance', 'setInterval', 'setTimeout',
+        'MutationObserver', 'XMLHttpRequest', '_supa', '_supaUser', 'Date', src)(
+        windowObj, { hostname: 'tradedeskpro.app', href: 'https://tradedeskpro.app/' }, documentObj,
+        { error() {}, log() {}, warn() {} }, { now: () => perf },
+        (f) => { intervalFn = f; return 0; }, () => 0,
+        function () { return { observe() {}, disconnect() {} }; }, function () {},
+        supa, uid ? { id: uid } : null, Date);
+    } finally { globalThis.localStorage = prev; }
+    const withStore = (fn) => { const p = globalThis.localStorage; globalThis.localStorage = store; try { return fn(); } finally { globalThis.localStorage = p; } };
+    return {
+      invocations,
+      tap: (onclick) => withStore(() => (listeners.document.click || []).forEach((f) =>
+        // '#id' taps a control by its id, anything else by its onclick.
+        f({ target: { closest: () => (/^#/.test(onclick)
+          ? { id: onclick.slice(1), getAttribute: () => null, tagName: 'BUTTON' }
+          : { getAttribute: (a) => (a === 'onclick' ? onclick : null), tagName: 'BUTTON' }) } }))),
+      tick: () => withStore(() => intervalFn && intervalFn()),
+      events: () => invocations.filter((i) => i.name === 'ingest-telemetry').map((i) => i.body),
+    };
+  }
+  const ctls = (body) => (body.events || []).map((e) => e.ctl).filter(Boolean);
+  const pend = (store) => JSON.parse(store.getItem('zp3_obs_pending') || '[]');
+
+  test('a tap is on disk the moment it happens, before any send', () => {
+    const store = makeStore();
+    const a = boot(store);
+    a.tap("_tlRowMenuDo('notwork','x')");
+    expect(a.events().length).toBe(0);
+    const cur = JSON.parse(store.getItem('zp3_obs_current'));
+    expect(cur.uid).toBe('u1');
+    expect(cur.events.map((e) => e.ctl)).toEqual(['_tlRowMenuDo']);
+  });
+
+  test('the tap a restart would have eaten goes out on the next page, under its own session', () => {
+    const store = makeStore();
+    const a = boot(store, { perf: 1 });
+    a.tap("event.stopPropagation();_tlRowMenu(this)");
+    a.tap("_tlRowMenuDo('notwork','x')");
+    // No tick: the app restarts here, the way it did at 4:20:42.
+    const b = boot(store, { perf: 2 });
+    b.tap("#mtb-more");
+    b.tick();
+    const sent = b.events();
+    const recovered = sent.find((p) => ctls(p).includes('_tlRowMenuDo'));
+    expect(recovered, 'the lost tap is sent').toBeTruthy();
+    expect(ctls(recovered)).toEqual(['stopPropagation', '_tlRowMenuDo']);
+    const fresh = sent.find((p) => ctls(p).includes('#mtb-more'));
+    expect(fresh.session_id).not.toBe(recovered.session_id);
+    expect(pend(store), 'both answered OK, nothing left on disk').toEqual([]);
+  });
+
+  test('a send stays on disk until the function answers, and goes again after a failure', () => {
+    const store = makeStore();
+    const a = boot(store, { answer: 'error', perf: 1 });
+    a.tap("_mileWhoPick('1')");
+    a.tick();
+    expect(a.events().length).toBe(1);
+    expect(pend(store).length, 'a refused send is kept').toBe(1);
+    const b = boot(store, { answer: 'reject', perf: 2 });
+    b.tick();
+    expect(pend(store).length, 'a network failure is kept too').toBe(1);
+    const c = boot(store, { answer: 'ok', perf: 3 });
+    c.tick();
+    expect(c.events().some((p) => ctls(p).includes('_mileWhoPick'))).toBe(true);
+    expect(pend(store)).toEqual([]);
+  });
+
+  test("another login's taps are dropped, never filed under the new login", () => {
+    const store = makeStore();
+    const a = boot(store, { uid: 'jack', perf: 1 });
+    a.tap("_tlRowMenuDo('notwork','x')");
+    const b = boot(store, { uid: 'logan', perf: 2 });
+    b.tap('#mtb-dash');
+    b.tick();
+    expect(b.events().some((p) => ctls(p).includes('_tlRowMenuDo'))).toBe(false);
+    expect(store.getItem('zp3_obs_current')).toBeNull();
+    expect(pend(store).every((x) => x.uid === 'logan')).toBe(true);
+  });
+
+  test('the disk copy is bounded: a phone offline for days keeps its ten newest sends', () => {
+    const store = makeStore();
+    const a = boot(store, { answer: 'reject' });
+    for (let i = 0; i < 25; i++) { a.tap('#t' + i); a.tick(); }
+    const l = pend(store);
+    expect(l.length).toBe(10);
+    expect(ctls(l[9].payload)).toEqual(['#t24']);
+  });
+
+  test('no storage, storage that throws, no login: nothing throws and taps still send', () => {
+    const none = boot(null);
+    none.tap('#a'); none.tick();
+    expect(none.events().length).toBe(1);
+    for (const opts of [{ throwOnRead: true }, { throwOnWrite: true }]) {
+      const s = makeStore(opts);
+      const x = boot(s);
+      expect(() => { x.tap('#b'); x.tick(); }).not.toThrow();
+      expect(x.events().length).toBe(1);
+    }
+    const out = boot(makeStore(), { uid: null });
+    expect(() => { out.tap('#c'); out.tick(); }).not.toThrow();
+    expect(out.events().length).toBe(0);
+  });
+
+  test('a replay of the same page never sends its own live batch twice', () => {
+    const store = makeStore();
+    const a = boot(store);
+    a.tap('#x'); a.tick(); a.tick(); a.tick();
+    expect(a.events().filter((p) => ctls(p).includes('#x')).length).toBe(1);
   });
 });

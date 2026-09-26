@@ -12,7 +12,9 @@ jobs:
     name: Seed tax_rates table
     # Runs on self-hosted Proxmox runner — home IP bypasses SST WAF that blocks Azure/GitHub cloud IPs
     runs-on: self-hosted
-    timeout-minutes: 10
+    # The SST boundary files are large (Kansas alone is 105MB unzipped) and are
+    # streamed state by state. 10 minutes cancelled the 2026-09-01 run.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
