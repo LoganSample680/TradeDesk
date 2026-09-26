@@ -1587,7 +1587,10 @@ function _tlRailKind(r){
 // Colours are REUSED from the split bar and the row badges (§7.3), never
 // invented here, so "amber means driving" holds everywhere on this page.
 const _TL_RAIL_META={
-  job:   {c:'var(--blue)',       icon:'📍', word:'On site'},
+  // "Job site", not "On site" (owner 2026-09-26): every other word on this
+  // rail names WHERE the time went (shop, supply house, office), and "On site"
+  // read as a state rather than a place.
+  job:   {c:'var(--blue)',       icon:'📍', word:'Job site'},
   drive: {c:'#9F5B00',           icon:'🚗', word:'Drive time'},
   shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
   load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
@@ -2525,6 +2528,7 @@ function _tlBarsHtml(groups,opts){
   // The guide is drawn OVER the bars, not behind them. Behind, it vanished
   // under every column tall enough to matter, which is precisely the set of
   // columns it exists to flag.
+  let anyOpens=false;
   const cols=list.map((g,i)=>{
     const rows=Array.isArray(g.rows)?g.rows:[];
     const e=folds[i];
@@ -2578,6 +2582,7 @@ function _tlBarsHtml(groups,opts){
     // affordance never lies. The click is prefixed with _tlDrillFrom(this) so
     // the zoom that follows can grow out of THIS column.
     const opens=!!(e.min&&g.onclick&&o.level!=='day');
+    if(opens)anyOpens=true;
     const seam=!!(g.key&&_tlSeamKey&&String(g.key)===String(_tlSeamKey));
     if(seam)_tlDrillX=((i+0.5)/list.length*100);
     return '<li class="tl-wbar-col'+(e.min?'':' tl-wbar-none')+'">'+
@@ -2619,6 +2624,12 @@ function _tlBarsHtml(groups,opts){
     '<ol class="tl-wbar'+(list.length>8?' tl-wbar-dense':'')+'" style="grid-template-columns:repeat('+list.length+',minmax(0,1fr))">'+
       cols+
     '</ol>'+
+    // Said in words under the bars (owner 2026-09-26: a crew member's dad, on
+    // a small phone, never guessed the bars opened). The chevron on each day
+    // is the cue for people who already know; this line is for everyone else.
+    // Only when something actually opens, so it never promises a tap that
+    // does nothing.
+    ((anyOpens&&o.tip)?'<div class="tl-wbar-tip">'+escHtml(String(o.tip))+'</div>':'')+
     key+
     (o.share||'')+
   '</div>';
@@ -2677,7 +2688,8 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
     onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
-  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week',key:false});
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week',key:false,
+    tip:'Tap a day to see every stop'});
 }
 // A MONTH: one bar per week, guided at 40 hours.
 //
@@ -2738,7 +2750,7 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
     // The cost is deliberate: a light month draws short bars, which is the
     // true answer, and the hours are printed under every column anyway.
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
-      floorMin:_TL_MONTH_FLOOR,level:'month'});
+      floorMin:_TL_MONTH_FLOOR,level:'month',tip:'Tap a week to open it'});
 }
 // "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
 // the dash so a six-column month still fits a 320px phone.
@@ -3635,7 +3647,7 @@ function _tlFlagChips(f){
 // can never drift into disagreeing about what a minute was or what colour it
 // is. Colours are the ones already in use (§7.3), not new ones.
 const _TL_BUCKETS=[
-  {k:'onsiteMin', label:'On site',      c:'var(--blue)'},
+  {k:'onsiteMin', label:'Job site',     c:'var(--blue)'},
   {k:'shopMin',   label:'Shop',         c:'var(--c-teal,#0E6B6B)'},
   {k:'driveMin',  label:'Driving',      c:'#9F5B00'},
   {k:'loadMin',   label:'Loading',      c:'#6D28D9'},

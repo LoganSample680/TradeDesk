@@ -967,13 +967,11 @@ test.describe('Utility and helper functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmAddMatCat: opens material category modal without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmAddMatCat !== 'function') return { skip: true };
-      try { _tmAddMatCat(); return { ok: true }; }
-      catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // The T&M-only category modal was replaced by the shared Materials sheet
+  // (js/materials.js), so T&M and BYO can never drift apart again (§7.1).
+  test('_tmAddMatCat is gone: T&M adds materials through the shared sheet', async () => {
+    const gone = await page.evaluate(() => typeof _tmAddMatCat);
+    expect(gone).toBe('undefined');
   });
 
   test('_tmSyncCadence: syncs cadence buttons without throwing', async () => {

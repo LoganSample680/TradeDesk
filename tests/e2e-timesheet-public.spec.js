@@ -107,7 +107,7 @@ test.describe('The public timesheet page', () => {
     // The breakdown the boss opens on. It used to be a colour-only key under
     // the chart; it is now the split bar's legend above it, with the hours on
     // it, which is what the owner asked the shared link for (2026-09-19).
-    expect(r.key).toContain('On site');
+    expect(r.key).toContain('Job site');
     expect(r.key, 'and how long each bucket took, not just its colour').toMatch(/\dh|\dm/);
     expect(r.under, 'one legend, not two').toBe(0);
   });
@@ -492,7 +492,7 @@ test.describe('The public timesheet page', () => {
       // And the day is still broken down, not flattened into one block: the
       // drive keeps its own colour and the site time keeps its own.
       expect(leg).toMatch(/Driving\s*20m/);
-      expect(leg).toMatch(/On site\s*4h/);
+      expect(leg).toMatch(/Job site\s*4h/);
       // The 220 minutes the clock covers and nothing tracked stay GREY. They
       // become a row reading "Clocked in, nothing tracked" (_tlBlendManual),
       // which _tlRailKind has always called Manual time because it has no
@@ -526,7 +526,7 @@ test.describe('The public timesheet page', () => {
       }));
       // Not a list of strings this file made up: the app's own bucket table,
       // so a renamed or added bucket comes through here without an edit.
-      const want = ['On site', 'Shop', 'Driving', 'Loading', 'Supply', 'Manual time'];
+      const want = ['Job site', 'Shop', 'Driving', 'Loading', 'Supply', 'Manual time'];
       want.forEach((w) => expect(r.legend.some(l => l.startsWith(w)), w + ' is on the week').toBe(true));
       expect(r.legend.find(l => l.startsWith('Supply'))).toMatch(/26m/);
       expect(r.legend.find(l => l.startsWith('Loading'))).toMatch(/25m/);
@@ -567,5 +567,74 @@ test.describe('The public timesheet page', () => {
       expect(r.bleed, w + 'px bleeds').toBe(false);
       expect(r.overlap, w + 'px overlaps').toBe(false);
     }
+  });
+
+  // Owner 2026-09-26: a crew member's dad, on a small phone, could not read it
+  // and never guessed the bars opened. The hint says it in words, the rail
+  // says Job site, and the week title keeps its end date at 320px.
+  test('small phone: the tap hint is there in words, Job site, the week title is whole', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await openPage(page, DATA);
+    await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-wbar-wrap'));
+    const r = await page.evaluate(() => {
+      const tip = document.querySelector('#tsp-body .tl-wbar-tip');
+      const lbl = document.querySelector('#tsp-body .tl-monav-lbl');
+      const tr = tip && tip.getBoundingClientRect();
+      return {
+        tip: tip && tip.textContent.trim(),
+        tipFont: tip && parseFloat(getComputedStyle(tip).fontSize),
+        tipIn: !!tr && tr.left >= 0 && tr.right <= innerWidth,
+        clipped: lbl.scrollWidth > lbl.clientWidth + 1,
+        lbl: lbl.textContent.trim(),
+        key: document.querySelector('#tsp-body').textContent,
+        bleed: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    expect(r.tip).toBe('Tap a day to see every stop');
+    expect(r.tipFont, 'an instruction, readable at arm\'s length').toBeGreaterThanOrEqual(13);
+    expect(r.tipIn).toBe(true);
+    expect(r.lbl).toBe('Week of Aug 23 – 29');
+    expect(r.clipped, 'the week title wraps, never cut to an ellipsis').toBe(false);
+    expect(r.key).toContain('Job site');
+    expect(r.key).not.toContain('On site');
+    expect(r.bleed).toBe(false);
+    // On the day there is nothing left to tap into, so no hint promising one.
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+    const d = await page.evaluate(() => ({
+      tip: document.querySelectorAll('#tsp-body .tl-wbar-tip').length,
+      rail: document.querySelector('#tsp-body .tl-rail').textContent,
+    }));
+    expect(d.tip).toBe(0);
+    // Big enough to read at arm's length (owner 2026-09-26: "he can't read it").
+    const f = await page.evaluate(() => {
+      const px = (sel) => parseFloat(getComputedStyle(document.querySelector('#tsp-body ' + sel)).fontSize);
+      return { time: px('.tl-rail-time'), ttl: px('.tl-rail-ttl'), sub: px('.tl-rail-sub'), dur: px('.tl-rail-dur'), leg: px('.tl-rail-leg'),
+        range: parseFloat(getComputedStyle(document.querySelector('.tsp-range')).fontSize),
+        chipBelow: document.querySelector('.tsp-chip').getBoundingClientRect().top >= document.querySelector('.tsp-range').getBoundingClientRect().bottom - 1 };
+    });
+    expect(f.time).toBeGreaterThanOrEqual(14);
+    expect(f.sub).toBeGreaterThanOrEqual(14);
+    expect(f.leg).toBeGreaterThanOrEqual(14);
+    expect(f.range).toBeGreaterThanOrEqual(15);
+    expect(f.ttl).toBeGreaterThanOrEqual(16);
+    expect(f.dur).toBeGreaterThanOrEqual(16);
+    expect(f.chipBelow, 'at 320px the stamp drops under the dates instead of squeezing them').toBe(true);
+    expect(d.rail).toContain('Job site');
+    expect(d.rail).not.toContain('On site');
+  });
+
+  test('no hint when no column opens, so it never promises a tap that does nothing', async ({ page }) => {
+    await openPage(page, DATA);
+    const r = await page.evaluate(() => {
+      const d = document.createElement('div');
+      const rows = [{ date: '2026-08-25', minutes: 60, source: 'geofence' }];
+      d.innerHTML = _tlBarsHtml([{ key: 'a', label: 'T', rows }], { level: 'week', tip: 'Tap a day to see every stop', key: false });
+      const e = document.createElement('div');
+      e.innerHTML = _tlBarsHtml([{ key: 'a', label: 'T', rows, onclick: 'void 0' }], { level: 'week', tip: 'Tap a day to see every stop', key: false });
+      return { noClick: d.querySelectorAll('.tl-wbar-tip').length, withClick: e.querySelectorAll('.tl-wbar-tip').length };
+    });
+    expect(r.noClick).toBe(0);
+    expect(r.withClick).toBe(1);
   });
 });
