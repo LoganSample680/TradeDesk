@@ -728,6 +728,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
+  _tmChecking=false;
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
@@ -2098,6 +2099,10 @@ function _geiScopeMissedHtml(){
               // The reason is a tap on the words away. Four paragraphs in a
               // row was a manual; the step names alone read like a list.
               '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+              // A visible No beside every Add (2026-09-26): the bar now walks
+              // him to these, and turning one down has to be one tap too. It
+              // was only a swipe or Edit before.
+              '<button type="button" class="ios-no" onclick="_geiScopeDropMissed('+id+')">No</button>'+
               '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
             '</div>'+
             '<button type="button" class="ios-del" tabindex="-1" onclick="_geiScopeDropMissed('+id+')">Not needed</button>'+
@@ -2227,6 +2232,7 @@ function _timMissAskRow(im,take,drop){
         'onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+take+'('+id+');}">'+
       '<button type="button" class="ios-pill" onclick="'+take+'('+id+')">Add</button>'+
     '</div>'+
+    '<div class="ios-row ios-ask-skip"><button type="button" class="ios-no" onclick="'+drop+'('+id+')">Skip this</button></div>'+
     '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
   '</div>';
 }
@@ -4775,11 +4781,18 @@ function _buildComparisonPreview(){
 }
 // ─── End comparison ──────────────────────────────────────────────────────────
 function _tmCrewStep(delta){
+  _tmTouchedRate();
   _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
   const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
   const lbl=document.getElementById('tm-i-crew-label');
   if(lbl)lbl.textContent=_tmCrewCount===1?'solo':_tmCrewCount===2?'me + helper':'crew';
   _tmInputChange();
+}
+// Changing the rate or the people is looking at them: no Yes needed after.
+function _tmTouchedRate(){
+  const k=String(_geiEditBidId||'');
+  _tmChecked[k]=true;_tmChecking=false;
+  try{localStorage.setItem('td_tm_rate_ok_'+k,'1');}catch(_e){}
 }
 function _tmInputChange(){
   _tmRatePerMan=_moneyVal('tm-i-rate');
@@ -5850,7 +5863,10 @@ function _tmRenderSteps(all,rule){
     const h=document.getElementById('tm-step-1');
     if(h)h.insertAdjacentHTML('beforeend','<button type="button" class="s" id="tm-scope-edit" onclick="_tmScopeEdit()">'+(_tmScopeEditing?'Done':'Edit')+'</button>');
   }
-  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?'done':'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  // Not ticked until he has looked at the numbers: a pre-filled rate is not a
+  // checked one.
+  const chk=!_tmLayers.has('rate')||_tmRateChecked();
+  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────
@@ -5873,7 +5889,60 @@ function _tmDockNext(st,rule,all){
     const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost',dep:'Lower the deposit'}[k]||'Finish How it bills';
     return {label:say,fn:'_tmStepAct(\''+k+'\')'};
   }
+  // HELD BY THE HAND TO SEND (owner, 2026-09-26: "even I would race to get
+  // the proposal done, there was a ton of shit I would've missed if my hand
+  // wasn't held, rate, how much my hourly number was, how many people, Tim's
+  // recommendations"). His rate and one person are filled in for him, so the
+  // bar went straight from Build the steps to Send it and none of them was
+  // ever looked at. Now the bar walks him through each before Send: Tim's
+  // questions (answered or turned down, one tap either way), then the rate and
+  // the people, confirmed in one tap that says the numbers out loud.
+  // Steps he left out are things Tim caught; the permit and the unit are
+  // questions only he can answer. The bar says which it is.
+  const miss=_geiScopeMissed||[];
+  const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_tmGoTimAsks()'};
+  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_tmGoTimAsks()'};
+  if(_tmLayers.has('rate')&&!_tmRateChecked()){
+    if(_tmChecking){
+      const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
+      return {label:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person'),fn:'_tmMarkRateChecked()'};
+    }
+    return {label:'Check your rate',fn:'_tmCheckRate()'};
+  }
   return null;
+}
+// The rate and people are confirmed once per proposal: typed, stepped, or the
+// Yes on the bar. Remembered by bid, so reopening a draft does not ask again.
+let _tmChecked={},_tmChecking=false;
+function _tmRateChecked(){
+  const k=String(_geiEditBidId||'');
+  if(_tmChecked[k])return true;
+  try{return localStorage.getItem('td_tm_rate_ok_'+k)==='1';}catch(_e){return false;}
+}
+function _tmMarkRateChecked(){
+  const k=String(_geiEditBidId||'');
+  _tmChecked[k]=true;_tmChecking=false;
+  try{localStorage.setItem('td_tm_rate_ok_'+k,'1');}catch(_e){}
+  document.getElementById('tm-blk-rate')?.classList.remove('tm-guide');
+  if(typeof _tmRenderSteps==='function')_tmRenderSteps();
+}
+// Scroll to the thing and light it, so he sees WHAT he is saying yes to.
+function _tmGuideTo(el,cls){
+  if(!el)return;
+  try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
+  el.classList.remove('tm-guide');void el.offsetWidth;el.classList.add('tm-guide');
+}
+function _tmCheckRate(){
+  _tmChecking=true;
+  _tmGuideTo(document.getElementById('tm-blk-rate'));
+  if(typeof _tmRenderSteps==='function')_tmRenderSteps();
+}
+function _tmGoTimAsks(){
+  const card=document.querySelector('#gei-tm-page .ios-tim');
+  _tmGuideTo(card);
+  // A question with a box (the unit) gets the cursor, so he can just type.
+  setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
 }
 function _tmDockBuild(){
   const el=document.getElementById('gei-scope-say');

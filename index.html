@@ -1533,6 +1533,10 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-btn-fill{background:#2C74C9}
 :is(#gei-tm-page,#gei-byo-page) #tm-nte-sub:empty{display:none}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .n{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2);color:var(--ios-2);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{background:var(--ios-tint);border-color:var(--ios-tint);color:#fff}
+/* Dark: the tint is a light blue there, and white on it read at 2.8:1. The
+   step being worked on is now common (How it bills waits for his check), so
+   its number has to read. Dark ink on the light tint. */
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="now"] .n{color:#0b1220}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .n{background:var(--c-green,#117841);border-color:var(--c-green,#117841);color:#fff}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .n svg{width:14px;height:14px}
 :is(#gei-tm-page,#gei-byo-page) .ios-stephead .t{flex:1;min-width:0;font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.15;color:var(--text)}
@@ -1544,6 +1548,13 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{co
 :is(#gei-tm-page,#gei-byo-page) .ios-links.left{justify-content:flex-start;padding:0 16px;margin-top:4px}
 /* Tim's finds are a list of step names. The reason opens on a tap. */
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
+/* The No beside Tim's Add, and Skip under a question with a box (2026-09-26). */
+:is(#gei-tm-page,#gei-byo-page) .ios-no{flex:0 0 auto;border:0;background:none;color:var(--text2);font:inherit;font-size:15px;font-weight:600;padding:8px 10px;cursor:pointer;min-height:44px;min-width:48px}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip{padding-top:0;min-height:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-ask-skip .ios-no{padding-left:0;font-size:14px}
+/* Where the bar sends him: lit for a moment so he sees what he is checking. */
+@keyframes tmGuide{0%{box-shadow:0 0 0 0 rgba(37,99,235,.0)}20%{box-shadow:0 0 0 4px rgba(37,99,235,.35)}100%{box-shadow:0 0 0 4px rgba(37,99,235,.18)}}
+#gei-tm-page .tm-guide{border-radius:14px;animation:tmGuide 1.2s ease-out forwards}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-swipe.why .ios-lbl small{display:block}
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl{cursor:pointer}
 /* The stepper shows the count; "solo" under it said it again. */
@@ -3162,7 +3173,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="ios-group">
             <div id="tm-blk-rate" style="display:none">
               <label class="ios-row"><span class="ios-lbl" id="tm-lbl-rate">Hourly rate</span>
-                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></span></label>
+                <span class="ios-val">$<input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmTouchedRate();_tmInputChange()"></span></label>
               <div class="ios-row"><span class="ios-lbl">People on site<small id="tm-i-crew-label">solo</small></span>
                 <span class="ios-step"><button onclick="_tmCrewStep(-1)" type="button" aria-label="One fewer">−</button><span id="tm-i-crew-count">1</span><button onclick="_tmCrewStep(1)" type="button" aria-label="One more">+</button></span></div>
               <label class="ios-row" id="tm-days-f"><span class="ios-lbl" id="tm-lbl-days">Days, estimated</span>
