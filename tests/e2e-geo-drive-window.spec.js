@@ -1315,14 +1315,17 @@ test.describe('The native half of the drive window', () => {
     expect(s.includes('self.restoreSamplingWindow()'), 'load() must run it').toBe(true);
   });
 
-  test('the heartbeat keepalive defaults to OFF: that is the blue arrow', () => {
+  test('the plugin keepalive defaults to OFF; only JS turns it on', () => {
     const s = swiftSrc();
     expect(s.includes('let keepalive = call.getBool("keepalive") ?? false')).toBe(true);
     expect(s.includes('private var heartbeatKeepalive = false')).toBe(true);
     // ...and no code path may re-assert the coarse session without it.
     expect(/if heartbeatOn && heartbeatKeepalive \{/.test(s)).toBe(true);
+    // JS decides, and passes the decision explicitly (3.2): awake only inside
+    // working hours (owner 2026-09-26, the mix), never the plugin's default.
     const js = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
-    expect(js.includes('keepalive:false'), 'JS must pass the decision explicitly (3.2)').toBe(true);
+    expect(/startHeartbeat\(\{intervalMs:30\*60000,ttlMs,keepalive,/.test(js), 'JS must pass the decision explicitly (3.2)').toBe(true);
+    expect(js.includes('const keepalive=awakeMs>0;')).toBe(true);
   });
 
   test('stopAll and a burst both hand the radio back through one door', () => {
