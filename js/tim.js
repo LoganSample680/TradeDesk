@@ -1304,10 +1304,21 @@ function _timTalkBegin(){
   };
   _timWaveTimer=setInterval(tick,110);
   if(typeof _voiceStart==='function'){
-    _voiceStart(el,(joined,heard)=>{
+    Promise.resolve(_voiceStart(el,(joined,heard)=>{
       _timHeard=joined;
       const tr=document.getElementById('_tim-transcript');
       if(tr)tr.textContent=joined?('"'+joined+'"'):'';
+    })).then(ok=>{
+      // The mic did not start. The panel said "Tim is listening" anyway and
+      // heard nothing (2026-09-26). Say so, where he is looking, and stop.
+      if(ok!==false||!_timTalking)return;
+      _timTalking=false;
+      if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
+      const p=document.getElementById('_tim-listen');
+      if(p)p.innerHTML='<div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">'+timMark(22)+
+        '<span style="font-size:13.5px;font-weight:700;color:var(--text-cream)">Tim can\'t hear you</span></div>'+
+        '<div style="font-size:13px;line-height:1.5;color:var(--text-cream-2);margin-bottom:14px">Turn on Microphone and Speech Recognition for TradeDesk in Settings, then try again. You can type it in the meantime.</div>'+
+        '<button type="button" onclick="document.getElementById(\'_tim-listen\')?.remove();document.getElementById(\'_tim-listen-host\')?.remove()" style="width:100%;height:48px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">OK</button>';
     });
   }
 }

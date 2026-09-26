@@ -50,27 +50,73 @@ async function _voiceStart(el,onText){
   if(!(await _voiceReady()))return false;
   _voiceTargetEl=el;
   _voiceBaseText=String(el.value||'');
+  _voiceOnText=onText;
   try{
     if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();
     _voiceListener=await P.addListener('partial',(ev)=>{
       const heard=(ev&&ev.text)||'';
+      _voiceLastHeard=Date.now();
       const joined=_voiceJoin(_voiceBaseText,heard);
       if(_voiceTargetEl)_voiceTargetEl.value=joined;
-      if(typeof onText==='function')onText(joined,heard);
+      if(typeof _voiceOnText==='function')_voiceOnText(joined,heard);
+      // The phone closed this stretch of speech (a pause). Carry on listening
+      // from where the words are now.
+      if(ev&&ev.final&&_voiceActive)_voiceResume();
     });
     await P.start();
+    _voiceActive=true;_voiceLastHeard=Date.now();_voiceLastStart=Date.now();
+    _voiceWatch();
     if(typeof _tdHaptic==='function')_tdHaptic('tap');
     return true;
-  }catch(_e){return false;}
+  }catch(_e){_voiceActive=false;return false;}
+}
+
+// STAYING ON THROUGH A PAUSE (owner, 2026-09-26: "Talk to Tim failed to
+// pickup what I was doing just now"). iOS ends a recognition session on its
+// own: after a few seconds of silence, on an error, or when it decides the
+// sentence is over. The native side then stops the mic and says nothing, so the
+// panel went on saying "Tim is listening" while nothing after the pause was
+// heard. A man working while he talks pauses all the time.
+//
+// So while dictation is meant to be on, a session that has gone quiet is
+// started again. The field already holds every word heard so far (the partial
+// handler writes it), so a restart builds on it and loses nothing. Restarting
+// in silence costs nothing; words only stream while he is talking, so four
+// quiet seconds means either he is thinking or the phone gave up, and a fresh
+// session is right for both.
+let _voiceActive=false,_voiceLastHeard=0,_voiceLastStart=0,_voiceWatchTimer=null,_voiceOnText=null,_voiceResuming=false;
+function _voiceWatch(){
+  if(_voiceWatchTimer)clearInterval(_voiceWatchTimer);
+  _voiceWatchTimer=setInterval(()=>{
+    if(!_voiceActive){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;return;}
+    const now=Date.now();
+    if(now-_voiceLastHeard>4000&&now-_voiceLastStart>4000)_voiceResume();
+  },1000);
+}
+async function _voiceResume(){
+  const P=_voicePlugin();
+  if(!P||!_voiceActive||_voiceResuming||!_voiceTargetEl)return;
+  _voiceResuming=true;
+  try{
+    _voiceBaseText=String(_voiceTargetEl.value||'');
+    _voiceLastStart=Date.now();
+    await P.start();
+    // Stopped while this restart was on its way: turn the mic back off, or
+    // it would stay open with nobody listening to it.
+    if(!_voiceActive){try{await P.stop();}catch(_e){}}
+  }catch(_e){}
+  finally{_voiceResuming=false;}
 }
 
 async function _voiceStop(){
   const P=_voicePlugin();
+  _voiceActive=false;
+  if(_voiceWatchTimer){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;}
   if(!P)return '';
   let text='';
   try{const r=await P.stop();text=(r&&r.text)||'';}catch(_e){}
   try{if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();}catch(_e){}
-  _voiceListener=null;
+  _voiceListener=null;_voiceOnText=null;
   const joined=_voiceJoin(_voiceBaseText,text);
   if(_voiceTargetEl){
     _voiceTargetEl.value=joined;
@@ -80,7 +126,7 @@ async function _voiceStop(){
     try{_voiceTargetEl.dispatchEvent(new Event('change',{bubbles:true}));}catch(_e){}
   }
   _voiceTargetEl=null;_voiceBaseText='';
-  if(typeof _tdHaptic==='function')_tdHaptic(text?'win':'warn');
+  if(typeof _tdHaptic==='function')_tdHaptic(joined?'win':'warn');
   return joined;
 }
 
