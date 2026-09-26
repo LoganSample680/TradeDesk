@@ -800,8 +800,13 @@ async function _supSend(){
 async function _supDeliver(email,parts,pdf){
   const P=_supReader();
   if(P&&typeof P.composeEmail==='function'){
-    const r=await P.composeEmail({to:email,subject:parts.subject,body:parts.body,
-      attachmentBase64:_supB64(pdf),filename:parts.filename,mime:'application/pdf'});
+    // An app build from before composeEmail existed rejects the call as
+    // unimplemented: that is the share sheet's job, not an error to show.
+    let r=null;
+    try{
+      r=await P.composeEmail({to:email,subject:parts.subject,body:parts.body,
+        attachmentBase64:_supB64(pdf),filename:parts.filename,mime:'application/pdf'});
+    }catch(_e){r={result:'unavailable'};}
     const res=r&&r.result;
     if(res==='sent'||res==='saved')return res;
     if(res==='cancelled')return 'cancelled';

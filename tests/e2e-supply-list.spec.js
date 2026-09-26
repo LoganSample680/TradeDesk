@@ -445,6 +445,29 @@ test.describe('supply list: on a BYO estimate', () => {
     expect(r.type).toBe('application/pdf');
   });
 
+  test('send: an older app without composeEmail falls back to the share sheet, no error', async () => {
+    const r = await page.evaluate(async () => {
+      const orig = _supReader; const os = navigator.share, oc = navigator.canShare;
+      let shared = false;
+      _supReader = () => ({ composeEmail: async () => { throw new Error('"composeEmail" is not implemented on ios'); } });
+      Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+      Object.defineProperty(navigator, 'share', { value: async () => { shared = true; }, configurable: true });
+      try {
+        _supOpenSend();
+        document.getElementById('sup-send-email').value = 'quotes@neenan.example';
+        const ok = await _supSend();
+        const alert = !!document.querySelector('.zmodal-overlay:not(#_sup-send)');
+        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+        return { ok, shared, alert };
+      } finally {
+        _supReader = orig;
+        Object.defineProperty(navigator, 'share', { value: os, configurable: true });
+        Object.defineProperty(navigator, 'canShare', { value: oc, configurable: true });
+      }
+    });
+    expect(r).toEqual({ ok: true, shared: true, alert: false });
+  });
+
   test('send refuses a bad email and opens nothing', async () => {
     const r = await page.evaluate(async () => {
       const orig = _supReader; let opened = false;
