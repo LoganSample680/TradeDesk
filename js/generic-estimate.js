@@ -1942,8 +1942,8 @@ function _geiAddRememberedLine(l){
     return true;
   }
   if(_geiLines.some(x=>x&&!x._tmLabor&&_pbKey(x.desc)===key))return false;
-  // T&M material categories are a lot, priced as one number, the shape
-  // _tmMatCatSave writes. Matching it is what keeps the row editable.
+  // A T&M material line: a lot, priced as one number, editable in the shared
+  // Materials sheet (js/materials.js).
   _geiLines.push({desc:String(l.label).trim(),notes,qty:1,unit:'lot',rate,total:rate});
   return true;
 }
@@ -2008,8 +2008,9 @@ function _byoRenderSections(){
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
   const sections=[..._defSecs,...new Set(allExtra)];
   const secHtml=sections.map(sec=>{
-    // The supply house line is drawn by its own card (js/supply-list.js), not
-    // as a row: the card is where its list, markup and quote live.
+    // Materials is ONE section shared with T&M (js/materials.js), so the two
+    // can never drift apart again.
+    if(sec===_MAT_SEC)return _matCardHTML();
     const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
@@ -2048,7 +2049,8 @@ function _byoRenderSections(){
   // The attach card goes directly under the work and ABOVE "+ Add section":
   // it is about the lines that are already on the estimate, and putting a
   // rarely-used structural control between them buried it three cards down.
-  wrap.innerHTML=_pkgCardHTML()+secHtml+(typeof _supCardHTML==='function'?_supCardHTML():'')+_attachCardHTML()+addSecBtn+tcCard;
+  wrap.innerHTML=_pkgCardHTML()+secHtml+_attachCardHTML()+addSecBtn+tcCard;
+  _matClaim(wrap);
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -2915,13 +2917,12 @@ function _byaAddFromBook(sec,i){
   // and the search closes rather than leaving a stale fragment behind.
   const _l=document.getElementById('_bya-label');if(_l)_l.value='';
   const _sg=document.getElementById('_bya-sugg');if(_sg)_sg.innerHTML='';
-  const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
   // The book's own words come with it. This is the whole payoff: the second
   // time he sells a water heater swap, the client's proposal already explains
   // what a water heater swap consists of, and he typed nothing.
-  _byoItems.push(_byoNormItem({id:nextId,section:sec,label:b.desc,qty:1,unit:b.unit||'ea',rate:b.rate,price:b.rate,notes:b.notes||'',on:true}));
+  _matPut(sec,{label:b.desc,qty:1,unit:b.unit||'ea',rate:b.rate,notes:b.notes||''});
   _pbLearn(b.desc,b.rate,b.unit);   // used again, so it climbs
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
   // The sheet stays open on purpose: he is usually adding several.
   _byaBumpCount();
   _byaRenderBook(sec);
@@ -2941,13 +2942,12 @@ function _byaConfirm(sec){
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
-  const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-  _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+  _matPut(sec,{label,qty,unit,rate,notes});
   // THE RATE, never the line total. Handing the book 12 doors' worth of money
   // and calling it the price of a door is the bug this whole change exists for.
   _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
@@ -2956,16 +2956,16 @@ function _byaConfirmAndNext(sec){
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(label){
-    const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-    _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+    _matPut(sec,{label,qty,unit,rate,notes});
     _pbLearn(label,rate,unit,notes);
-    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+    _matRefresh();
   }
   // Open next item modal for the same section
   _byoAddItem(sec);
 }
 function _byoEditItem(idx){
-  const it=_byoItems[idx];if(!it)return;
+  // Read through the shared store so a T&M material line opens in this same sheet.
+  const it=_matView(idx);if(!it)return;
   document.getElementById('_byo-add-modal')?.remove();
   const ov=document.createElement('div');ov.id='_byo-add-modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -2994,19 +2994,18 @@ function _byoEditItem(idx){
   },50);
 }
 function _byaEditConfirm(idx){
-  const it=_byoItems[idx];if(!it)return;
+  if(!_matView(idx))return;
   const label=(document.getElementById('_bya-label')?.value||'').trim();
   const rate=_byaPriceValue('_bya-price');
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
-  it.label=label;it.qty=qty;it.unit=unit;it.rate=rate;it.notes=notes;
-  _byoNormItem(it);
+  _matWrite(idx,{label,qty,unit,rate,notes});
   // Editing an item is the other moment he writes the words. Teach the book
   // here too, or a description added on the second pass is lost to the next job.
   _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
 }
 // A copy lands directly under the original, named so he can tell them apart at
 // a glance and so two rows reading exactly the same thing never reach a client.
@@ -3575,93 +3574,9 @@ function _tmInputChange(){
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
-  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
-  const sup=(typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
-  if(!mats.length){
-    el.innerHTML=sup+'<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
-    return;
-  }
-  // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
-  // same way a fixed-price one does, and one renderer is what keeps the two
-  // from drifting apart again.
-  el.innerHTML=sup+mats.map(({l,i})=>{
-    const rawTotal=l.total||((l.qty||0)*(l.rate||0));
-    return _geiItemRowHtml({
-      label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
-      editFn:'_tmEditMatCat('+i+')',delFn:'_tmDelMatCat('+i+')',delTitle:'Remove category'
-    });
-  }).join('')+_attachCardHTML();
-}
-function _tmAddMatCat(){ _tmMatCatModal(-1); }
-function _tmEditMatCat(idx){ _tmMatCatModal(idx); }
-function _tmMatCatModal(idx){
-  const isEdit=idx>=0;
-  const l=isEdit?_geiLines[idx]:null;
-  if(isEdit&&(!l||l._tmLabor))return;
-  const cur=isEdit?(l.total||((l.qty||0)*(l.rate||0))):0;
-  document.getElementById('_tm-mat-modal')?.remove();
-  const ov=document.createElement('div');
-  ov.id='_tm-mat-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
-    '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Description <span style="font-weight:400;color:var(--text3)">, what it consists of</span></label><textarea id="tcm-notes" rows="3" placeholder="e.g. Sherwin-Williams Duration, two coats, tinted to the approved color" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">The client reads this on the proposal. Tab from here to save.</div>'+
-    '<div style="display:flex;gap:10px">'+
-      '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
-      '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
-    '</div>'+
-  '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>{
-    const nameEl=document.getElementById('tcm-name');
-    const costEl=document.getElementById('tcm-cost');
-    const notesEl=document.getElementById('tcm-notes');
-    if(nameEl)nameEl.focus();
-    // Same tab-chain as BYO's "Add item" modal (§ notes structure must match): Name → Cost
-    // → Notes, Tab from Notes saves. Enter now makes a newline in the notes textarea.
-    if(notesEl){
-      notesEl.addEventListener('keydown',e=>{
-        if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();_tmMatCatSave(idx);}
-      });
-    }
-    if(nameEl){
-      nameEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();costEl?.focus();}
-      });
-    }
-    if(costEl){
-      costEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
-      });
-    }
-  },50);
-}
-function _tmMatCatSave(idx){
-  const name=(document.getElementById('tcm-name')?.value||'').trim();
-  if(!name){document.getElementById('tcm-name')?.focus();return;}
-  const notes=(document.getElementById('tcm-notes')?.value||'').trim();
-  const cost=parseFloat(document.getElementById('tcm-cost')?.value)||0;
-  if(idx>=0){
-    const l=_geiLines[idx];if(!l)return;
-    l.desc=name;l.notes=notes;l.qty=1;l.unit='lot';l.rate=cost;l.total=cost;
-  } else {
-    _geiLines.push({desc:name,notes,qty:1,unit:'lot',rate:cost,total:cost});
-  }
-  // Same moment BYO's modal teaches the book, so a T&M category he describes
-  // once arrives already described on the next job.
-  _pbLearn(name,cost,'lot',notes);
-  document.getElementById('_tm-mat-modal')?.remove();
-  _tmRenderMatList();_tmInputChange();
-}
-function _tmDelMatCat(idx){
-  const l=_geiLines[idx];if(!l||l._tmLabor)return;
-  if(!confirm('Remove "'+(l.desc||'this category')+'"?'))return;
-  _geiLines.splice(idx,1);
-  _tmRenderMatList();_tmInputChange();
+  // The same Materials card BYO draws (js/materials.js, §7.3).
+  el.innerHTML=_matCardHTML()+_attachCardHTML();
+  _matClaim(el);
 }
 // ── THE LAYERS ──────────────────────────────────────────────────────────────
 //
@@ -3751,8 +3666,6 @@ function _tmApplyLayers(){
   if(nteH)nteH.textContent=locked.has('cap')
     ?'Guaranteed maximum price'   // the statutes' phrase, where a statute forces it
     :(_tmRateOnly?'The most it can cost them (the only number they see)':'The most it can cost them (optional)');
-  const matH=document.getElementById('tm-mat-head');
-  if(matH)matH.textContent='Material categories';
   _tmRenderAddRow(rule,locked);
 }
 

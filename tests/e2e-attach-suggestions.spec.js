@@ -210,7 +210,7 @@ test.describe('attach suggestions', () => {
     });
     expect(r.sugg).toContain('Isolation valve kit');
     expect(r.byo, 'a T&M estimate must not grow BYO items').toBe(0);
-    expect(r.added, 'the shape _tmMatCatSave writes, so the row stays editable').toEqual({ unit: 'lot', qty: 1, total: 214 });
+    expect(r.added, 'a lot priced as one number, editable in the shared Materials sheet').toEqual({ unit: 'lot', qty: 1, total: 214 });
   });
 
   test('the card renders into the T&M material list, and into BYO sections', async () => {
