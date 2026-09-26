@@ -1313,7 +1313,7 @@ function _timTalkBegin(){
 }
 
 function _timTalkStop(silent){
-  if(!_timTalking){return;}
+  if(!_timTalking){return Promise.resolve();}
   _timTalking=false;
   if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
   document.getElementById('_tim-listen')?.remove();
@@ -1339,8 +1339,11 @@ function _timTalkStop(silent){
     if(_timTalkTarget!=='_tim-say')return;
     _timShowRead(said);
   };
-  if(typeof _voiceStop==='function')Promise.resolve(_voiceStop()).then(finish).catch(()=>finish(''));
-  else finish('');
+  // Returned so a caller that is leaving (Save, a page change) can wait for
+  // the words to land in the field before it saves.
+  if(typeof _voiceStop==='function')return Promise.resolve(_voiceStop()).then(finish).catch(()=>finish(''));
+  finish('');
+  return Promise.resolve();
 }
 
 // ── What Tim made of it ──────────────────────────────────────────────────────

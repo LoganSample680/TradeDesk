@@ -86,5 +86,73 @@ test.describe('leaving a T&M or BYO estimate', () => {
     expect(await page.evaluate(() => bids.length)).toBe(0);
   });
 
+  // ── TIM LISTENING (owner, 2026-09-26) ─────────────────────────────────────
+  //
+  // "Tim's voice thing is cutoff at the bottom when trying to do a bid, he also
+  // doesn't turn off if you save and exit". The listening panel sat under the
+  // page's bottom bar, which hid Done talking, and nothing turned the mic off
+  // on the way out. The mic is stubbed: what matters is what the app does.
+  const talk = (heard) => page.evaluate((heard) => {
+    window.__micOn = false;
+    window._voiceStart = (el, cb) => { window.__micOn = true; };
+    window._voiceStop = async () => { window.__micOn = false; return heard; };
+    _geiScopeTalk();
+  }, heard);
+
+  test('the listening panel sits above the bottom bar: Done talking is on top and on screen', async () => {
+    await open('tm', 99106);
+    await page.waitForTimeout(500);
+    await talk('Replace the kitchen faucet');
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('#_tim-listen button')].find(b => /Done talking/.test(b.textContent));
+      const box = btn.getBoundingClientRect();
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      const panel = document.getElementById('_tim-listen').getBoundingClientRect();
+      return { onTop: !!top && btn.contains(top), bottom: box.bottom, panelBottom: panel.bottom, vh: innerHeight };
+    });
+    expect(r.onTop, 'nothing covers Done talking').toBe(true);
+    expect(r.bottom).toBeLessThanOrEqual(r.vh);
+    // The whole panel, small print included, ends at the screen's edge.
+    expect(r.panelBottom).toBeLessThanOrEqual(r.vh + 0.5);
+    await page.evaluate(() => _timTalkStop(true));
+  });
+
+  test('Save while Tim is listening: the mic goes off, the words are kept, then home', async () => {
+    await open('tm', 99107);
+    await page.waitForTimeout(500);
+    await talk('Replace the kitchen faucet');
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => _timTalking)).toBe(true);
+    await page.locator('#gei-tm-page .ios-nav .ios-navbtn.bold').click();
+    await page.waitForTimeout(700);
+    const r = await page.evaluate(() => ({
+      talking: _timTalking, mic: window.__micOn, panel: !!document.getElementById('_tim-listen'),
+      said: document.getElementById('gei-scope-say')?.value || '', pg: document.querySelector('.pg.active')?.id,
+    }));
+    expect(r.talking).toBe(false);
+    expect(r.mic).toBe(false);
+    expect(r.panel).toBe(false);
+    expect(r.said).toBe('Replace the kitchen faucet');
+    expect(r.pg).toBe('pg-dash');
+  });
+
+  test('Back, or leaving by any page change, turns the mic off too', async () => {
+    await open('tm', 99108);
+    await page.waitForTimeout(500);
+    await talk('Replace the kitchen faucet');
+    await page.waitForTimeout(200);
+    await page.locator('#gei-tm-page .ios-nav .ios-navbtn').first().click();
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => ({ t: _timTalking, m: window.__micOn }))).toEqual({ t: false, m: false });
+    await open('tm', 99109);
+    await page.waitForTimeout(500);
+    await talk('Replace the kitchen faucet');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => goPg('pg-clients'));
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => ({ t: _timTalking, m: window.__micOn, p: !!document.getElementById('_tim-listen') }))).toEqual({ t: false, m: false, p: false });
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'estimate exit'); });
 });

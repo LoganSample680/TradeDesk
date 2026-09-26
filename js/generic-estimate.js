@@ -6049,6 +6049,8 @@ function _tmSyncCadence(){
 function _tmPreviewClient(){_geiPreviewClient();}
 
 function _geiBack(){
+  // Back is leaving too: the mic goes off, and what he said stays in the box.
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){try{_timTalkStop(true);}catch(_e){}}
   // T&M skips step 1 on the way in, so Back does not walk into it on the way
   // out either. Step 1 is reached on purpose, from Change on the sub-line.
   // Build Your Own is the same full-screen page with the same Change, so its
@@ -6058,7 +6060,14 @@ function _geiBack(){
 }
 // Save the draft and go home. The draft stays in the pipeline to pick up
 // again; nothing he typed is lost on the way out.
-function _geiSaveAndExit(){
+// Tim still listening when he taps Save (owner, 2026-09-26: "he also doesn't
+// turn off if you save and exit"): the mic goes off first and what he said so
+// far lands in the box, so it is saved with the rest. Not built into steps: he
+// left, he did not ask for that.
+async function _geiSaveAndExit(){
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'){
+    try{await Promise.race([_timTalkStop(true),new Promise(r=>setTimeout(r,1500))]);}catch(_e){}
+  }
   try{saveGenericEstimate(true);}catch(_e){}
   document.getElementById('gei-cart-bar')?.remove();
   goPg('pg-dash');
