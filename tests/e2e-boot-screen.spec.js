@@ -5,7 +5,7 @@
  *
  *   js/brand-look.js   tdLogoLook, tdLogoKey, tdBootFill
  *   js/settings.js     _tdBrandFromLogo, _updateBootPreview
- *   js/dashboard.js    _dashSkelSweep, _dashRevealSkeletons
+ *   js/dashboard.js    _dashRevealSkeletons (tdSkelSweep lives in js/brand-look.js)
  *   js/cloud.js        _removeBootOverlay (the 2.15s beat), _showUpdateOverlay
  *   client.html        the hub boot (no "Powered by", ever)
  */
@@ -140,6 +140,99 @@ test.describe('brand-look: the look a logo gives the screen', () => {
     expect(r.miss).toContain('0, 0, 0');
   });
 
+  // Jack's logo is a 1.5 MB PNG, too big for the settings cache (saveAll splits it
+  // out on quota), so the boot screen fell back to his business name while the
+  // hub, which loads the logo by URL, showed it. A boot-sized copy in the look
+  // cache puts the same logo on the first frame of both.
+  test('tdBootFill: a read logo caches a boot-sized copy with its look', async () => {
+    const r = await page.evaluate(async () => {
+      localStorage.removeItem('zz_thumb');
+      const big = document.createElement('canvas'); big.width = 1600; big.height = 800;
+      const x = big.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 1600, 800);
+      x.fillStyle = '#0a8cf5'; x.fillRect(400, 200, 800, 400);
+      const logo = big.toDataURL('image/png');
+      const a = document.createElement('div');
+      tdBootFill(a, { logo, cacheKey: 'zz_thumb' });
+      for (let i = 0; i < 40 && !localStorage.getItem('zz_thumb'); i++) await new Promise(r => setTimeout(r, 50));
+      const c = JSON.parse(localStorage.getItem('zz_thumb') || 'null');
+      const t = c && c.img ? await __img(c.img) : null;
+      localStorage.removeItem('zz_thumb');
+      return { k: c && c.k === tdLogoKey(logo), bg: c && c.bg, w: t && t.naturalWidth, h: t && t.naturalHeight };
+    });
+    expect(r.k).toBe(true);
+    expect(r.bg).toBe('#000000');
+    expect(r.w).toBe(600);    // longest side 600, aspect kept
+    expect(r.h).toBe(300);
+  });
+
+  test('tdBootFill: no logo in hand but a cached copy paints the logo, not the name', async () => {
+    const r = await page.evaluate(async () => {
+      const logo = __logo('white-red');
+      localStorage.setItem('zz_copy', JSON.stringify({ k: tdLogoKey(logo), bg: '#ffffff', fg: 'rgba(0,0,0,.38)', img: logo }));
+      const a = document.createElement('div');
+      tdBootFill(a, { logo: '', name: 'Plumbing Solutions By JS', cacheKey: 'zz_copy' });
+      const img = a.querySelector('img.bt-logo');
+      const b = document.createElement('div');
+      tdBootFill(b, { logo: '', name: 'Acme' });   // no cache key: the name, as before
+      localStorage.removeItem('zz_copy');
+      return { img: !!img, src: img && img.src === logo, bg: a.style.background, name: !!a.querySelector('.bt-name'),
+        plainName: (b.querySelector('.bt-name') || {}).textContent };
+    });
+    expect(r.img).toBe(true);
+    expect(r.src).toBe(true);
+    expect(r.bg).toContain('255, 255, 255');
+    expect(r.name).toBe(false);
+    expect(r.plainName).toBe('Acme');
+  });
+
+  test('tdBootFill: a cache hit paints the small copy, never re-reads the full logo', async () => {
+    const r = await page.evaluate(async () => {
+      const full = __logo('black-blue'), small = __logo('grey');
+      localStorage.setItem('zz_hit', JSON.stringify({ k: tdLogoKey(full), bg: '#000000', fg: 'x', img: small }));
+      const a = document.createElement('div');
+      tdBootFill(a, { logo: full, cacheKey: 'zz_hit' });
+      await new Promise(r => setTimeout(r, 200));
+      const c = JSON.parse(localStorage.getItem('zz_hit'));
+      localStorage.removeItem('zz_hit');
+      return { src: a.querySelector('img.bt-logo').src === small, kept: c.img === small && c.fg === 'x' };
+    });
+    expect(r.src).toBe(true);
+    expect(r.kept).toBe(true);   // cache left alone on a hit
+  });
+
+  test('tdBootCacheLogo: caches once, skips a cached logo, survives junk and a full quota', async () => {
+    const r = await page.evaluate(async () => {
+      const logo = __logo('white-red');
+      localStorage.removeItem('zz_bcl');
+      let calls = 0;
+      tdBootCacheLogo(logo, 'zz_bcl', () => calls++);
+      for (let i = 0; i < 40 && !calls; i++) await new Promise(r => setTimeout(r, 50));
+      const first = JSON.parse(localStorage.getItem('zz_bcl') || 'null');
+      localStorage.setItem('zz_bcl', JSON.stringify({ ...first, bg: '#abcdef' }));
+      tdBootCacheLogo(logo, 'zz_bcl', l => { calls++; window.__bclBg = l.bg; });
+      const second = JSON.parse(localStorage.getItem('zz_bcl')).bg;
+      let threw = false;
+      try { tdBootCacheLogo(null, 'zz_bcl'); tdBootCacheLogo(logo, ''); tdBootCacheLogo('not an image', 'zz_junk'); } catch (e) { threw = true; }
+      // Quota: the copy is dropped, the look still lands.
+      const orig = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) { if (k === 'zz_q' && /"img"/.test(v)) throw new Error('QuotaExceededError'); return orig.call(this, k, v); };
+      localStorage.removeItem('zz_q');
+      tdBootCacheLogo(__logo('black-blue'), 'zz_q');
+      for (let i = 0; i < 40 && !localStorage.getItem('zz_q'); i++) await new Promise(r => setTimeout(r, 50));
+      Storage.prototype.setItem = orig;
+      const q = JSON.parse(localStorage.getItem('zz_q') || 'null');
+      ['zz_bcl', 'zz_q', 'zz_junk'].forEach(k => localStorage.removeItem(k));
+      return { calls, img: !!(first && first.img), second, cbBg: window.__bclBg, threw, qBg: q && q.bg, qImg: q && 'img' in q };
+    });
+    expect(r.img).toBe(true);
+    expect(r.second).toBe('#abcdef');   // already cached: not re-read
+    expect(r.cbBg).toBe('#abcdef');     // callback still gets the cached look
+    expect(r.calls).toBe(2);
+    expect(r.threw).toBe(false);
+    expect(r.qBg).toBe('#000000');
+    expect(r.qImg).toBe(false);
+  });
+
   test('tdBootFill: missing container and repeat calls are safe', async () => {
     const r = await page.evaluate(() => {
       try {
@@ -189,6 +282,28 @@ test.describe('app boot screen', () => {
     }));
     expect(r.name).toBe('Acme Plumbing');
     expect(r.foot).toBe(false);
+  });
+
+  test('a logo the settings cache split out (zp3_logo) still shows on the first frame', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('zz_seeded')) {
+        const c = document.createElement('canvas'); c.width = c.height = 60;
+        const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 60, 60); x.fillStyle = '#d32a2a'; x.fillRect(15, 15, 30, 30);
+        localStorage.setItem('zp3_S', JSON.stringify({ bname: 'Plumbing Solutions By JS', poweredBy: false }));
+        localStorage.setItem('zp3_logo', c.toDataURL('image/png'));
+        sessionStorage.setItem('zz_seeded', '1');
+      }
+    });
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const r = await page.evaluate(() => ({
+      logo: !!document.querySelector('#supa-boot-overlay img.bt-logo'),
+      name: !!document.querySelector('#supa-boot-overlay .bt-name'),
+    }));
+    expect(r.logo).toBe(true);
+    expect(r.name).toBe(false);
+    await waitForAppBoot(page);
+    assertNoErrors(page, 'split logo boot');
   });
 
   test('the overlay holds for the 2.15s beat, then lifts and is removed', async ({ page }) => {
@@ -305,7 +420,7 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
 
   test('reveal with nothing shimmering, or called repeatedly, is a no-op', async () => {
     const r = await page.evaluate(() => {
-      try { for (let i = 0; i < 5; i++) _dashRevealSkeletons(); _dashSkelSweep(document.createElement('div')); return true; }
+      try { for (let i = 0; i < 5; i++) _dashRevealSkeletons(); tdSkelSweep(document.createElement("div")); tdSkelSweep(null); return true; }
       catch (e) { return e.message; }
     });
     expect(r).toBe(true);
@@ -401,6 +516,88 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
     });
     expect(r).toBe('translateY(-16px)');
     assertNoErrors(page, 'dashboard boot reveal');
+  });
+});
+
+// Owner 2026-09-25: the white label "looks cutoff" on the home screen. Jack's
+// logo is its own black square; squeezed into a 32px bar (on a white plate in
+// the hub) it read as a hard black box. A logo like that is a rounded badge
+// with his name beside it; any other logo keeps the old treatment.
+test.describe('a square dark logo is a badge with the name beside it', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+    await page.evaluate(DRAW);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('tdLogoIsTile: a dark square is a tile; white, transparent and wide logos are not', async () => {
+    const r = await page.evaluate(async () => {
+      const wide = document.createElement('canvas'); wide.width = 360; wide.height = 100;
+      const x = wide.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 360, 100); x.fillStyle = '#0a8cf5'; x.fillRect(40, 30, 280, 40);
+      const look = async k => tdLogoLook(await __img(k === 'wide' ? wide.toDataURL('image/png') : __logo(k)));
+      const sq = await look('black-blue');
+      return {
+        sq: tdLogoIsTile(sq), sqFacts: [sq.solid, sq.ratio, sq.light],
+        white: tdLogoIsTile(await look('white-red')),
+        clear: tdLogoIsTile(await look('clear-dark')),
+        wide: tdLogoIsTile(await look('wide')),
+        junk: [tdLogoIsTile(null), tdLogoIsTile(undefined), tdLogoIsTile({}), tdLogoIsTile({ solid: true, light: false, ratio: 'x' })],
+        meta: tdLogoIsTile({ solid: true, light: false, ratio: 1 }),
+      };
+    });
+    expect(r.sq).toBe(true);
+    expect(r.sqFacts).toEqual([true, 1, false]);
+    expect(r.white).toBe(false);
+    expect(r.clear).toBe(false);
+    expect(r.wide).toBe(false);
+    expect(r.junk).toEqual([false, false, false, false]);
+    expect(r.meta).toBe(true);   // the app's S.logoMeta shape reads the same
+  });
+
+  test('app bar: the square logo is a rounded badge and his name reads beside it', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { logoData: S.logoData, logoMeta: S.logoMeta, bname: S.bname };
+      S.logoData = __logo('black-blue'); S.logoMeta = null; S.bname = 'Plumbing Solutions By JS';
+      await _logoEnsureMeta(); applyBrandLogo();
+      const slot = document.querySelector('.brand-logo-slot.mobile-topbar-name');
+      const img = slot.querySelector('img');
+      const out = { h: img.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(img).borderTopLeftRadius), name: slot.textContent.trim(),
+        right: slot.getBoundingClientRect().right <= innerWidth + 1 };
+      // A transparent logo keeps the plain logo, no name beside it.
+      S.logoData = __logo('clear-dark'); S.logoMeta = null; await _logoEnsureMeta(); applyBrandLogo();
+      out.clearName = slot.textContent.trim(); out.clearImg = !!slot.querySelector('img');
+      Object.assign(S, keep); applyBrandLogo();
+      return out;
+    });
+    expect(r.h).toBe(34);
+    expect(r.radius).toBeGreaterThanOrEqual(8);
+    expect(r.name).toBe('Plumbing Solutions By JS');
+    expect(r.right).toBe(true);
+    expect(r.clearImg).toBe(true);
+    expect(r.clearName).toBe('');
+  });
+
+  test('app bar: the name is escaped, and the badge appears once the logo is measured', async () => {
+    const r = await page.evaluate(async () => {
+      const keep = { logoData: S.logoData, logoMeta: S.logoMeta, bname: S.bname };
+      S.logoData = __logo('black-blue'); S.logoMeta = null; S.bname = '<img src=x onerror=window.__pwn=1>';
+      applyBrandLogo();                                   // not measured yet: plain logo
+      for (let i = 0; i < 40 && !document.querySelector('.brand-logo-slot span span'); i++) await new Promise(r => setTimeout(r, 25));
+      const slot = document.querySelector('.brand-logo-slot.mobile-topbar-name');
+      const out = { badge: !!slot.querySelector('span span'), pwn: !!window.__pwn, imgs: slot.querySelectorAll('img').length };
+      Object.assign(S, keep); applyBrandLogo();
+      return out;
+    });
+    expect(r.badge).toBe(true);
+    expect(r.pwn).toBe(false);
+    expect(r.imgs).toBe(1);
+    assertNoErrors(page, 'logo badge');
   });
 });
 
@@ -511,5 +708,132 @@ test.describe('client hub boot', () => {
     const r = await page.evaluate(() => ({ foot: !!document.querySelector('#boot-overlay .bt-foot') }));
     expect(r.foot).toBe(false);
     assertNoErrors(page, 'hub logo colour');
+  });
+
+  // Owner 2026-09-25: the hub links "don't share the same exact animation the
+  // app does". After the logo the hub now plays the app's load: the cards drop
+  // in as shimmer, one band sweeps them, then each fills in a shuffled order.
+  const HUB_FULL = () => hub({ clientName: 'Dana Miller', clientAddr: '3 Timeline Ave',
+    jobs: [{ id: 5001, bid_id: null, name: 'Water heater', start: '2026-09-28', days: 1, status: 'scheduled', photos: [] }] });
+
+  test('after the logo, the hub cards pour in as shimmer, then each fills with its data', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.querySelectorAll('#view-overview .hub-skel').length > 0, { timeout: 8000 });
+    const during = await page.evaluate(() => {
+      const bars = [...document.querySelectorAll('#view-overview .hub-skel .td-skel')];
+      const covered = [...document.querySelectorAll('#view-overview>.hub-hero,#view-overview .card')];
+      return {
+        cards: covered.length,
+        allCovered: covered.every(c => c.classList.contains('hub-skel-on') && c.querySelector(':scope>.hub-skel')),
+        bars: bars.length,
+        swept: bars.every(b => b.classList.contains('td-sweep') && /px$/.test(b.style.getPropertyValue('--sx'))),
+        oneClock: new Set(bars.map(b => b.style.animationDelay)).size,
+        anim: getComputedStyle(bars[0]).animationName,
+        cascade: document.getElementById('view-overview').classList.contains('hub-cascade'),
+      };
+    });
+    expect(during.cards).toBeGreaterThanOrEqual(2);
+    expect(during.allCovered).toBe(true);
+    expect(during.bars).toBeGreaterThanOrEqual(4);
+    expect(during.swept).toBe(true);
+    expect(during.oneClock).toBe(1);
+    expect(during.anim).toBe('td-skel-sweep');
+    expect(during.cascade).toBe(true);   // the shimmer drops down with the waterfall
+    await page.waitForFunction(() => !document.querySelector('#view-overview .hub-skel,#view-overview .hub-skel-on'), { timeout: 5000 });
+    const after = await page.evaluate(() => ({
+      text: document.getElementById('view-overview').textContent,
+      greet: !!document.querySelector('#view-overview .hub-hero-greeting'),
+    }));
+    expect(after.text).toContain('Water heater');
+    expect(after.greet).toBe(true);
+    assertNoErrors(page, 'hub shimmer load');
+  });
+
+  test('the fast paths (errors, the test mock) never shimmer', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => getComputedStyle(document.getElementById('boot-overlay')).display === 'none', { timeout: 8000 });
+    expect(await page.locator('#view-overview .hub-skel').count()).toBe(0);
+  });
+
+  test('skeleton helpers: no stacking, no overview, nothing to reveal, all safe', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => !!document.querySelector('#view-overview .card'), { timeout: 8000 });
+    const r = await page.evaluate(async () => {
+      try {
+        _hubRevealSkeletons();                          // nothing shimmering: no-op
+        _hubApplySkeletons(); _hubApplySkeletons();     // twice: one cover per card
+        const per = [...document.querySelectorAll('#view-overview .hub-skel-on')].map(c => c.querySelectorAll(':scope>.hub-skel').length);
+        for (let i = 0; i < 3; i++) _hubRevealSkeletons();
+        await new Promise(r => setTimeout(r, 900));
+        const left = document.querySelectorAll('#view-overview .hub-skel,#view-overview .hub-skel-on').length;
+        const ov = document.getElementById('view-overview'); ov.id = 'x-ov';
+        const none = _hubApplySkeletons().length;
+        ov.id = 'view-overview';
+        return { ok: true, per, left, none };
+      } catch (e) { return { ok: false, err: e.message }; }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.per.length).toBeGreaterThan(0);
+    expect(r.per.every(n => n === 1)).toBe(true);
+    expect(r.left).toBe(0);
+    expect(r.none).toBe(0);
+    assertNoErrors(page, 'hub skeleton helpers');
+  });
+
+  test('reduced motion: the hub goes straight to its data, no shimmer', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, HUB_FULL());
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.getElementById('view-overview').classList.contains('hub-cascade'), { timeout: 8000 });
+    expect(await page.locator('#view-overview .hub-skel').count()).toBe(0);
+    await ctx.close();
+  });
+
+  test('hub bar: a square dark logo is a badge with the name; a clear one stays on its plate', async ({ browser }) => {
+    for (const kind of ['tile', 'clear']) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      const page = await ctx.newPage();
+      await page.addInitScript(({ k, uid }) => {
+        const c = document.createElement('canvas'); c.width = c.height = 120; const x = c.getContext('2d');
+        if (k === 'tile') { x.fillStyle = '#000'; x.fillRect(0, 0, 120, 120); }
+        x.fillStyle = '#0a8cf5'; x.beginPath(); x.arc(60, 60, 34, 0, 7); x.fill();
+        window.__mockHubData = { clientId: 933, contractorUserId: uid, contractorName: 'Plumbing Solutions By JS', clientName: 'Dana', logoData: c.toDataURL('image/png'), bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
+      }, { k: kind, uid: FAKE_USER_ID });
+      await mockAllExternal(page);
+      await page.goto(`/client.html?c=933&u=${FAKE_USER_ID}&t=boot933`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForFunction(() => { const l = document.getElementById('topbar-logo-img'); return l && l.complete && l.naturalWidth > 0; }, { timeout: 8000 });
+      await page.waitForTimeout(100);
+      const r = await page.evaluate(() => {
+        const l = document.getElementById('topbar-logo-img'), n = document.getElementById('topbar-name');
+        return { tile: l.classList.contains('tile'), nameShown: getComputedStyle(n).display !== 'none', name: n.textContent, w: l.getBoundingClientRect().width };
+      });
+      if (kind === 'tile') {
+        expect(r.tile).toBe(true); expect(r.nameShown).toBe(true); expect(r.name).toBe('Plumbing Solutions By JS'); expect(r.w).toBe(34);
+      } else {
+        expect(r.tile).toBe(false); expect(r.nameShown).toBe(false);
+      }
+      assertNoErrors(page, 'hub logo badge ' + kind);
+      await ctx.close();
+    }
+  });
+
+  test('first visit: the logo gets the whole beat from the moment it appears', async ({ page }) => {
+    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, hub({ contractorName: 'Fresh Co' }));
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => !!document.querySelector('#boot-overlay .bt-name'), { timeout: 8000 });
+    const r = await page.evaluate(() => ({ painted: Date.now(), start: window._bootStart }));
+    // No cache on this device, so the clock restarted when his name went up,
+    // not when the page began to parse.
+    expect(r.painted - r.start).toBeLessThan(1500);
+    expect(await page.locator('#boot-overlay .bt-word').count()).toBe(0);   // never the TradeDesk mark
   });
 });

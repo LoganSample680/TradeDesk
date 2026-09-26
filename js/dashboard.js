@@ -1845,34 +1845,8 @@ function _dashApplySkeletons(){
       const drift=el.offsetHeight-h;
       if(drift){sk.style.boxSizing='border-box';sk.style.overflow='hidden';sk.style.height=Math.max(20,sk.offsetHeight-drift)+'px';}
     }
-    _dashSkelSweep(sk,_sweepPhase);
+    if(typeof tdSkelSweep==='function')tdSkelSweep(sk,_sweepPhase);
   });
-}
-// Anchor each shimmer bar to the page and to one clock, so the whole boot
-// skeleton shimmers as one surface (CSS td-skel-sweep in index.html).
-function _dashSkelSweep(root,phase){
-  try{
-    // Every bar's animation starts on a whole multiple of the 1.3s cycle, so a
-    // bar added later is still in step with the ones already sweeping. One
-    // phase per batch: bars styled in the same pass start in the same frame.
-    if(typeof phase!=='number')phase=-Math.round(performance.now()%1300);
-    const tl=document.timeline;
-    root.querySelectorAll('.td-skel').forEach(b=>{
-      const r=b.getBoundingClientRect();
-      b.style.setProperty('--sx',Math.round(r.left+(r.top+(window.scrollY||0))*0.35)+'px');
-      b.style.animationDelay=phase+'ms';
-      // The delay alone is not exact: WebKit starts a CSS animation on the
-      // next style pass, not when this line runs, and that lag differs between
-      // the boot pass and later ones. Pinning each sweep's start to a whole
-      // cycle on the document timeline is exact on every engine.
-      try{
-        if(tl&&typeof tl.currentTime==='number'&&typeof b.getAnimations==='function'){
-          const base=Math.floor(tl.currentTime/1300)*1300;
-          b.getAnimations().forEach(a=>{if(a.animationName==='td-skel-sweep')a.startTime=base;});
-        }
-      }catch(_e){}
-    });
-  }catch(_e){}
 }
 // The boot sync landed: each card swaps its shimmer for its real content, in a
 // shuffled order across a short beat, so the page fills the way data arrives

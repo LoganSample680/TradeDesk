@@ -19,6 +19,11 @@ test.describe('clients.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // A reconnect probe runs supaLoadFromCloud against whatever _supa is at
+    // that moment. The rename tests swap in a stub _supa that only knows
+    // update(), and a probe landing inside that window logged a TypeError
+    // (CI 2026-09-25). Park the load, as e2e-timesheet does.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     await page.evaluate(() => {
       // Remove any leftover fixtures

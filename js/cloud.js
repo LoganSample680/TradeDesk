@@ -616,10 +616,7 @@ async function _devLoadUserAccount(key){
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
     syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
-  // Load target user's records into memory. photos[] is emptied first: the
-  // td_photos set() keeps this device's pending uploads, and those are the
-  // dev's own, never the target account's (they come back via _devSavedState).
-  photos.length=0;
+  // Load target user's records into memory
   for(let i=0;i<_TD_TABLES.length;i++){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
@@ -1539,11 +1536,7 @@ const _TD_TABLES=[
   // was added to stop. bid_id/bid_name carry the estimate a photo was shot on
   // (js/photo-capture.js), and a photo whose tag does not survive the sync is
   // a photo that leaves the Before/After pair on one phone.
-  // set() KEEPS a photo still waiting to upload (Jack, 2026-09-24). A pending
-  // row never syncs (tx below needs a url), so the cloud copy of this table
-  // never has it, and replacing the list wholesale erased the only copy.
-  // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
-  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
+  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
@@ -1552,7 +1545,7 @@ const _TD_TABLES=[
     // replaced the row, and the pointer to the UNTOUCHED original was gone.
     // "The original is never destroyed" is the rule mark-up is built on, and
     // an original nobody can find again is a destroyed original.
-    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,shotPx,accM,by,exifGps,stamped,imported,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',shotPx:shotPx||'',accM:accM!=null?accM:null,by:by||'',exifGps:!!exifGps,stamped:!!stamped,imported:!!imported,annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,thumbUrl,thumbPath,originalUrl,originalPath,fullPath,originalFullPath,annotated,type,caption,client_id,client_name,bid_id,bid_name,job_id,job_name,addr,addrM,lat,lon,uploadedAt})=>({id,url,storagePath:storagePath||'',thumbUrl:thumbUrl||'',thumbPath:thumbPath||'',originalUrl:originalUrl||'',originalPath:originalPath||'',fullPath:fullPath||'',originalFullPath:originalFullPath||'',annotated:!!annotated,type,caption,client_id,client_name,bid_id:bid_id!=null?bid_id:null,bid_name:bid_name||'',job_id,job_name,addr:addr||'',addrM:addrM!=null?addrM:null,lat:lat!=null?lat:null,lon:lon!=null?lon:null,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
 // that fell out of sync with _TD_TABLES above, td_maintenance was missing.
@@ -2035,9 +2028,13 @@ function _bootSyncSettled(){
   // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
   // so a colour picked on another device is never overwritten.
   try{
-    if(_authSettingsLoaded&&S.logoData&&!S.brandColor&&typeof _tdBrandFromLogo==='function'&&typeof tdLogoKey==='function'){
-      const lk=JSON.parse(localStorage.getItem('zp3_boot_look')||'null');
-      if(lk&&lk.k===tdLogoKey(S.logoData))_tdBrandFromLogo(lk);
+    // Cache the logo's look and boot-sized copy (js/brand-look.js), so the next
+    // boot paints the real logo even when it is too big for the settings cache.
+    // An account with a logo but no brand colour takes it from the logo.
+    if(_authSettingsLoaded&&S.logoData&&typeof tdBootCacheLogo==='function'){
+      tdBootCacheLogo(S.logoData,'zp3_boot_look',lk=>{
+        if(!S.brandColor&&typeof _tdBrandFromLogo==='function')_tdBrandFromLogo(lk);
+      });
     }
   }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
@@ -8887,11 +8884,7 @@ async function supaLoadFromCloud({silent=false}={}){
     _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    // One query against the county assessor records we already hold, for every
-    // address at once. This used to be _startPropQueue, which trickled one
-    // Zillow scrape every 6.5s and could not finish a big import before the tab
-    // closed. See _syncPropertyData (js/clients.js).
-    if(typeof _syncPropertyData==='function')setTimeout(_syncPropertyData,5000);
+    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof _fetchScopeRates==='function')_fetchScopeRates();

@@ -56,6 +56,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // A reconnect probe runs supaLoadFromCloud against the mock, which replaces
+    // the in-memory arrays. The re-seed below restores the canonical fixtures,
+    // but a test that builds on what the test before it saved (the site note
+    // on client 88820) loses it. Park the load, as e2e-timesheet does.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     await seedFixtures();
   });

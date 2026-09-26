@@ -59,11 +59,14 @@ test.describe('the proposal, white-labelled', () => {
   // Since the cover (2026-09-23, §10.4) the document opens on his colour and
   // his logo sits on a white plate on it: the same white paper under the logo,
   // on a page that is now his colour.
-  test('his logo sits on white paper, sized like a letterhead', async () => {
+  // Size changed 2026-09-25 (§10.4): the owner said the proposal did not look
+  // white labeled, "very small logo". The plate stays; the logo is now a size
+  // a client notices, still bounded so it never outgrows the cover.
+  test('his logo sits on white paper, big enough to notice', async () => {
     const r = await doc({ logo: LOGO, brand: '#C2410C' });
     expect(r.img).not.toBe(null);
     expect(r.img.src).toBe(LOGO);
-    expect(r.img.h).toBeLessThanOrEqual(56);
+    expect(r.img.h).toBeLessThanOrEqual(76);
     expect(r.mastheadBg).toBe('rgb(255, 255, 255)');
     expect(r.text).toContain('Pruitt Plumbing');
   });
@@ -114,26 +117,38 @@ test.describe('the proposal, white-labelled', () => {
     const keep = { logoData: S.logoData, logoMeta: S.logoMeta };
     S.logoData = logo; S.logoMeta = null;
     const meta = await _logoEnsureMeta();
-    const d = document.createElement('div');
+    const d = document.createElement('div'); d.style.width = '360px';
     d.innerHTML = _propCover({ bname: 'Plumbing Solutions by JS', bphone: '785-409-8931', blic: '', accent: '#2D5DA8', label: 'Proposal', num: '1', date: '09/23/2026', name: 'Tracey Gillaspy', addr: '', phone: '', project: 'Kitchen sink drain repair', until: '10/23/2026' });
     document.body.appendChild(d);
-    const img = d.querySelector('.prop-mark img');
-    const r = { meta, radius: parseFloat(getComputedStyle(img).borderTopLeftRadius), beside: img.parentElement.style.display === 'flex' };
+    const img = d.querySelector('.prop-mark img'), cover = d.querySelector('.prop-cover');
+    const ir = img.getBoundingClientRect(), cr = cover.getBoundingClientRect();
+    const r = { meta, w: ir.width, centred: Math.abs((ir.left + ir.width / 2) - (cr.left + cr.width / 2)) < 2,
+      bg: getComputedStyle(cover).backgroundColor, grad: cover.style.backgroundImage, plate: getComputedStyle(img.parentElement).backgroundColor,
+      text: cover.innerText };
     d.remove(); Object.assign(S, keep);
     return r;
   }, logo);
 
-  test('a logo on its own solid square is a rounded tile beside his name', async () => {
+  // Changed 2026-09-25 (§10.4), owner: "A but make black fade to blue". A logo
+  // on its own dark square used to be a 56px tile beside his name; it now
+  // opens the document big and centred on its own background, which fades
+  // into his colour.
+  test('a logo on its own dark square opens the cover big, centred, on its own black fading to his colour', async () => {
     const r = await markOf(TILE);
     expect(r.meta.solid).toBe(true);
-    expect(r.beside).toBe(true);
-    expect(r.radius).toBeGreaterThanOrEqual(12);
+    expect(r.w).toBeGreaterThanOrEqual(180);
+    expect(r.centred).toBe(true);
+    expect(r.bg).toBe('rgb(0, 0, 0)');
+    expect(r.grad).toMatch(/linear-gradient\((180deg, )?rgb\(0, 0, 0\) 0%, rgb\(0, 0, 0\) 50%, (rgb\(45, 93, 168\)|#2D5DA8) 100%\)/i);
+    expect(r.text).toContain('785-409-8931');   // how to reach him, under the logo
   });
 
-  test('a transparent logo stays a wordmark, name underneath', async () => {
+  test('a transparent logo stays on its white plate over his colour, name underneath', async () => {
     const r = await markOf(CLEAR);
     expect(r.meta.solid).toBe(false);
-    expect(r.beside).toBe(false);
+    expect(r.plate).toBe('rgb(255, 255, 255)');
+    expect(r.bg).not.toBe('rgb(0, 0, 0)');
+    expect(r.text).toContain('Plumbing Solutions by JS');
   });
 
   test('his Title Case steps print as sentences, with the trade acronyms in capitals', async () => {

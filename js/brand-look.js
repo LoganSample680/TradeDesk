@@ -53,9 +53,58 @@ function tdLogoLook(img){
     const accent=(top&&top[0]>=N*N*0.02)
       ?'#'+[1,2,3].map(i=>Math.round(top[i]/top[0]).toString(16).padStart(2,'0')).join('')
       :null;
-    return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark};
+    // The same three facts S.logoMeta records in the app (js/settings.js
+    // _logoEnsureMeta), so tdLogoIsTile reads either one.
+    const solid=ea/en>235,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
+    return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark,solid,ratio,light:!dark&&lum(bgRgb[0],bgRgb[1],bgRgb[2])>0.92};
   }catch(e){return null;}
 }
+// A boot-sized copy of the logo (longest side 600px). A big logo (Jack's is a
+// 1.5 MB PNG) is too heavy for the phone's settings cache, which then drops it
+// (js/data.js saveAll splits logoData out on quota), and the boot screen fell
+// back to the business name while the client hub, which loads its logo by URL,
+// showed the real one. The copy rides in the look cache, so every boot paints
+// the same logo as the hub on the first frame.
+function tdLogoThumb(img){
+  try{
+    const w=img.naturalWidth,h=img.naturalHeight;if(!w||!h)return null;
+    const k=Math.min(1,600/Math.max(w,h)),c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    return c.toDataURL('image/png');
+  }catch(e){return null;}
+}
+// Store a look (with its boot-sized logo when it fits) under cacheKey.
+function _tdSaveLook(cacheKey,look){
+  if(!cacheKey)return;
+  try{localStorage.setItem(cacheKey,JSON.stringify(look));}
+  catch(e){try{const{img,...rest}=look;localStorage.setItem(cacheKey,JSON.stringify(rest));}catch(_e){}}
+}
+// Read a logo once and cache its look + boot copy, unless the cache already
+// holds this exact logo. Called after settings land, so a logo the boot screen
+// could not read this time is on the first frame next time.
+function tdBootCacheLogo(src,cacheKey,cb){
+  try{
+    if(!src||!cacheKey)return;
+    const key=tdLogoKey(src);let c=null;
+    try{c=JSON.parse(localStorage.getItem(cacheKey)||'null');}catch(e){}
+    if(c&&c.k===key&&c.img){if(typeof cb==='function')cb(c);return;}
+    const img=new Image();
+    if(/^https?:/i.test(src))img.crossOrigin='anonymous';
+    img.onload=function(){
+      const look=tdLogoLook(img);if(!look)return;
+      look.k=key;const t=tdLogoThumb(img);if(t)look.img=t;
+      _tdSaveLook(cacheKey,look);
+      if(typeof cb==='function')cb(look);
+    };
+    img.src=src;
+  }catch(e){}
+}
+// A logo that is its own dark square (Jack's emblem on black) is shown as a
+// rounded badge with the business name beside it. Put on a white plate or
+// shrunk into a 32px bar it reads as a cut-off black box with text nobody can
+// read. Takes S.logoMeta or a tdLogoLook result.
+function tdLogoIsTile(m){return !!(m&&m.solid&&!m.light&&m.ratio<=1.6);}
 // A short key for a logo, so a cached look is only reused for the same logo.
 function tdLogoKey(src){
   src=String(src||'');if(!src)return'';
@@ -93,7 +142,40 @@ const _TD_BOOT_CSS=
 '@keyframes bt-in{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}'+
 '@keyframes bt-out{from{opacity:1;transform:none}to{opacity:0;transform:scale(1.02)}}'+
 '@keyframes bt-fade{to{opacity:1}}@keyframes bt-fadeout{from{opacity:1}to{opacity:0}}'+
-'@media (prefers-reduced-motion:reduce){.bt-in,.bt-foot{animation:none;opacity:1}.td-fadeout .bt-in,.td-fadeout .bt-foot{animation:none;opacity:0}}';
+'@media (prefers-reduced-motion:reduce){.bt-in,.bt-foot{animation:none;opacity:1}.td-fadeout .bt-in,.td-fadeout .bt-foot{animation:none;opacity:0}}'+
+// The load after the logo, shared by the app dashboard and the client hub: one
+// light band sweeping every shimmer bar on a diagonal (tdSkelSweep anchors it),
+// then each card's real content coming into focus where its shimmer was.
+'@keyframes td-skel-sweep{from{background-position:calc(-450px - var(--sx,0px)) 0}to{background-position:calc(450px - var(--sx,0px)) 0}}'+
+'@keyframes td-data-in{from{opacity:0;filter:blur(3px)}to{opacity:1;filter:none}}'+
+'.td-sweep{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}'+
+'.td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}'+
+'@media (prefers-reduced-motion:reduce){.td-sweep,.td-data-in>*{animation:none}}';
+// Anchor each shimmer bar under root to the page and to one clock, so a whole
+// skeleton shimmers as one surface. One phase per batch: bars styled in the
+// same pass start in the same frame.
+function tdSkelSweep(root,phase){
+  try{
+    if(!root)return;
+    if(typeof phase!=='number')phase=-Math.round(performance.now()%1300);
+    const tl=document.timeline;
+    root.querySelectorAll('.td-skel').forEach(b=>{
+      const r=b.getBoundingClientRect();
+      b.style.setProperty('--sx',Math.round(r.left+(r.top+(window.scrollY||0))*0.35)+'px');
+      b.style.animationDelay=phase+'ms';
+      // The delay alone is not exact: WebKit starts a CSS animation on the
+      // next style pass, not when this line runs, and that lag differs between
+      // the boot pass and later ones. Pinning each sweep's start to a whole
+      // cycle on the document timeline is exact on every engine.
+      try{
+        if(tl&&typeof tl.currentTime==='number'&&typeof b.getAnimations==='function'){
+          const base=Math.floor(tl.currentTime/1300)*1300;
+          b.getAnimations().forEach(a=>{if(a.animationName==='td-skel-sweep')a.startTime=base;});
+        }
+      }catch(_e){}
+    });
+  }catch(_e){}
+}
 const _TD_BOOT_DARK='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
 const _TD_WRENCH='<svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
 function tdBootFill(ov,o){
@@ -110,24 +192,32 @@ function tdBootFill(ov,o){
   stage.appendChild(inner);ov.appendChild(stage);
   let fg='rgba(255,255,255,.42)';
   const name=String(o.name||'').trim();
-  if(o.logo){
+  let cached=null;
+  try{cached=o.cacheKey&&JSON.parse(localStorage.getItem(o.cacheKey)||'null');}catch(e){}
+  // No logo in hand (the settings cache dropped a big one) but the look cache
+  // holds its boot copy: paint that, exactly as the hub would.
+  const fromCache=!o.logo&&!!(cached&&cached.img);
+  if(o.logo||fromCache){
     // Paint the cached look first; a new or changed logo is read once it decodes.
-    const key=tdLogoKey(o.logo);let cached=null;
-    try{cached=o.cacheKey&&JSON.parse(localStorage.getItem(o.cacheKey)||'null');}catch(e){}
-    const hit=cached&&cached.k===key;
+    const key=o.logo?tdLogoKey(o.logo):cached.k;
+    const hit=!!(cached&&cached.k===key);
     ov.style.background=hit?cached.bg:'#000';
     if(hit){fg=cached.fg||fg;ov._tdLook=cached;}
     const img=new Image();img.className='bt-logo';img.alt='';
-    if(/^https?:/i.test(o.logo))img.crossOrigin='anonymous';
+    // The boot copy decodes in a fraction of the time a full-size logo does.
+    const src=(hit&&cached.img)?cached.img:o.logo;
+    if(/^https?:/i.test(src))img.crossOrigin='anonymous';
     img.onload=function(){
+      if(hit&&cached.img){try{if(typeof o.onLook==='function')o.onLook(cached);}catch(e){}return;}
       const look=tdLogoLook(img);if(!look)return;
       look.k=key;ov._tdLook=look;
+      const t=tdLogoThumb(img);if(t)look.img=t;
       if(!hit){ov.style.transition='background-color .2s ease';ov.style.background=look.bg;
         const f=ov.querySelector('.bt-foot');if(f)f.style.color=look.fg;}
-      try{if(o.cacheKey)localStorage.setItem(o.cacheKey,JSON.stringify(look));}catch(e){}
+      _tdSaveLook(o.cacheKey,look);
       try{if(typeof o.onLook==='function')o.onLook(look);}catch(e){}
     };
-    img.src=o.logo;inner.appendChild(img);
+    img.src=src;inner.appendChild(img);
   }else if(name){
     ov.style.background=_TD_BOOT_DARK;
     const tile=el('div','bt-tile',(name[0]||'').toUpperCase());
@@ -146,4 +236,4 @@ function tdBootFill(ov,o){
   const foot=o.status?o.status:((o.powered&&(o.logo||name))?'Powered by TradeDesk':'');
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
-if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdBootFill};
+if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdSkelSweep};
