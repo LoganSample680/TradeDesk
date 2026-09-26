@@ -40,10 +40,40 @@ function _qiRecentClients(){
     });
     Object.keys(last).sort((a,b)=>last[b]-last[a]).slice(0,6).forEach(cid=>{
       const c=getClientById(Number(cid));
-      if(c)out.push({label:c.name,sub:(c.addr||'').split(',')[0]||'No address',clientId:c.id,icon:'📍'});
+      if(!c)return;
+      const st=_qiStatus(c.id);
+      out.push({label:c.name,sub:((c.addr||'').split(',')[0]||'No address')+(st?' · '+st.label:''),clientId:c.id,icon:'📍'});
     });
   }catch(_e){}
   return out;
+}
+// Is the work at this customer going on, finished, or still to come? One
+// word, next to their name, so nobody bills a job that is still running
+// (owner 2026-09-26: "easy way to tell if a job is done or actively running
+// is a must, by client name and address").
+//   Working now   somebody was tracked there today, or a job is on today
+//   Scheduled     the next open job starts later
+//   Done          the last job was marked done (or everything is closed)
+function _qiStatus(cid){
+  const today=todayKey();
+  const mine=(jobs||[]).filter(j=>j&&String(j.client_id)===String(cid));
+  if(!mine.length)return null;
+  const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
+  const here=mine.some(j=>(byJob[j.id]||[]).some(e=>{
+    const a=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'');
+    return !isNaN(a)&&dateKey(new Date(a))===today;
+  }));
+  if(here||mine.some(j=>typeof _jobActiveOn==='function'&&_jobActiveOn(j,today)))return {k:'now',label:'Working now'};
+  const closed=j=>j.status==='done'||j.completion_date||j.cancelled;
+  const next=mine.filter(j=>!closed(j)&&(j.start||'')>today).sort((a,b)=>String(a.start).localeCompare(String(b.start)))[0];
+  if(next)return {k:'next',label:'Scheduled '+_qiDay(next.start)};
+  const done=mine.filter(j=>j.completion_date).sort((a,b)=>String(b.completion_date).localeCompare(String(a.completion_date)))[0];
+  if(done)return {k:'done',label:'Done '+_qiDay(done.completion_date)};
+  return null;
+}
+function _qiStatusPill(cid){
+  const st=_qiStatus(cid);
+  return st?'<span class="qi-st qi-st-'+st.k+'">'+escHtml(st.label)+'</span>':'';
 }
 function openQuickInvoicePicker(){
   showQuickPicker('Quick invoice','Who is it for?',_qiRecentClients(),'invoice',true,'Worked this week');
@@ -161,7 +191,8 @@ function renderQuickInvoice(){
     '<div class="ios-nav"><button type="button" class="ios-navbtn" onclick="qiCancel()">Cancel</button>'+
       '<button type="button" class="ios-navbtn bold" onclick="qiSeeIt()">See it</button></div>'+
     '<div class="ios-large"><h1 class="ios-title" style="cursor:default">Invoice</h1>'+
-      '<div class="ios-sub">'+escHtml(c.name||'')+((c.addr||'')?' · '+escHtml(String(c.addr).split(',')[0]):'')+'</div></div>'+
+      '<div class="ios-sub">'+escHtml(c.name||'')+((c.addr||'')?' · '+escHtml(String(c.addr).split(',')[0]):'')+'</div>'+
+      _qiStatusPill(_qi.cid)+'</div>'+
     '<div class="qi-body">'+
       '<div class="ios-seg qi-seg" role="tablist">'+
         '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">Hourly</button>'+

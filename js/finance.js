@@ -1370,7 +1370,8 @@ function onQPSearch(el){
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue-lt);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--blue-dk);flex-shrink:0">'+initials(c.name)+'</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+escHtml((c.addr||'').split(',')[0]||'No address')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml((c.addr||'').split(',')[0]||'No address')+
+          ((actionType==='invoice'&&typeof _qiStatus==='function'&&_qiStatus(c.id))?' · '+escHtml(_qiStatus(c.id).label):'')+'</div>'+
       '</div>'+
     '</button>'
   ).join('');

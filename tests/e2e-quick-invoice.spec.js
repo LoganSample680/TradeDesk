@@ -202,6 +202,24 @@ test.describe('Quick invoice', () => {
     expect(await page.locator('#mpay-btn-deposit').count(), 'no deposit on a finished job').toBe(0);
   });
 
+  test('each customer says whether the work is going on, coming up, or done', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 'jnow', client_id: 902, start: todayKey(), days: 2 });
+      jobs.push({ id: 'jnext', client_id: 903, start: addDays(todayKey(), 5), days: 1 });
+      jobs.find(j => j.id === 'j901').status = 'done';
+      jobs.find(j => j.id === 'j901').completion_date = '2026-09-24';
+      jobs.find(j => j.id === 'j901').start = '2026-09-20';
+      openQuickInvoice(902);
+      const pill902 = document.querySelector('#qi-page .qi-st').textContent;
+      return { s901: _qiStatus(901), s902: pill902, s903: _qiStatus(903).label, none: _qiStatus(999) };
+    });
+    expect(r.s901.label).toBe('Done Sep 24');
+    expect(r.s902).toBe('Working now');
+    expect(r.s903).toMatch(/^Scheduled /);
+    expect(r.none).toBe(null);
+  });
+
   test('the printed invoice lists each line', async ({ page }) => {
     await boot(page);
     const html = await page.evaluate(() => {
