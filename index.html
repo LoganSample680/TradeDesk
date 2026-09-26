@@ -1233,6 +1233,75 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    why, then its rows; the second section gets a rule above it. */
 .td-hold-card{padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)}
 .td-hold-hd{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)}
+.card.td-wh-card{padding:0;overflow:hidden}
+.td-wh-hd{display:flex;align-items:center;gap:12px;padding:14px 16px 12px}
+.td-wh-ico{width:36px;height:36px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--denim-soft);color:var(--denim)}
+.td-wh-hd-txt{flex:1;min-width:0}
+.td-wh-title{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:17px;font-weight:800;letter-spacing:-.3px;color:var(--text)}
+.td-wh-hd-sub{font-size:12px;color:var(--text3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.td-wh-count{font-family:var(--font-ui);font-size:11px;font-weight:800;color:#fff;background:var(--c-amber);border-radius:var(--r-pill);padding:1px 7px;letter-spacing:0}
+.td-wh-add{width:32px;height:32px;flex-shrink:0;border-radius:var(--r-pill);border:none;background:var(--denim-soft);color:var(--denim);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .12s ease}
+.td-wh-add:active{transform:scale(.92)}
+.td-wh-find{margin:0 12px 10px;padding:12px;border-radius:var(--r-lg);background:var(--cream);font-size:13px;color:var(--text2)}
+.td-wh-find-t{display:flex;align-items:flex-start;gap:8px}
+.td-wh-find-t svg{flex-shrink:0;margin-top:2px;color:var(--denim)}
+.td-wh-find-b{display:flex;gap:8px;margin-top:10px}
+.td-wh-find-b .btn{flex:1}
+.td-wh-list{border-top:1px solid var(--line)}
+.td-wh-swipe{position:relative;overflow:hidden}
+.td-wh-swipe+.td-wh-swipe .td-wh-row::before{content:'';position:absolute;top:0;left:68px;right:0;border-top:1px solid var(--line)}
+.td-wh-under{position:absolute;inset:0;display:none;align-items:center;gap:8px;padding:0 22px;font-size:14px;font-weight:700;color:#fff}
+.td-wh-under-l{background:var(--denim);justify-content:flex-start}
+.td-wh-under-r{background:var(--c-green);justify-content:flex-end}
+.td-wh-go-l .td-wh-under-l,.td-wh-go-r .td-wh-under-r{display:flex}
+.td-wh-row{position:relative;display:flex;align-items:center;gap:12px;padding:12px 16px;min-width:0;background:var(--bg-card,#fff);cursor:pointer;touch-action:pan-y;transition:background .15s ease}
+.td-wh-row:active{background:var(--cream)}
+.td-wh-av{width:40px;height:40px;border-radius:var(--r-pill);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.3px}
+.td-wh-av-due{background:var(--c-amber-soft);color:var(--c-amber)}
+.td-wh-av-late{background:var(--c-red-soft);color:var(--c-red)}
+.td-wh-av-wait{background:var(--c-gray-soft);color:var(--c-gray)}
+.td-wh-av-roll{background:var(--denim-soft);color:var(--denim)}
+.td-wh-who{flex:1;min-width:0}
+.td-wh-name{font-size:15px;font-weight:700;letter-spacing:-.2px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.td-wh-sub{font-size:12.5px;color:var(--text3);margin-top:1px}
+.td-wh-status{display:inline-block;margin-top:3px;font-size:12px;font-weight:700}
+.td-wh-status-due{color:var(--c-amber)}
+.td-wh-status-late{color:var(--c-red)}
+.td-wh-chip{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;color:var(--c-gray);background:var(--c-gray-soft);border-radius:var(--r-pill);padding:2px 8px}
+.td-wh-chip-roll{color:var(--denim);background:var(--denim-soft)}
+.btn.td-wh-txt{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:var(--r-pill);border:none;background:var(--denim-soft);color:var(--denim);font-size:13.5px;font-weight:700;box-shadow:none}
+.btn.td-wh-txt:disabled{opacity:.4}
+.td-wh-empty{padding:4px 16px 16px;font-size:13px;color:var(--text3)}
+.td-wh-foot{padding:10px 16px 12px;font-size:12px;color:var(--text3);border-top:1px solid var(--line);display:grid;gap:2px}
+.zmodal.td-wh-sheet{padding-top:22px}
+.td-wh-sheet-hd{text-align:center;margin-bottom:16px}
+.td-wh-sheet-av{margin:0 auto 10px;width:48px;height:48px;font-size:16px}
+.td-wh-sheet-hd .zmodal-title{text-align:center}
+.td-wh-sheet-sub{font-size:13px;color:var(--text3);margin-top:2px}
+.td-wh-sheet-group{border-radius:var(--r-lg);background:var(--cream);overflow:hidden}
+.td-wh-sheet-row{display:flex;align-items:center;gap:12px;width:100%;padding:15px 16px;border:none;background:none;font-family:inherit;font-size:16px;font-weight:600;color:var(--text);text-align:left;cursor:pointer}
+.td-wh-sheet-row+.td-wh-sheet-row{border-top:1px solid var(--line)}
+.td-wh-sheet-row svg{color:var(--text3);flex-shrink:0}
+.td-wh-sheet-row:active{background:var(--line)}
+.td-wh-sheet-go,.td-wh-sheet-go svg{color:var(--denim)}
+.td-wh-sheet-open{display:block;width:100%;margin-top:10px;padding:14px;border:none;border-radius:var(--r-lg);background:none;font-family:inherit;font-size:15px;font-weight:700;color:var(--denim);cursor:pointer}
+.zmodal.td-wh-form{max-width:420px}
+.td-wh-form-sub{font-size:13px;color:var(--text3);margin-top:3px}
+.td-wh-form-card{background:var(--cream);box-shadow:none}
+.td-wh-form .sf-cta{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.td-wh-hd-txt{cursor:pointer}
+.td-wh-all{justify-self:start;margin-top:4px;padding:0;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:var(--denim);cursor:pointer}
+.td-wh-search{display:flex;align-items:center;gap:8px;margin:0 0 14px;padding:0 12px;height:40px;border-radius:var(--r-lg);background:var(--cream);color:var(--text3)}
+.td-wh-search input{flex:1;min-width:0;border:none;background:none;font-family:inherit;font-size:15px;color:var(--text);outline:none;-webkit-appearance:none}
+.td-wh-list-cap{padding:6px 4px 6px}
+.td-wh-list-card{padding:0}
+.td-wh-list-card .td-wh-list-row+.td-wh-list-row::before{content:'';position:absolute;top:0;left:68px;right:0;border-top:1px solid var(--line)}
+.td-wh-list-r{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.td-wh-list-r .td-wh-status,.td-wh-list-r .td-wh-chip{margin-top:0}
+.td-wh-list-due{font-size:12.5px;font-weight:600;color:var(--text3)}
+.td-wh-chev{color:var(--text3);display:flex}
+.td-wh-list-empty{padding:30px 16px;text-align:center;font-size:14px;color:var(--text3)}
+.td-wh-undo{margin-left:10px;background:none;border:none;color:inherit;font-weight:800;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:inherit}
 .td-hold-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em}
 .td-hold-count{margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)}
 .td-hold-sec{padding:12px 16px 4px}
@@ -2829,6 +2898,12 @@ body.dark .cal-cell.other{background:var(--cream)}
            below it (2026-07-11 fix, margin-bottom here matches .card's 14px so the
            gap below is the same weight as everywhere else on the dashboard). -->
       <div id="dash-nearby" style="display:none;margin-bottom:14px"></div>
+      <!-- Water heater flush board (owner 2026-09-25, js/wh-board.js): everyone
+           whose install or last flush was 11+ months ago. Nested in the kpi
+           widget like dash-nearby so it always lands right under the money
+           tiles (owner: "money numbers first"). Shows for plumbers, or once a
+           water heater is on record. -->
+      <div id="dash-wh-board" style="display:none"></div>
     </div>
     <div class="td-dw" data-dw="alerts">
       <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
@@ -3849,6 +3924,18 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button class="sf-clear" onclick="resetSched()">Clear form</button>
     </div>
   </div>
+</div>
+<!-- Annual service master list (owner 2026-09-26, js/wh-board.js renderWhList):
+     every water heater on record, grouped by what happens next. -->
+<div class="pg" id="pg-wh-list">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow"><a href="javascript:void(0)" onclick="goPg('pg-dash')" style="color:inherit;text-decoration:none">← Home</a></div>
+      <div class="tbar-title">Annual service</div>
+    </div>
+    <button class="td-wh-add" onclick="openWhAdd()" aria-label="Add a water heater install"><span data-ico="➕" data-ico-size="16"></span></button>
+  </div>
+  <div style="padding:0 0 90px" id="wh-list-body"></div>
 </div>
 <div class="pg" id="pg-licensing">
   <div class="tbar"><div class="tbar-title">Licensing</div><button class="btn btn-sm btn-p" onclick="openAddLicense()">+ Add</button></div>
@@ -5559,6 +5646,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
      after tim-log.js because it borrows its word splitter. -->
 <script src="js/tim-ask.js"></script>
 <script src="js/equipment.js"></script>
+<script src="js/wh-board.js"></script>
 <script src="js/share-inbox.js"></script>
 <script src="js/bg-upload.js"></script>
 <script src="js/scan.js"></script>
