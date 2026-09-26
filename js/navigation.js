@@ -9,7 +9,7 @@ function goPg(id){
   // Redirect employees away from restricted pages
   if(_isEmployee){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
-      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money'];
+      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money','pg-wh-list'];
     if(_empBlocked.includes(id))id='pg-dash';
     else if(id==='pg-leads'&&!_employeeRecord?.permissions?.leads)id='pg-dash';
   }
@@ -80,6 +80,7 @@ function goPg(id){
   if(id==='pg-team'){renderTeam();renderFleetVehicles();}
   if(id==='pg-dispatch'){if(typeof renderDispatch==='function')renderDispatch();}
   if(id==='pg-licensing')renderLicensing();
+  if(id==='pg-wh-list'&&typeof renderWhList==='function')renderWhList();
   if(id==='pg-contracts'){renderContracts();if(typeof refreshAgreementSignatures==='function')refreshAgreementSignatures();}
   if(id==='pg-timelog')renderTimeLog();
   if(id==='pg-photos'&&typeof renderPhotosPage==='function')renderPhotosPage();
@@ -143,6 +144,7 @@ function _refreshActivePage(){
     'pg-taxes':()=>run('calcTax'),
     'pg-contracts':()=>run('renderContracts'),
     'pg-licensing':()=>run('renderLicensing'),
+    'pg-wh-list':()=>run('renderWhList'),
     'pg-checklist':()=>run('renderChecklist'),
     'pg-client-hub':()=>run('renderClientHubPage'),
   }[id]||(()=>{}))();
