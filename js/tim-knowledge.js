@@ -64,7 +64,9 @@
 // Longest phrase wins, so "tear out" cannot be eaten by "out".
 const TIM_STAGES=[
   {k:'access', n:'Access and staging', say:['deliver the','acclimate','scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out']},
-  {k:'protect',n:'Protect and remove',  say:['recover the refrigerant','move the furniture','tarp','hang plastic','mask off','mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect']},
+  {k:'protect',n:'Protect and remove',  say:['recover the refrigerant','move the furniture','tarp','hang plastic','mask off','mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect',
+    // Clearing the way for the work (2026-09-26: "move the return duct").
+    'move the','move that','get the','out of the way']},
   // 'pull the old', 'take out', 'swap out' and the rest added 2026-09-23: this
   // list was a painter's, so a water heater coming out of a basement was a step
   // with no stage, and a step with no stage cannot be put in order.
@@ -425,9 +427,63 @@ function timScopeFrom(text){
 // A man dictating his day says it in the order he will work it. So the sort
 // stays an offer (_geiPutScopeInOrder, one tap, already on the card) rather
 // than something that happens to his words while he watches.
+// ── WHAT HE SAW IS NOT WHAT HE WILL DO (owner, 2026-09-26) ─────────────────
+//
+// "do we do voice notes to feed a proposal, that way everything that is said
+// is captured and scoped?" Walking a basement he says what he sees as much as
+// what he will do: "the floor under it is rotted, probably from the leak",
+// "homeowner wants the shutoff where she can reach it". Every one of those used
+// to become a numbered step on the contract. Now a remark is sorted out of the
+// steps and handed back as a NOTE for him to place (on the proposal under What
+// we found, for the crew, or nowhere), and an action riding inside a remark
+// ("...so we'll have to move that return duct") is lifted out as its step.
+//
+// A remark is a piece that does NOT start with a verb doing work AND says
+// what is, what was seen, or what somebody wants. A bare noun phrase ("water
+// heater replacement") has none of those words and stays a step, as it always
+// was.
+const _TIMK_OBSERVE=/\b(is|are|was|were|looks?|looked|seems?|feels?|there'?s|there is|there are|we'?re in|we are in|we got|i see|probably|maybe|kind of|pretty)\b/i;
+const _TIMK_ASKED=/\b(home ?owner|owner|customer|client|she|he|they|wife|husband|tenant|landlord)\s+(wants?|would like|asked|prefers?|mentioned|said)\b/i;
+// What turns into a change order later if it is not written down now.
+const _TIMK_DAMAGE=/\b(rot|rots|rotted|rotten|rotting|mold|moldy|mildew|leak|leaks|leaking|leaked|water damage|cracked|crack|cracks|rust|rusted|rusting|corroded|corrosion|soft spot|sagging|termites?|asbestos|knob and tube|aluminum wiring|not to code|code violation|in the way|undersized|too small)\b/i;
+function _timkIsNote(frag){
+  const t=String(frag||'').trim();
+  if(!t||_timkNewAction(t))return false;
+  return _TIMK_OBSERVE.test(t)||_TIMK_ASKED.test(t)||_TIMK_DAMAGE.test(t);
+}
+// "...so we'll have to move that return duct" -> "Move the return duct".
+// "...we'll need a condensate pump" -> "Install a condensate pump".
+const _TIMK_RIDES=/(?:,\s*|\s)(?:and\s+|so\s+)?(?:we'?ll have to|we'?ll need to|we will have to|we will need to|we'?re going to have to|we need to|we have to|have to|need to|we'?ll|we will|we'?re going to|gonna)\s+(.+)$/i;
+function _timkRiding(frag){
+  const t=String(frag||'');
+  const m=t.match(_TIMK_RIDES);
+  if(!m)return null;
+  let act=m[1].trim().replace(/[\s,;:.]+$/,'');
+  const need=act.match(/^need\s+(a|an|some|the|new)\b\s*(.*)$/i);
+  if(need)act='Install '+need[1]+(need[2]?' '+need[2]:'');
+  act=act.replace(/^(\w+)\s+that\b/i,'$1 the');
+  if(!_timkNewAction(act))return null;
+  const tidy=_timkTidy(act);
+  if(!tidy)return null;
+  return {act:tidy,remark:_timkTidy(t.slice(0,m.index))};
+}
+function timSortSaid(pieces){
+  const steps=[],notes=[];
+  (pieces||[]).forEach(p=>{
+    if(!_timkIsNote(p)){steps.push(p);return;}
+    const ride=_timkRiding(p);
+    const remark=ride?(ride.remark||p):p;
+    if(ride&&!steps.includes(ride.act))steps.push(ride.act);
+    if(remark&&remark.replace(/[^a-z]/gi,'').length>=3)
+      notes.push({text:remark,damage:_TIMK_DAMAGE.test(remark),asked:_TIMK_ASKED.test(remark)});
+  });
+  return {steps,notes};
+}
+
 function timScopeBuild(text,opts){
   const said=String(text||'');
-  const steps=timScopeFrom(said);
+  const sorted=timSortSaid(timScopeFrom(said));
+  const steps=sorted.steps;
   const staged=timOrderScope(steps);
   const byText={};
   staged.forEach(r=>{if(byText[r.text]===undefined)byText[r.text]=r;});
@@ -435,11 +491,15 @@ function timScopeBuild(text,opts){
     const r=byText[t]||{};
     return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i};
   });
+  // What the job drags in is read from what he will DO, not from everything
+  // he mentioned: "the furnace is in the way" is not a furnace job, and "by the
+  // panel" is not a panel job (both did, 2026-09-26).
   let implied=[];
-  try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
+  try{implied=timImplied(steps.join('. '),steps,opts)||[];}catch(_e){implied=[];}
   return {
     said,
     steps:mine,
+    notes:sorted.notes,
     implied,
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
@@ -975,7 +1035,11 @@ const _TIMK_COVERED=/\b(cover|covered|drop ?cloth|protect|masked?|masking|floor 
 const _TIMK_TESTED=/\b(test|tested|testing|pressure|pressured|leak ?check|leak ?test|check for leaks|purge|bleed|bled)\b/;
 
 // For the trade rules: what he said and the steps it became, as one string.
-function _timkAll(t,steps){return _timkNorm(t)+' '+(steps||[]).map(x=>_timkNorm(x&&typeof x==='object'?(x.text||''):x)).join(' ');}
+// A place is not a system: "set it on the wall BY THE PANEL" is not panel
+// work, and it armed the circuit test and the permit (2026-09-26). Where
+// something goes is struck before the systems are read.
+const _TIMK_PLACE=/\b(by|near|next to|beside|behind|under|above|below|left of|right of|across from|close to)\s+the\s+(electric(al)?\s+)?(panel|breaker box|furnace|water heater|boiler|meter)\b/g;
+function _timkAll(t,steps){return (_timkNorm(t)+' '+(steps||[]).map(x=>_timkNorm(x&&typeof x==='object'?(x.text||''):x)).join(' ')).replace(_TIMK_PLACE,' ');}
 // The systems each trade rule listens for. Narrow, like the ones above.
 const _TIMK_PERMIT=/\b(panel|sub ?panel|service (change|upgrade)|(100|150|200|400) ?amp|new circuit|water heater|tankless|furnace|heat pump|air handler|condenser|boiler|mini ?split|gas line|re-?roof|new roof|tear ?off)\b/;
 const _TIMK_TANKLESS=/\b(tankless|on ?demand water heater)\b/;

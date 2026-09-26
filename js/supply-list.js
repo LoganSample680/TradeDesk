@@ -183,7 +183,7 @@ function _supCardHTML(opts){
         '</div>'+
       '</div>'+
       (priced
-        ?'<div class="sup-totals"><span>Your cost '+_supMoney(cost)+'</span><span><b>Client price '+_supMoney(price)+'</b></span></div>'
+        ?'<div class="sup-totals"><span>Your cost '+_supMoney(cost)+'</span><span><b>'+(_supMode()==='tm'?'Billed at your markup ':'Client price ')+_supMoney(price)+'</b></span></div>'
         :(items.length?'<div class="sup-totals"><span style="color:var(--text3)">Waiting on their quote for prices</span></div>':''))+
       (taxNote?'<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">'+escHtml(taxNote)+'</div>':'')+
       '<div class="sup-actions">'+

@@ -1576,6 +1576,14 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{co
 :is(#gei-tm-page,#gei-byo-page) .ios-links.left{justify-content:flex-start;padding:0 16px;margin-top:4px}
 /* Tim's finds are a list of step names. The reason opens on a tap. */
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
+/* What he said that is not a step (2026-09-26): quoted, then three ways to
+   place it. The damage tag is the one line in amber on the card. */
+:is(#gei-tm-page,#gei-byo-page) .ios-said-h{padding:12px 16px 2px;font-size:13px;font-weight:700;color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-said .ios-lbl{white-space:normal}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-tag{display:block;font-style:normal;font-size:12.5px;font-weight:600;color:#8A4E00;margin-top:4px}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-said-tag{color:#F2B55C}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-acts{gap:8px;flex-wrap:wrap;padding-top:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-walk .ios-lbl{white-space:normal;font-size:15px;line-height:1.5;color:var(--text2)}
 /* The No beside Tim's Add, and Skip under a question with a box (2026-09-26). */
 :is(#gei-tm-page,#gei-byo-page) .ios-no{flex:0 0 auto;border:0;background:none;color:var(--text2);font:inherit;font-size:15px;font-weight:600;padding:8px 10px;cursor:pointer;min-height:44px;min-width:48px}
 :is(#gei-tm-page,#gei-byo-page) .ios-ask-skip{padding-top:0;min-height:0}

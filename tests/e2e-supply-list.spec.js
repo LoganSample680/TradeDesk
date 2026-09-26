@@ -659,18 +659,24 @@ test.describe('supply list: on a T&M estimate', () => {
   test('the list rides on one T&M material line, not a category row', async () => {
     const r = await page.evaluate((q) => {
       _tmRenderMatList();
-      const hasCard = !!document.querySelector('#tm-mat-list #sup-card');
+      // Changed 2026-09-26 (§10.4, owner: "material totals add like they do in
+      // BYO but they don't surface in the proposal itself"): on the iPhone T&M
+      // screen the card has its own place under the job (#tm-sup-wrap), since
+      // the old Materials list it lived in is not on that screen. It keeps its
+      // card chrome there; bare is only for the old list.
+      const inWrap = !!document.querySelector('#tm-sup-wrap #sup-card');
+      const hasCard = inWrap || !!document.querySelector('#tm-mat-list #sup-card');
       _supReview(_supCheckQuote(q));
       _supApplyReview();
       const lines = _geiLines.filter(l => l._supply);
       const rows = document.querySelectorAll('#tm-mat-list .byo-row').length;
-      return { hasCard, n: lines.length, total: lines[0] && lines[0].total, rows, bare: document.getElementById('sup-card').dataset.bare };
+      return { hasCard, inWrap, n: lines.length, total: lines[0] && lines[0].total, rows, bare: document.getElementById('sup-card').dataset.bare };
     }, Q_14TH);
     expect(r.hasCard).toBe(true);
     expect(r.n).toBe(1);
     expect(r.total).toBeCloseTo(315.72, 2);
     expect(r.rows).toBe(0);
-    expect(r.bare).toBe('1');
+    expect(r.bare).toBe(r.inWrap ? '0' : '1');
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });

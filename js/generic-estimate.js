@@ -671,7 +671,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_geiWalk=[];_geiNotes=[];_geiFound=[];_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -792,6 +792,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
+      _geiWalkLoad(b);
       if(Array.isArray(b.exclusions))_geiExclusions=[...b.exclusions];
       _geiScopeNoScope=!!(b.scopeNoScope);
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
@@ -872,6 +873,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
+      _geiWalkLoad(_b);
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
       _geiScopeNoScope=!!(_b.scopeNoScope);
       // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
@@ -1172,7 +1174,13 @@ function _geiRenderScopeCard(prefix){
   const wrap=document.getElementById(prefix+'-scopecard-wrap');if(!wrap)return;
   // T&M: the section (label, group, footnote, and what Tim noticed) is drawn
   // whole by _tmScopeIosHtml, so this is only the container it lives in.
-  if(prefix==='tm'){wrap.style.display='';if(!document.getElementById('tm-scope-wrap'))wrap.innerHTML='<div id="tm-scope-wrap"></div>';return;}
+  if(prefix==='tm'){wrap.style.display='';
+    if(!document.getElementById('tm-scope-wrap'))wrap.innerHTML='<div id="tm-scope-wrap"></div>';
+    // The supply house list, under the job (2026-09-26). Its totals count on
+    // his screen; the T&M proposal never prints them (owner: "material totals
+    // add like they do in BYO but they don't surface in the proposal itself").
+    if(!document.getElementById('tm-sup-wrap'))wrap.insertAdjacentHTML('beforeend','<div id="tm-sup-wrap"></div>');
+    return;}
   const mode=_geiScopeCardMode(prefix);
   if(mode==='off'){wrap.innerHTML='';wrap.style.display='none';return;}
   wrap.style.display='';
@@ -1867,6 +1875,14 @@ function _updateScopeSheetBtn(label){
 // than the DOM so a re-render cannot lose it mid-decision.
 let _geiScopeSaid='';
 let _geiScopeMissed=[];
+// ── WHAT HE SAID, KEPT AND PLACED (owner, 2026-09-26: "do we do voice notes to
+// feed a proposal, that way everything that is said is captured and scoped?")
+// _geiWalk:  every sentence he gave Tim, word for word, with the time. Kept on
+//            the bid for him and the crew; never on the proposal.
+// _geiNotes: the remarks Tim sorted out of the steps (timSortSaid), waiting to
+//            be placed. The bar will not reach Send while any is unplaced.
+// _geiFound: the ones he put on the proposal, printed under What we found.
+let _geiWalk=[],_geiNotes=[],_geiFound=[];
 Object.defineProperty(window,'_geiScopeMissed',{get:()=>_geiScopeMissed,set:v=>{_geiScopeMissed=v||[];},configurable:true});
 
 // ── THE WORK, iOS (2026-09-23) ──────────────────────────────────────────────
@@ -1964,7 +1980,7 @@ function _tmScopeIosHtml(){
     ?_tmSayBox('What else? Say it the way you would tell your crew.')
     :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
   return '<div class="ios-sec">'+
-      '<div class="ios-group">'+rows+reorder+more+'</div>'+
+      '<div class="ios-group">'+rows+reorder+more+_geiWalkRowHtml()+'</div>'+
       (_tmSayMoreOpen?btns:'')+
     '</div>'+
     _geiScopeMissedHtml();
@@ -2047,11 +2063,12 @@ function _geiScopeBuild(containerId){
   if(typeof timScopeBuild!=='function')return;
   const rejected=(typeof timDropped==='function')?[]:[];
   const built=timScopeBuild(said,{rejected});
-  if(!built.steps.length){
+  if(!built.steps.length&&!(built.notes||[]).length){
     if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
     return;
   }
   _geiScopeSaid=said;
+  _geiWalkAdd(said,built.notes);
   _tmSayMoreOpen=false;
   // ADDED TO what is there, never replacing it: he may build twice, once from
   // the driveway and once after he has walked the crawlspace.
@@ -2079,7 +2096,7 @@ function _geiScopeBuild(containerId){
 // nothing moves until he taps it: rule 3 of js/tim-knowledge.js is that nothing
 // Tim guessed becomes a fact until the contractor accepts it.
 function _geiScopeMissedHtml(){
-  if(!_geiScopeMissed.length)return '';
+  if(!_geiScopeMissed.length&&!_geiNotes.length)return '';
   if(_geiIsTM)return _timMissCardHtml(_geiScopeMissed,'_geiScopeTakeMissed','_geiScopeDropMissed','_geiScopeTakeAllMissed',_tmScopeEditing);
   const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
     '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
@@ -2226,8 +2243,25 @@ function _timMissCardHtml(list,take,drop,takeAll,ed){
           '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
         '</div>';
       }).join('')+
+      _geiNotesRowsHtml()+
     '</div>'+
   '</div>';
+}
+// What he said that is not a step, one row each, placed in one tap. Damage is
+// marked, because unwritten damage is tomorrow's argument about a change order.
+function _geiNotesRowsHtml(){
+  if(!_geiNotes.length)return '';
+  return '<div class="ios-said-h">You also said</div>'+_geiNotes.map((n,i)=>
+    '<div class="ios-swipe ios-said" data-kind="note">'+
+      '<div class="ios-row"><span class="ios-lbl">\u201c'+escHtml(n.text)+'\u201d'+
+        (n.damage?'<em class="ios-said-tag">Put it on the proposal, or it is a change order argument later</em>':
+         n.asked?'<em class="ios-said-tag">They asked for this</em>':'')+'</span></div>'+
+      '<div class="ios-row ios-said-acts">'+
+        '<button type="button" class="ios-pill" onclick="_geiNotePlace('+i+',\'found\')">On the proposal</button>'+
+        '<button type="button" class="ios-pill ghost" onclick="_geiNotePlace('+i+',\'crew\')">Crew only</button>'+
+        '<button type="button" class="ios-no" onclick="_geiNotePlace('+i+',\'no\')">No</button>'+
+      '</div>'+
+    '</div>').join('');
 }
 function _timMissAskRow(im,take,drop){
   const id=escHtml(JSON.stringify(String(im.id||'')));
@@ -2953,7 +2987,8 @@ function _byoSayBuild(){
   }
   if(typeof timScopeBuild!=='function')return;
   const built=timScopeBuild(said,{rejected:[]});
-  if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
+  if(!built.steps.length&&!(built.notes||[]).length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
+  _geiWalkAdd(said,built.notes);
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
   built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text);have.add(st.text.toLowerCase());}});
   _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
@@ -2989,7 +3024,7 @@ function _byoDropMissed(id){
   _byoRenderSections();
 }
 function _byoMissedHtml(){
-  if(!_byoMissed.length)return '';
+  if(!_byoMissed.length&&!_geiNotes.length)return '';
   return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
 }
 function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
@@ -3043,7 +3078,8 @@ function _byoRenderSections(){
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  const walk=_geiWalk.length?'<div class="ios-sec"><div class="ios-group">'+_geiWalkRowHtml()+'</div></div>':'';
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+walk+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+(_byoItems.length?_attachCardHTML():'')+group+terms;
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3227,6 +3263,7 @@ function _byoAutosave(){
   b.estCrewSize=_estCrew.length||1;
   b.scopeChips=[..._geiScopeChips];
   b.scopeNoScope=_geiScopeNoScope||false;
+  _geiWalkSave(b);
   const _termsEl=document.getElementById('byo-custom-terms');
   if(_termsEl)b.byoCustomTerms=_termsEl.value;
   const {total}=calcGeiTotal();
@@ -5028,9 +5065,11 @@ function _tmRenderMoneyRows(n){
     '<div class="summary-divider"></div>';
 }
 function _tmRenderMatList(){
+  const sw=document.getElementById('tm-sup-wrap');
+  if(sw)sw.innerHTML=(typeof _supCardHTML==='function')?_supCardHTML():'';
   const el=document.getElementById('tm-mat-list');if(!el)return;
   const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
-  const sup=(typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
+  const sup=(!sw&&typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
   if(!mats.length){
     el.innerHTML=sup+'<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
     return;
@@ -5945,6 +5984,10 @@ function _geiTimStep(miss){
   miss=miss||[];
   const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
   if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  // Everything he said lands somewhere before Send: a step, the proposal, the
+  // crew, or a deliberate no (2026-09-26).
+  const said=_geiNotes.length;
+  if(said)return {label:'Place '+said+' thing'+(said>1?'s':'')+' you said',fn:'_geiGoTimAsks()'};
   if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
   return null;
 }
@@ -5991,6 +6034,65 @@ function _geiGoTimAsks(){
   _geiGuideTo(card);
   // A question with a box (the unit) gets the cursor, so he can just type.
   setTimeout(()=>{const f=card&&card.querySelector('.ios-ask-in');if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+}
+// ── Walk notes: keep, place, save ─────────────────────────────────────────
+function _geiWalkAdd(said,notes){
+  const t=String(said||'').trim();
+  if(t)_geiWalk.push({at:new Date().toISOString(),said:t});
+  const have=new Set([..._geiNotes,..._geiFound].map(n=>String(n.text||n).toLowerCase()));
+  (notes||[]).forEach(n=>{const k=String(n.text||'').toLowerCase();if(k&&!have.has(k)){_geiNotes.push({text:n.text,damage:!!n.damage,asked:!!n.asked});have.add(k);}});
+  // Damage first: the one he most needs to see before he sends.
+  _geiNotes.sort((a,b)=>(b.damage?1:0)-(a.damage?1:0));
+}
+function _geiNotePlace(i,where){
+  const n=_geiNotes[i];if(!n)return;
+  _geiNotes.splice(i,1);
+  if(where==='found')_geiFound.push(n.text);
+  else if(where==='crew'){
+    // The crew note for this address, the one the crew already reads at the
+    // gate. Added to, never replacing what is there.
+    const c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+    if(c&&typeof setSiteNote==='function'){
+      const addr=(typeof _geiSiteAddr==='function')?_geiSiteAddr():(c.addr||'');
+      const cur=(typeof getSiteNote==='function')?String(getSiteNote(c,addr)||'').trim():'';
+      setSiteNote(c,addr,(cur?cur+'\n':'')+n.text);
+      try{saveAll();}catch(_e){}
+    }
+  }
+  if(_geiIsTM)['tm-scope-wrap'].forEach(cid=>_renderScopeChips(cid));
+  else if(typeof _byoRenderSections==='function'){_byoRenderSections();if(typeof _byoUpdateRail==='function')_byoUpdateRail();}
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+// Every walk, word for word, one tap away. His and the crew's; the customer
+// never sees it.
+let _geiWalkOpen=false;
+function _geiWalkRowHtml(){
+  if(!_geiWalk.length)return '';
+  const n=_geiWalk.length;
+  const head='<button type="button" class="ios-row ios-link" onclick="_geiWalkOpen=!_geiWalkOpen;_geiRepaintScope()">'+
+    (_geiWalkOpen?'Hide what you said':('What you said'+(n>1?' ('+n+' walks)':'')))+'</button>';
+  if(!_geiWalkOpen)return head;
+  return head+_geiWalk.map(w=>{
+    const d=new Date(w.at);
+    const when=isNaN(d)?'':d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return '<div class="ios-row ios-walk"><span class="ios-lbl">'+escHtml(w.said)+(when?'<small>'+escHtml(when)+'</small>':'')+'</span></div>';
+  }).join('');
+}
+function _geiRepaintScope(){
+  if(_geiIsTM)_renderScopeChips('tm-scope-wrap');
+  else if(typeof _byoRenderSections==='function')_byoRenderSections();
+}
+function _geiWalkSave(b){
+  // His supply house total on a T&M, for his own numbers (never the customer's).
+  if(_geiIsTM){try{b.tmSupplyTotal=calcGeiTotal().supply||0;}catch(_e){}}
+  b.walkNotes=_geiWalk.slice();
+  b.notesToPlace=_geiNotes.slice();
+  b.foundNotes=_geiFound.slice();
+}
+function _geiWalkLoad(b){
+  _geiWalk=Array.isArray(b&&b.walkNotes)?b.walkNotes.slice():[];
+  _geiNotes=Array.isArray(b&&b.notesToPlace)?b.notesToPlace.slice():[];
+  _geiFound=Array.isArray(b&&b.foundNotes)?b.foundNotes.slice():[];
 }
 // The T&M names, kept for Tim and the tests that call them.
 function _tmRateChecked(){return _geiNumsChecked();}
@@ -7195,7 +7297,12 @@ function _panelPrint(){
 }
 
 function calcGeiTotal(){
-  const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
+  // T&M's supply house line is his own number (2026-09-26): it is kept out of
+  // the amount the customer's hub and signing page show, and handed back as
+  // `supply` for his side of the screen and the bid record.
+  const _tmSup=l=>_geiIsTM&&l&&l._supply;
+  const supply=_geiLines.filter(_tmSup).reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
+  const sub=_geiLines.filter(l=>!_tmSup(l)).reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
   // T&M carries no markup here: how materials are priced is his business,
   // not a term on the contract, and receipts never go on a bill (owner,
@@ -7209,7 +7316,7 @@ function calcGeiTotal(){
   // Rate: always use client address ZIP/state lookup; fall back to contractor setting only when no address yet
   const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
   if(typeof calcSalesTax==='function'&&_stRate>0){
-    const _liItems=_geiLines.map(l=>{
+    const _liItems=_geiLines.filter(l=>!_tmSup(l)).map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
       const sec=(l._byoSection||'').toLowerCase();
       const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
@@ -7268,7 +7375,7 @@ function calcGeiTotal(){
 
   // Margin on pre-tax revenue: sub + markup but not salesTax (pass-through to government).
   _updateMarginGauge('gei',sub+markup);
-  return{sub,tax:markup+salesTax,markup,salesTax,total};
+  return{sub,tax:markup+salesTax,markup,salesTax,total,supply};
 }
 
 // When an estimate is saved at an address the client doesn't have on file yet
@@ -7371,6 +7478,7 @@ function saveGenericEstimate(draft){
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       b.scopeChips=[..._geiScopeChips];
       b.scopeNoScope=_geiScopeNoScope||false;
+      _geiWalkSave(b);
       // The promise, stamped on the deliberate save too, not only on autosave
       // (_byoAutosave). Relying on an autosave having happened first is how a
       // bid reaches a job with nothing to measure it against.
@@ -7405,6 +7513,7 @@ function saveGenericEstimate(draft){
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       scopeChips:[..._geiScopeChips],
       scopeNoScope:_geiScopeNoScope||false,
+      walkNotes:_geiWalk.slice(),notesToPlace:_geiNotes.slice(),foundNotes:_geiFound.slice(),
       estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
       exclusions:[..._geiExclusions],
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
@@ -8006,8 +8115,11 @@ async function sendGenericProposal(previewOnly,opts){
       }).join('');
     }).join('');
   }else{
-    // T&M and other flows: flat list
-    lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>_mkLineRow(l,l._rrp||false)).join('');
+    // T&M and other flows: flat list. On T&M the supply house line is his
+    // (2026-09-26, owner: "material totals add like they do in BYO but they
+    // don't surface in the proposal itself"): it counts on his screen and is
+    // never printed; the customer is billed materials as used.
+    lineRows=_geiLines.filter(l=>(l.desc||l.rate)&&!(_geiIsTM&&l._supply)).map(l=>_mkLineRow(l,l._rrp||false)).join('');
   }
   const notesHtml=v('gei-notes')?`<div style="margin:0 24px;padding:18px 0 22px;border-top:1px solid #e2e8f0;font-size:13.5px;color:#334155;line-height:1.55;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
@@ -8098,7 +8210,7 @@ async function sendGenericProposal(previewOnly,opts){
   // description"), so they say it here in words, priced rows stay in the table
   // below where they belong.
   if(!_geiIsFreeForm&&!_geiScopeNoScope){
-    const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&String(l.desc||'').trim()
+    const _lineScope=(_geiLines||[]).filter(l=>l&&!l._tmLabor&&!l._rrp&&!(_geiIsTM&&l._supply)&&String(l.desc||'').trim()
       &&!_chipsToPrint.some(c=>_pbKey(c)===_pbKey(l.desc)));
     if(_lineScope.length){
       const _rows=_propUl(_lineScope.map(l=>{
@@ -8158,6 +8270,13 @@ async function sendGenericProposal(previewOnly,opts){
   // question the scope raises ("is X in there?") at the moment they ask it,
   // instead of in the terms accordion where nobody looks until there is an
   // argument.
+  // WHAT WE FOUND (2026-09-26): the conditions he saw at the walk-through and
+  // chose to put in writing. Signed by the customer with everything else, so a
+  // rotted floor he noted is on the record before the first tool comes out.
+  const _foundSection=(_geiFound||[]).length
+    ?_propSection('What we found','',_propUl(_geiFound.map(x=>_propLi(escHtml(x))).join(''))+
+      '<div style="font-size:12px;color:#64748b;line-height:1.5;margin-top:10px">Noted at the walk-through. Anything hidden that turns up once the work starts is priced and approved in a written change order before it is done.</div>')
+    :'';
   const _exclSection=_geiExclusions.length
     ?`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #eceef2"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not included</div><ul style="margin:0;padding-left:18px">${_geiExclusions.map(x=>`<li style="font-size:13.5px;color:#1e293b;line-height:1.45;margin-bottom:5px;overflow-wrap:anywhere">${escHtml(x)}</li>`).join('')}</ul><div style="font-size:10.5px;color:#718096;margin-top:8px">If any of this turns out to be needed, it is priced and approved in a written change order before that work starts.</div></div>`
     :'';
@@ -8309,7 +8428,7 @@ async function sendGenericProposal(previewOnly,opts){
   })();
   const proposalHtml=`<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">`+
     _propCover({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr,name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD})+
-    `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
+    `${_optionsSection}${_scopeSection}${_foundSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
     `<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px ${_PT.line}">${_lineItemsSection}</div>`+
     `${notesHtml}${_propPanelHtml}${_propFooter}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
