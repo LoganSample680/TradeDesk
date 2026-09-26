@@ -909,7 +909,8 @@ function openPayPanel(bidId, autoType){
   // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
-  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  // A quick invoice bills work already done: no deposit, only the balance.
+  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
@@ -1306,7 +1307,8 @@ function selectPayType(btn, bidId){
   const bid=bids.find(b=>b.id==bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  // A quick invoice bills work already done: no deposit, only the balance.
+  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
   const hint=document.getElementById('mpay-max-hint');

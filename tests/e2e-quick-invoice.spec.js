@@ -84,7 +84,7 @@ test.describe('Quick invoice', () => {
     expect(r.text).toContain('$455.00');           // owner at the labor rate, 6.5h x $70
     expect(r.text).toContain('Ferguson');
     expect(r.total).toBe('$1,307.50');
-    expect(r.send).toBe('Send to John');
+    expect(r.send).toBe('Text it to John');
   });
 
   test('changing a rate reprices that line and the total', async ({ page }) => {
@@ -142,6 +142,63 @@ test.describe('Quick invoice', () => {
     expect(r.seg).toBe('Set price');
     expect(r.sent).toBe(false);
     expect(r.grew).toBe(false);
+  });
+
+  test('time on a job with a proposal stays off, and the screen says to bill it from that job', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      bids.push({ id: 'b77', client_id: 901, type: 'Time & Materials', isTM: true, status: 'Closed Won', amount: 2000 });
+      payments.push({ id: 'p77', bid_id: 'b77', amount: 500, date: '2026-09-20', method: 'Card' });
+      jobs.find(j => j.id === 'j901').bid_id = 'b77';
+      openQuickInvoice(901);
+      return { text: document.getElementById('qi-page').textContent, total: document.getElementById('qi-total').textContent };
+    });
+    expect(r.text).not.toContain('Jack Sample');
+    expect(r.text).toContain('John has a');
+    expect(r.text).toContain('$500 paid');
+    expect(r.text).toContain('Bill that one from the job');
+    expect(r.total).toBe('$300.00');                 // only the receipt is left
+  });
+
+  test('a proposal job paid in full says nothing', async ({ page }) => {
+    await boot(page);
+    const t = await page.evaluate(() => {
+      bids.push({ id: 'b78', client_id: 901, type: 'Build Your Own Estimate', isFreeForm: true, status: 'Closed Won', amount: 800 });
+      payments.push({ id: 'p78', bid_id: 'b78', amount: 800, date: '2026-09-20', method: 'Cash' });
+      jobs.find(j => j.id === 'j901').bid_id = 'b78';
+      openQuickInvoice(901);
+      return document.getElementById('qi-page').textContent;
+    });
+    expect(t).not.toContain('Bill that one from the job');
+  });
+
+  test('See it shows the lines and total before anything is saved', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const n = bids.length;
+      openQuickInvoice(901);
+      qiSeeIt();
+      const box = document.getElementById('qi-see');
+      return { text: box && box.textContent, saved: bids.length !== n };
+    });
+    expect(r.text).toContain('Jack Sample: 6h 30m on site');
+    expect(r.text).toContain('$1,307.50');
+    expect(r.text).toContain('Looks good');
+    expect(r.saved).toBe(false);
+    await page.click('#qi-see button');
+    expect(await page.locator('#qi-see').count()).toBe(0);
+  });
+
+  test('Pay now saves the invoice and opens the pay panel on it', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      openQuickInvoice(901);
+      const bid = qiPayNow();
+      return { kind: bid && bid.kind, active: window.activePayBidId === bid.id || (typeof activePayBidId !== 'undefined' && activePayBidId === bid.id) };
+    });
+    expect(r.kind).toBe('quick_invoice');
+    expect(r.active).toBe(true);
+    expect(await page.locator('#mpay-btn-deposit').count(), 'no deposit on a finished job').toBe(0);
   });
 
   test('the printed invoice lists each line', async ({ page }) => {

@@ -71,13 +71,34 @@ function _qiMins(m){const h=Math.floor(m/60),mm=Math.round(m%60);return (h?h+'h 
 function _qiDay(d){const t=Date.parse(String(d||'')+'T12:00:00');return isNaN(t)?'':new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 function _qiMoney(n){return '$'+(Math.round((Number(n)||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
+// A job with a real proposal behind it (T&M, BYO, a painting bid) is billed
+// from that job, where its deposit and payments are already counted. Its time
+// never lands on a quick invoice, or it would be billed twice.
+function _qiPropBid(j){
+  if(!j||j.bid_id==null)return null;
+  const b=(bids||[]).find(x=>String(x.id)===String(j.bid_id));
+  return (b&&b.kind!=='quick_invoice'&&b.kind!=='diagnostic')?b:null;
+}
+function _qiPropJobs(cid){
+  const seen=new Set(),out=[];
+  (jobs||[]).forEach(j=>{
+    if(!j||String(j.client_id)!==String(cid))return;
+    const b=_qiPropBid(j);if(!b||seen.has(b.id))return;
+    seen.add(b.id);
+    const paid=typeof getBidPaid==='function'?getBidPaid(b.id):0;
+    const owed=typeof getBidBalance==='function'?getBidBalance(b):0;
+    if(owed<0.01&&paid>0)return;               // paid in full: settled, nothing to say
+    out.push({id:b.id,name:(typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):b.type)||'Job',paid});
+  });
+  return out;
+}
 // The unbilled work: one line per person (their minutes at this customer's
 // jobs since the last quick invoice), then one line per unbilled receipt.
 function _qiUnbilled(cid){
   const {through,exp}=_qiBilled(cid);
   const byPerson={};let last=through;
   const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
-  (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)).forEach(j=>{
+  (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)&&!_qiPropBid(j)).forEach(j=>{
     (byJob[j.id]||[]).forEach(e=>{
       const a=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'');
       const d=Date.parse(e&&(e.departedAt||e.departed_at)||'');
@@ -137,13 +158,17 @@ function renderQuickInvoice(){
     '<button type="button" onclick="_qiAddPb('+i+')">'+escHtml(p.desc)+(Number(p.rate)>0?' · '+_qiMoney(p.rate).replace('.00',''):'')+'</button>').join('')+'</div>':'';
   const total=_qiTotal();
   host.innerHTML=
-    '<div class="ios-nav"><button type="button" class="ios-navbtn" onclick="qiCancel()">Cancel</button></div>'+
+    '<div class="ios-nav"><button type="button" class="ios-navbtn" onclick="qiCancel()">Cancel</button>'+
+      '<button type="button" class="ios-navbtn bold" onclick="qiSeeIt()">See it</button></div>'+
     '<div class="ios-large"><h1 class="ios-title" style="cursor:default">Invoice</h1>'+
       '<div class="ios-sub">'+escHtml(c.name||'')+((c.addr||'')?' · '+escHtml(String(c.addr).split(',')[0]):'')+'</div></div>'+
     '<div class="qi-body">'+
       '<div class="ios-seg qi-seg" role="tablist">'+
         '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">Hourly</button>'+
         '<button type="button" role="tab" class="'+(hourly?'':'on')+'" onclick="_qiSetMode(\'set\')">Set price</button></div>'+
+      _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
+        escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
+        '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
       (hourly?'<div class="ios-sec"><div class="ios-h"><span>Since the last invoice</span></div><div class="ios-group">'+
         (tracked||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
       '</div></div>':'')+
@@ -153,7 +178,8 @@ function renderQuickInvoice(){
       '</div>'+pbHtml+'</div>'+
       '<div class="ios-sec"><div class="ios-group"><div class="ios-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div></div>'+
         '<div class="ios-foot">'+(hourly?'Once sent, these hours and receipts are marked billed and the next invoice starts after them.':'Your tracked time and receipts are not on this bill.')+'</div></div>'+
-      '<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Send to '+escHtml(String(c.name||'customer').split(' ')[0])+'</button>'+
+      '<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Text it to '+escHtml(String(c.name||'customer').split(' ')[0])+'</button>'+
+      '<button type="button" class="ios-btn ios-btn-tint" id="qi-paynow" onclick="qiPayNow()">Pay now</button>'+
     '</div>';
 }
 function _qiRate(i,v){
@@ -186,12 +212,35 @@ function _qiAddPb(i){
 }
 function qiCancel(){_qi=null;goPg('pg-dash');}
 
-function qiSend(){
+function qiOpenJob(bidId){
+  _qi=null;
+  const b=(bids||[]).find(x=>String(x.id)===String(bidId));
+  if(b&&typeof openFinalInvoice==='function')openFinalInvoice(b.id);
+}
+// What the customer will get, before anything is saved or sent.
+function qiSeeIt(){
   if(!_qi)return;
+  const c=getClientById(_qi.cid)||{};
+  const lines=_qiLines().filter(l=>Number(l.amount)>0);
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='qi-see';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:13px;font-weight:700;color:var(--text3)">'+escHtml((typeof S!=='undefined'&&S.bname)||'')+'</div>'+
+    '<div style="font-size:22px;font-weight:800;margin:2px 0 2px">Invoice</div>'+
+    '<div style="font-size:14px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+(c.addr?'<br>'+escHtml(c.addr):'')+'</div>'+
+    (lines.length?lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border2);font-size:15px"><span>'+escHtml(l.desc)+'</span><span style="white-space:nowrap">'+_qiMoney(l.amount)+'</span></div>').join('')
+      :'<div style="font-size:14px;color:var(--text3);padding:10px 0">No lines with a price yet.</div>')+
+    '<div style="display:flex;justify-content:space-between;padding:12px 0 16px;font-size:18px;font-weight:800"><span>Total</span><span>'+_qiMoney(_qiTotal())+'</span></div>'+
+    '<button type="button" class="btn btn-p btn-full" onclick="document.getElementById(\'qi-see\').remove()">Looks good</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+}
+function _qiSave(){
+  if(!_qi)return null;
   const c=getClientById(_qi.cid);if(!c)return;
   const lines=_qiLines().filter(l=>Number(l.amount)>0);
   const total=_qiTotal();
-  if(!lines.length||!(total>0)){showToast('Add a line with a price first','✏️');return;}
+  if(!lines.length||!(total>0)){showToast('Add a line with a price first','✏️');return null;}
   const hourly=_qi.mode==='hourly';
   const bid={id:_newBidId(),client_id:c.id,client_name:c.name||'',name:c.name||'',phone:c.phone||'',addr:c.addr||'',
     type:'Invoice',kind:'quick_invoice',status:'Closed Won',draft:false,
@@ -205,6 +254,19 @@ function qiSend(){
   saveAll();
   _qi=null;
   goPg('pg-dash');
+  return bid;
+}
+// Text them the link to pay later.
+function qiSend(){
+  const bid=_qiSave();if(!bid)return false;
   if(typeof _sendPaidInvoice==='function')_sendPaidInvoice(bid.id);
+  return bid;
+}
+// Settle it now, in person: the same pay panel every job uses (Tap to Pay,
+// card by QR, cash, check, Venmo, Zelle), so the payment is recorded against
+// this invoice and it reads paid everywhere.
+function qiPayNow(){
+  const bid=_qiSave();if(!bid)return false;
+  if(typeof openPayPanel==='function')openPayPanel(bid.id,'final');
   return bid;
 }
