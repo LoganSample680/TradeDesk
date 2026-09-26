@@ -2983,7 +2983,9 @@ function openInvoice(bidId){
   // ones, and for most trades the licence number on the bill is the norm.
   const _logo=h.logoUrl||h.logoData||'';
   let html='<div class="inv-header"><div style="min-width:0">';
-  if(_logo)html+='<img src="'+esc(_logo)+'" alt="" style="max-height:54px;max-width:190px;object-fit:contain;margin-bottom:10px;display:block">';
+  // Sized to be noticed (owner 2026-09-25: the white label read as a small
+  // logo); the rounding reads as a badge on a logo that is its own square.
+  if(_logo)html+='<img src="'+esc(_logo)+'" alt="" style="max-height:96px;max-width:240px;object-fit:contain;border-radius:16px;margin-bottom:12px;display:block">';
   html+='<div class="inv-co-name">'+esc(h.contractorName)+'</div>';
   if(h.contractorAddr)html+='<div class="inv-co-sub">'+esc(h.contractorAddr)+'</div>';
   const _coLine=[h.contractorPhone,h.contractorEmail].filter(Boolean).join(' &middot; ');
