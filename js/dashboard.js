@@ -2530,7 +2530,13 @@ function printNoticeOfIntent(bidId){
   const todayD=fmtD(todayKey());
   const payByD=fmtD(addDays(todayKey(),demandDays));
   const lastWork=bid.completion_date||bid.bid_date||todayKey();
-  const fileDeadline=rules?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
+  // A printed Notice of Intent is a legal document: a calendar date on it reads as
+  // a fact. In a `confirm` state the statute fixes the LENGTH of the window but not
+  // what starts it (Idaho 45-507(2): "ninety (90) days after the completion of the
+  // labor or services", never saying whose), so the date we would compute here is a
+  // guess wearing a suit. Print the window in words instead and say what to check.
+  const lienUnsure=!!(rules&&rules.confirm);
+  const fileDeadline=(rules&&!lienUnsure)?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
   const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
   // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
   // separate person (or unknown → fill-in line); on a homeowner account they're the same.
@@ -2575,7 +2581,7 @@ ${gcBlock}
 <div class="row" style="margin-top:18px"><div class="plabel">Amount Past Due</div><div class="amt">${fmt(bal)}</div></div>
 <div class="body" style="margin-top:16px">
   <p>You are hereby notified that the undersigned, <strong>${escHtml(bname)}</strong>, furnished ${escHtml(workDesc)} for the improvement of the property located at <strong>${escHtml(addr)}</strong>, with work last furnished on or about <strong>${fmtD(lastWork)}</strong>.</p>
-  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':''}.</p>
+  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':(lienUnsure?', and must do so within '+escHtml(String(rules.filing_deadline_days))+' days of the date the statutory period begins to run':'')}.</p>
 </div>
 <div class="demand"><strong>DEMAND:</strong> Unless full payment of ${fmt(bal)} is received on or before <strong>${payByD}</strong>, the undersigned intends to file a mechanic's lien against the property described above and to pursue all remedies available under law, which may include recovery of interest, costs, and attorney's fees where permitted.</div>
 <div class="body"><p>To resolve this matter, contact <strong>${escHtml(bname)}</strong>${bphone?' at '+escHtml(bphone):''} immediately.</p></div>
