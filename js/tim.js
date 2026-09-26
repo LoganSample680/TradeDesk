@@ -1538,18 +1538,19 @@ function _timWaveHtml(t){
 function _timTalkPanel(){
   const secs=Math.max(0,Math.round((Date.now()-_timTalkStart)/1000));
   const clock=Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
-  return '<div id="_tim-listen" style="background:var(--ink);margin:0 0 -28px;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))">'+
-    '<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px">'+
-      timMark(22)+
-      '<span style="font-size:12px;font-weight:600;color:var(--text-cream)">Tim is listening</span>'+
-      '<span style="flex:1"></span>'+
-      '<span id="_tim-clock" style="font-size:11.5px;color:var(--text-cream-2);font-variant-numeric:tabular-nums">'+clock+'</span>'+
-    '</div>'+
-    '<div id="_tim-transcript" style="font-size:13.5px;line-height:1.55;color:var(--text-cream);margin-bottom:14px;min-height:42px"></div>'+
+  // VOICE MEMOS, NOT A CUSTOM PANEL (owner, 2026-09-26: "Go for the iOS
+  // redesign"). The recording sheet every iPhone owner already knows: a
+  // grabber, the clock large, the words arriving, a red waveform, and the
+  // round red stop button. The ids are unchanged, so the timer, the
+  // transcript and the wave keep ticking exactly as before.
+  return '<div id="_tim-listen" class="tim-rec" style="margin:0 0 -28px">'+
+    '<div class="tim-rec-grab"></div>'+
+    '<div class="tim-rec-t">Tim is listening</div>'+
+    '<div class="tim-rec-clock" id="_tim-clock">'+clock+'</div>'+
+    '<div class="tim-rec-said" id="_tim-transcript"></div>'+
     '<div class="tim-wave" id="_tim-wave">'+_timWaveHtml(0)+'</div>'+
-    '<button type="button" onclick="_timTalkToggle()" style="width:100%;height:52px;margin-top:16px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px">'+
-      '<span style="width:13px;height:13px;border-radius:3px;background:var(--c-red)"></span>Done talking</button>'+
-    '<div style="text-align:center;font-size:12px;color:var(--text-cream-2);margin-top:10px">Keep going as long as you want. Nothing is added until you approve it.</div>'+
+    '<button type="button" id="_tim-stop" class="tim-rec-stop" onclick="_timTalkToggle()" aria-label="Done talking"><span></span></button>'+
+    '<div class="tim-rec-foot">Tap to stop. Nothing is added until you check it.</div>'+
   '</div>';
 }
 
@@ -1607,10 +1608,10 @@ function _timTalkBegin(){
       _timTalking=false;
       if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
       const p=document.getElementById('_tim-listen');
-      if(p)p.innerHTML='<div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">'+timMark(22)+
-        '<span style="font-size:13.5px;font-weight:700;color:var(--text-cream)">Tim can\'t hear you</span></div>'+
-        '<div style="font-size:13px;line-height:1.5;color:var(--text-cream-2);margin-bottom:14px">Turn on Microphone and Speech Recognition for TradeDesk in Settings, then try again. You can type it in the meantime.</div>'+
-        '<button type="button" onclick="document.getElementById(\'_tim-listen\')?.remove();document.getElementById(\'_tim-listen-host\')?.remove()" style="width:100%;height:48px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">OK</button>';
+      if(p)p.innerHTML='<div class="tim-rec-grab"></div>'+
+        '<div class="tim-rec-t">Tim can\'t hear you</div>'+
+        '<div class="tim-rec-foot" style="margin:8px 8px 16px;font-size:15px">Turn on Microphone and Speech Recognition for TradeDesk in Settings, then try again. You can type it in the meantime.</div>'+
+        '<button type="button" class="tim-rec-ok" onclick="document.getElementById(\'_tim-listen\')?.remove();document.getElementById(\'_tim-listen-host\')?.remove()">OK</button>';
     });
   }
 }

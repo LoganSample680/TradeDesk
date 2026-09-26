@@ -148,7 +148,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     // possible with shared code"). The bar now walks Tim's leftovers first and
     // asks him to check the total and deposit before Send, the same walk as
     // T&M (e2e-tm-guided.spec.js). Tim's leftovers are answered here.
-    expect((await bar())[0]).toMatch(/^Tim caught \d+ things? you left out$/);
+    expect((await bar())[0]).toMatch(/^Tim caught \d+ things?$/);
     await page.evaluate(() => { _byoMissed.length = 0; _byoRenderSteps(); });
     expect(await bar()).toEqual(['Price every line']);
     await priceAll(900);
@@ -169,7 +169,10 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('a new job is one plain list, no section headings', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
-    expect(await page.evaluate(() => [...document.querySelectorAll('#byo-sections .ios-h')].filter(h => h.offsetParent).length)).toBe(0);
+    // The supply house is its own grouped section with its own heading since
+    // the iOS redesign (2026-09-26, §10.4); what this holds is that the JOB's
+    // lines are one plain list.
+    expect(await page.evaluate(() => [...document.querySelectorAll('#byo-sections .ios-h')].filter(h => h.offsetParent && !h.closest('.sup-card')).length)).toBe(0);
   });
 
   // ── THE PRICE ─────────────────────────────────────────────────────────────

@@ -652,3 +652,37 @@ function bizTime(iso){
   try{return d.toLocaleTimeString('en-US',{timeZone:bizTz(),hour:'numeric',minute:'2-digit'});}
   catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
 }
+
+// ── The iOS action sheet (2026-09-26) ─────────────────────────────────────────
+// Owner: "Go for the iOS redesign". The one bottom sheet of choices for the
+// iPhone screens: a grouped card of actions with a title and message on top,
+// and Cancel on its own underneath, the way every iOS app asks "which of
+// these?". A tap outside is Cancel. Built once here so no screen hand-rolls
+// its own (CLAUDE.md 7.3).
+//   iosActionSheet({title, message, actions:[{label, onTap, destructive}], cancel, onCancel})
+function iosActionSheet(o){
+  o=o||{};
+  document.getElementById('_ios-as')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_ios-as';ov.className='ios-as-ov';
+  const head=(o.title||o.message)
+    ?'<div class="ios-as-head">'+(o.title?'<div class="t">'+escHtml(o.title)+'</div>':'')+(o.message?'<div class="m">'+escHtml(o.message)+'</div>':'')+'</div>':'';
+  ov.innerHTML='<div class="ios-as" role="dialog" aria-modal="true">'+
+    '<div class="ios-as-grp">'+head+
+      (o.actions||[]).map((a,i)=>'<button type="button" class="ios-as-btn'+(a.destructive?' red':'')+'" data-i="'+i+'">'+escHtml(a.label)+'</button>').join('')+
+    '</div>'+
+    '<button type="button" class="ios-as-btn ios-as-cancel">'+escHtml(o.cancel||'Cancel')+'</button>'+
+  '</div>';
+  const close=()=>{ov.classList.remove('in');setTimeout(()=>ov.remove(),220);};
+  ov.addEventListener('click',e=>{
+    const b=e.target.closest('.ios-as-btn');
+    if(!b){if(e.target===ov){close();if(typeof o.onCancel==='function')o.onCancel();}return;}
+    close();
+    if(b.classList.contains('ios-as-cancel')){if(typeof o.onCancel==='function')o.onCancel();return;}
+    const a=(o.actions||[])[Number(b.dataset.i)];
+    if(a&&typeof a.onTap==='function')setTimeout(()=>a.onTap(),0);
+  });
+  document.body.appendChild(ov);
+  requestAnimationFrame(()=>ov.classList.add('in'));
+  return ov;
+}

@@ -879,6 +879,21 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    the chunky random blocks, and rejected holding the mic at all, so the bars
    only ever say "still listening" and never ask for a thumb. */
 .tim-wave{display:flex;align-items:center;justify-content:space-between;height:32px;gap:2px}
+/* The listening sheet, Voice Memos style (js/tim.js _timTalkPanel). */
+.tim-rec{background:var(--bg-card,#fff);border-radius:14px 14px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.14);padding:8px 20px calc(16px + env(safe-area-inset-bottom,0px));text-align:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif}
+.tim-rec-grab{width:36px;height:5px;border-radius:3px;background:rgba(60,60,67,.3);margin:0 auto 12px}
+.tim-rec-t{font-size:17px;font-weight:600;color:var(--text)}
+.tim-rec-clock{font-size:40px;font-weight:300;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--text);margin:2px 0 8px}
+.tim-rec-said{font-size:15px;line-height:1.45;color:var(--text2);min-height:22px;max-height:112px;overflow-y:auto;text-align:left;margin:0 2px 12px}
+.tim-rec .tim-wave{height:44px;margin:0 2px 16px}
+.tim-rec .tim-wave span{background:#FF3B30}
+.tim-rec .tim-wave span.edge{background:rgba(255,59,48,.28)}
+.tim-rec-stop{width:66px;height:66px;border-radius:50%;border:4px solid rgba(120,120,128,.32);background:none;padding:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.tim-rec-stop span{width:26px;height:26px;border-radius:6px;background:#FF3B30}
+.tim-rec-foot{font-size:13px;color:var(--text3);margin-top:10px;line-height:1.4}
+.tim-rec-ok{width:100%;height:50px;border:0;border-radius:12px;background:#007AFF;color:#fff;font:inherit;font-size:17px;font-weight:600;cursor:pointer}
+body.dark .tim-rec{background:#1c1c1e}
+body.dark .tim-rec-grab{background:rgba(235,235,245,.3)}
 .tim-wave span{width:2px;border-radius:1px;background:var(--hat);flex:none}
 .tim-wave span.edge{background:rgba(242,168,28,.28)}
 
@@ -1578,12 +1593,32 @@ body.dark :is(#gei-tm-page,#gei-byo-page) .ios-stephead[data-state="done"] .s{co
 :is(#gei-tm-page,#gei-byo-page) .ios-tim .ios-lbl small{display:none}
 /* What he said that is not a step (2026-09-26): quoted, then three ways to
    place it. The damage tag is the one line in amber on the card. */
-:is(#gei-tm-page,#gei-byo-page) .ios-said-h{padding:12px 16px 2px;font-size:13px;font-weight:700;color:var(--ios-tint)}
-:is(#gei-tm-page,#gei-byo-page) .ios-said .ios-lbl{white-space:normal}
-:is(#gei-tm-page,#gei-byo-page) .ios-said-tag{display:block;font-style:normal;font-size:12.5px;font-weight:600;color:#8A4E00;margin-top:4px}
-body.dark :is(#gei-tm-page,#gei-byo-page) .ios-said-tag{color:#F2B55C}
-:is(#gei-tm-page,#gei-byo-page) .ios-said-acts{gap:8px;flex-wrap:wrap;padding-top:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-h{padding:14px 16px 4px;font-size:13px;font-weight:600;color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-row{width:100%;text-align:left;background:inherit;border:0;font:inherit;cursor:pointer;align-items:center}
+:is(#gei-tm-page,#gei-byo-page) .ios-said .ios-lbl{white-space:normal;flex:1 1 auto;min-width:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-tag{display:block;font-style:normal;font-size:13px;font-weight:400;color:#C93400;margin-top:3px}
+:is(#gei-tm-page,#gei-byo-page) .ios-said-tag.asked{color:var(--ios-2)}
+body.dark :is(#gei-tm-page,#gei-byo-page) .ios-said-tag{color:#FF9F0A}
 :is(#gei-tm-page,#gei-byo-page) .ios-walk .ios-lbl{white-space:normal;font-size:15px;line-height:1.5;color:var(--text2)}
+/* The iOS action sheet (js/utils.js iosActionSheet). Bottom, grouped, Cancel
+   apart and bold, system blue, a red for the destructive one. */
+.ios-as-ov{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,0);transition:background .22s ease;display:flex;align-items:flex-end;justify-content:center}
+.ios-as-ov.in{background:rgba(0,0,0,.32)}
+.ios-as{width:100%;max-width:480px;padding:0 8px calc(8px + env(safe-area-inset-bottom,0px));transform:translateY(105%);transition:transform .26s cubic-bezier(.2,.9,.3,1);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif}
+.ios-as-ov.in .ios-as{transform:none}
+.ios-as-grp{background:rgba(249,249,249,.94);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-radius:14px;overflow:hidden;margin-bottom:8px}
+.ios-as-head{padding:14px 16px 12px;text-align:center;border-bottom:.5px solid rgba(60,60,67,.29)}
+.ios-as-head .t{font-size:13px;font-weight:600;color:#8a8a8e}
+.ios-as-head .m{font-size:13px;color:#8a8a8e;margin-top:3px;line-height:1.35}
+.ios-as-btn{display:block;width:100%;min-height:57px;border:0;background:none;font:inherit;font-size:20px;color:#007AFF;cursor:pointer;padding:0 16px}
+.ios-as-grp .ios-as-btn+.ios-as-btn{border-top:.5px solid rgba(60,60,67,.29)}
+.ios-as-btn.red{color:#FF3B30}
+.ios-as-cancel{background:#fff;border-radius:14px;font-weight:600}
+body.dark .ios-as-grp{background:rgba(44,44,46,.92)}
+body.dark .ios-as-cancel{background:#2c2c2e}
+body.dark .ios-as-btn{color:#0A84FF}
+body.dark .ios-as-btn.red{color:#FF453A}
+body.dark .ios-as-head,body.dark .ios-as-grp .ios-as-btn+.ios-as-btn{border-color:rgba(84,84,88,.6)}
 /* The No beside Tim's Add, and Skip under a question with a box (2026-09-26). */
 :is(#gei-tm-page,#gei-byo-page) .ios-no{flex:0 0 auto;border:0;background:none;color:var(--text2);font:inherit;font-size:15px;font-weight:600;padding:8px 10px;cursor:pointer;min-height:44px;min-width:48px}
 :is(#gei-tm-page,#gei-byo-page) .ios-ask-skip{padding-top:0;min-height:0}
@@ -2431,6 +2466,22 @@ body.dark .cal-cell.other{background:var(--cream)}
 :is(#gei-tm-page,#gei-byo-page) .sup-cost{min-height:44px;min-width:44px;padding:0 6px}
 :is(#gei-tm-page,#gei-byo-page) #sup-markup{min-height:44px;box-sizing:border-box}
 :is(#gei-tm-page,#gei-byo-page) .att-skip{min-width:44px;min-height:44px}
+/* The supply house section on the iPhone screens (js/supply-list.js). */
+:is(#gei-tm-page,#gei-byo-page) .sup-ios-card{margin-bottom:0}
+:is(#gei-tm-page,#gei-byo-page) .sup-ios-card .ios-h .s{font-size:15px;font-weight:400;color:var(--ios-2)}
+:is(#gei-tm-page,#gei-byo-page) .sup-ios{gap:12px}
+:is(#gei-tm-page,#gei-byo-page) .sup-row.sup-ios.off{opacity:1}
+:is(#gei-tm-page,#gei-byo-page) .sup-ios.off .ios-lbl,:is(#gei-tm-page,#gei-byo-page) .sup-ios.off .sup-price{opacity:.45}
+:is(#gei-tm-page,#gei-byo-page) .sup-tick{flex:0 0 44px;width:44px;height:44px;margin:0 -8px 0 -10px;border:0;background:none;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
+:is(#gei-tm-page,#gei-byo-page) .sup-tick span{width:24px;height:24px;border-radius:50%;border:1.5px solid rgba(60,60,67,.3);display:inline-flex;align-items:center;justify-content:center;color:#fff;box-sizing:border-box}
+:is(#gei-tm-page,#gei-byo-page) .sup-tick.on span{background:var(--ios-tint);border-color:var(--ios-tint)}
+:is(#gei-tm-page,#gei-byo-page) .sup-price{flex-shrink:0;border:0;background:none;font:inherit;font-size:17px;color:var(--text);font-variant-numeric:tabular-nums;cursor:pointer;min-height:44px;min-width:44px;padding:0 0 0 6px}
+:is(#gei-tm-page,#gei-byo-page) .sup-fig{flex-shrink:0;font-size:17px;color:var(--ios-2);font-variant-numeric:tabular-nums}
+:is(#gei-tm-page,#gei-byo-page) .sup-fig.b{color:var(--text);font-weight:600}
+:is(#gei-tm-page,#gei-byo-page) .sup-add-row{padding:0}
+:is(#gei-tm-page,#gei-byo-page) .sup-add-row .ios-say{min-height:64px;font-size:17px}
+:is(#gei-tm-page,#gei-byo-page) #sup-markup{width:56px;border:0;background:none;text-align:right;font:inherit;font-size:17px;color:var(--ios-2);min-height:44px;padding:0}
+:is(#gei-tm-page,#gei-byo-page) .sup-ios-card .ios-link[disabled]{color:var(--ios-2);opacity:.5}
 .byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
 .byo-label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .byo-meta{font-size:10px;color:var(--text-3);margin-top:5px;margin-left:32px;font-weight:600;letter-spacing:.04em;overflow-wrap:anywhere}

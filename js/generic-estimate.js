@@ -2220,12 +2220,13 @@ function _timMissLearn(im,yes){
 // the same card from two copies, and only T&M's got the No. Tinted, his mark
 // on it, a filled Add, and a visible No beside every Add: the bar walks him to
 // this card, so turning one down has to be one tap too, not a swipe.
-function _timMissCardHtml(list,take,drop,takeAll,ed){
+function _timMissCardHtml(list,take,drop,takeAll,ed,attach){
+  attach=attach||[];
   const n=_timMissTakeable(list).length;
   return '<div class="ios-sec">'+
     '<div class="ios-group ios-tim">'+
       '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
-        '<span class="who">You did not say</span>'+
+        '<span class="who">'+(list.length?'You did not say':attach.length?'Usually goes with this':'You also said')+'</span>'+
         (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
       '</div>'+
       list.map(im=>{
@@ -2243,25 +2244,42 @@ function _timMissCardHtml(list,take,drop,takeAll,ed){
           '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
         '</div>';
       }).join('')+
-      _geiNotesRowsHtml()+
+      _attachTimRowsHtml(attach,list.length>0)+
+      _geiNotesRowsHtml(list.length>0||attach.length>0)+
     '</div>'+
   '</div>';
 }
 // What he said that is not a step, one row each, placed in one tap. Damage is
 // marked, because unwritten damage is tomorrow's argument about a change order.
-function _geiNotesRowsHtml(){
+function _geiNotesRowsHtml(withHead){
   if(!_geiNotes.length)return '';
-  return '<div class="ios-said-h">You also said</div>'+_geiNotes.map((n,i)=>
+  // iOS (owner, 2026-09-26: "Go for the iOS redesign"): one row per remark,
+  // tap for the choices in an action sheet, swipe left for No, the way a Mail
+  // or Reminders row works. Three buttons under every row was a form.
+  return (withHead?'<div class="ios-said-h">You also said</div>':'')+_geiNotes.map((n,i)=>
     '<div class="ios-swipe ios-said" data-kind="note">'+
-      '<div class="ios-row"><span class="ios-lbl">\u201c'+escHtml(n.text)+'\u201d'+
-        (n.damage?'<em class="ios-said-tag">Put it on the proposal, or it is a change order argument later</em>':
-         n.asked?'<em class="ios-said-tag">They asked for this</em>':'')+'</span></div>'+
-      '<div class="ios-row ios-said-acts">'+
-        '<button type="button" class="ios-pill" onclick="_geiNotePlace('+i+',\'found\')">On the proposal</button>'+
-        '<button type="button" class="ios-pill ghost" onclick="_geiNotePlace('+i+',\'crew\')">Crew only</button>'+
-        '<button type="button" class="ios-no" onclick="_geiNotePlace('+i+',\'no\')">No</button>'+
-      '</div>'+
+      '<button type="button" class="ios-row ios-said-row" onclick="_geiNoteSheet('+i+')">'+
+        '<span class="ios-lbl">\u201c'+escHtml(n.text)+'\u201d'+
+          (n.damage?'<em class="ios-said-tag">Could become a change order</em>':
+           n.asked?'<em class="ios-said-tag asked">They asked for this</em>':'')+'</span>'+
+        '<span class="ios-chev">\u203a</span>'+
+      '</button>'+
+      '<button type="button" class="ios-del" tabindex="-1" onclick="_geiNotePlace('+i+',\'no\')">No</button>'+
     '</div>').join('');
+}
+// Where a remark goes, asked the iOS way. chain: the bar walks him through
+// every remark, one sheet after the next, until none is left.
+function _geiNoteSheet(i,chain){
+  const n=_geiNotes[i];if(!n||typeof iosActionSheet!=='function')return;
+  iosActionSheet({
+    title:n.damage?'Could become a change order':'Where does this go?',
+    message:'\u201c'+n.text+'\u201d',
+    actions:[
+      {label:'On the proposal',onTap:()=>{_geiNotePlace(i,'found');if(chain&&_geiNotes.length)_geiNoteSheet(0,true);}},
+      {label:'Crew only',onTap:()=>{_geiNotePlace(i,'crew');if(chain&&_geiNotes.length)_geiNoteSheet(0,true);}},
+      {label:'Not needed',destructive:true,onTap:()=>{_geiNotePlace(i,'no');if(chain&&_geiNotes.length)_geiNoteSheet(0,true);}},
+    ],
+  });
 }
 function _timMissAskRow(im,take,drop){
   const id=escHtml(JSON.stringify(String(im.id||'')));
@@ -2912,6 +2930,37 @@ function _attachSkip(key){
   if(!_attachSkipped.includes(key))_attachSkipped.push(key);
   _geiRefreshLines();
 }
+// ONE CARD, NOT TWO (owner, 2026-09-26: "Go for the iOS redesign"). On the
+// iPhone BYO screen "Usually goes with this" (js/trade-knowledge.js and his
+// own history) is folded into Tim's card, and anything Tim is already
+// suggesting is left out: "Gas line upsize for tankless" and Tim's "The gas
+// line, sized for the new unit" are the same thing said twice.
+// The same THING, not the same word: "drain" is in both the drip pan and the
+// condensate drain, and they are two different parts.
+const _ATTACH_SAME=[/\bpermit/i,/\bhaul|\bdispos/i,/\bvent(ing)?\b/i,/gas line|upsiz/i,/condensate/i,/\b(model|make and model|name the unit)\b/i];
+function _attachForTim(timList){
+  if(typeof _attachSuggestions!=='function')return [];
+  // What Tim is asking AND what is already on the job: "Haul-away" is not
+  // news once "Haul off debris" is a line.
+  const onJob=(typeof _byoItems!=='undefined'?_byoItems:[]).map(it=>it&&it.label||'').concat(_geiScopeChips||[]);
+  const said=(timList||[]).map(im=>(im.say||'')+' '+(im.step||'')).concat(onJob).join(' . ');
+  return _attachSuggestions().filter(s=>{
+    const lbl=String(s.line&&s.line.label||'');
+    return !_ATTACH_SAME.some(re=>re.test(lbl)&&re.test(said));
+  });
+}
+function _attachTimRowsHtml(sugg,withHead){
+  if(!sugg.length)return '';
+  return (withHead?'<div class="ios-said-h">Usually goes with this</div>':'')+sugg.map(s=>{
+    const k=escHtml(JSON.stringify(s.key));
+    const why=s.lib?(s.why||('Often left off '+s.anchorLabel)):('With '+s.anchorLabel+' on '+s.n+' of your last '+s.of);
+    return '<div class="ios-swipe" data-kind="attach"><div class="ios-row">'+
+      '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(s.line.label)+'<small>'+escHtml(why)+'</small></span>'+
+      '<button type="button" class="ios-no" onclick="_attachSkip('+k+')">No</button>'+
+      '<button type="button" class="ios-pill ghost" onclick="_attachAdd('+k+')">Add</button>'+
+    '</div><button type="button" class="ios-del" tabindex="-1" onclick="_attachSkip('+k+')">Not needed</button></div>';
+  }).join('');
+}
 function _attachCardHTML(){
   const sugg=_attachSuggestions();
   if(!sugg.length)return '';
@@ -3024,8 +3073,9 @@ function _byoDropMissed(id){
   _byoRenderSections();
 }
 function _byoMissedHtml(){
-  if(!_byoMissed.length&&!_geiNotes.length)return '';
-  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
+  const attach=_byoItems.length?_attachForTim(_byoMissed):[];
+  if(!_byoMissed.length&&!_geiNotes.length&&!attach.length)return '';
+  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false,attach);
 }
 function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
@@ -3079,7 +3129,7 @@ function _byoRenderSections(){
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
   const walk=_geiWalk.length?'<div class="ios-sec"><div class="ios-group">'+_geiWalkRowHtml()+'</div></div>':'';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+walk+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+walk+_byoMissedHtml()+(typeof _supCardHTML==='function'?_supCardHTML():'')+group+terms;
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3193,6 +3243,8 @@ function _byoDockNext(st){
   if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
   // Tim before the prices: a step he adds is a line that needs a price, so
   // pricing first would send him back to pricing (2026-09-26, shared walk).
+  // "Usually goes with this" is on Tim's card but does not hold up Send: the
+  // library refills as he says no, so it is a list to glance at, not a gate.
   const tim=_geiTimStep(_byoMissed);
   if(tim)return tim;
   if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
@@ -5066,7 +5118,7 @@ function _tmRenderMoneyRows(n){
 }
 function _tmRenderMatList(){
   const sw=document.getElementById('tm-sup-wrap');
-  if(sw)sw.innerHTML=(typeof _supCardHTML==='function')?_supCardHTML():'';
+  if(sw){sw.innerHTML=(typeof _supCardHTML==='function')?_supCardHTML():'';_tmWireSwipe(sw);}
   const el=document.getElementById('tm-mat-list');if(!el)return;
   const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor&&!x.l._supply);
   const sup=(!sw&&typeof _supCardHTML==='function')?_supCardHTML({bare:true}):'';
@@ -5983,11 +6035,12 @@ function _tmDockNext(st,rule,all){
 function _geiTimStep(miss){
   miss=miss||[];
   const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
-  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  // Short enough to stay on one line of the bar at 12 and more (2026-09-26).
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':''),fn:'_geiGoTimAsks()'};
   // Everything he said lands somewhere before Send: a step, the proposal, the
   // crew, or a deliberate no (2026-09-26).
   const said=_geiNotes.length;
-  if(said)return {label:'Place '+said+' thing'+(said>1?'s':'')+' you said',fn:'_geiGoTimAsks()'};
+  if(said)return {label:'Place '+said+' thing'+(said>1?'s':'')+' you said',fn:'_geiGoTimAsks();_geiNoteSheet(0,true)'};
   if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
   return null;
 }

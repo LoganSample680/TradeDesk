@@ -44,7 +44,7 @@ test.describe('the bar walks him to Send', () => {
     await open(99401);
     await page.waitForTimeout(400);
     await tap();
-    expect((await bar())[0]).toMatch(/^Tim caught \d+ things you left out$/);
+    expect((await bar())[0]).toMatch(/^Tim caught \d+ things$/);
     // Add all takes the steps; the permit and the unit are his to answer.
     await page.locator('#tm-scope-wrap button', { hasText: /^Add all/ }).first().click();
     await page.waitForTimeout(300);
@@ -126,14 +126,17 @@ test.describe('the bar walks him to Send', () => {
     await openByo(99410);
     await page.waitForTimeout(400);
     await byoTap();
-    expect((await byoBar())[0]).toMatch(/^Tim caught \d+ things you left out$/);
+    expect((await byoBar())[0]).toMatch(/^Tim caught \d+ things$/);
     await page.locator('#gei-byo-page button', { hasText: /^Add all/ }).first().click();
     await page.waitForTimeout(300);
+    // "Usually goes with this" sits on Tim's card since 2026-09-26 but does
+    // not hold up Send: the trade library refills as he says no.
     expect(await byoBar()).toEqual(['Tim has 2 questions']);
     await byoTap();
     expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('tim-ask-detail-model');
     // The same card as T&M: a No beside every Add.
-    const noes = await page.evaluate(() => [...document.querySelectorAll('#gei-byo-page .ios-tim .ios-no')].map(b => b.textContent.trim()));
+    // Tim's own rows (the folded "Usually goes with this" rows carry their own No).
+    const noes = await page.evaluate(() => [...document.querySelectorAll('#gei-byo-page .ios-tim .ios-no')].filter(b => !b.closest('[data-kind="attach"]')).map(b => b.textContent.trim()));
     expect(noes).toEqual(['No', 'Skip this']);
     await page.locator('#gei-byo-page .ios-tim .ios-no', { hasText: /^No$/ }).first().click();
     // Scoped to this screen: the T&M page above still holds its own hidden

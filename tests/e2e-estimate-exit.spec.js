@@ -109,7 +109,9 @@ test.describe('leaving a T&M or BYO estimate', () => {
       await talk('Replace the kitchen faucet', mode);
       await page.waitForTimeout(300);
       const r = await page.evaluate(() => {
-        const btn = [...document.querySelectorAll('#_tim-listen button')].find(b => /Done talking/.test(b.textContent));
+        // The stop is the round red Voice Memos button since 2026-09-26 (§10.4,
+        // owner: "Go for the iOS redesign"): found by its label, not its text.
+        const btn = document.querySelector('#_tim-listen button[aria-label="Done talking"]');
         const box = btn.getBoundingClientRect();
         const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
         const panel = document.getElementById('_tim-listen').getBoundingClientRect();

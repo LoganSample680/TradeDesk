@@ -148,7 +148,7 @@ test.describe('walk notes', () => {
     await page.evaluate(() => { _geiScopeChips = ['Set a tankless']; _renderScopeChips('tm-scope-wrap');
       const h = _supHost(true); h._supply.items = [{ qty: 1, unit: 'ea', desc: 'Navien NPE-240A', cost: 1650, on: true }, { qty: 3, unit: 'ea', desc: '3/4 ball valve', cost: 21.5, on: true }]; h._supply.markup = 20; _supSync(); });
     const card = await page.evaluate(() => document.getElementById('tm-sup-wrap').innerText.replace(/\s+/g, ' '));
-    expect(card).toContain('Supply house materials');
+    expect(card).toContain('Supply house');
     expect(card).toContain('Your cost $1,671.50');
     expect(card).toContain('Billed at your markup $2,005.80');
     const t = await doc();
@@ -156,6 +156,82 @@ test.describe('walk notes', () => {
     const saved = await page.evaluate(() => { saveGenericEstimate(true); const b = bids.find(x => x.id === _geiEditBidId); return { amount: b.amount, supply: b.tmSupplyTotal }; });
     expect(saved.amount, 'the amount the customer sees').toBe(0);
     expect(saved.supply).toBeCloseTo(2005.8, 2);
+  });
+
+  // ── THE iOS REDESIGN (owner, 2026-09-26: "Go for the iOS redesign") ─────
+  test('a remark is placed from an iOS action sheet, and the bar walks every one in turn', async () => {
+    await openTM(99905, WALK);
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _renderScopeChips('tm-scope-wrap'); });
+    // One row per remark, no buttons under it: tap for the sheet, swipe for No.
+    const row = await page.evaluate(() => { const r = document.querySelector('#gei-tm-page .ios-said'); return { btns: r.querySelectorAll('.ios-pill').length, del: r.querySelector('.ios-del').textContent }; });
+    expect(row).toEqual({ btns: 0, del: 'No' });
+    await page.waitForTimeout(750);
+    await page.locator('#tm-dock-go').click();
+    await page.waitForTimeout(350);
+    const sheet = await page.evaluate(() => { const s = document.getElementById('_ios-as'); return s ? [...s.querySelectorAll('.ios-as-btn')].map(b => b.textContent) : null; });
+    expect(sheet).toEqual(['On the proposal', 'Crew only', 'Not needed', 'Cancel']);
+    // Four remarks, four sheets, one after the next.
+    for (let i = 0; i < 4; i++) {
+      await page.locator('#_ios-as .ios-as-btn', { hasText: i === 0 ? 'On the proposal' : 'Not needed' }).click();
+      await page.waitForTimeout(350);
+    }
+    expect(await page.evaluate(() => ({ left: _geiNotes.length, found: _geiFound.length, sheet: !!document.getElementById('_ios-as') }))).toEqual({ left: 0, found: 1, sheet: false });
+  });
+
+  test('Cancel and a tap outside place nothing', async () => {
+    await openTM(99906, WALK);
+    await page.evaluate(() => _geiNoteSheet(0));
+    await page.waitForTimeout(300);
+    await page.locator('#_ios-as .ios-as-cancel').click();
+    await page.waitForTimeout(300);
+    await page.evaluate(() => _geiNoteSheet(0));
+    await page.waitForTimeout(300);
+    await page.mouse.click(196, 60);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => ({ left: _geiNotes.length, sheet: !!document.getElementById('_ios-as') }))).toEqual({ left: 4, sheet: false });
+  });
+
+  test('BYO: "Usually goes with this" is inside Tim\'s card, with what Tim already asks left out', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay,#_style-pick-ov').forEach(e => e.remove());
+      clients.length = 0; bids.length = 0;
+      clients.push({ id: 99907, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
+      currentClientId = 99907; _activeTrade = 'plumbing';
+      S.priceBook = S.priceBook || {}; S.priceBook.plumbing = [];
+      openGenericEstimate(getClientById(99907), null, null, { mode: 'byo' });
+      _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+      document.getElementById('byo-say').value = 'Pull the old water heater and set a tankless'; _byoSayBuild();
+      const pg = document.getElementById('gei-byo-page');
+      return {
+        timCards: pg.querySelectorAll('.ios-tim').length,
+        oldCard: [...pg.querySelectorAll('.card-hd-title')].some(e => /Usually goes with this/.test(e.textContent)),
+        inTim: [...pg.querySelectorAll('.ios-tim [data-kind="attach"] .ios-lbl')].map(e => e.firstChild.textContent),
+        library: _attachSuggestions().map(s => s.line.label),
+      };
+    });
+    expect(r.timCards).toBe(1);
+    expect(r.oldCard).toBe(false);
+    expect(r.inTim.length).toBeGreaterThan(0);
+    // Tim already asks for the permit and haul-off; the library's copies are not shown twice.
+    expect(r.inTim.some(l => /permit|haul/i.test(l))).toBe(false);
+    // A different part that shares a word ("drain") is not mistaken for the same thing.
+    if (r.library.some(l => /drip pan/i.test(l))) expect(r.inTim.some(l => /drip pan/i.test(l))).toBe(true);
+  });
+
+  test('the listening sheet is Voice Memos: grabber, clock, red stop, and it says so when it cannot hear', async () => {
+    await openTM(99908, null);
+    const r = await page.evaluate(async () => {
+      window._voiceStart = async () => true; window._voiceStop = async () => '';
+      _geiScopeTalk();
+      await new Promise(res => setTimeout(res, 200));
+      const p = document.getElementById('_tim-listen');
+      const stop = document.getElementById('_tim-stop');
+      const out = { grab: !!p.querySelector('.tim-rec-grab'), clock: !!document.getElementById('_tim-clock'), stop: stop && stop.getAttribute('aria-label'),
+        stopRed: stop && getComputedStyle(stop.querySelector('span')).backgroundColor };
+      _timTalkStop(true);
+      return out;
+    });
+    expect(r).toEqual({ grab: true, clock: true, stop: 'Done talking', stopRed: 'rgb(255, 59, 48)' });
   });
 
   test('no console errors', async () => { assertNoErrors(page, 'walk notes'); });

@@ -144,8 +144,53 @@ function _supSync(){
 
 // ── The card ─────────────────────────────────────────────────────────────────
 // bare: T&M draws it inside its own Materials card, so no second card chrome.
+// THE iPHONE SCREENS (owner, 2026-09-26: "Go for the iOS redesign"). On the
+// T&M and BYO editors the card is a grouped iOS section like everything around
+// it: one row per item with its price on the right and swipe to delete, the
+// box to type into, Markup as a row with its value, the two totals as rows,
+// and Send / Load as blue link rows. Same ids and handlers as the card below.
+function _supCardIosHTML(){
+  const d=_supData();
+  const items=(d&&d.items)||[];
+  const priced=_supPriced(d);
+  const rows=items.map((it,i)=>{
+    const off=it.on===false;
+    return '<div class="ios-swipe" data-kind="sup">'+
+      '<div class="ios-row sup-row sup-ios'+(off?' off':'')+'" data-i="'+i+'">'+
+        '<button type="button" class="sup-tick'+(off?'':' on')+'" aria-label="'+(off?'Include':'Leave out')+'" onclick="_supToggle('+i+')"><span>'+(off?'':svgIcon('✓',{size:13}))+'</span></button>'+
+        '<span class="ios-lbl">'+escHtml(it.desc)+'<small>'+escHtml(String(it.qty)+' '+(it.unit||'ea'))+(it.flag?' \u00b7 '+escHtml(it.flag):'')+'</small></span>'+
+        '<button type="button" class="sup-price" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supMoney(it.cost):'<span class="ios-link">Add price</span>')+'</button>'+
+      '</div>'+
+      '<button type="button" class="ios-del" tabindex="-1" onclick="_supDel('+i+')">Delete</button>'+
+    '</div>';
+  }).join('');
+  const cost=_supCost(d),price=_supPrice(d);
+  const q=d&&d.quote;
+  const foot=q
+    ?(q.taxCharged?'Tax was charged on this quote, so no sales tax is added on these again.':'No tax on this quote, so sales tax goes on the price, markup included.')
+    :(_supMode()==='tm'?'For you, not the customer: a T&M proposal bills materials as used.':'Type what you need, one item per line. Prices come from their quote.');
+  return '<div class="ios-sec sup-card sup-ios-card" id="sup-card" data-bare="0">'+
+    '<div class="ios-h"><span>Supply house</span>'+(d&&d.vendor?'<span class="s">'+escHtml(d.vendor)+'</span>':'')+'</div>'+
+    '<div class="ios-group">'+
+      rows+
+      '<div class="ios-row sup-add-row"><textarea id="sup-add" class="ios-say" rows="2" placeholder="3 ea 3/4 ball valve&#10;20 ft 2in PVC"></textarea></div>'+
+      '<button type="button" class="ios-row ios-link" onclick="_supAddFromBox()">Add to list</button>'+
+      '<label class="ios-row"><span class="ios-lbl">Markup</span>'+
+        '<span class="ios-val"><input id="sup-markup" type="number" inputmode="decimal" min="0" max="100" step="1" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)">%</span></label>'+
+      (priced
+        ?'<div class="ios-row"><span class="ios-lbl">Your cost</span><span class="sup-fig">'+_supMoney(cost)+'</span></div>'+
+         '<div class="ios-row"><span class="ios-lbl">'+(_supMode()==='tm'?'Billed at your markup':'Client price')+'</span><span class="sup-fig b">'+_supMoney(price)+'</span></div>'
+        :(items.length?'<div class="ios-row"><span class="ios-lbl" style="color:var(--ios-2)">Waiting on their quote</span></div>':''))+
+      '<button type="button" class="ios-row ios-link" onclick="_supOpenSend()"'+(items.length?'':' disabled')+'>Send to supply house</button>'+
+      '<button type="button" class="ios-row ios-link" onclick="_supPickQuote()">Load their quote</button>'+
+    '</div>'+
+    '<div class="ios-foot">'+escHtml(foot)+'</div>'+
+    '<input type="file" id="sup-quote-file" accept="application/pdf,image/*" style="display:none" onchange="_supQuoteChosen(this)">'+
+  '</div>';
+}
 function _supCardHTML(opts){
   const bare=!!(opts&&opts.bare);
+  if(!bare&&!(opts&&opts.classic))return _supCardIosHTML();
   const d=_supData();
   const items=(d&&d.items)||[];
   const priced=_supPriced(d);

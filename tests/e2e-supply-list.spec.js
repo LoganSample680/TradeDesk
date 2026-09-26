@@ -296,7 +296,9 @@ test.describe('supply list: on a BYO estimate', () => {
 
   test('typing the list adds lines with no prices yet', async () => {
     await page.locator('#sup-add').fill('3 ea 3/4 ball valve\n1 40 gal gas water heater');
-    await page.locator('#sup-card button', { hasText: '+ Add to list' }).click();
+    // "Add to list" since the iOS rows (2026-09-26, §10.4, owner: "Go for the
+    // iOS redesign"): a link row carries no "+".
+    await page.locator('#sup-card button', { hasText: 'Add to list' }).click();
     await expect(page.locator('#sup-card .sup-row')).toHaveCount(2);
     await expect(page.locator('#sup-card')).toContainText('Waiting on their quote');
     await expect(page.locator('#sup-card button', { hasText: 'Send to supply house' })).toBeEnabled();
