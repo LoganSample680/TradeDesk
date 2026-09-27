@@ -18,8 +18,10 @@
  *    row, no receipts promised (owner, same day).
  *  - The ceiling holds unless hidden damage turns up, and then only by a
  *    change order they sign.
- *  - Estimate and material categories are not offered on a new T&M.
- *    Pennsylvania's estimate is on the page because the statute asks for it.
+ *  - Estimate is not offered on a new T&M. Pennsylvania's estimate is on the
+ *    page because the statute asks for it. Materials is offered again, off
+ *    until he turns it on (owner 2026-09-27), because the supply house quote
+ *    reader lives in that card.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -206,7 +208,10 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
 
   // ── WHAT IS OFFERED ───────────────────────────────────────────────────────
 
-  test('More options no longer offers Estimate, Materials or Deposit on a new T&M', async () => {
+  // AMENDED 2026-09-27 (10.4): Materials is offered again, off by default.
+  // It was hidden 2026-09-23; the supply house quote reader moved into the
+  // Materials card 2026-09-26, and hidden it could not be reached on a T&M.
+  test('More options offers Materials (off) but not Estimate or Deposit on a new T&M', async () => {
     await open({ addr: '412 Bell St, Topeka, KS 66603' });
     const r = await page.evaluate(() => {
       _tmMoreOpen = true; _tmApplyLayers();
@@ -215,9 +220,27 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
       return ks;
     });
     expect(r).not.toContain('est');
-    expect(r).not.toContain('mat');
+    expect(r).toContain('mat');
     expect(r).not.toContain('dep');
     expect(r).toContain('excl');
+  });
+
+  test('turning Materials on shows the Materials card with the supply house quote reader', async () => {
+    await open({ addr: '412 Bell St, Topeka, KS 66603' });
+    const r = await page.evaluate(() => {
+      const before = { on: _tmLayers.has('mat'), shown: document.getElementById('tm-blk-mat').style.display !== 'none' };
+      _tmMoreOpen = true; _tmApplyLayers();
+      document.querySelector('#tm-more-row input.ios-switch[data-layer="mat"]').click();
+      const blk = document.getElementById('tm-blk-mat');
+      const after = { on: _tmLayers.has('mat'), shown: blk.style.display !== 'none',
+        quote: [...blk.querySelectorAll('button')].some(b => /Load their quote/.test(b.textContent)) };
+      _tmToggleLayer('mat'); _tmMoreOpen = false; _tmApplyLayers();
+      return { before, after };
+    });
+    expect(r.before).toEqual({ on: false, shown: false });
+    expect(r.after.on).toBe(true);
+    expect(r.after.shown).toBe(true);
+    expect(r.after.quote, 'the supply house quote reader is in reach').toBe(true);
   });
 
   // A draft built before this keeps its switch, so he can turn it off.
