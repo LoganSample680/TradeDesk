@@ -4948,7 +4948,7 @@ async function _removeCrewServerSide(emp){
   }
   if(!memberId)return false;
   try{
-    const{error}=await _supa.rpc('remove_crew_member',{p_member_id:memberId});
+    const{error}=await _supa.rpc('remove_crew_member',{p_team_member_id:memberId,p_email:emp.email,p_contractor:cid});
     if(!error)return true;
     console.warn('remove_crew_member failed, deactivating directly:',error.message||error);
   }catch(_e){}

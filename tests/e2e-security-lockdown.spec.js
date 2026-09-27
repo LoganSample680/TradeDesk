@@ -313,7 +313,12 @@ test.describe('a hostile lead from the public form stays inert end to end', () =
     });
     expect(r.okRes).toBe(true);
     expect(r.okLocal).toBe(0);
-    expect(r.okRpc).toEqual([['remove_crew_member', { p_member_id: 'm-77' }]]);
+    // The migration's signature (20261049): id, plus email and business as a fallback key.
+    expect(r.okRpc.length).toBe(1);
+    expect(r.okRpc[0][0]).toBe('remove_crew_member');
+    expect(r.okRpc[0][1].p_team_member_id).toBe('m-77');
+    expect(r.okRpc[0][1].p_email).toBe('gone@example.com');
+    expect(typeof r.okRpc[0][1].p_contractor).toBe('string');
     expect(r.okUpdates).toBe(0);
     expect(r.fbRes).toBe(true);
     expect(r.fbUpdate).toEqual([['team_members', { active: false }]]);
