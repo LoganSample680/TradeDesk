@@ -2098,11 +2098,13 @@ function _saveJobNote(jobId){
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
-  const todayJobs=jobs.filter(j=>{
-    if(j.status==='canceled')return false;
-    const d=parseInt(j.days)||1;
-    for(let i=0;i<d;i++){if(addDays(j.start,i)===tk)return true;}
-    return false;
+  // The same days the calendar grid shows (getJobWorkDays), and only the jobs
+  // this person may see (Earl audit 2026-09-27: crew saw everyone's jobs, with
+  // their prices, on Home).
+  const _money=_moneyVisible();
+  const todayJobs=_jobsForViewer(jobs).filter(j=>{
+    if(!j||j.status==='canceled'||!j.start)return false;
+    return getJobWorkDays(j).includes(tk);
   }).sort((a,b)=>{
     if(a.eventType==='estimate'&&b.eventType!=='estimate')return -1;
     if(b.eventType==='estimate'&&a.eventType!=='estimate')return 1;
@@ -2178,7 +2180,8 @@ function renderDashToday(){
                 '<span style="color:#7F77DD;font-weight:600">Estimate visit</span>'
                 :
                 (j.addr||c&&c.addr?'<span style="font-weight:600">'+escHtml((j.addr||c.addr||'').split(',')[0])+'</span>':'No address')+
-                (j.value?' · '+fmt(j.value):'')+
+                (_money&&j.value?' · '+fmt(j.value):'')+
+                (j.time?' · '+fmtTime(j.time):'')+
                 ' · '+j.days+' day'+(parseInt(j.days)!==1?'s':'')
               )+
             '</div>'+
@@ -2189,7 +2192,7 @@ function renderDashToday(){
             '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">'+svgIcon('💬',{size:16})+'</div>'
           :'')+
           '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+(isEst?'rgba(127,119,221,.15)':'rgba(24,95,165,.12)')+';color:'+(isEst?'#7F77DD':'var(--blue)')+'">'+
-            (isEst?'Estimate':'Active')+
+            (isEst?'Estimate':(j.status==='done'||j.completion_date)?'Done':'Active')+
           '</span>'+
         '</div>'+
       '</div>'+
@@ -4214,7 +4217,10 @@ function renderEstimatesPage(){
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
 // 'crew' was deleted 2026-07-14 ("simplify before we scale"): a saved order
 // containing it is harmless: _applyDashOrder skips ids with no matching element.
-const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','readyQueue','goal','pipeline','feed','quick','calendar','sources'];
+// 'calendar' sits second (Earl audit 2026-09-27, owner "do it all"): today's
+// jobs were about five screens down on a phone, under the money feed and the
+// quick actions. A saved custom order is still honoured as the person left it.
+const _DASH_DEFAULT_ORDER = ['kpi','calendar','alerts','contracts','readyQueue','goal','pipeline','feed','quick','sources'];
 
 // FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
 // sibling from its old position to its new one, so cards GLIDE aside instead of

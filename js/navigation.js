@@ -196,6 +196,18 @@ function _applyEmployeeNavGating(){
   // shows the request-access popup. Full opacity for owners/co-owners always.
   const _qaEst=document.getElementById('qa-estimate-btn');
   if(_qaEst){const _ok=_ownerUI()||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
+  // Money on Home (Earl audit 2026-09-27: Jack, plain crew, had Invoice,
+  // Expense and Collect tiles and the lead-source revenue card). Hidden, not
+  // greyed: there is nothing to request. The split follows the redaction
+  // matrix in js/cloud.js _employeeRedactedTables, so a tile shows exactly
+  // when the data behind it would.
+  const _pm=(_employeeRecord&&_employeeRecord.permissions)||{};
+  const _fin=_ownerUI()||!!_pm.financials;
+  const _vis=(el,ok)=>{if(el)el.style.display=ok?'':'none';};
+  _vis(document.getElementById('qa-invoice-btn'),_fin);
+  _vis(document.getElementById('qa-collect-btn'),_fin||!!_pm.collect);
+  _vis(document.querySelector('#dash-quick .qa[onclick*="\'expense\'"]'),_fin||!!_pm.expenses);
+  _vis(document.querySelector('#dash-widget-root .td-dw[data-dw="sources"]'),_fin);
   // nav-user avatar: employees can't reach the Settings page (goPg blocks it), but they
   // still need a way to sign out, route their click to a small sign-out menu instead of
   // nulling the click entirely. Owners/co-owners go to Settings as always.

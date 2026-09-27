@@ -673,6 +673,11 @@ function getLicenseAlerts(){
 }
 
 // Returns the actual working calendar dates for a job, skipping weekends (unless job.allowWeekend)
+// The START day is always a work day (Earl audit 2026-09-27): a call booked on
+// a Sunday without the weekend box ticked used to slide to Monday here, so the
+// month grid said Monday while Home, Upcoming and the crew's day all said
+// Sunday. Somebody picked that date on purpose; only the days AFTER it skip
+// the weekend.
 function getJobWorkDays(job){
   const allowWknd=!!job.allowWeekend;
   const numDays=parseInt(job.days)||1;
@@ -681,10 +686,82 @@ function getJobWorkDays(job){
   let count=0;
   while(count<numDays){
     const dow=parseD(cur).getDay();
-    if(allowWknd||(dow!==0&&dow!==6)){days.push(cur);count++;}
+    if(allowWknd||count===0||(dow!==0&&dow!==6)){days.push(cur);count++;}
     if(count<numDays)cur=addDays(cur,1);
   }
   return days;
+}
+// The last day a job is actually worked (weekends skipped the same way the
+// grid skips them), so "is this job over yet" agrees with the calendar.
+function _jobLastWorkDay(job){
+  if(!job||!job.start)return '';
+  const wd=getJobWorkDays(job);
+  return wd.length?wd[wd.length-1]:job.start;
+}
+// A multi-day PROJECT holds the crew's whole day (a repaint, a remodel). A
+// one-day job is a service call: a plumber runs four to six of them, so it
+// never holds the day by itself (Earl audit 2026-09-27, the second call for
+// the same guy on the same day was refused).
+function _jobIsProject(j){return !!j&&j.eventType!=='estimate'&&(parseInt(j.days)||1)>1;}
+// Start/end minutes of a job's time slot, or null when it has no start time.
+// Estimates carry hours; a timed job with no length is read as one hour.
+function _jobSlot(j){
+  const t=String((j&&j.time)||'');const m=t.match(/^(\d{1,2}):(\d{2})/);
+  if(!m)return null;
+  const a=parseInt(m[1])*60+parseInt(m[2]);
+  const h=parseFloat(j.hours);
+  return {a,b:a+Math.max(15,Math.round((h>0?h:1)*60))};
+}
+// Why a new or moved job collides with the SAME crew member's work, or '' when
+// it does not. Never a block (the caller warns and lets him book it anyway):
+//   * two timed jobs on the same day whose slots actually overlap, or
+//   * a multi-day project laid over another multi-day project.
+// Two untimed service calls on one day are just a busy day, not a conflict.
+function _schedClash(nj,excludeId){
+  if(!nj||!nj.start)return '';
+  const crew=nj.assignedTo?String(nj.assignedTo):'';
+  const ndays=new Set(getJobWorkDays(nj));
+  const nslot=_jobSlot(nj);
+  for(const j of (Array.isArray(jobs)?jobs:[])){
+    if(!j||j.id===excludeId||j.status==='canceled'||j.status==='done'||j.completion_date)continue;
+    if((j.assignedTo?String(j.assignedTo):'')!==crew)continue;
+    if(!j.start)continue;
+    const shared=getJobWorkDays(j).filter(d=>ndays.has(d));
+    if(!shared.length)continue;
+    if(_jobIsProject(nj)&&_jobIsProject(j))return '"'+(j.name||'Another job')+'" is already booked across '+shared.length+' of those days.';
+    const s=_jobSlot(j);
+    if(nslot&&s&&nslot.a<s.b&&s.a<nslot.b)return '"'+(j.name||'Another job')+'" is at '+(typeof fmtTime==='function'?fmtTime(j.time):j.time)+' that day, the times overlap.';
+  }
+  return '';
+}
+// Who may see every job on the board. The owner and co-owner always; a crew
+// member only with Manage team or Schedule jobs. Everybody else sees the jobs
+// assigned to him, the same rule the crew home's Today's Jobs already uses.
+function _seesAllJobs(){
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
+  const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
+  return !!(p.team||p.schedule);
+}
+function _jobsForViewer(list){
+  const arr=Array.isArray(list)?list:[];
+  if(_seesAllJobs())return arr;
+  const me=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.id!=null)?String(_employeeRecord.id):null;
+  if(me==null)return [];
+  return arr.filter(j=>j&&String(j.assignedTo)===me);
+}
+// Dollar figures on shared screens (Home, Calendar, Jobs, the job sheet).
+// The same rule as _canSeeFinancials in js/clients.js, read defensively so a
+// page that does not load clients.js still answers.
+function _moneyVisible(){
+  if(typeof _canSeeFinancials==='function')return _canSeeFinancials();
+  return typeof _ownerUI!=='function'||_ownerUI();
+}
+// A job he can mark done: a real job (not an estimate visit), not finished or
+// cancelled, and its first day is today or already past. Nothing ever set
+// status 'active', so the old test for that hid the button for good.
+function _jobDueForDone(j,tk){
+  if(!j||j.eventType==='estimate'||j.status==='done'||j.status==='canceled'||j.cancelled||j.completion_date)return false;
+  return !!j.start&&j.start<=(tk||todayKey());
 }
 function getTimeOffDays(){
   const days=new Set();
@@ -754,8 +831,11 @@ function getBookedDays(){
     // Estimates never block a day, Zach can book multiple estimates on the same day
     // at different times (morning, afternoon, evening). Only paint jobs block days.
     if(j.eventType==='estimate')return;
+    // Only a multi-day project holds the day (a one-day service call never
+    // does: see _jobIsProject). Its buffer days still show as buffer.
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
@@ -772,7 +852,9 @@ function getBookedDays(){
 function _jobActiveOn(j,dateKey){
   if(!j||j.completion_date||j.cancelled||j.status==='done')return false;
   const start=j.start||j.date||'';if(!start)return false;
-  const end=addDays(start,(parseInt(j.days)||1)-1);
+  // Ends on the last WORKED day, the same day the calendar grid ends it, so a
+  // five-day job started on a Thursday is still on the crew's day next Wednesday.
+  const end=_jobLastWorkDay({start,days:j.days,allowWeekend:j.allowWeekend});
   return start<=dateKey&&end>=dateKey;
 }
 // Crew-scoped variant (owner spec 2026-07-18: multi-crew dispatch at
@@ -790,8 +872,9 @@ function getBookedDaysForCrew(empId){
     if(j.eventType==='estimate')return;
     const sameCrew=empId?String(j.assignedTo||'')===String(empId):!j.assignedTo;
     if(!sameCrew)return;
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));

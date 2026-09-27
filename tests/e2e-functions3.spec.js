@@ -4683,7 +4683,9 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
     const result = await page.evaluate(() => {
       if (typeof _jobActiveOn !== 'function' || typeof addDays !== 'function') return { skip: true };
       const tk = todayKey();
-      const j = { start: tk, days: 5 };
+      // allowWeekend: the span now ends on the last WORKED day, so without it a
+      // span crossing a weekend would end later than tk+4 (Earl audit 2026-09-27).
+      const j = { start: tk, days: 5, allowWeekend: true };
       const midSpan = addDays(tk, 2);
       const lastDay = addDays(tk, 4);
       const pastEnd = addDays(tk, 5);
@@ -4717,8 +4719,10 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
         // allowWeekend:true keeps this deterministic regardless of what day of
         // the week the suite happens to run on (getJobWorkDays skips weekends
         // otherwise, which would silently shift the booked day off `tk`).
-        jobs.push({ id: 88801, start: tk, days: 1, status: 'upcoming', allowWeekend: true }); // unassigned
-        jobs.push({ id: 88802, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-x' }); // assigned to someone else
+        // days: 2 because only a multi-day project holds a day now; a one-day
+        // service call never does (Earl audit 2026-09-27).
+        jobs.push({ id: 88801, start: tk, days: 2, status: 'upcoming', allowWeekend: true }); // unassigned
+        jobs.push({ id: 88802, start: tk, days: 2, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-x' }); // assigned to someone else
         const { booked } = getBookedDaysForCrew(null);
         return { ok: true, hasUnassigned: booked.has(tk) };
       } finally { jobs.length = 0; jobs.push(...origJobs); }
@@ -4733,7 +4737,8 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
       const origJobs = jobs.slice();
       try {
         jobs.length = 0;
-        jobs.push({ id: 88803, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-a' });
+        // days: 2, a project: a one-day call never holds the day (Earl audit 2026-09-27).
+        jobs.push({ id: 88803, start: tk, days: 2, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-a' });
         const crewA = getBookedDaysForCrew('crew-a');
         const crewB = getBookedDaysForCrew('crew-b');
         return { ok: true, crewABooked: crewA.booked.has(tk), crewBFree: !crewB.booked.has(tk) };

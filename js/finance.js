@@ -1579,17 +1579,26 @@ saveClient=function(){
   }
 };
 function closeCalDay(){const el=document.getElementById('cal-day-detail');if(el)el.style.display='none';}
+// A conflict is the SAME person double-booked (Earl audit 2026-09-27): two
+// jobs on one day for two different guys is a normal day, and two untimed
+// service calls for one guy is a busy one. Same rule the scheduler warns with
+// (_schedClash in js/settings.js), so the card and the warning never disagree.
 function renderCalConflicts(){
-  const paintJobs=jobs.filter(j=>j.eventType!=='estimate');
+  const live=jobs.filter(j=>j&&j.eventType!=='estimate'&&j.start&&j.status!=='canceled'&&j.status!=='done'&&!j.completion_date);
   const conflicts=[];
-  for(let i=0;i<paintJobs.length;i++){
-    for(let j=i+1;j<paintJobs.length;j++){
-      const a=paintJobs[i],b=paintJobs[j];
-      const ad=new Set(),bd=[];
-      for(let k=0;k<(parseInt(a.days)||1);k++)ad.add(addDays(a.start,k));
-      for(let k=0;k<(parseInt(b.days)||1);k++)bd.push(addDays(b.start,k));
-      const ov=bd.filter(d=>ad.has(d));
-      if(ov.length)conflicts.push('"'+escHtml(a.name)+'" and "'+escHtml(b.name)+'" overlap on '+ov.length+' day'+(ov.length>1?'s':''));
+  for(let i=0;i<live.length;i++){
+    for(let j=i+1;j<live.length;j++){
+      const a=live[i],b=live[j];
+      if(String(a.assignedTo||'')!==String(b.assignedTo||''))continue;
+      const ad=new Set(getJobWorkDays(a));
+      const ov=getJobWorkDays(b).filter(d=>ad.has(d));
+      if(!ov.length)continue;
+      const bothProjects=_jobIsProject(a)&&_jobIsProject(b);
+      const sa=_jobSlot(a),sb=_jobSlot(b);
+      const timesClash=!!(sa&&sb&&sa.a<sb.b&&sb.a<sa.b);
+      if(!bothProjects&&!timesClash)continue;
+      const emp=a.assignedTo?(S.employees||[]).find(e=>String(e.id)===String(a.assignedTo)):null;
+      conflicts.push('"'+escHtml(a.name)+'" and "'+escHtml(b.name)+'" overlap'+(bothProjects?' on '+ov.length+' day'+(ov.length>1?'s':''):' in time')+(emp?' for '+escHtml(emp.name):''));
     }
   }
   const el=document.getElementById('cal-conflicts');
@@ -1606,7 +1615,9 @@ function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','
 // start-less job therefore reached a sort that assumes a string. Rejecting
 // them up front is the fix; a job with no date has nothing to show on a
 // calendar anyway, and dropping one row must never cost the whole page.
-function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>j&&typeof j.start==='string'&&j.start&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
+// Crew see their own jobs and no dollars unless they hold the permission for
+// them (Earl audit 2026-09-27: Jack saw another guy's $4,200 job here).
+function renderCalUpcoming(){const tk=todayKey(),_money=_moneyVisible(),upcoming=_jobsForViewer(jobs).filter(j=>j&&typeof j.start==='string'&&j.start&&j.status!=='canceled'&&_jobLastWorkDay(j)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})}${j.time?' · '+fmtTime(j.time):''} · ${j.days}d${(_money&&j.value)?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
@@ -1650,9 +1661,14 @@ function setSchedType(type,btn){
   if(crewRow)crewRow.style.display=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
   selectedColor=isEst?'#7F77DD':'#185FA5';
   const tip=document.getElementById('sched-tip');
-  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won proposal and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
-  const days=document.getElementById('s-days');if(days)days.value=isEst?1:2;
-  const buf=document.getElementById('s-buf');if(buf)buf.value=isEst?'0':'1';
+  // One <span> around the whole sentence: .tip is a flex row, so bare text
+  // and a <strong> used to become three squashed columns on a 375px phone.
+  if(tip){tip.innerHTML='<span style="flex:1;min-width:0">'+(isEst?'Pick a client, date and time. Estimate visits never block a work day, book as many as you need.':'Pick the job and a start date. Book as many calls in a day as you run.')+'</span>';tip.className=isEst?'tip':'tip tip-s';}
+  // One day, no buffer (Earl audit 2026-09-27): most jobs are one visit. A
+  // multi-day project sets its own length when it is pulled or typed.
+  const days=document.getElementById('s-days');if(days)days.value=1;
+  const buf=document.getElementById('s-buf');if(buf)buf.value='0';
+  window._schedEditJobId=null;window._schedClashAck=null;_schedCtaLabel();
   const daysRow=document.getElementById('s-dur-days-row');
   const hoursRow=document.getElementById('s-dur-hours-row');
   const bufRow=document.getElementById('s-buf-row');
@@ -1859,8 +1875,19 @@ function scheduleJob(){
   const start=v('s-start');if(!start){_schedErr('Pick a start date.','s-start');return;}
   const days=parseInt(v('s-days'))||1;
   const _crewId=v('s-crew-sel')||null;
-  const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
-  const{booked}=_hasCrew?getBookedDaysForCrew(_crewId):getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr(_hasCrew?'This crew already has a job on one or more of those days, pick a different start date or crew.':'One or more days already booked, pick a different start date.','s-start');return;}}
+  const _allowWknd=!!document.getElementById('s-allow-weekend')?.checked;
+  const _editId=window._schedEditJobId!=null?window._schedEditJobId:null;
+  // Time off still holds the day: nobody is there to run the call.
+  const _off=getTimeOffDays();
+  if(getJobWorkDays({start,days,allowWeekend:_allowWknd}).some(d=>_off.has(d))){_schedErr('That falls on time off. Pick a different start date.','s-start');return;}
+  // Another job for the SAME person is a warning, never a wall (Earl audit
+  // 2026-09-27: a plumber's second call of the day was refused outright). It
+  // only speaks up when the times really overlap or two multi-day projects
+  // stack; the second tap on the button books it anyway.
+  const _clash=(schedType==='job')?_schedClash({start,days,allowWeekend:_allowWknd,assignedTo:_crewId,time:v('s-time')||'',eventType:'job'},_editId):'';
+  const _clashKey=[start,days,_crewId||'',v('s-time')||'',_editId||''].join('|');
+  if(_clash&&window._schedClashAck!==_clashKey){window._schedClashAck=_clashKey;_schedErr(_clash+' Tap '+(_editId!=null?'Save changes':'Add to calendar')+' again to book it anyway.','s-start');return;}
+  window._schedClashAck=null;
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
   if(bid&&bid.status==='Pending'){_schedErr('The proposal must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
@@ -1869,9 +1896,28 @@ function scheduleJob(){
     if(wx&&wx.rain){_schedErr('Rain in the forecast for '+start+'. Pressure washing needs dry conditions, pick a clear day.','s-start');return;}
   }
   // Duplicate guard: same bid already has a job scheduled
-  if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
+  if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled'&&j.id!==_editId)){
     _schedErr('This job is already scheduled. Edit or cancel the existing one first.','s-bid-sel');return;}
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
+  // Reschedule: move the job that is already on the books. Building a second
+  // one here is how the calendar ended up with the same job twice.
+  if(_editId!=null){
+    const ej=jobs.find(x=>x.id===_editId);
+    if(ej){
+      ej.name=name;ej.addr=v('s-addr');ej.start=start;ej.days=days;ej.buffer=parseInt(v('s-buf'))||0;
+      ej.time=v('s-time')||'';ej.notes=v('s-notes');ej.allowWeekend=_allowWknd;
+      const _sv=document.getElementById('s-value-row');
+      if(_sv&&_sv.style.display!=='none'&&_moneyVisible())ej.value=parseFloat(v('s-value'))||0;
+      if(String(ej.assignedTo||'')!==String(_crewId||'')){
+        ej.assignedTo=_crewId||null;
+        if(_crewId){if(!Array.isArray(ej.crewHistory))ej.crewHistory=[];if(!ej.crewHistory.map(String).includes(String(_crewId)))ej.crewHistory.push(_crewId);}
+      }
+      saveAll();
+      resetSched();renderDash();goPg('pg-cal');
+      showToast('Moved to '+parseD(start).toLocaleDateString('en-US',{month:'short',day:'numeric'}),'📅');
+      return;
+    }
+  }
   // A job with no proposal behind it still belongs to a client when something
   // opened the scheduler FOR that client (the water heater board, js/wh-board.js).
   const _pre=window._schedPrefill||null;
@@ -1882,7 +1928,7 @@ function scheduleJob(){
   // Crew assignment applies to estimates too now (whoever does the visit), not
   // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
   const _asgnTo=_crewId||null;
-  jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[],allowWeekend:_allowWknd});
   if(_pre&&_pre.whEqId!=null&&!bid&&typeof whFlushBooked==='function')try{whFlushBooked(_pre.whEqId,jobs[jobs.length-1]);}catch(_e){}
   // Booked. Estimate VISITS are a different milestone than the job being booked.
   try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
@@ -1899,11 +1945,39 @@ function scheduleJob(){
   resetSched();renderDash();
   if(schedType==='estimate'&&clientId){openClientDetail(clientId);}else{goPg('pg-cal');}
 }
+// The button says what it will do: add a new job, or save the one being moved.
+function _schedCtaLabel(){
+  const b=document.querySelector('#pg-schedule .sf-cta');
+  if(b)b.textContent=window._schedEditJobId!=null?'Save changes':'Add to calendar';
+}
+// Reschedule from the job sheet: open the scheduler already holding THIS job,
+// and save back onto it (scheduleJob reads window._schedEditJobId).
+function rescheduleJob(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  goPg('pg-schedule');
+  setSchedType(j.eventType==='estimate'?'estimate':'job');
+  if(typeof populateSchedSelect==='function')populateSchedSelect();
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val==null?'':val;};
+  set('s-name',j.name||'');set('s-addr',j.addr||'');set('s-start',j.start||'');
+  set('s-days',parseInt(j.days)||1);set('s-buf',String(parseInt(j.buffer)||0));
+  set('s-time',j.time||'');set('s-notes',j.notes||'');
+  if(j.bid_id){const bs=document.getElementById('s-bid-sel');if(bs){const o=[...bs.options].find(x=>String(x.value)===String(j.bid_id));if(o){o.disabled=false;bs.value=String(j.bid_id);}}}
+  set('s-value',j.value||'');
+  const vr=document.getElementById('s-value-row');if(vr&&(!_moneyVisible()||j.bid_id))vr.style.display='none';
+  set('s-crew-sel',j.assignedTo||'');
+  const wk=document.getElementById('s-allow-weekend');if(wk)wk.checked=!!j.allowWeekend;
+  if(j.color)selectedColor=j.color;
+  window._schedEditJobId=j.id;window._schedClashAck=null;_schedCtaLabel();
+  if(j.start){availYear=parseD(j.start).getFullYear();availMonth=parseD(j.start).getMonth();}
+  refreshAvail();updateSchedPreview();
+}
 function resetSched(){
   window._schedPrefill=null;
+  window._schedEditJobId=null;window._schedClashAck=null;_schedCtaLabel();
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
-  const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
+  const sd=document.getElementById('s-days');if(sd)sd.value=1;
+  const sb=document.getElementById('s-buf');if(sb)sb.value='0';
   const st=document.getElementById('s-time');if(st)st.value=schedType==='estimate'?'09:00':'';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
@@ -2116,7 +2190,10 @@ async function fetchStateInfo(state){
     // Falls back gracefully if function doesn't handle this yet
   }catch(e){console.warn('fetchStateInfo:',e);}
 }
-async function openExportPanel(){
+async function openExportPanel(mode){
+  // From the Mileage screen he wants the mileage log, not a menu of five
+  // things that are not it (Earl audit 2026-09-27).
+  const _mile=mode==='mileage';
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
     ...expenses.map(e=>e.date?.slice(0,4)),
@@ -2131,10 +2208,10 @@ async function openExportPanel(){
   ov.innerHTML=
     '<div style="background:var(--bg);border-radius:16px;width:100%;max-width:560px;padding:24px 20px 28px;max-height:90vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-        '<div style="font-size:18px;font-weight:800">Export records</div>'+
-        '<button onclick="document.getElementById(\'export-panel\').remove()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
+        '<div style="font-size:18px;font-weight:800">'+(_mile?'Mileage log':'Export records')+'</div>'+
+        '<button id="export-panel-close" aria-label="Close" onclick="document.getElementById(\'export-panel\').remove()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;margin:-8px -10px -8px 0">×</button>'+
       '</div>'+
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:20px">Choose a year and format. All amounts in USD.</div>'+
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:20px">'+(_mile?'Every trip for the year: date, vehicle, from, to, miles, purpose. The log the IRS asks for.':'Choose a year and format. All amounts in USD.')+'</div>'+
       '<div style="margin-bottom:20px">'+
         '<label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Tax year</label>'+
         '<select id="exp-panel-year" style="width:100%;font-size:15px;font-weight:700;padding:10px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">'+
@@ -2142,14 +2219,20 @@ async function openExportPanel(){
           '<option value="all">All years</option>'+
         '</select>'+
       '</div>'+
+      (_mile?
+        '<div id="exp-mileage-log">'+exportOptionHTML('exportMileageCSV()','🗺','Download the mileage log, Excel','One row per trip with the IRS deduction beside it and the totals at the bottom. Print it or hand it to your accountant.')+'</div>'+
+        exportOptionHTML('exportTaxPDF()','📄','Full tax report, PDF','Schedule C summary with the mileage log inside it.')+
+        '<button onclick="document.getElementById(\'export-panel\').remove();openExportPanel()" style="width:100%;min-height:44px;margin-top:4px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">Other exports</button>'
+      :
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
+      exportOptionHTML('exportMileageCSV()','🗺','Mileage log, Excel','Every trip: date, vehicle, from, to, miles, purpose and the IRS deduction.')+
       exportOptionHTML('openVehicleVerdict(getExportYear())','🚗','Year-end vehicle verdict','Mileage rate vs actual expenses, worked out per truck, with the IRS switching rules applied. See which method wins before you file, then generate the full report.')+
       exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, proposal, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, proposals, jobs, payments, income, expenses, mileage, all labeled sections.')+
       exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
       exportOptionHTML('exportTaxPDF()','📄','Full tax report, PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save, IRS audit ready.')+
       exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, proposals, income, expenses, mileage. JSON: restore or migrate anytime.')+
-      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF, sorted by date with vendor, amount and category. Print or send to your CPA.')+
+      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF, sorted by date with vendor, amount and category. Print or send to your CPA.'))+
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
