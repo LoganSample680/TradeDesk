@@ -453,7 +453,7 @@ function whMarkDiy(id){
   if(typeof saveAll==='function')saveAll();
   _whRefresh();
   const eid=escHtml(String(e.id));
-  if(typeof showToast==='function')showToast('Back on the board in 11 months <button class="td-wh-undo" onclick="whUndoDiy(\''+eid+'\',\''+at+'\');this.closest(\'.toast\')?.remove()">Undo</button>','✓',5000);
+  if(typeof showToast==='function')showToast('Back on the board in 11 months <button class="td-wh-undo" onclick="whUndoDiy(\''+eid+'\',\''+at+'\');this.closest(\'.toast\')?.remove()">Undo</button>','✓',5000,{html:true});
 }
 function whUndoDiy(id,at){
   const e=_whFind(id);if(!e||!Array.isArray(e.flushLog))return false;

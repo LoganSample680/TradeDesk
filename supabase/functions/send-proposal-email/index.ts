@@ -2,13 +2,17 @@
  * send-proposal-email — sends a branded HTML proposal email via Resend.
  *
  * POST body (JSON):
- *   to           string   — client email address
- *   clientName   string   — full client name (used for personalisation)
- *   businessName string   — contractor business name
- *   proposalUrl  string   — signing URL (sign.html?t=…)
- *   replyTo      string   — contractor's email (so client can reply directly)
- *   customSubject string? — override default subject line
- *   customBody   string?  — plain-text body override (newlines → HTML paragraphs)
+ *   to            string   client email address
+ *   clientName    string   full client name (used for personalisation)
+ *   proposalUrl   string   the sign.html / client.html link the app generated.
+ *                          It must be a link this caller's business issued; it is
+ *                          checked and REBUILT server-side (20261049, H2).
+ *   customSubject string?  override default subject line (links removed)
+ *   customBody    string?  plain-text body override (newlines to HTML paragraphs;
+ *                          the proposal link is swapped for the verified one and
+ *                          any other link is removed)
+ * businessName and replyTo are no longer read from the request: the business
+ * comes from the caller's account and replies go to the caller's login email.
  *
  * Environment secrets (set via `supabase secrets set`):
  *   RESEND_API_KEY — your Resend API key (re_xxxx...)
@@ -23,9 +27,13 @@
  * and deliver instead of blocking.
  */
 
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getServiceRoleKey } from '../_shared/keys.ts';
+import { stripLinks } from '../_shared/links.ts';
+import { businessFor, callerFromRequest, logSend, rebuildClientLink, underDailyCap, validEmail } from '../_shared/mail-guard.ts';
+
 const RESEND_API_KEY  = Deno.env.get('RESEND_API_KEY');
 const SUPABASE_URL    = Deno.env.get('SUPABASE_URL') || '';
-const SUPABASE_ANON   = Deno.env.get('SUPABASE_ANON_KEY') || '';
 const FROM_ADDRESS    = 'proposals@tradedeskpro.app';
 
 function escHtml(s: string): string {
@@ -36,7 +44,7 @@ function bodyToHtml(text: string): string {
   // Convert plain text paragraphs (double newline) and lines (single newline) to HTML
   return text
     .split(/\n\n+/)
-    .map(para => '<p>' + para.replace(/\n/g,'<br>').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</p>')
+    .map(para => '<p>' + para.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '</p>')
     .join('');
 }
 
@@ -115,76 +123,69 @@ function htmlTemplate(
 </html>`;
 }
 
+const svc = createClient(SUPABASE_URL, getServiceRoleKey());
+const DAILY_CAP = 200;
+
 Deno.serve(async (req) => {
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
-  }
+  const CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+  const reply = (b: unknown, status = 200) =>
+    new Response(JSON.stringify(b), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (req.method !== 'POST') return reply({ error: 'Method not allowed' }, 405);
 
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
-  }
-
-  // Verify caller is an authenticated Supabase user
-  const authHeader = req.headers.get('Authorization') || '';
-  const jwtToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!jwtToken) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-  }
-  try {
-    const authRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: { 'Authorization': `Bearer ${jwtToken}`, 'apikey': SUPABASE_ANON },
-    });
-    if (!authRes.ok) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-    }
-  } catch {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-  }
+  // 1. A real session.
+  const caller = await callerFromRequest(svc, req);
+  if (!caller) return reply({ error: 'Unauthorized' }, 401);
 
   if (!RESEND_API_KEY) {
     // Resend key not configured — caller falls back to mailto:
-    return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), { status: 503 });
+    return reply({ error: 'RESEND_API_KEY not configured' }, 503);
   }
 
-  let body: {
-    to?: string;
-    clientName?: string;
-    businessName?: string;
-    proposalUrl?: string;
-    replyTo?: string;
-    customSubject?: string;
-    customBody?: string;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
+  let body: { to?: string; clientName?: string; proposalUrl?: string; customSubject?: string; customBody?: string };
+  try { body = await req.json(); } catch { return reply({ error: 'Invalid JSON' }, 400); }
+
+  const to = String(body.to || '').trim();
+  const clientName = String(body.clientName || '').replace(/[<>]/g, '').trim().slice(0, 120);
+  if (!validEmail(to) || !clientName || !body.proposalUrl) {
+    return reply({ error: 'Missing required fields: to, clientName, proposalUrl' }, 400);
   }
 
-  const { to, clientName, businessName, proposalUrl, replyTo, customSubject, customBody } = body;
-  if (!to || !clientName || !businessName || !proposalUrl) {
-    return new Response(JSON.stringify({ error: 'Missing required fields: to, clientName, businessName, proposalUrl' }), { status: 400 });
+  // 2. The link must be one this business issued; it is rebuilt server-side.
+  const proposalUrl = await rebuildClientLink(svc, caller.id, body.proposalUrl);
+  if (!proposalUrl) return reply({ error: 'That link is not one of your proposals. Generate the proposal link again.' }, 403);
+
+  // 3. The name the email goes out under is the caller's business, never the request's.
+  const { name: businessName } = await businessFor(svc, caller.id);
+
+  // 4. A daily cap per login.
+  if (!(await underDailyCap(svc, caller.id, 'proposal', DAILY_CAP))) {
+    return reply({ error: 'Daily email limit reached. Try again tomorrow or text the link.' }, 429);
   }
 
-  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody);
+  // The contractor's own words stay. The link they were shown is swapped for the
+  // verified one; any OTHER link in the text is removed.
+  const MARK = '\u0000TDLINK\u0000';
+  const rawBody = String(body.customBody || '').split(String(body.proposalUrl)).join(MARK);
+  const customBody = rawBody ? stripLinks(rawBody).split(MARK).join(proposalUrl) : '';
+  const customSubject = stripLinks(body.customSubject || '', 200).trim();
+
+  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody || undefined);
   const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
-  const subject = customSubject?.trim()
-    ? customSubject.trim()
-    : `Your ${businessName} Proposal is Ready, ${firstName}!`;
+  const subject = customSubject || `Your ${businessName} Proposal is Ready, ${firstName}!`;
+  const replyTo = validEmail(caller.email) ? caller.email : '';
 
   const resendPayload = {
-    from: `${businessName} via TradeDeskPro <${FROM_ADDRESS}>`,
+    from: `${businessName.replace(/[<>"]/g, '')} via TradeDeskPro <${FROM_ADDRESS}>`,
     to: [to],
     subject,
     html,
-    // reply_to → client replies land in contractor's inbox, not in Resend
+    // reply_to → client replies land in the contractor's inbox (the login's own
+    //            address, never one the request names)
     // bcc      → contractor gets a copy for their records (Resend doesn't
     //            store sent mail, so this is the only paper trail they get)
     ...(replyTo ? { reply_to: replyTo, bcc: [replyTo] } : {}),
@@ -201,20 +202,16 @@ Deno.serve(async (req) => {
       body: JSON.stringify(resendPayload),
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Resend network error', detail: String(err) }), { status: 502 });
+    return reply({ error: 'Resend network error', detail: String(err) }, 502);
   }
 
   const resendData = await resendRes.json().catch(() => ({}));
 
   if (!resendRes.ok) {
     console.error('Resend error:', resendRes.status, resendData);
-    return new Response(
-      JSON.stringify({ error: 'Resend API error', status: resendRes.status, detail: resendData }),
-      { status: 502 }
-    );
+    return reply({ error: 'Resend API error', status: resendRes.status, detail: resendData }, 502);
   }
+  await logSend(svc, caller.id, 'proposal', to);
 
-  return new Response(JSON.stringify({ ok: true, id: resendData.id }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return reply({ ok: true, id: resendData.id });
 });

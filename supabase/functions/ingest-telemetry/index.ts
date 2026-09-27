@@ -25,6 +25,10 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const GH_DISPATCH_TOKEN = Deno.env.get("GH_DISPATCH_TOKEN") || "";
 const GH_DISPATCH_REPO = Deno.env.get("GH_DISPATCH_REPO") || "LoganSample680/TradeDesk";
 let _lastDispatch = 0; // per-instance throttle: error bursts fire ONE dispatch/min
+const ERR_CAP_PER_HOUR = 60;   // error rows one login may add per hour
+const ERR_DEDUPE_MIN = 10;     // the same message from the same login is stored once per this window
+// The dedupe key: the kind plus the first 300 characters of the message.
+const errKey = (kind: unknown, message: unknown) => String(kind || "error") + "|" + String(message || "").slice(0, 300);
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -82,22 +86,53 @@ serve(async (req) => {
     const svc = createClient(SUPABASE_URL, SERVICE_KEY);
 
     // ── Errors → error_log (real uid, ops) ──
+    // CAPPED AND DEDUPED (20261049, M3). Any signed-in login could post twenty
+    // errors every call, and every error row fired a GitHub dispatch that opens
+    // a hotfix PR. Now: at most ERR_CAP_PER_HOUR rows per login per hour, the
+    // same message from the same login is stored once per ERR_DEDUPE_MIN, and
+    // the hot lane is woken only by a message nobody has reported in a day.
     let errCount = 0;
+    let freshMessage = false;
     if (Array.isArray(body.errors) && body.errors.length) {
-      const rows = (body.errors as any[]).slice(0, 20).map((e) => ({
-        user_id: uid,
-        kind: String(e?.kind || "error").slice(0, 40),
-        message: String(e?.message || "").slice(0, 2000),
-        stack: e?.stack ? String(e.stack).slice(0, 4000) : null,
-        url: e?.url ? String(e.url).slice(0, 500) : null,
-        ua: (req.headers.get("user-agent") || "").slice(0, 300),
-        context: e?.context ?? null,
-        app_version: ver,
-      }));
-      const { error } = await svc.from("error_log").insert(rows);
-      if (!error) errCount = rows.length;
+      const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+      const { count: lastHour } = await svc.from("error_log").select("id", { count: "exact", head: true })
+        .eq("user_id", uid).gte("created_at", hourAgo);
+      const room = Math.max(0, ERR_CAP_PER_HOUR - (lastHour || 0));
+      const dedupeSince = new Date(Date.now() - ERR_DEDUPE_MIN * 60_000).toISOString();
+      const { data: recent } = await svc.from("error_log").select("kind,message")
+        .eq("user_id", uid).gte("created_at", dedupeSince).limit(500);
+      const seen = new Set<string>((recent || []).map((r: any) => errKey(r.kind, r.message)));
+      const rows: Record<string, unknown>[] = [];
+      for (const e of (body.errors as any[]).slice(0, 20)) {
+        if (rows.length >= room) break;
+        const kind = String(e?.kind || "error").slice(0, 40);
+        const message = String(e?.message || "").slice(0, 2000);
+        const k = errKey(kind, message);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        rows.push({
+          user_id: uid, kind, message,
+          stack: e?.stack ? String(e.stack).slice(0, 4000) : null,
+          url: e?.url ? String(e.url).slice(0, 500) : null,
+          ua: (req.headers.get("user-agent") || "").slice(0, 300),
+          context: e?.context ?? null,
+          app_version: ver,
+        });
+      }
+      if (rows.length) {
+        // Is any of these new to the whole platform in the last day? Only that
+        // is worth waking the hotfix lane for.
+        const dayAgo = new Date(Date.now() - 86400_000).toISOString();
+        for (const r of rows) {
+          const { count } = await svc.from("error_log").select("id", { count: "exact", head: true })
+            .eq("message", r.message as string).gte("created_at", dayAgo);
+          if (!count) { freshMessage = true; break; }
+        }
+        const { error } = await svc.from("error_log").insert(rows);
+        if (!error) errCount = rows.length;
+      }
       // Instant trigger: wake error-watch NOW (throttled, never blocks the response).
-      if (errCount > 0 && GH_DISPATCH_TOKEN && Date.now() - _lastDispatch > 60_000) {
+      if (errCount > 0 && freshMessage && GH_DISPATCH_TOKEN && Date.now() - _lastDispatch > 60_000) {
         _lastDispatch = Date.now();
         fetch(`https://api.github.com/repos/${GH_DISPATCH_REPO}/dispatches`, {
           method: "POST",

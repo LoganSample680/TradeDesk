@@ -62,7 +62,7 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
       };
       window.__rpcCalls=[];
       return {from:(t)=>chain(t),rpc:(n,a)=>{window.__rpcCalls.push(n);
-        if(window.__claimLinks&&n==='claim_crew_by_email'){teamRows.push(window.__claimLinks);window.__claimLinks=null;
+        if(window.__claimLinks&&n==='claim_crew_invite'){teamRows.push(window.__claimLinks);window.__claimLinks=null;
           return Promise.resolve({data:{ok:true},error:null});}
         return Promise.resolve({data:null,error:null});}};
     })()`;
@@ -103,6 +103,9 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
   // counted rows that were ALREADY linked, and the owner branch returns before
   // the crew-linking block, so the claim never ran for a login that owns a
   // business. Every dual-hat user would have hit this.
+  //
+  // Since 20261049 (H4) the claim is the invite TOKEN he opened, never his
+  // email alone: email confirmation is off, so an address proves nothing.
   test('an owner with an UNCLAIMED invite claims it on sign-in and gets the switcher', async () => {
     const r = await page.evaluate(async ({ supaSrc }) => {
       const saved = { supa: _supa, user: window._supaUser, isEmp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, u: _user, links: window._hatCrewLinks, owns: window._hatOwnsBusiness };
@@ -111,8 +114,9 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         _supa = eval(supaSrc);
         // What the claim links: the row exists on the roster but is unclaimed,
         // which is exactly Blake's state, so team_members returns NOTHING until
-        // claim_crew_by_email has run.
+        // claim_crew_invite has run with the token his invite link stashed.
         window.__claimLinks = { contractor_user_id: 'td-1', name: 'Blake Sample', role: 'manager', active: true, id: 'tm-blake' };
+        localStorage.setItem('_pendingEmpInvite', JSON.stringify({ cid: 'td-1', eid: 'e1', tok: 'tok-blake' }));
         window._supaUser = { id: 'blake-1', email: 'blakesample57@gmail.com' };
         const ok = await loadAccountData();
         return { ok, owns: window._hatOwnsBusiness, links: (window._hatCrewLinks || []).length,
@@ -122,12 +126,15 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         _contractorUserId = saved.cid; _employeeRecord = saved.rec; _user = saved.u;
         window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
         window.__claimLinks = null;
+        localStorage.removeItem('_pendingEmpInvite');
         localStorage.removeItem('zp3_hat_blake-1'); localStorage.removeItem('zp3_acct_blake-1');
         applyPermissions();
       }
     }, { supaSrc: fakeSupaFor({ id: 'blake-1', account_id: 'acct-1' }, []) });
-    expect(r.rpcs, 'the email claim runs on the OWNER path, which is the whole fix')
-      .toContain('claim_crew_by_email');
+    expect(r.rpcs, 'the token claim runs on the OWNER path, which is the whole fix')
+      .toContain('claim_crew_invite');
+    expect(r.rpcs, 'and the email-only claim is gone (H4): an address proves nothing')
+      .not.toContain('claim_crew_by_email');
     expect(r.links, 'and the freshly claimed link is surfaced to the switcher').toBe(1);
     expect(r.owns, 'he still owns his own business').toBe(true);
     expect(r.isEmployee, 'claiming is not switching: no chosen hat still lands in his own business').toBe(false);
@@ -151,8 +158,8 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         applyPermissions();
       }
     }, { supaSrc: fakeSupaFor({ id: 'blake-2', account_id: 'acct-1' }, []) });
-    expect(r.rpcs[0], 'the forge-proof token is tried before the email match').toBe('claim_crew_invite');
-    expect(r.rpcs, 'and the email match still runs, because the token may be spent').toContain('claim_crew_by_email');
+    expect(r.rpcs[0], 'the forge-proof token is tried first').toBe('claim_crew_invite');
+    expect(r.rpcs, 'and there is no email-only claim behind it (H4)').not.toContain('claim_crew_by_email');
   });
 
   test('an owner with nothing pending is unchanged: one quiet call, no link, no switcher', async () => {

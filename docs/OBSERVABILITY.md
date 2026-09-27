@@ -30,7 +30,9 @@ rolls it into `analytics_metrics_daily` for the future ops dashboard (R/Y/G vs
 
 3. **Fan errors to Slack** — Supabase Dashboard → Database → **Webhooks** → new webhook:
    - Table `error_log`, event **INSERT**
-   - Type **HTTP Request** → POST your `slack-notify` function URL, with a payload template like:
+   - Type **HTTP Request** → POST your `slack-notify` function URL, with the header
+     `x-slack-notify-secret: <the SLACK_NOTIFY_SECRET function secret>` (since 20261049
+     the function refuses any caller without it or the service-role key), and a payload template like:
      ```json
      { "text": ":red_circle: *App error* `{{ record.kind }}` — {{ record.message }}\n`{{ record.app_version }}` · {{ record.url }}" }
      ```

@@ -469,7 +469,7 @@ function sendClientHubLink(clientId){
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
     '<button id="_hub-copy-link-btn" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+', view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+'+_jsArg(c.phone.replace(/\D/g,''))+'+\'?body=\'+encodeURIComponent('+_jsArg('Hi '+firstName+', here\'s your project hub from '+biz+', view your proposals, pay your balance, and download invoices anytime: '+url)+')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -987,7 +987,7 @@ function expandCalDay(key){
                 (job.time?'<span style="font-size:10px;color:#6366F1;font-weight:700;margin-right:6px">'+fmtTime(job.time)+'</span>':'')+
                 job.name+
               '</div>'+
-              (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
+              (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(job.notes)+'</div>':'')+
               (()=>{const _c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>x.id===job.client_id):null;const _sn=(_c?getSiteNote(_c,job.addr||_c.addr):'').trim();return _sn?'<div style="font-size:11px;color:var(--text2);margin-top:2px"><strong>Site:</strong> '+escHtml(_sn)+'</div>':'';})()+
             '</div>'+
             ''+
@@ -1006,8 +1006,8 @@ function expandCalDay(key){
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'+
               '<div style="flex:1;min-width:0">'+
                 '<div style="font-size:10px;font-weight:700;color:'+job.color+';text-transform:uppercase;margin-bottom:2px">'+(isEst?'Proposal':'Paint job · '+job.days+' day'+(job.days>1?'s':''))+'</div>'+
-                '<div style="font-size:14px;font-weight:700">'+job.name+'</div>'+
-                (job.addr?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+job.addr+'</div>':'')+
+                '<div style="font-size:14px;font-weight:700">'+escHtml(job.name||'')+'</div>'+
+                (job.addr?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(job.addr)+'</div>':'')+
                 (!isEst&&job.value?'<div style="font-size:12px;color:var(--green-mid);font-weight:700;margin-top:3px">'+fmt(job.value)+'</div>':'')+
               '</div>'+
               '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">'+
@@ -1038,7 +1038,7 @@ function expandCalDay(key){
               const isEst=job.eventType==='estimate';
               return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
                 '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?svgIcon('📋')+' Proposal':svgIcon('🎨')+' Paint job')+'</div>'+
-                '<div style="font-size:13px;font-weight:700">'+job.name+'</div>'+
+                '<div style="font-size:13px;font-weight:700">'+escHtml(job.name||'')+'</div>'+
                 '<div style="font-size:10px;opacity:.9;margin-top:1px">'+(job.hours?job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
                   (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>':'')+
@@ -1230,7 +1230,7 @@ function markBidHandshake(bidId){
       saveAll();renderCDBids();renderDash();
       showToast('Marked as handshake, no signed contract on file','🤝');
     },
-    {title:svgIcon('🤝')+' Handshake deal, are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
+    {title:svgIcon('🤝')+' Handshake deal, are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true,html:true}
   );
 }
 function markBidAbandoned(bidId,cid){markFUAbandoned(bidId,cid);}

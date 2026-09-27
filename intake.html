@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Get a Free Quote</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="js/icons.js"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin async onload="_intakeInitMapKit()"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -254,7 +254,11 @@ async function init(){
     return;
   }
   try{
-    const{data,error}=await _supa.from('account_public').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
+    // One business, by the id in this QR link (20261049). The account_public
+    // view used to answer anon for EVERY business; account_public_card answers
+    // for exactly the one asked about.
+    const{data:_cards,error}=await _supa.rpc('account_public_card',{p_id:ACCOUNT_ID});
+    const data=Array.isArray(_cards)?_cards[0]:null;
     if(error||!data){
       showErr('Contractor not found','This link may be invalid or expired.');
       return;
