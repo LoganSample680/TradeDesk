@@ -336,7 +336,22 @@ async function _verifyCoOwner(boss){
   try{
     if(!_supa||!boss)return;
     const{data,error}=await _supa.rpc('is_co_owner',{boss});
-    if(error||data!==false)return;
+    if(error)return;
+    if(data===true){
+      // THE BUSINESS'S OWN ROWS: its name, trade lines (the trade pills up top)
+      // and config. Crew never load these; an owner membership can read them
+      // ("Account members can read" / "Account members read config").
+      if(String(_contractorUserId)!==String(boss))return;
+      const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
+      if(!a||String(_contractorUserId)!==String(boss))return;
+      const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
+      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+      if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
+      applyPermissions();
+      return;
+    }
+    if(data!==false)return;
     if(String(_contractorUserId)!==String(boss))return;
     _coOwner=false;
     try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c){c.coOwner=false;localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
@@ -750,7 +765,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.19';
+const APP_VERSION='09.26.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard

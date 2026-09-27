@@ -276,4 +276,28 @@ test.describe('Co-owner', () => {
     expect(coEdit[0].contractor_user_id, 'a co-owner edits the business roster, not their own').toBe('boss-1');
     expect('active' in coEdit[0]).toBe(false);
   });
+  // The trade pills live on the business's account_config, which crew never
+  // load. Blake, made an owner, saw no trade picker (2026-09-26).
+  test('the server says yes: the business name and trade lines load, and the trade picker shows', async ({ page }) => {
+    await boot(page);
+    await asLinked(page, true);
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, acct: _account, cfg: _config };
+      localStorage.setItem('zp3_acct_dad-1', JSON.stringify({ user: _user, isEmployee: true, contractorUserId: 'boss-1', coOwner: true }));
+      const q = (row) => { const c = { select() { return c; }, eq() { return c; }, maybeSingle: async () => ({ data: row, error: null }) }; return c; };
+      _supa = { rpc: async () => ({ data: true, error: null }),
+        from: (t) => t === 'accounts' ? q({ id: 'acct-1', owner_id: 'boss-1', business_name: 'Plumbing Solutions' })
+                   : q({ account_id: 'acct-1', trade_lines: 'painting,plumbing', business_type: 'plumbing' }) };
+      try { await _verifyCoOwner('boss-1'); } finally { _supa = saved.supa; }
+      const wrap = document.getElementById('nav-trade-switcher');
+      const out = { co: _coOwner, biz: _account && _account.business_name, lines: _getTradeLines(), shown: !!wrap && wrap.style.display !== 'none',
+        pills: document.querySelectorAll('#nav-trade-pills button').length, cached: JSON.parse(localStorage.getItem('zp3_acct_dad-1')).config.trade_lines };
+      _account = saved.acct; _config = saved.cfg; localStorage.removeItem('zp3_acct_dad-1');
+      if (typeof _renderNavTradeSwitcher === 'function') _renderNavTradeSwitcher();
+      return out;
+    });
+    await asOwner(page);
+    expect(r).toEqual({ co: true, biz: 'Plumbing Solutions', lines: ['painting', 'plumbing'], shown: true, pills: 2, cached: 'painting,plumbing' });
+  });
+
 });
