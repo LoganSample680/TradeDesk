@@ -2522,7 +2522,10 @@ test.describe('TrueShot: every control, and no dead ones', () => {
         const openOn = label === 'Before' ? 'after' : label === 'Ghost' ? 'after' : 'before';
         tdCaptureForBid(901, openOn);
         const btns = [...document.querySelectorAll('#pc-sheet button')];
-        const btn = btns.find(b => (b.textContent || '').trim().toLowerCase().startsWith(label.toLowerCase()));
+        // Ghost and Stamp read in plain words since the Earl audit (2026-09-27):
+        // "Show/Hide Before" and "Date on photo / No date on photo".
+        const words = { Ghost: /^(show|hide) before/i, Stamp: /date on photo/i }[label];
+        const btn = btns.find(b => words ? words.test((b.textContent || '').trim()) : (b.textContent || '').trim().toLowerCase().startsWith(label.toLowerCase()));
         if (!btn) { dead.push(label + ' (missing)'); return; }
         const before = snap();
         btn.click();
