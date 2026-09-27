@@ -404,42 +404,23 @@ function qiOpenJob(bidId){
 // so the customer gets the same letterhead, colour and page on the bill as on
 // the proposal. Only the body is the invoice's: the lines and what is due.
 // TALK TO TIM ON THE INVOICE (owner 2026-09-27: "Do we add in talk to Tim
-// like we do for proposals to speak to what we did?"). The same box, button and
-// splitter the Build Your Own proposal uses (_byoSayHtml, timScopeBuild), so
-// it works the same everywhere. Hourly: what he says is the work done, listed
+// like we do for proposals to speak to what we did?"). Tim's shared say box
+// (js/tim.js timSayBox, timSaid, timSaySteps), the same one both proposal
+// builders use, pointed at the invoice. Hourly: what he says is the work done, listed
 // on the invoice above the hours, never a price. Set price: each thing he did
 // is a line, priced from his own book when it knows it, blank when it does not
 // (a guessed number on a bill is worse than a blank that asks).
 function _qiSayHtml(){
-  const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
   const hourly=_qi&&_qi.mode==='hourly';
-  return '<div class="ios-sec">'+
-    '<div class="ios-group"><textarea id="qi-say" class="ios-say" rows="3" placeholder="'+escHtml(hourly?'What did you do? Say it the way you would tell the customer.':'What did you do? Tim makes the lines and prices them from your book.')+'"></textarea></div>'+
-    (voice?'<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-tint" onclick="_qiTalk()">'+
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button></div>':'')+
-    '<div class="ios-links left"><button type="button" onclick="_qiSayBuild()">'+(hourly?'Add to work done':'Make the lines')+'</button></div>'+
-  '</div>';
-}
-function _qiTalk(){if(typeof _timTalkToggle==='function')_timTalkToggle('qi-say');}
-function _qiSaySteps(said){
-  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[]}):null;
-  const steps=(built&&Array.isArray(built.steps)?built.steps.map(st=>String(st.text||'').trim()):[]).filter(Boolean);
-  if(steps.length)return steps;
-  // Nothing Tim recognised as a step: the sentence itself, cleaned up, is
-  // still what he did.
-  const t=String(said||'').trim().replace(/\s+/g,' ');
-  return t?[t.charAt(0).toUpperCase()+t.slice(1)]:[];
+  return timSayBox({id:'qi-say',done:'_qiSayBuild',
+    placeholder:hourly?'What did you do? Say it the way you would tell the customer.':'What did you do? Tim makes the lines and prices them from your book.',
+    links:'<button type="button" onclick="_qiSayBuild()">'+(hourly?'Add to work done':'Make the lines')+'</button>'});
 }
 function _qiSayBuild(){
   if(!_qi)return;
-  const el=document.getElementById('qi-say');
-  const said=el?String(el.value||'').trim():'';
-  if(!said){
-    if(el){try{el.focus();}catch(_e){}}
-    if(typeof showToast==='function')showToast('Type or say what you did first','✏️',2600);
-    return;
-  }
-  const steps=_qiSaySteps(said);
+  const said=timSaid('qi-say','Type or say what you did first');
+  if(!said)return;
+  const steps=timSaySteps(said);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));
     steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);have.add(st.toLowerCase());}});
