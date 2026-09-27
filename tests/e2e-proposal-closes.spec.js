@@ -35,6 +35,10 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The first cloud load replaces clients/jobs/bids with the cloud's rows
+    // (supaLoadFromCloud). It lands ~5s after boot on Chromium and ~10s on
+    // WebKit, so a fixture seeded before it is wiped mid-file. Seed after it.
+    await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, null, { timeout: 20000 });
   });
   test.afterAll(async () => { await ctx.close(); });
 
@@ -58,6 +62,10 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     return page.evaluate(async ([said, take]) => {
       openGenericEstimate(getClientById(97001), null, null, { mode: 'byo' });
       _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+      // BYO opens straight on its page now (Earl audit), so start from an
+      // empty list explicitly: the say box shows only on an empty list, and a
+      // prior test's lines could still be on it when WebKit gets here.
+      _byoItems.length = 0; _byoSayOpen = false; _byoRenderSections();
       document.getElementById('byo-say').value = said;
       _byoSayBuild();
       // Add all, then his two calls: the permit is his (not every job needs
