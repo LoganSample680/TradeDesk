@@ -292,6 +292,10 @@ body.dark .tl-wbar-guide b{background:rgba(183,205,237,.18);color:var(--text)}
 .tl-wbar-col:nth-child(8) .tl-wbar-stack{animation-delay:.28s}
 .tl-wbar-col:nth-child(9) .tl-wbar-stack{animation-delay:.32s}
 .tl-wbar-col:nth-child(n+10) .tl-wbar-stack{animation-delay:.36s}
+/* A repaint nobody asked for (fresh hours landing on resume) swaps the
+   numbers in place: no rise, no ring (owner 2026-09-27, js/timelog.js
+   _tlAnimNext). */
+.tl-still .tl-wbar-stack,.tl-still .tl-wbar-seam{animation:none}
 /* Somebody who asked their device for less motion gets the chart, not the
    show. This is vestibular, not taste. */
 @media (prefers-reduced-motion:reduce){

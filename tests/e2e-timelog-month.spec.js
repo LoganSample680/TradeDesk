@@ -631,6 +631,37 @@ test.describe('month bars: the page', () => {
     expect(r.after[0]).toBe(r.before[0]);
   });
 
+  // Owner 2026-09-27: "why do the bar graphs glitch out quickly 3 times when
+  // going back into the app?" Resume repaints this screen several times as
+  // data lands, and each repaint replayed the bar rise and the last drill's
+  // zoom. Motion now belongs to the tap, never to a background repaint.
+  test('bars grow on a tap, and a background repaint swaps numbers without replaying it', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const body = () => document.querySelector('.tl-drill-body');
+      const anim = () => getComputedStyle(document.querySelector('.tl-drill-body .tl-wbar-stack')).animationName;
+      _tlDrillTo('week', '2026-08-23');
+      const tapCls = body().className, tapAnim = anim();
+      // What coming back into the app does: repaints nobody tapped for.
+      await renderTimeLog({ cached: true });
+      const bg1 = body().className, bgAnim = anim();
+      await renderTimeLog({ cached: true });
+      await renderTimeLog();
+      const bg3 = body().className;
+      // The next thing he actually does animates again.
+      _tlDrillTo('month', '2026-08');
+      const upCls = body().className;
+      return { tapCls, tapAnim, bg1, bgAnim, bg3, upCls };
+    });
+    expect(r.tapCls).toContain('tl-mbars-down');
+    expect(r.tapAnim).toBe('td-bar-rise');
+    expect(r.bg1).toContain('tl-still');
+    expect(r.bg1).not.toContain('tl-mbars-');
+    expect(r.bgAnim, 'no bar rise on a repaint').toBe('none');
+    expect(r.bg3).toContain('tl-still');
+    expect(r.upCls).toContain('tl-mbars-up');
+    expect(r.upCls).not.toContain('tl-still');
+  });
+
   // Design handoff 2026-09-04: "a month column must derive its totals from
   // the weeks it drills into, never carry its own roll-up." It already does
   // (_tlMonthBarsHtml folds each week's rows), and this pins it: the number
