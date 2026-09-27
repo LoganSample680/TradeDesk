@@ -21,7 +21,14 @@ async function boot(browser) {
   return page;
 }
 // Every box that has to take a thumb, measured on the real layout.
-const tooSmall = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)]
+// Measured after every running animation settles: a sheet's entrance scale
+// (and the permissions accordion) shrinks every box a pixel while it runs,
+// and WebKit is slow enough in CI to be caught mid-animation (43px, 2026-09-27).
+const tooSmall = async (page, sel) => {
+  await page.waitForFunction(() => !document.getAnimations || document.getAnimations().every(a => a.playState !== 'running'), null, { timeout: 5000 }).catch(() => {});
+  return tooSmallNow(page, sel);
+};
+const tooSmallNow = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)]
   .filter(el => el.offsetParent !== null)
   .map(el => { const r = el.getBoundingClientRect(); return { t: (el.textContent || el.id || el.className || '').trim().slice(0, 30), w: Math.round(r.width), h: Math.round(r.height) }; })
   .filter(r => r.w < 44 || r.h < 44), sel);
