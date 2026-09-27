@@ -1593,8 +1593,17 @@ if(typeof window!=='undefined'&&!window.__payTapGuardOn){
   };
   ['pointerdown','pointerup','mousedown','mouseup','click','touchstart','touchend'].forEach(t=>window.addEventListener(t,_swallow,{capture:true,passive:false}));
 }
+// The 400ms starts when the save is FINISHED, not when the sheet closes:
+// recording a payment is heavy (save, re-render, sync), and on a slow phone
+// (an SE, or WebKit in CI) the whole window used to run out while that work
+// was still going, so the second tap, queued behind it, went straight through.
+// Until the timer below runs, the guard holds; input queued during the work is
+// handled before the timer, so it is swallowed.
 function _armPayTapGuard(){
-  if(_payLastDown&&Date.now()-_payLastDown.t<1500)_payTapGuard={x:_payLastDown.x,y:_payLastDown.y,until:Date.now()+400};
+  if(!(_payLastDown&&Date.now()-_payLastDown.t<1500))return;
+  const g={x:_payLastDown.x,y:_payLastDown.y,until:Infinity};
+  _payTapGuard=g;
+  setTimeout(()=>{if(_payTapGuard===g)g.until=Date.now()+400;},0);
 }
 function logPayment(){
   if(_submitting)return;

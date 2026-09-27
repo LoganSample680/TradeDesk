@@ -197,6 +197,34 @@ test.describe('Earl: one definition of his money', () => {
     expect(await page.evaluate(() => window.__probeHits)).toBe(1);
   });
 
+  // An SE is slow: recording a payment took longer than the guard's window,
+  // so the second tap, queued behind the work, went through (WebKit CI,
+  // 2026-09-27). The window now starts when the work is done.
+  test('double tap on a slow phone: 700ms of work after the sheet closes and the second tap is still swallowed', async ({ page }) => {
+    await boot(page);
+    await seedEarl(page, { paid: false });
+    await page.evaluate((BID) => {
+      jobs.push({ id: 7710302, bid_id: BID, client_id: 7710001, start: todayKey(), days: 1 });
+      // The slow part runs AFTER the sheet closes: the re-renders.
+      const real = window.renderMoneyPage;
+      window.renderMoneyPage = function () { const t = Date.now(); while (Date.now() - t < 700) {} return real.apply(this, arguments); };
+      openPayPanel(BID); document.getElementById('mpay-amount').value = '150.00';
+    }, BID);
+    const box = await page.locator('#mpay-submit-btn').boundingBox();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.evaluate(([x, y]) => {
+      const p = document.createElement('button'); p.id = 'zz-under-probe2';
+      p.style.cssText = 'position:fixed;left:' + (x - 30) + 'px;top:' + (y - 22) + 'px;width:60px;height:44px;z-index:1';
+      window.__probe2 = 0; p.onclick = () => { window.__probe2++; };
+      document.body.appendChild(p);
+    }, [x, y]);
+    await page.mouse.click(x, y);
+    await page.mouse.click(x, y);
+    const r = await page.evaluate((BID) => ({ n: payments.filter(p => p.bid_id === BID).length, hits: window.__probe2 }), BID);
+    expect(r.n).toBe(1);
+    expect(r.hits).toBe(0);
+  });
+
   test('pay method remembers his last one per business, and a remembered Venmo stays quiet', async ({ page }) => {
     await boot(page);
     await seedEarl(page, { paid: false });
