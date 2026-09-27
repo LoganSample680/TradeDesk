@@ -62,8 +62,10 @@ const _SVC_BUILTIN=[
     msg:'Hi {name}, your heater is due for its service. Want us to get you on the schedule, or doing it yourself this year?'},
   // The rest of the recurring work each trade books (owner 2026-09-27: "for
   // hvac it's a condenser clean and shit maybe even a coil clean"). Same shape
-  // as the five above; a trade sees its own first and the rest under More. A
-  // general contractor or handyman gets the house-care jobs they commonly book.
+  // as the five above. A contractor only ever sees his own trades' services
+  // (owner 2026-09-27: "it should only show things behind the actual trade
+  // itself"). A general contractor or handyman gets the house-care jobs they
+  // commonly book.
   {key:'ac-tuneup',name:'AC tune-up',short:'AC tune-up',months:12,icon:'❄️',trades:['hvac'],
     msg:'Hi {name}, your AC is due for its tune-up before the heat hits. Want us to get you on the schedule?'},
   {key:'condenser',name:'Condenser coil cleaning',short:'Condenser',months:12,icon:'🌀',trades:['hvac'],
@@ -189,15 +191,13 @@ function _svcTypesOrdered(){
   };
   return _svcTypes().map((t,i)=>({t,i,r:t.custom?200:rank(t)})).sort((a,b)=>a.r-b.r||a.i-b.i).map(x=>x.t);
 }
-// What a sheet shows before More is tapped: the services his trades book, any
-// service he already has on the board, his own services, and whatever is picked
-// right now. A trade nothing fits sees them all.
-function _svcTypesShown(pick){
-  const all=_svcTypesOrdered();
+// The services a sheet offers: the ones his trades book, his own, and any he
+// already has customers on (so switching trades never strands a customer he
+// can't edit). Nothing from a trade he doesn't work.
+function _svcTypesShown(){
   const tr=_svcTrades();
   const used=new Set(_whUnits().map(e=>_svcKindOf(e)));
-  const shown=all.filter(t=>t.custom||t.key===pick||used.has(t.key)||(t.trades||[]).some(x=>tr.indexOf(x)>=0));
-  return {shown:shown.length?shown:all,more:shown.length?all.length-shown.length:0,all};
+  return _svcTypesOrdered().filter(t=>t.custom||used.has(t.key)||(t.trades||[]).some(x=>tr.indexOf(x)>=0));
 }
 function _svcTradeFits(){
   const tr=_svcTrades();
@@ -690,13 +690,12 @@ function svcAddCustomType(name,months){
   if(typeof _settingsChanged==='function')_settingsChanged();else S.settingsTs=Date.now();
   return _svcType(key);
 }
-function openSvcTypes(all){
+function openSvcTypes(){
   document.getElementById('_svc-types-ov')?.remove();
   const ov=document.createElement('div');ov.id='_svc-types-ov';ov.className='zmodal-overlay';
   ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
   const m=document.createElement('div');m.className='zmodal td-wh-form';m.style.maxWidth='440px';
-  const vis=_svcTypesShown();
-  const types=all?vis.all:vis.shown;
+  const types=_svcTypesShown();
   m.innerHTML=
     '<div class="zmodal-title">How often</div>'+
     '<div class="td-wh-form-sub">The default for each service. You can still change it for one customer.</div>'+
@@ -706,19 +705,16 @@ function openSvcTypes(all){
         '<div class="td-svc-own"><input id="_svc-own-name" autocapitalize="sentences" placeholder="Dryer vent cleaning"><button type="button" id="_svc-own-add" class="td-svc-chip">Add</button></div>'+
       '</div></div>'+
     '</div></div>'+
-    (!all&&vis.more?'<button type="button" id="_svc-types-all" class="sf-clear" style="margin-top:0">Show every service ('+vis.more+' more)</button>':'')+
     '<div id="_svc-types-err" style="display:none;color:var(--c-red);font-size:12.5px;font-weight:600;margin:-2px 2px 8px"></div>'+
     '<button id="_svc-types-save" class="btn btn-g sf-cta">Save</button>';
   ov.appendChild(m);document.body.appendChild(ov);
   _svcWireEvery(m);
-  const allBtn=document.getElementById('_svc-types-all');
-  if(allBtn)allBtn.onclick=()=>openSvcTypes(true);
   const err=t=>{const x=document.getElementById('_svc-types-err');x.textContent=t;x.style.display='block';};
   document.getElementById('_svc-own-add').onclick=()=>{
     const nm=document.getElementById('_svc-own-name').value.trim();
     if(!nm){document.getElementById('_svc-own-name').focus();return;}
     svcAddCustomType(nm,12);
-    openSvcTypes(all);
+    openSvcTypes();
     _whRefresh();
   };
   document.getElementById('_svc-types-save').onclick=()=>{
@@ -964,15 +960,12 @@ function whSkipProposals(){
 // after each save, on the same service, so a stack of old invoices goes in one
 // after another without reopening anything.
 let _svcAddKind=null;
-let _svcAddAll=false;
 const _SVC_CUSTOM='__custom';
-const _SVC_MORE='__more';
 function svcAddPick(key){
   const ov=document.getElementById('_wh-add-ov');
   const val=id=>{const x=document.getElementById(id);return x?x.value:'';};
   const keep=ov?{name:val('_wh-name'),phone:val('_wh-phone'),addr:val('_wh-addr'),client:val('_wh-client'),date:val('_wh-date'),custom:val('_svc-custom-name')}:{};
-  if(key===_SVC_MORE)_svcAddAll=true;else _svcAddKind=String(key||'');
-  keep.all=_svcAddAll;
+  _svcAddKind=String(key||'');
   openWhAdd(ov&&ov.dataset.md==='client'?'client':'new',keep);
 }
 function _svcAddSub(t,months){
@@ -982,15 +975,13 @@ function _svcAddSub(t,months){
 function openWhAdd(mode,keep){
   const md=mode==='client'?'client':'new';
   const k=keep||{};
-  _svcAddAll=!!k.all;
   document.getElementById('_wh-add-ov')?.remove();
   const ov=document.createElement('div');ov.id='_wh-add-ov';ov.className='zmodal-overlay';ov.dataset.md=md;
   ov.onclick=ev=>{if(ev.target===ov){ov.remove();_whRefresh();}};
   const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='420px';
-  const types=_svcTypesOrdered();
-  const kind=_svcAddKind===_SVC_CUSTOM||types.some(t=>t.key===_svcAddKind)?_svcAddKind:types[0].key;
+  const types=_svcTypesShown();
+  const kind=_svcAddKind===_SVC_CUSTOM||types.some(t=>t.key===_svcAddKind)?_svcAddKind:(types[0]?types[0].key:_SVC_CUSTOM);
   const t=kind===_SVC_CUSTOM?null:_svcType(kind);
-  const vis=_svcTypesShown(kind);
   const months=_svcValidMonths(k.months)||(t?t.months:12);
   const have=new Set(_whUnits().filter(e=>_svcKindOf(e)===kind).map(e=>String(e.clientId)));
   const opts=(typeof clients!=='undefined'?clients:[]).filter(c=>c&&c.name)
@@ -1010,9 +1001,7 @@ function openWhAdd(mode,keep){
     '<div class="zmodal-title">Add a service customer</div>'+
     '<div class="td-wh-form-sub" id="_svc-add-sub">'+_svcAddSub(t,months)+'</div>'+
     '<div class="td-svc-chips" role="group" aria-label="Service">'+
-      (_svcAddAll?vis.all:vis.shown).map(x=>chip(x.key,x.short||x.name)).join('')+
-      (!_svcAddAll&&vis.more?chip(_SVC_MORE,'More ('+vis.more+')'):'')+
-      chip(_SVC_CUSTOM,'Custom')+
+      types.map(x=>chip(x.key,x.short||x.name)).join('')+chip(_SVC_CUSTOM,'Custom')+
     '</div>'+
     '<div class="sf-seg" style="margin-top:12px">'+
       '<button type="button" class="sf-seg-btn'+(md==='new'?' active':'')+'" onclick="openWhAdd(\'new\')">New customer</button>'+

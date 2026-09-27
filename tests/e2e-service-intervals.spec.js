@@ -340,7 +340,7 @@ test.describe('Service due: recurring service intervals', () => {
       const firstMonths = document.getElementById('_svc-months').value;
       // Typed fields survive picking a service.
       document.getElementById('_wh-name').value = 'Pat Newby';
-      svcAddPick('water-filter');
+      svcAddPick('irrigation');
       const keptName = document.getElementById('_wh-name').value;
       const months = document.getElementById('_svc-months').value;
       const dateLbl = document.getElementById('_wh-date').closest('.sf-row').querySelector('.sf-lbl').textContent;
@@ -359,17 +359,17 @@ test.describe('Service due: recurring service intervals', () => {
       document.getElementById('_wh-add-done').click();
       return { chips, first, firstMonths, keptName, months, dateLbl, errNoDate, sub, row: { kind: e.kind, sk: e.serviceKind, sm: e.serviceMonths, src: e.source }, stayed, nextMonths, cleared };
     });
-    // A landscaper sees landscaping work; everything else waits under More (2026-09-27).
-    expect(r.chips).toEqual(['Gutters', 'Irrigation', 'Sprinkler start-up', 'Aeration', 'Fertilizing', 'Mulch', 'More (18)', 'Custom']);
+    // A landscaper sees landscaping work and nothing else (owner 2026-09-27).
+    expect(r.chips).toEqual(['Gutters', 'Irrigation', 'Sprinkler start-up', 'Aeration', 'Fertilizing', 'Mulch', 'Custom']);
     expect(r.first, 'a landscaper starts on a landscaping service').toBe('Gutters');
     expect(r.firstMonths).toBe('6');
     expect(r.keptName).toBe('Pat Newby');
-    expect(r.months, 'prefilled from the service default').toBe('6');
+    expect(r.months, 'prefilled from the service default').toBe('12');
     expect(r.dateLbl).toBe('Last done');
     expect(r.errNoDate).toBe('Pick when it was last done.');
-    expect(r.sub).toBe('Water filter change. They show up on the board 3 months after this date.');
-    expect(r.row).toEqual({ kind: 'Water filter change', sk: 'water-filter', sm: 3, src: 'manual' });
-    expect(r.stayed).toBe('Water filter');
+    expect(r.sub).toBe('Irrigation drain-down. They show up on the board 3 months after this date.');
+    expect(r.row).toEqual({ kind: 'Irrigation drain-down', sk: 'irrigation', sm: 3, src: 'manual' });
+    expect(r.stayed).toBe('Irrigation');
     expect(r.nextMonths).toBe('3');
     expect(r.cleared).toBe('');
     expect(await boardNames()).toEqual([]);
@@ -442,41 +442,65 @@ test.describe('Service due: recurring service intervals', () => {
     expect(await boardNames()).toEqual(['Fay Filter']);
   });
 
-  test('HVAC gets condenser and coil cleaning, and More shows every trade\'s services', async () => {
+  test('HVAC gets condenser and coil cleaning, and only HVAC work', async () => {
     await seed('hvac');
     const r = await page.evaluate(() => {
       openWhAdd();
       const chips = [...document.querySelectorAll('#_wh-add-ov .td-svc-tchip')].map(b => b.textContent);
       const first = document.querySelector('#_wh-add-ov .td-svc-tchip.on').textContent;
       document.getElementById('_wh-name').value = 'Carl Coil';
-      svcAddPick('__more');
-      const all = [...document.querySelectorAll('#_wh-add-ov .td-svc-tchip')].map(b => b.textContent);
-      const keptName = document.getElementById('_wh-name').value;
-      const stillOn = document.querySelector('#_wh-add-ov .td-svc-tchip.on').textContent;
       svcAddPick('condenser');
+      const keptName = document.getElementById('_wh-name').value;
       const months = document.getElementById('_svc-months').value;
       document.getElementById('_wh-phone').value = '5557778888';
       document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
       document.getElementById('_wh-add-save').click();
       const c = clients.find(x => x.name === 'Carl Coil');
       const e = c && equipment.find(x => String(x.clientId) === String(c.id));
+      // Another trade's service can't be picked into an HVAC sheet.
+      svcAddPick('gutter');
+      const refused = document.querySelector('#_wh-add-ov .td-svc-tchip.on').textContent;
       document.getElementById('_wh-add-done').click();
-      openWhAdd();
-      const reopened = [...document.querySelectorAll('#_wh-add-ov .td-svc-tchip')].map(b => b.textContent);
-      document.getElementById('_wh-add-ov').remove();
-      return { chips, first, all, keptName, stillOn, months, sk: e && e.serviceKind, kind: e && e.kind, reopened };
+      return { chips, first, keptName, months, sk: e && e.serviceKind, kind: e && e.kind, refused };
     });
-    expect(r.chips).toEqual(['Furnace', 'AC tune-up', 'Condenser', 'Coil clean', 'Air filter', 'More (19)', 'Custom']);
+    expect(r.chips).toEqual(['Furnace', 'AC tune-up', 'Condenser', 'Coil clean', 'Air filter', 'Custom']);
     expect(r.first).toBe('Furnace');
-    expect(r.all.length, 'every built-in plus Custom, no More chip').toBe(await page.evaluate(() => _SVC_BUILTIN.length + 1));
-    expect(r.all).not.toContain('More (19)');
-    expect(r.keptName, 'More keeps what was typed').toBe('Carl Coil');
-    expect(r.stillOn).toBe('Furnace');
+    expect(r.keptName).toBe('Carl Coil');
     expect(r.months).toBe('12');
     expect(r.sk).toBe('condenser');
     expect(r.kind).toBe('Condenser coil cleaning');
-    expect(r.reopened, 'a fresh sheet is short again').toContain('More (19)');
+    expect(r.refused, 'falls back to his own first service').toBe('Furnace');
     expect(await boardNames()).toEqual(['Carl Coil']);
+  });
+
+  test('a customer already on another service keeps it on the sheets after a trade change', async () => {
+    await seed('hvac');
+    await add(503, 'gutter', 3);
+    const r = await page.evaluate(() => {
+      openWhAdd();
+      const chips = [...document.querySelectorAll('#_wh-add-ov .td-svc-tchip')].map(b => b.textContent);
+      document.getElementById('_wh-add-ov').remove();
+      openSvcTypes();
+      const rows = [...document.querySelectorAll('#_svc-types-ov .sf-lbl')].map(l => l.textContent);
+      document.getElementById('_svc-types-ov').remove();
+      return { chips, rows };
+    });
+    expect(r.chips).toContain('Gutters');
+    expect(r.rows).toContain('Gutter cleaning');
+    expect(r.chips).not.toContain('Deck stain');
+  });
+
+  test('a trade no service fits still gets Custom, never a blank sheet', async () => {
+    await seed('pest control');
+    const r = await page.evaluate(() => {
+      openWhAdd();
+      const chips = [...document.querySelectorAll('#_wh-add-ov .td-svc-tchip')].map(b => b.textContent);
+      const custom = !!document.getElementById('_svc-custom-name');
+      document.getElementById('_wh-add-ov').remove();
+      return { chips, custom };
+    });
+    expect(r.chips).toEqual(['Custom']);
+    expect(r.custom).toBe(true);
   });
 
   test('every built-in service is whole: a trade, a sane interval, and a text in plain words', async () => {
@@ -493,25 +517,18 @@ test.describe('Service due: recurring service intervals', () => {
     expect(r.uncovered, 'every trade TradeDesk sets up has recurring work on the board').toEqual([]);
   });
 
-  test('the defaults sheet shows his trade first and every service on one tap', async () => {
+  test('the defaults sheet shows only his trade', async () => {
     await seed('electrical');
     const r = await page.evaluate(() => {
       openSvcTypes();
       const rows = [...document.querySelectorAll('#_svc-types-ov .sf-lbl')].map(l => l.textContent);
-      const btn = document.getElementById('_svc-types-all').textContent;
-      document.getElementById('_svc-types-all').click();
-      const all = [...document.querySelectorAll('#_svc-types-ov .sf-lbl')].length;
-      const noBtn = !document.getElementById('_svc-types-all');
-      document.getElementById('_svc-t-condenser').value = '6';
+      document.getElementById('_svc-t-generator').value = '6';
       document.getElementById('_svc-types-save').click();
       document.querySelectorAll('.toast').forEach(t => t.remove());
-      return { rows, btn, all, noBtn, cond: _svcType('condenser').months, closed: !document.getElementById('_svc-types-ov') };
+      return { rows, gen: _svcType('generator').months, closed: !document.getElementById('_svc-types-ov') };
     });
     expect(r.rows).toEqual(['Generator service', 'Smoke & CO detector check', 'Add your own']);
-    expect(r.btn).toBe('Show every service (22 more)');
-    expect(r.all).toBe(await page.evaluate(() => _SVC_BUILTIN.length + 1));
-    expect(r.noBtn).toBe(true);
-    expect(r.cond, 'a service outside his trade can still be set').toBe(6);
+    expect(r.gen).toBe(6);
     expect(r.closed).toBe(true);
   });
 
