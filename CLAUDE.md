@@ -379,6 +379,15 @@ never decides on their behalf that their testing is finished.
   number neither has. Migration lint now fails a PR whose new version is
   already used on `uat` by a different file, and `scripts/uat-roll.sh`
   refuses to push a `uat` with two files on one version.
+- **Merge a PR into `main` as a MERGE COMMIT, never a squash** (owner
+  2026-09-26: "thought we fixed this messy bullshit"). A branch that was rolled
+  to `uat` already has its commits there; a squash rewrites them into one new
+  commit on `main`, so `main` and `uat` then hold the same code under different
+  history and every roll after that conflicts on those files. It happened with
+  #100 and #101: the next roll stopped on 14 files that were the same features
+  arriving twice. With a merge commit the commits are identical on both sides
+  and the roll is clean. `mcp__github__merge_pull_request` takes
+  `merge_method: 'merge'`; the §14.1.1 skip-token check still applies.
 - **To try one feature on its own, use that branch's Pages preview URL**, which
   every push already builds. `uat` is only special because the TestFlight shell
   points at it, so spend it on what has to be on a phone.

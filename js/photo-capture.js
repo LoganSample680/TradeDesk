@@ -330,25 +330,37 @@ async function _pcPreviewDataUrl(file){
 // Put back any photo the phone lost track of (a relaunch, a cloud reload, a
 // wiped localStorage) while it is still waiting in the outbox, so it shows in
 // the album and the tray even before there is signal to send it.
-async function _pcOutboxRestore(){
-  await _pcTouching;
-  const recs=await _pcOutboxAll();
-  let n=0;
-  const me=_pcAcct();
-  for(const rec of recs){
-    if(!rec||!rec.meta)continue;
-    if(rec.acct&&me&&rec.acct!==me)continue;
-    if(_pcSaving.has(String(rec.id)))continue;
-    if(photos.some(p=>p&&String(p.id)===String(rec.id)))continue;
-    const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
-    const f=_pcObFile(rec);
-    if(!f)continue;
-    row.data=await _pcPreviewDataUrl(f);
-    row.outboxWait=true;
-    photos.push(row);n++;
-  }
-  if(n){saveAll();try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
-  return n;
+// ONE RESTORE AT A TIME (2026-09-26). The "already there?" check and the push
+// sit either side of an await (the preview), so a restore started by
+// tdPhotoFlush and one started on relaunch both passed the check and the same
+// photo came back twice. A second caller now shares the run in flight, and the
+// check is made again after the await.
+let _pcRestoring=null;
+function _pcOutboxRestore(){
+  if(_pcRestoring)return _pcRestoring;
+  _pcRestoring=(async()=>{
+    await _pcTouching;
+    const recs=await _pcOutboxAll();
+    let n=0;
+    const me=_pcAcct();
+    const have=id=>photos.some(p=>p&&String(p.id)===String(id));
+    for(const rec of recs){
+      if(!rec||!rec.meta)continue;
+      if(rec.acct&&me&&rec.acct!==me)continue;
+      if(_pcSaving.has(String(rec.id)))continue;
+      if(have(rec.id))continue;
+      const row=Object.assign({url:'',storagePath:'',thumbUrl:'',thumbPath:'',fullPath:''},rec.meta,{id:rec.meta.id!=null?rec.meta.id:rec.id});
+      const f=_pcObFile(rec);
+      if(!f)continue;
+      row.data=await _pcPreviewDataUrl(f);
+      row.outboxWait=true;
+      if(have(row.id)||_pcSaving.has(String(rec.id)))continue;
+      photos.push(row);n++;
+    }
+    if(n){saveAll();try{if(typeof renderDash==='function')renderDash();}catch(_e){}}
+    return n;
+  })().finally(()=>{_pcRestoring=null;});
+  return _pcRestoring;
 }
 // Send everything in the outbox that belongs to this account. Safe to call
 // any number of times from anywhere: one run at a time, and a photo leaves the
