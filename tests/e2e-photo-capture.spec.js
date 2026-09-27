@@ -2690,6 +2690,11 @@ test.describe('TrueShot: the photos come back', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Diagnostic (2026-09-27): the midnight-clock job has twice seen this page
+    // navigate away mid-test ("Execution context was destroyed") and it does
+    // not reproduce locally. Name where it went, so the next occurrence says
+    // what did it instead of leaving a guess.
+    page.on('framenavigated', f => { if (f === page.mainFrame()) console.log('[photos-come-back] main frame navigated to ' + f.url()); });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => { await page.evaluate(seed()); });
