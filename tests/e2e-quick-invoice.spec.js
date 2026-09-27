@@ -176,6 +176,53 @@ test.describe('Quick invoice', () => {
     expect(r.nav).toBe('Preview');
   });
 
+  // Owner 2026-09-27: "drive time should have a toggle that's set by user
+  // level if they want to include it and also shop time needs included".
+  test('shop time on his days is billed by his share of the day; drive time only with the switch on, a shared leg split in half, held legs never', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      window._jobTimeEntriesByJob = {};
+      delete S.qiBillDrive;
+      const H = 3600e3, M = 60e3, t = Date.parse('2026-09-22T13:00:00Z');
+      const at = (o, mins) => ({ arrived_at: new Date(t + o).toISOString(), departed_at: new Date(t + o + mins * M).toISOString(), minutes: mins });
+      const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client' }, o);
+      const saved = { f: window._fetchCrewLabor, se: window.supaEnabled, su: window._supaUser, sp: window._supa, sc: window._settingsChanged };
+      let saves = 0; window._settingsChanged = () => { saves++; };
+      window._supaUser = { id: 'boss-uid' }; window.supaEnabled = () => true; window._supa = window._supa || {};
+      window._fetchCrewLabor = async () => ({ name: { 'jack-uid': 'Jack Sample' }, entries: [
+        row(Object.assign({ dest_place: 'John Doe (1418 Maple Ave)' }, at(0, 240))),
+        row(Object.assign({ dest_place: 'Mary Smith (77 Lakeview Dr)' }, at(5 * H, 240))),
+        row(Object.assign({ source: 'drive', origin_place: 'Shop', dest_place: 'John Doe (1418 Maple Ave)' }, at(-10 * M, 10))),
+        row(Object.assign({ source: 'drive', origin_place: 'John Doe (1418 Maple Ave)', dest_place: 'Mary Smith (77 Lakeview Dr)' }, at(4 * H + 5 * M, 20))),
+        row(Object.assign({ source: 'drive', origin_place: 'Mary Smith (77 Lakeview Dr)', dest_place: 'Shop' }, at(9 * H + 5 * M, 15))),
+        row(Object.assign({ source: 'drive-held', origin_place: 'Shop', dest_place: 'John Doe (1418 Maple Ave)' }, at(-2 * H, 45))),
+      ], shopEntries: [
+        Object.assign({ employee_user_id: 'boss-uid' }, at(-2 * H, 60)),
+        Object.assign({ employee_user_id: 'jack-uid' }, at(-2 * H, 30)),
+      ] });
+      openQuickInvoice(901);
+      await new Promise(r => setTimeout(r, 50));
+      const off = _qi.tracked.filter(l => l.kind === 'time').map(l => ({ who: l.who, mins: l.mins, detail: l.detail }));
+      const offText = document.getElementById('qi-page').textContent;
+      document.getElementById('qi-drive').click();
+      const on = _qi.tracked.filter(l => l.kind === 'time').map(l => ({ who: l.who, mins: l.mins, detail: l.detail, amount: l.amount }));
+      const checked = document.getElementById('qi-drive').checked, setting = S.qiBillDrive;
+      document.getElementById('qi-drive').click();
+      const back = _qi.tracked.filter(l => l.kind === 'time').map(l => l.mins);
+      Object.assign(window, { _fetchCrewLabor: saved.f, supaEnabled: saved.se, _supaUser: saved.su, _supa: saved.sp, _settingsChanged: saved.sc });
+      delete S.qiBillDrive;
+      return { off, offText, on, checked, setting, back, saves };
+    });
+    expect(r.off).toEqual([{ who: 'Mike Sample', mins: 270, detail: '4h on site, 30m shop' }]);
+    expect(r.offText).toContain('Bill drive time');
+    expect(r.offText).toContain('4h on site, 30m shop at');
+    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 290, detail: '4h on site, 30m shop, 20m driving', amount: 338.33 }]);
+    expect(r.checked).toBe(true);
+    expect(r.setting).toBe(true);
+    expect(r.back).toEqual([270]);
+    expect(r.saves, 'the switch is his setting, saved each time').toBe(2);
+  });
+
   test('offline, or the load fails: the screen keeps what it had and says nothing tracked only when that is true', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
