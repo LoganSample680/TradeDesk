@@ -3219,6 +3219,9 @@ async function _geoPermissionBanner(){
     denied?null:'Turn on location');
 }
 // One banner shell for every state, so the copy is the only thing that varies.
+// The button is sized to its words, left, not full width: a full-width button's
+// centre is the middle of the screen, which is exactly where Tim's key sits, so
+// once Home moved up (Earl audit 2026-09-27) his key covered it.
 // The button routes through _setupTodoGo('location'), the SAME handler the
 // setup checklist uses, rather than calling _geoRequestPermission directly:
 // that handler already knows a settled iOS decision cannot be re-prompted and
@@ -3229,7 +3232,7 @@ function _geoBannerHtml(title,body,cta){
   return '<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">'+
     '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">'+svgIcon('📍',{size:13})+' '+escHtml(title)+'</div>'+
     '<div style="font-size:12px;color:#991B1B;line-height:1.5;margin-bottom:'+(cta?'10px':'0')+'">'+escHtml(body)+'</div>'+
-    (cta?'<button onclick="if(typeof _setupTodoGo===\'function\')_setupTodoGo(\'location\')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">'+escHtml(cta)+'</button>':'')+
+    (cta?'<button onclick="if(typeof _setupTodoGo===\'function\')_setupTodoGo(\'location\')" style="padding:11px 18px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">'+escHtml(cta)+'</button>':'')+
   '</div>';
 }
 // ── Permission request ────────────────────────────────────────────────────────
