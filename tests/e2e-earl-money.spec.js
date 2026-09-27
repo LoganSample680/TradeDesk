@@ -133,7 +133,15 @@ test.describe('Earl: one definition of his money', () => {
   test('the banner never blocks: taps reach the expense sheet under it, and a tap dismisses it', async ({ page }) => {
     await boot(page);
     await seedEarl(page, { paid: false });
-    await page.evaluate((BID) => { openPayPanel(BID); document.getElementById('mpay-amount').value = '100.00'; logPayment(); openExpenseFlow(); }, BID);
+    // The job is already on the calendar, or logPayment asks "Schedule now?"
+    // 300ms later and that prompt (not the banner) covers the sheet. Chromium
+    // clicked before it landed; WebKit did not (CI, 2026-09-27).
+    await page.evaluate((BID) => {
+      jobs.push({ id: 7710300, bid_id: BID, client_id: 7710001, start: todayKey(), days: 1 });
+      openPayPanel(BID); document.getElementById('mpay-amount').value = '100.00'; logPayment(); openExpenseFlow();
+    }, BID);
+    await page.waitForTimeout(400);
+    await expect(page.locator('.zmodal-overlay')).toHaveCount(0);
     const banner = page.locator('#_pay-banner');
     await expect(banner).toBeVisible();
     const hit = await page.evaluate(() => {
