@@ -1369,6 +1369,9 @@ function onQPSearch(el){
       const c=b.dataset.cid!=null&&typeof getClientById==='function'?getClientById(b.dataset.cid)||getClientById(Number(b.dataset.cid)):null;
       const sub=b.querySelector('.qp-sub');
       if(on&&c&&sub&&clientAddresses(c).length>1)sub.textContent=clientAddrSub(c,q)+(b.dataset.subtail||'');
+      // The search named one of their houses: tapping goes straight to it.
+      const hit=on&&c?clientMatchedAddr(c,q):null;
+      if(hit)b.dataset.addr=hit.addr;else delete b.dataset.addr;
     });
     if(!shown&&q)res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
     if(newWrap)newWrap.style.display=(q&&!shown)?'block':'none';
@@ -1406,7 +1409,7 @@ function pickQuickClient(btn,actionType){
   const s=suggestions[idx];
   if(!s)return;
   overlay.remove();
-  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null);
+  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||undefined);
 }
 
 function pickQPClient(cid,actionType){
@@ -1416,7 +1419,8 @@ function pickQPClient(cid,actionType){
   executeQuickAction(actionType,cid,wonBid?wonBid.id:null,null);
 }
 
-function executeQuickAction(actionType,clientId,bidId,jobId){
+// addr: the house the search already named (clientMatchedAddr), when there is one.
+function executeQuickAction(actionType,clientId,bidId,jobId,addr){
   window._fromDash=true;
   currentClientId=clientId;
   if(actionType==='drive'){
@@ -1428,7 +1432,7 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     const purpose=hasWon?'Job site':hasEst?'Proposal':'Proposal';
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='invoice'){
-    if(typeof openQuickInvoice==='function')openQuickInvoice(clientId);
+    if(typeof openQuickInvoice==='function')openQuickInvoice(clientId,addr);
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){

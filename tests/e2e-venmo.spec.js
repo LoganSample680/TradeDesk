@@ -142,7 +142,7 @@ test.describe('Venmo', () => {
     expect(r.sub).toContain('paying @John-Doe');
     expect(r.src, 'drawn on the phone, works with no signal').toBe('data:image/gif;base64');
     expect(fetched).toBe(0);
-    expect(decodeURIComponent(r.sms)).toBe('sms:5555550101?body=Hi John, here is the Venmo link for $500.00: https://venmo.com/John-Doe?txn=pay&amount=500.00&note=Invoice from Sample Plumbing #1234');
+    expect(decodeURIComponent(r.sms)).toBe('sms:5555550101?body=Hi John, here is the Venmo link for $500.00: https://venmo.com/John-Doe?txn=pay&amount=500.00&note=Invoice%20from%20Sample%20Plumbing%20%231234');
     expect(r.opened).toEqual(['https://venmo.com/']);
     expect(r.btn, 'the button stays to bring the code back').toBe('block');
     expect(r.closed).toBe(true);
