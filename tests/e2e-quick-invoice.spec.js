@@ -177,8 +177,10 @@ test.describe('Quick invoice', () => {
   });
 
   // Owner 2026-09-27: "drive time should have a toggle that's set by user
-  // level if they want to include it and also shop time needs included".
-  test('shop time on his days is billed by his share of the day; drive time only with the switch on, a shared leg split in half, held legs never', async ({ page }) => {
+  // level if they want to include it", then "really the only billable time in
+  // time and materials is drive time and job site time". Shop time is pay, not
+  // a bill: it is on the timesheet, never on the customer's invoice.
+  test('job site time is billed; drive time only with the switch on, a shared leg split in half, held legs never; shop time never', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
       window._jobTimeEntriesByJob = {};
@@ -213,13 +215,14 @@ test.describe('Quick invoice', () => {
       delete S.qiBillDrive;
       return { off, offText, on, checked, setting, back, saves };
     });
-    expect(r.off).toEqual([{ who: 'Mike Sample', mins: 270, detail: '4h on site, 30m shop' }]);
+    expect(r.off).toEqual([{ who: 'Mike Sample', mins: 240, detail: '4h on site' }]);
     expect(r.offText).toContain('Bill drive time');
-    expect(r.offText).toContain('4h on site, 30m shop at');
-    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 290, detail: '4h on site, 30m shop, 20m driving', amount: 338.33 }]);
+    expect(r.offText).toContain('4h on site at');
+    expect(r.offText).not.toMatch(/shop/i);
+    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 260, detail: '4h on site, 20m driving', amount: 303.33 }]);
     expect(r.checked).toBe(true);
     expect(r.setting).toBe(true);
-    expect(r.back).toEqual([270]);
+    expect(r.back).toEqual([240]);
     expect(r.saves, 'the switch is his setting, saved each time').toBe(2);
   });
 
