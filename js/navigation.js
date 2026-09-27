@@ -206,7 +206,7 @@ function _applyEmployeeNavGating(){
   const _mmiSignout=document.getElementById('mmi-signout');
   if(_mmiSignout)_mmiSignout.style.display=_ownerUI()?'none':'';
   const nr=document.getElementById('nav-user-role');
-  if(nr&&_coOwner)nr.textContent='Co-owner';
+  if(nr&&_coOwner)nr.textContent='Owner';
   else if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
   // Dual-hat switcher entry (§9.10 slice 1): an owner who is ALSO on someone's
   // crew gets a switch button in the Settings header. The crew hat's entry lives

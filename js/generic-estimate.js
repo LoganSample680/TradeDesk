@@ -154,7 +154,7 @@ function applyPermissions(){
   // Never display an email address as the nav name, fall back to business name
   const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
-  if(roleEl)roleEl.textContent=_coOwner?'Co-owner':_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
+  if(roleEl)roleEl.textContent=_coOwner?'Owner':_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.innerHTML=(name==='My Account'?svgIcon('👤',{size:18}):escHtml(name.charAt(0).toUpperCase()));
 }
 

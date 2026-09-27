@@ -750,7 +750,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.15';
+const APP_VERSION='09.26.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3023,7 +3023,7 @@ function openInviteEmployeeModal(){
         '<option value="tech">Field Tech</option>'+
         '<option value="office">Office / CSR</option>'+
         '<option value="manager">Manager</option>'+
-        '<option value="owner">Co-owner (sees and runs everything)</option>'+
+        '<option value="owner">Owner (sees and runs everything)</option>'+
       '</select></div>'+
     '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
       '<select id="_inv-class" style="font-size:14px;padding:10px">'+
@@ -4743,7 +4743,7 @@ function _employeeModalHTML(emp,idx){
           '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
           '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
-          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Co-owner (sees and runs everything)</option>'+
+          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner (sees and runs everything)</option>'+
         '</select></div>'+
       '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+

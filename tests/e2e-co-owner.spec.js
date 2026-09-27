@@ -56,7 +56,7 @@ test.describe('Co-owner', () => {
     await asLinked(page, false);
     const crew = await probe();
     await asOwner(page);
-    expect(co).toMatchObject({ settings: true, team: true, money: true, taxes: true, tim: true, signout: false, role: 'Co-owner' });
+    expect(co).toMatchObject({ settings: true, team: true, money: true, taxes: true, tim: true, signout: false, role: 'Owner' });
     expect(crew).toMatchObject({ settings: false, team: false, money: false, taxes: false, tim: false, signout: true });
   });
 
@@ -219,7 +219,7 @@ test.describe('Co-owner', () => {
       document.getElementById('_emp-invite-ov')?.remove();
       return { label, all };
     });
-    expect(r.label).toBe('Co-owner (sees and runs everything)');
+    expect(r.label).toBe('Owner (sees and runs everything)');
     expect(r.all).toBe(true);
   });
 
