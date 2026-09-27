@@ -1136,27 +1136,52 @@ function _venmoNote(bid){
   return 'Invoice'+(nm?' from '+nm:'')+(bid&&bid.id?' #'+String(bid.id).slice(-4):'');
 }
 // In person: the customer scans this with their camera, Venmo opens on THEIR
-// phone with the amount in. Same full-screen code as the card QR (showPayQr).
-function showVenmoQr(bidId){
+// phone with the amount in. Owner 2026-09-27: "hit record payment for Venmo
+// and it didn't launch Venmo". Picking Venmo on Record payment now opens this
+// sheet by itself (it used to add a second button most people never saw), the
+// code is drawn on the phone (js/lib/qrcode.js, so no signal is needed), and
+// the sheet has the two other ways Venmo actually gets launched: text them the
+// link, or open his own Venmo to watch the payment land.
+// amount: what is being collected now; else the amount typed on Record
+// payment; else the whole balance.
+function showVenmoQr(bidId,amount){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  const url=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));
-  if(!url){showToast('Add your Venmo in Settings first.','⚠');return;}
+  const typed=parseFloat(String((document.getElementById('mpay-amount')||{}).value||'').replace(/[^0-9.]/g,''));
+  const amt=Number(amount)>0?Number(amount):(typed>0?typed:getBidBalance(bid));
+  const url=_venmoPayUrl(amt,_venmoNote(bid));
+  if(!url){showToast(_venmoUser()?'Nothing left to collect.':'Add your Venmo username in Settings first.','⚠');return;}
+  const c=getClientById(bid.client_id);
+  const phone=String((c&&c.phone)||'').replace(/\D/g,'');
   document.getElementById('_venmo-qr-ov')?.remove();
   const ov=document.createElement('div');ov.id='_venmo-qr-ov';ov.className='zmodal-overlay';
+  const btn='width:100%;margin-top:8px;padding:12px;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;';
   ov.innerHTML='<div class="zmodal" style="text-align:center">'+
-    '<div style="font-size:17px;font-weight:800">Pay '+fmt(getBidBalance(bid))+' with Venmo</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin:4px 0 14px">Have them scan this with their camera. Venmo opens with the amount in, paying @'+escHtml(_venmoUser())+'.</div>'+
+    '<div style="font-size:17px;font-weight:800">Pay '+fmt(amt)+' with Venmo</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin:4px 0 14px">Have them scan this with their camera. Venmo opens on their phone with the amount in, paying @'+escHtml(_venmoUser())+'.</div>'+
     '<div id="_venmo-qr-wrap" style="display:flex;justify-content:center;min-height:240px"></div>'+
-    '<button type="button" onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;margin-top:14px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>'+
+    (phone?'<button type="button" id="_venmo-text" style="'+btn+'border:0;background:#3D95CE;color:#fff">Text them the link</button>':'')+
+    '<button type="button" id="_venmo-open" style="'+btn+'border:1.5px solid #3D95CE;background:#EAF4FB;color:#1F6FA8">Open Venmo</button>'+
+    '<button type="button" id="_venmo-done" style="'+btn+'border:1px solid var(--border2);background:var(--bg2);color:var(--text)">Done</button>'+
   '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.getElementById('_venmo-done').addEventListener('click',()=>ov.remove());
+  // His own Venmo, to see the payment come in (the pay link would have him
+  // paying himself).
+  document.getElementById('_venmo-open').addEventListener('click',()=>{window.open('https://venmo.com/','_blank');});
+  const tx=document.getElementById('_venmo-text');
+  if(tx){
+    const first=String((c&&c.name)||'').split(' ')[0]||'there';
+    tx.dataset.href='sms:'+phone+'?body='+encodeURIComponent('Hi '+first+', here is the Venmo link for '+fmt(amt)+': '+url);
+    tx.addEventListener('click',()=>{window.location.href=tx.dataset.href;});
+  }
   const wrap=document.getElementById('_venmo-qr-wrap');
-  const img=document.createElement('img');
-  img.style.cssText='width:240px;height:240px;display:block;border-radius:8px';img.alt='Venmo code';
-  img.onerror=()=>{wrap.innerHTML='<div style="font-size:11px;word-break:break-all;max-width:240px;color:var(--text2)">'+escHtml(url)+'</div>';};
-  img.src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(url)+'&margin=10';
-  wrap.appendChild(img);
+  try{
+    const qr=qrcode(0,'M');qr.addData(url);qr.make();
+    wrap.innerHTML='<img alt="Venmo code" style="width:240px;height:240px;display:block;border-radius:8px;image-rendering:pixelated" src="'+qr.createDataURL(8,4)+'">';
+  }catch(_e){
+    wrap.innerHTML='<div style="font-size:11px;word-break:break-all;max-width:240px;color:var(--text2)">'+escHtml(url)+'</div>';
+  }
 }
 async function _sendPaidInvoice(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1461,6 +1486,12 @@ function _mpayPickMethod(m){
     b.style.color=on?'var(--green)':'var(--text)';
   });
   _mpayMethodChange();
+  // Venmo: the code comes up by itself, no second button to find. The button
+  // stays under the pills to bring it back.
+  if(m==='Venmo'){
+    if(!_venmoUser()){showToast('Add your Venmo username in Settings first.','⚠');return;}
+    document.getElementById('mpay-venmo-qr')?.click();
+  }
 }
 function _mpayMethodChange(){
   const m=document.getElementById('mpay-method')?.value||'';

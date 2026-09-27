@@ -103,31 +103,49 @@ test.describe('Venmo', () => {
     expect(r.sheetGone).toBe(true);
   });
 
-  test('Pay now: picking Venmo shows "Show my Venmo code" only when there is a username, and it opens the code', async ({ page }) => {
-    await page.route('**/api.qrserver.com/**', r => r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
+  // Owner 2026-09-27: "hit record payment for Venmo and it didn't launch
+  // Venmo even with my Venmo username in". Picking Venmo opens the code by
+  // itself now; the button under the pills only brings it back.
+  test('Record payment: picking Venmo opens the code by itself, drawn on the phone, with Text them the link and Open Venmo', async ({ page }) => {
+    let fetched = 0;
+    await page.route('**/api.qrserver.com/**', r => { fetched++; return r.abort(); });
     await boot(page);
     const r = await page.evaluate(() => {
+      const toasts = []; const t = window.showToast; window.showToast = (m) => toasts.push(m);
       S.venmoUser = '';
       openPayPanel(7001234);
       _mpayPickMethod('Venmo');
-      const off = getComputedStyle(document.getElementById('mpay-venmo-qr')).display;
+      const noUser = { ov: !!document.getElementById('_venmo-qr-ov'), btn: getComputedStyle(document.getElementById('mpay-venmo-qr')).display };
       closePayPanel();
       S.venmoUser = 'John-Doe';
       openPayPanel(7001234);
       _mpayPickMethod('Cash');
-      const cash = getComputedStyle(document.getElementById('mpay-venmo-qr')).display;
+      const cash = !!document.getElementById('_venmo-qr-ov');
+      document.getElementById('mpay-amount').value = '500.00';
       _mpayPickMethod('Venmo');
-      const on = getComputedStyle(document.getElementById('mpay-venmo-qr')).display;
-      document.getElementById('mpay-venmo-qr').click();
       const ov = document.getElementById('_venmo-qr-ov');
-      return { off, cash, on, title: ov && ov.querySelector('.zmodal div').textContent, sub: ov && ov.textContent, src: ov && ov.querySelector('img').src };
+      const opened = []; const wo = window.open; window.open = (u) => { opened.push(u); return null; };
+      document.getElementById('_venmo-open').click();
+      window.open = wo; window.showToast = t;
+      const out = { noUser, toasts, cash, open: !!ov, title: ov.querySelector('.zmodal div').textContent, sub: ov.textContent,
+        src: ov.querySelector('img').src.slice(0, 21), sms: document.getElementById('_venmo-text').dataset.href, opened,
+        btn: getComputedStyle(document.getElementById('mpay-venmo-qr')).display };
+      document.getElementById('_venmo-done').click();
+      out.closed = !document.getElementById('_venmo-qr-ov');
+      return out;
     });
-    expect(r.off).toBe('none');
-    expect(r.cash).toBe('none');
-    expect(r.on).toBe('block');
-    expect(r.title).toBe('Pay $1,250.50 with Venmo');
+    expect(r.noUser).toEqual({ ov: false, btn: 'none' });
+    expect(r.toasts).toEqual(['Add your Venmo username in Settings first.']);
+    expect(r.cash).toBe(false);
+    expect(r.open, 'the code comes up the moment Venmo is picked').toBe(true);
+    expect(r.title, 'the amount being collected, not the whole balance').toBe('Pay $500.00 with Venmo');
     expect(r.sub).toContain('paying @John-Doe');
-    expect(decodeURIComponent(r.src)).toContain('https://venmo.com/John-Doe?txn=pay&amount=1250.50');
+    expect(r.src, 'drawn on the phone, works with no signal').toBe('data:image/gif;base64');
+    expect(fetched).toBe(0);
+    expect(decodeURIComponent(r.sms)).toBe('sms:5555550101?body=Hi John, here is the Venmo link for $500.00: https://venmo.com/John-Doe?txn=pay&amount=500.00&note=Invoice from Sample Plumbing #1234');
+    expect(r.opened).toEqual(['https://venmo.com/']);
+    expect(r.btn, 'the button stays to bring the code back').toBe('block');
+    expect(r.closed).toBe(true);
   });
 
   test('the code with no username refuses with a toast, not an empty code', async ({ page }) => {
@@ -138,7 +156,7 @@ test.describe('Venmo', () => {
       return { toasts, ov: !!document.getElementById('_venmo-qr-ov') };
     });
     expect(r.ov).toBe(false);
-    expect(r.toasts).toEqual(['Add your Venmo in Settings first.']);
+    expect(r.toasts).toEqual(['Add your Venmo username in Settings first.']);
   });
 
   test('setup checklist: "Add your Venmo" shows, can be skipped, drops off once a username is saved, and Add lands on the box', async ({ page }) => {
