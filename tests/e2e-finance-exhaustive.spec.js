@@ -1263,7 +1263,7 @@ test.describe('finance.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.gone).toBe(true);
-      expect(r.dateVal).toBe('06/15/2025');
+      expect(r.dateVal).toBe('2025-06-15'); // em-date is a native date input now, which holds ISO
     });
 
     test('no button, clears em-date and removes widget', async () => {
@@ -1271,7 +1271,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
         try {
-          document.getElementById('em-date').value = '06/15/2025';
+          document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
           _confirmReceiptDate('2025-06-15', statusEl);
           document.getElementById('rcpt-no-btn')?.click();
           return { ok: true, gone: !document.getElementById('rcpt-date-confirm'), dateVal: document.getElementById('em-date')?.value };
@@ -1427,7 +1427,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = '';
         document.getElementById('em-amount').value = '50';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, errText: document.getElementById('exp-save-err')?.textContent, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1442,7 +1442,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, errText: document.getElementById('exp-save-err')?.textContent, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1457,7 +1457,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '0';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, added: expenses.length - before, errText: document.getElementById('exp-save-err')?.textContent }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1471,7 +1471,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '-10';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1485,7 +1485,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Denny\'s';
         document.getElementById('em-amount').value = '45';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         document.getElementById('em-cat').value = 'meals';
         document.getElementById('em-meal-purpose').value = '';
         const before = expenses.length;
@@ -1502,7 +1502,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Sherwin-Williams';
         document.getElementById('em-amount').value = '125.50';
-        document.getElementById('em-date').value = '06/15/2025';
+        document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
         // Use first category in list
         document.getElementById('em-cat').selectedIndex = 0;
         const before = expenses.length;
@@ -1534,7 +1534,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'TestVendor';
         document.getElementById('em-amount').value = '10';
-        document.getElementById('em-date').value = '06/15/2025';
+        document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
         try { await expSave(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
         finally { localStorage.removeItem('zp3_data'); }

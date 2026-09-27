@@ -754,10 +754,33 @@ function tdOpenCapture(opts){
   _pcPaint();
   return el;
 }
+// Shots still being encoded or saved. Done can land while the last one is
+// between the shutter and photos[] (the JPEG encode plus the outbox write is
+// most of a second on a phone), and the review used to be opened from the
+// list as it stood that instant: five fast shots, Done, a review of four and
+// the fifth left unfiled with nobody told (Earl audit 2026-09-27). Every
+// commit registers here and Done waits for the set to drain first.
+const _pcInflight=new Set();
+function _pcTrack(pr){
+  _pcInflight.add(pr);
+  const off=()=>_pcInflight.delete(pr);
+  pr.then(off,off);
+  return pr;
+}
 function tdCloseCapture(){
   _pcStopStream();
   const el=document.getElementById('pc-sheet');
   if(el)el.remove();
+  // Nothing in flight: finish now, exactly as before. Something in flight:
+  // the sheet is already gone, the summary waits for the last save.
+  if(!_pcInflight.size){_pcFinishCapture();return;}
+  const ctx=_pcCtx;
+  return Promise.all([..._pcInflight].map(pr=>pr.catch(()=>null))).then(()=>{
+    // A new shoot opened while this one drained owns the globals now.
+    if(_pcCtx===ctx)_pcFinishCapture();
+  });
+}
+function _pcFinishCapture(){
   const done=_pcCtx&&_pcCtx.onDone,n=_pcShots;
   const unfiled=!!(_pcCtx&&_pcCtx.clientId==null&&_pcCtx.jobId==null&&_pcCtx.bidId==null);
   const ids=_pcSessionIds.slice();
@@ -2107,12 +2130,24 @@ function _pcAttAway(c){
   const rows=(_pcAtt.ids||[]).map(id=>photos.find(x=>String(x.id)===String(id))).filter(Boolean);
   const fix=rows.map(r=>({lat:r.lat,lon:r.lon})).find(f=>f.lat!=null&&f.lon!=null);
   if(!fix)return false;
+  // "Away" has to be TRUE, not a rounding error (Earl audit 2026-09-27: one
+  // house on file, standing in its kitchen, still asked "Which property?").
+  // A fix inside a house is often 50 to 100m out, so the phone's own stated
+  // accuracy is slack on top of the near radius, never counted against him.
+  const rows0=rows.find(r=>r.lat!=null&&r.lon!=null);
+  const slack=Math.min(500,Math.max(0,Number(rows0&&rows0.accM)||0));
   const places=_pcClientPlaces(c);
-  if(places.length)return !places.some(pl=>_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon)<=_PC_NEAR_M);
+  if(places.length)return !places.some(pl=>_pcMeters(fix.lat,fix.lon,pl.lat,pl.lon)<=_PC_NEAR_M+slack);
   if(!_pcAtt.guess||typeof siteNoteKey!=='function')return false;
-  const here=siteNoteKey(_pcAtt.guess);
+  // No pins: the STREET decides, not the house number. Apple naming the
+  // neighbour's number (GPS drift next door) is still the same street, and
+  // "St" against "Street" is the same street too.
+  const street=a=>siteNoteKey(a).replace(/^\d+[a-z]?\s+/,'')
+    .replace(/\b(street|st\.?)$/,'st').replace(/\b(avenue|ave\.?)$/,'ave').replace(/\b(drive|dr\.?)$/,'dr')
+    .replace(/\b(road|rd\.?)$/,'rd').replace(/\b(lane|ln\.?)$/,'ln').replace(/\b(court|ct\.?)$/,'ct');
+  const here=street(_pcAtt.guess);
   const theirs=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
-  return !theirs.some(a=>a&&a.addr&&siteNoteKey(a.addr)===here);
+  return !theirs.some(a=>a&&a.addr&&street(a.addr)===here);
 }
 // Who the county says owns the house the photos were taken at. Asked once,
 // after the street is known, through the one door to the county
@@ -2433,15 +2468,21 @@ function _pcSubjectLabel(){
 // (3024x4032) and a full-bleed cover crop showed a picture wider than the one
 // it saved. The stage is three words, the way Photo and Video are, not three
 // filled buttons. Everything that is not the shutter floats on glass.
+// Plain words on the camera's two toggles (Earl audit 2026-09-27): "Stamp"
+// and "Ghost" named how it works, not what he gets. The stamp is the date,
+// time and place burned into the photo; the ghost is the Before shot laid
+// over the viewfinder so the After lines up with it.
+function _pcStampWord(on){return on?'Date on photo':'No date on photo';}
+function _pcGhostWord(on){return on?'Hide Before':'Show Before';}
 function _pcSheetHTML(){
   const t=_pcCtx?_pcCtx.type:'before';
   const seg=(v,label)=>'<button type="button" class="pc-seg-btn'+(t===v?' on':'')+'" onclick="tdCaptureSetType(\''+v+'\')">'+label+'</button>';
   return ''+
   '<div class="pc-cam-top">'+
     '<button type="button" class="pc-stamp-toggle pc-glass" id="pc-stamp-toggle" onclick="tdTogglePhotoStamp()">'+
-      '<span class="dot"></span><span id="pc-stamp-label">Stamp on</span></button>'+
+      '<span class="dot"></span><span id="pc-stamp-label">'+_pcStampWord(true)+'</span></button>'+
     '<div class="pc-cam-top-r">'+
-      '<button type="button" class="pc-ghost-btn pc-glass" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">Ghost on</button>'+
+      '<button type="button" class="pc-ghost-btn pc-glass" id="pc-ghost-btn" onclick="tdCaptureToggleGhost()">'+_pcGhostWord(true)+'</button>'+
       '<button type="button" class="pc-import-btn pc-glass" id="pc-import-btn" onclick="tdImportPhotos()">'+_pcIcon('photos')+'<span>Import</span></button>'+
     '</div>'+
   '</div>'+
@@ -2598,7 +2639,7 @@ function _pcPaint(){
   if(g){g.style.backgroundImage=showGhost?'url("'+gsrc+'")':'';g.style.display=showGhost?'block':'none';}
   if(gf)gf.style.display=showGhost?'block':'none';
   const gb=document.getElementById('pc-ghost-btn');
-  if(gb){gb.style.visibility=gsrc?'visible':'hidden';gb.textContent=_pcCtx.ghost?'Ghost on':'Ghost off';}
+  if(gb){gb.style.visibility=gsrc?'visible':'hidden';gb.textContent=_pcGhostWord(_pcCtx.ghost);}
   const hint=document.getElementById('pc-hint');
   if(hint){
     if(showGhost){hint.className='pc-hint gold';hint.textContent='Line up with the Before shot';}
@@ -2607,7 +2648,7 @@ function _pcPaint(){
   }
   _pcPaintNear();
   const st=document.getElementById('pc-stamp-toggle'),stl=document.getElementById('pc-stamp-label');
-  if(st&&stl){const on=_pcStampOn();st.className='pc-stamp-toggle pc-glass'+(on?'':' off');stl.textContent=on?'Stamp on':'Stamp off';}
+  if(st&&stl){const on=_pcStampOn();st.className='pc-stamp-toggle pc-glass'+(on?'':' off');stl.textContent=_pcStampWord(on);}
   _pcPaintStrip();
 }
 // The last shot, the way the Camera app shows it: one thumbnail, with how
@@ -2645,7 +2686,8 @@ function _pcPaintNear(){
 }
 // The shutter. With a live stream it grabs a frame and the sheet stays open,
 // which is the burst behaviour. Without one it opens the native picker.
-async function tdCaptureShoot(){
+function tdCaptureShoot(){return _pcTrack(_pcShootNow());}
+async function _pcShootNow(){
   if(!_pcCtx)return;
   if(!_pcStream){document.getElementById('pc-fallback-file')?.click();return;}
   const v=document.getElementById('pc-video');
@@ -2676,7 +2718,7 @@ function tdCaptureFromPicker(input){
   const f=input&&input.files&&input.files[0];
   input.value='';
   if(!f)return;
-  _pcCommit(f);
+  _pcTrack(_pcCommit(f));
 }
 async function _pcCommit(file){
   if(!_pcCtx)return;

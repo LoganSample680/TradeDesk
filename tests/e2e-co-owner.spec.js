@@ -211,12 +211,14 @@ test.describe('Co-owner', () => {
   test('the Team role picker names it plainly and ticks every box', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(() => {
-      openInviteEmployeeModal();
-      const sel = document.getElementById('_inv-role');
+      // One crew form now (Earl audit 2026-09-27): the old "Add Team Member"
+      // modal was deleted, its role picker was a copy of this one.
+      openAddEmployeeModal();
+      const sel = document.getElementById('emp-role');
       const label = [...sel.options].find(o => o.value === 'owner').textContent;
       _setEmpRolePreset('owner');
       const all = Object.keys(_EMP_PERM_LABELS).every(p => document.getElementById('_perm-' + p).checked);
-      document.getElementById('_emp-invite-ov')?.remove();
+      document.getElementById('emp-modal-overlay')?.remove();
       return { label, all };
     });
     expect(r.label).toBe('Owner (sees and runs everything)');
