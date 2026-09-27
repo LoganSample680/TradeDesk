@@ -2,6 +2,7 @@
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getServiceRoleKey, resolveStripeMode, stripeSecretKey, stripePublishableKey } from '../_shared/keys.ts';
+import { appOrigin, hubKey, isUuid, parseProposalKey } from '../_shared/links.ts';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -27,14 +28,16 @@ Deno.serve(async (req) => {
     const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const body = await req.json();
     const {
-      amount, currency, paymentMethod, paymentType,
+      amount, paymentMethod, paymentType,
       surchargeAmount: _ignoredSurcharge,
-      proposalKey, clientName, clientEmail, businessName,
-      bidId, contractorUserId, notifyEmail,
-      signatureDataUrl, signerName,
-      successUrl, cancelUrl,
+      proposalKey, clientEmail,
+      bidId: _bidIdAsked,
+      signatureDataUrl, signerName, buyerSenior,
+      hubU, hubC, hubT,
       embedded,
     } = body;
+    const bad = (error: string, status = 400, code?: string) =>
+      new Response(JSON.stringify(code ? { error, code } : { error }), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
     // TradeDesk never adds a fee to what the client pays (owner rule 2026-08-15:
     // "we can't allow passing fees to the person until stripe natively does it").
@@ -49,44 +52,92 @@ Deno.serve(async (req) => {
 
     // Validate signatureDataUrl to prevent arbitrary blob storage
     if (signatureDataUrl) {
-      if (signatureDataUrl.length > 2 * 1024 * 1024) {
-        return new Response(JSON.stringify({ error: 'Signature data too large' }), { status: 400, headers: CORS });
-      }
-      if (!signatureDataUrl.startsWith('data:image/')) {
-        return new Response(JSON.stringify({ error: 'Invalid signature format' }), { status: 400, headers: CORS });
-      }
+      if (signatureDataUrl.length > 2 * 1024 * 1024) return bad('Signature data too large');
+      if (!/^data:image\/(png|jpeg|webp);base64,/.test(signatureDataUrl)) return bad('Invalid signature format');
     }
+    const cents = (v: unknown) => Math.round((Number(v) || 0) * 100);
+    const amt = Math.round(Number(amount) || 0);
+    if (!(amt >= 50)) return bad('Invalid payment amount');
 
-    // Validate amount against stored proposal to prevent $0.01 payment attacks
-    if (proposalKey && amount) {
-      try {
-        const { data: storedBlob } = await supabase.storage.from('proposals').download(proposalKey);
-        if (storedBlob) {
-          const storedProp = JSON.parse(await storedBlob.text());
-          const storedTotal = Math.round((storedProp.total || storedProp.amount || storedProp.contractTotal || 0) * 100);
-          const storedDeposit = Math.round((storedProp.depositAmount || storedProp.deposit || 0) * 100);
-          const validAmounts = [storedTotal, storedDeposit].filter(v => v > 50);
-          if (validAmounts.length > 0) {
-            const requested = amount + (surchargeAmount || 0);
-            const isValid = validAmounts.some(v => Math.abs(requested - v) <= Math.max(v * 0.015, 100));
-            if (!isValid) {
-              console.warn('Amount mismatch', { requested, validAmounts });
-              return new Response(JSON.stringify({ error: 'Invalid payment amount' }), { status: 400, headers: CORS });
-            }
-          }
-          // Server-side mirror of the cash-only UI: a proposal SENT without Stripe
-          // Connect never shows a card button, but a direct API call could still
-          // reach here — refuse it, don't let it fall to the platform account.
-          if (storedProp.stripeConnectEnabled === false) {
-            return new Response(JSON.stringify({ error: 'This proposal is cash/check only.', code: 'cash_only_proposal' }), { status: 409, headers: { ...CORS, 'Content-Type': 'application/json' } });
-          }
+    // WHO IS BEING PAID, AND HOW MUCH, COMES FROM THE SERVER (20261049).
+    // A payment must name the proposal it pays (the secret proposal link) or,
+    // from the client hub, the hub link plus the bid. Nothing else is accepted:
+    // the old code skipped every check when proposalKey was left out, and took
+    // the contractor, bid and client names from the request, so a stranger could
+    // point a $0.50 charge at anybody's bid and the webhook would stamp it paid.
+    const pk = parseProposalKey(proposalKey);
+    const hk = pk ? null : hubKey(hubU, hubC, hubT);
+    let stored: any = null;
+    let contractorUserId = '', bidId = '', clientName = '', businessName = '', notifyEmail = '';
+    let epaRequired = false;
+    if (pk) {
+      const { data: blob } = await supabase.storage.from('proposals').download(pk.key);
+      try { stored = blob ? JSON.parse(await blob.text()) : null; } catch { stored = null; }
+      if (!stored || String(stored.id) !== pk.bid) return bad('This payment link is not valid.', 401);
+      if (stored.status === 'voided' || stored.status === 'declined') return bad('This proposal can no longer be paid.', 409);
+      // Server-side mirror of the cash-only UI: a proposal SENT without Stripe
+      // Connect never shows a card button, but a direct API call could still
+      // reach here, so refuse it rather than let it fall to the platform account.
+      if (stored.stripeConnectEnabled === false) return bad('This proposal is cash/check only.', 409, 'cash_only_proposal');
+      contractorUserId = String(stored.contractorUserId || '');
+      bidId = pk.bid;
+      clientName = String(stored.clientName || '');
+      businessName = String(stored.businessName || '');
+      notifyEmail = String(stored.notifyEmail || '');
+      epaRequired = !!stored.epaRequired;
+
+      // Amounts this proposal can be paid in: the total, the deposit, the
+      // portfolio-discount price and its deposit, the balance after the
+      // deposit, and each total a SIGNED change order moved it to.
+      const total = cents(stored.total || stored.amount || stored.contractTotal);
+      const dep = cents(stored.depositAmount || stored.deposit);
+      const disc = cents(stored.discountedPrice);
+      const allowed = [total, dep, disc, total - dep];
+      if (disc && total && dep) allowed.push(Math.round(disc * dep / total));
+      const { data: sp } = await supabase.from('signed_proposals')
+        .select('amount,deposit,change_orders').eq('bid_id', bidId).maybeSingle();
+      if (sp) {
+        allowed.push(cents(sp.amount), cents(sp.amount) - cents(sp.deposit));
+        for (const co of (Array.isArray(sp.change_orders) ? sp.change_orders : [])) {
+          if (co && co.signedAt && co.newAmount != null) allowed.push(cents(co.newAmount), cents(co.newAmount) - dep);
         }
-      } catch (e) { console.warn('Amount validation skipped:', e); }
+      }
+      const valid = allowed.filter((v) => v > 50);
+      if (!valid.length || !valid.some((v) => Math.abs(amt - v) <= Math.max(v * 0.015, 100))) {
+        console.warn('Amount mismatch', { requested: amt, valid });
+        return bad('Invalid payment amount');
+      }
+    } else if (hk) {
+      const { data: blob } = await supabase.storage.from('proposals').download(hk.key);
+      let hub: any = null;
+      try { hub = blob ? JSON.parse(await blob.text()) : null; } catch { hub = null; }
+      const bid = hub && Array.isArray(hub.bids) ? hub.bids.find((b: any) => String(b.id) === String(_bidIdAsked)) : null;
+      if (!bid) return bad('This payment link is not valid.', 401);
+      contractorUserId = String(hub.contractorUserId || hk.uid);
+      bidId = String(bid.id);
+      clientName = String(hub.clientName || '');
+      businessName = String(hub.contractorName || '');
+      notifyEmail = String(hub.notifyEmail || '');
+      // A hub payment is at most what the hub says is owed on that bid.
+      const cap = Math.max(cents(bid.balance), 0);
+      if (!(cap >= 50) || amt > cap + Math.max(cap * 0.015, 100)) {
+        console.warn('Hub amount over balance', { requested: amt, cap });
+        return bad('Invalid payment amount');
+      }
+    } else {
+      return bad('This payment link is missing its proposal. Ask your contractor for a new link.');
     }
+    if (!isUuid(contractorUserId)) return bad('This payment link is not valid.', 401);
+
+    // Where Stripe sends the client afterwards: only back to TradeDesk.
+    const origin = appOrigin(req.headers.get('origin') || body.successUrl || '');
+    const safeUrl = (u: unknown) => { try { const x = new URL(String(u || '')); return x.origin === origin ? x.toString() : origin + '/'; } catch { return origin + '/'; } };
+    const successUrl = safeUrl(body.successUrl);
+    const cancelUrl = safeUrl(body.cancelUrl);
 
     // Look up contractor's connected Stripe account (if any)
     let stripeAccountId: string | null = null;
-    if (contractorUserId) {
+    {
       const { data: userRow } = await supabase
         .from('users')
         .select('account_id')
@@ -106,29 +157,33 @@ Deno.serve(async (req) => {
       }
     }
 
-    // HARD WALL — client money must NEVER settle on the TradeDesk platform account
-    // for someone else's work. If a contractor id was given but no ENABLED connected
-    // account resolves (disconnected after sending the link, onboarding incomplete,
-    // account revoked), REFUSE the payment instead of silently absorbing it into the
+    // HARD WALL: client money must NEVER settle on the TradeDesk platform account
+    // for someone else's work. If no ENABLED connected account resolves
+    // (disconnected after sending the link, onboarding incomplete, account
+    // revoked), REFUSE the payment instead of silently absorbing it into the
     // platform balance. The ONLY exception: uids explicitly listed in the
-    // PLATFORM_DIRECT_USER_IDS env var (comma-separated) — TradeDesk acting as its
+    // PLATFORM_DIRECT_USER_IDS env var (comma-separated), TradeDesk acting as its
     // own contractor, where the platform's dollars are the contractor's dollars.
-    if (contractorUserId && !stripeAccountId) {
+    if (!stripeAccountId) {
       const allowDirect = (Deno.env.get('PLATFORM_DIRECT_USER_IDS') || '')
         .split(',').map((s) => s.trim()).filter(Boolean);
       if (!allowDirect.includes(String(contractorUserId))) {
         console.warn('Refused platform-fallback charge', { contractorUserId });
         return new Response(
-          JSON.stringify({ error: 'Card payments are unavailable for this contractor right now — please pay by cash or check, or contact your contractor.', code: 'no_connected_account' }),
+          JSON.stringify({ error: 'Card payments are unavailable for this contractor right now. Please pay by cash or check, or contact your contractor.', code: 'no_connected_account' }),
           { status: 409, headers: { ...CORS, 'Content-Type': 'application/json' } }
         );
       }
     }
 
     const metadata = {
-      proposalKey, bidId, contractorUserId,
-      notifyEmail, signerName, clientName, businessName,
+      proposalKey: pk ? pk.key : '', bidId, contractorUserId,
+      notifyEmail, signerName: String(signerName || '').replace(/[<>]/g, '').slice(0, 120),
+      clientName, businessName,
       paymentMethod: paymentMethod || 'card',
+      // Carried to stripe-webhook so the paid row keeps the EPA acknowledgement
+      // and the California 65+ flag the cash path writes (proposal-sign).
+      epa: epaRequired ? '1' : '', senior: buyerSenior ? '1' : '',
     };
 
     // statement_descriptor → client's card statement (max 22 chars)
@@ -142,7 +197,8 @@ Deno.serve(async (req) => {
 
     // Signature save helper
     async function saveSignature() {
-      if (!signatureDataUrl || !proposalKey) return;
+      if (!signatureDataUrl || !pk) return;
+      const proposalKey = pk.key;
       try {
         const { data: existing } = await supabase.storage.from('proposals').download(proposalKey);
         if (existing) {
@@ -196,10 +252,10 @@ Deno.serve(async (req) => {
           console.warn('wallet domain registration skipped:', (e as Error).message);
         }
       }
-      const totalAmt = amount + (surchargeAmount || 0);
+      const totalAmt = amt + (surchargeAmount || 0);
       const piParams: Stripe.PaymentIntentCreateParams = {
         amount: totalAmt,
-        currency: currency || 'usd',
+        currency: 'usd',
         automatic_payment_methods: { enabled: true, allow_redirects: 'always' },
         metadata,
         statement_descriptor_suffix: statementDescriptor,
@@ -232,12 +288,12 @@ Deno.serve(async (req) => {
     // Non-embedded: hosted Checkout Session
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
       price_data: {
-        currency: currency || 'usd',
+        currency: 'usd',
         product_data: {
           name: `${businessName} — Payment`,
           description: `Payment for ${clientName}`,
         },
-        unit_amount: amount,
+        unit_amount: amt,
       },
       quantity: 1,
     }];

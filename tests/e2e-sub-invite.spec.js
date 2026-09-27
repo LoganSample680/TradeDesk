@@ -502,7 +502,7 @@ test.describe('sub referral invite, exhaustive coverage', () => {
     expect(result.fallbackId).toBe(4242); // bare call still name-matches
   });
 
-  test('hostile GC strings land ESCAPED: toast shows the payload as text, no element injection (showToast uses innerHTML)', async () => {
+  test('hostile GC strings land ESCAPED: toast shows the payload as text, no element injection (showToast renders text)', async () => {
     const result = await page.evaluate(async () => {
       const savedJ = jobs.slice(), savedC = clients.slice();
       const savedFrom = _supa.from, savedEnabled = window.supaEnabled, savedUser = _supaUser;

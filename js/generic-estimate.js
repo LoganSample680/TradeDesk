@@ -534,8 +534,8 @@ function _tmHomeBlock(addr,commercial){
 // customer at the same address, carrying any scope already written; Cancel
 // leaves him where he came from (onNo), never inside a T&M.
 function _tmHomeStop(blk,c,addr,steps,onNo){
-  zConfirm(escHtml(blk.name)+' law does not allow a time and materials contract on a home. '+
-    'Build this one as a fixed price instead.'+(blk.statute?' ('+escHtml(blk.statute)+')':''),
+  zConfirm((blk.name)+' law does not allow a time and materials contract on a home. '+
+    'Build this one as a fixed price instead.'+(blk.statute?' ('+(blk.statute)+')':''),
     ()=>{
       if(!c)return;
       const lines=(steps||[]).filter(Boolean);
@@ -6772,7 +6772,7 @@ function _pbLearn(desc,rate,unit,notes){
       const _keep=was;
       if(typeof zConfirm==='function'){
         setTimeout(()=>zConfirm(
-          'You charged '+(typeof fmt==='function'?fmt(r):'$'+r)+' for "'+escHtml(hit.desc)+'" this time. It was '+(typeof fmt==='function'?fmt(_keep):'$'+_keep)+'.',
+          'You charged '+(typeof fmt==='function'?fmt(r):'$'+r)+' for "'+(hit.desc)+'" this time. It was '+(typeof fmt==='function'?fmt(_keep):'$'+_keep)+'.',
           ()=>{hit.rate=r;if(typeof _settingsChanged==='function')_settingsChanged();},
           {title:'Is that your price now?',yes:'Yes, update it',no:'Just this job'}),0);
       }else{hit.rate=r;}

@@ -35,6 +35,10 @@ test.describe('the proposal closes: Hetty and Barry', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The first cloud load replaces clients/jobs/bids with the cloud's rows
+    // (supaLoadFromCloud). It lands ~5s after boot on Chromium and ~10s on
+    // WebKit, so a fixture seeded before it is wiped mid-file. Seed after it.
+    await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, null, { timeout: 20000 });
   });
   test.afterAll(async () => { await ctx.close(); });
 

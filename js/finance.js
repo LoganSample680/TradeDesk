@@ -1104,7 +1104,7 @@ async function expSave(){
   // and silently does nothing if location was never granted.
   if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
-  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
+  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   // Back where he was (Earl audit 2026-09-27): a receipt saved from a job or
   // the Home screen used to throw him into Books. Books itself still lands on
   // its Expenses tab.
@@ -1580,7 +1580,7 @@ function saveQuickExpense(clientId){
   saveAll();
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
-  showToast(vendor+', '+fmt(amount)+' logged '+svgIcon('✓'),'💰');
+  showToast(vendor+', '+fmt(amount)+' logged','💰');
   // He stays where he was: logging a cost from a job or a client is a side
   // trip, not a reason to be dropped on Home (Earl audit 2026-09-27).
   _expRefreshWhereHeIs();
@@ -2874,7 +2874,7 @@ function exportTaxPDF(){
   // Income table
   h+='<div class="sec"><div class="sec-t">Income: '+yrIncome.length+' transactions</div>';
   h+='<table><thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
-  yrIncome.forEach(r=>{h+='<tr><td>'+(r.date||'')+'</td><td>'+(r.client_name||'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.method||'')+'</td><td style="text-align:right;font-weight:700">'+fmt(r.amount)+'</td></tr>';});
+  yrIncome.forEach(r=>{h+='<tr><td>'+(r.date||'')+'</td><td>'+escHtml(r.client_name||'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.method||'')+'</td><td style="text-align:right;font-weight:700">'+fmt(r.amount)+'</td></tr>';});
   h+='<tr class="tr"><td colspan="4">Total Income</td><td style="text-align:right">'+fmt(tInc)+'</td></tr></tbody></table></div>';
   // Expenses by category
   h+='<div class="sec"><div class="sec-t">Expenses by IRS Category</div>';
@@ -3076,7 +3076,7 @@ function renderJobsHistory(){
       const isPaidFull=balance<=0.01;
       return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'proposal')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.client_name||b.name||'Unknown')+'</div>'+
+          '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(b.client_name||b.name||'Unknown')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+fmtDateShort(b.bid_date)+(b.addr?' · '+b.addr:'')+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+(b.days||1)+' day'+((b.days||1)>1?'s':'')+(b.scope?getTopScope(b.scope):'')+'</div>'+
         '</div>'+
@@ -3603,8 +3603,8 @@ function openBidHistoryDetail(bidId){
   content.innerHTML=
     '<div style="background:var(--blue-lt);border-radius:var(--rl);padding:14px 16px;margin-bottom:14px">'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--blue-dk);margin-bottom:4px">Completed job</div>'+
-      '<div style="font-size:20px;font-weight:800">'+(b.client_name||b.name)+'</div>'+
-      (b.addr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+b.addr+'</div>':'')+
+      '<div style="font-size:20px;font-weight:800">'+escHtml(b.client_name||b.name||'')+'</div>'+
+      (b.addr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+escHtml(b.addr)+'</div>':'')+
       '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+fmtDateShort(b.bid_date)+' · '+(b.days||1)+' day'+((b.days||1)>1?'s':'')+'</div>'+
     '</div>'+
 
@@ -3649,7 +3649,7 @@ function openBidHistoryDetail(bidId){
     (b.notes?
       '<div class="card" style="margin-bottom:10px">'+
         '<div class="card-hd">Notes</div>'+
-        '<div style="font-size:12px;color:var(--text2);line-height:1.6">'+b.notes+'</div>'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.6">'+escHtml(b.notes)+'</div>'+
       '</div>':'')+
 
     '<button class="btn btn-full" onclick="closeBidHistoryDetail()" style="margin-top:4px">Close</button>';
@@ -3670,7 +3670,7 @@ function renderJobSummary(){
     const net=rev-exp;
     grandRev+=rev;grandExp+=exp;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-      '<div><div style="font-size:13px;font-weight:700">'+(b.client_name||b.name)+'</div>'+
+      '<div><div style="font-size:13px;font-weight:700">'+escHtml(b.client_name||b.name||'')+'</div>'+
       '<div class="meta-xs">'+(b.addr||'')+(exp>0?' · '+fmt(exp)+' expenses':'')+' '+(miles>0?' · '+miles.toFixed(1)+'mi':'')+'</div></div>'+
       '<div style="text-align:right">'+
         '<div style="font-size:13px;font-weight:700;color:'+(net>0?'var(--green-mid)':'#A32D2D')+'">'+fmt(net)+'</div>'+
@@ -3929,7 +3929,7 @@ function renderIncome(){
     // data-label drives the mobile card layout (CSS turns each row into a stacked
     // card on ≤767px, no horizontal scroll). Desktop still renders a real table.
     return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="bold" data-label="Client">'+(r.client_name||'-')+'</td>'+
+      '<td class="bold" data-label="Client">'+escHtml(r.client_name||'-')+'</td>'+
       '<td class="'+(r.amount<0?'red':'green')+'" data-label="Amount">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
       '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
       '<td class="mute" data-label="Type">'+r.type+'</td>'+
@@ -4415,7 +4415,7 @@ function openCollectModal(){
       return '<div style="padding:12px;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">'+
           '<div>'+
-            '<div style="font-size:14px;font-weight:700">'+c.name+' '+urgTag+'</div>'+
+            '<div style="font-size:14px;font-weight:700">'+escHtml(c.name||'')+' '+urgTag+'</div>'+
             '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+fmt(balance)+' owed'+(paid>0.01?' · '+fmt(paid)+' paid':'')+'</div>'+
           '</div>'+
           '<div style="font-size:18px;font-weight:800;color:#A32D2D">'+fmt(balance)+'</div>'+

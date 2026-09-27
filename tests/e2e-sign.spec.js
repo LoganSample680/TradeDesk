@@ -1913,20 +1913,19 @@ test.describe('sign.html: decline reason picker', () => {
       { waitUntil: 'domcontentloaded', timeout: 20000 }
     );
     await page.waitForTimeout(2000);
-    // _supa.from(...).upsert(...) runs entirely through the in-memory shim (no real
-    // HTTP request to intercept), spy on _supa.from directly instead, same pattern
-    // used elsewhere in this file for the mocked Supabase client.
+    // Since 20261049 the decline goes through the proposal-sign edge function
+    // (signed_proposals is closed to anon), so spy on functions.invoke: it runs
+    // entirely through the in-memory shim, no HTTP request to intercept.
     await page.evaluate(() => {
-      window.__declineUpserts = [];
-      const origFrom = _supa.from.bind(_supa);
-      _supa.from = function(table) {
-        const q = origFrom(table);
-        if (table === 'signed_proposals') {
-          const origUpsert = q.upsert.bind(q);
-          q.upsert = function(row, opts) { window.__declineUpserts.push(row); return origUpsert(row, opts); };
-        }
-        return q;
+      window.__declineCalls = [];
+      window.__tableWrites = [];
+      const origInvoke = _supa.functions.invoke.bind(_supa.functions);
+      _supa.functions.invoke = function(name, opts) {
+        if (name === 'proposal-sign') window.__declineCalls.push(opts && opts.body);
+        return origInvoke(name, opts);
       };
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = function(table) { window.__tableWrites.push(table); return origFrom(table); };
     });
   });
 
@@ -1944,15 +1943,17 @@ test.describe('sign.html: decline reason picker', () => {
     await expect(page.locator('#decline-other-wrap')).toBeVisible();
   });
 
-  test('picking a reason and declining sends decline_reason on the signed_proposals upsert', async () => {
+  test('picking a reason and declining sends the reason to proposal-sign, never to the table', async () => {
     await page.evaluate(() => declineBid());
     await page.locator('.decline-reason-opt[data-reason="Found another contractor"]').click();
     await page.click('#decline-confirm-btn');
     await page.waitForTimeout(500);
-    const rows = await page.evaluate(() => window.__declineUpserts);
-    expect(rows.length, 'no signed_proposals upsert was captured').toBe(1);
-    expect(rows[0].decline_reason).toBe('Found another contractor');
-    expect(rows[0].payment_status).toBe('declined');
+    const r = await page.evaluate(() => ({ calls: window.__declineCalls, tables: window.__tableWrites }));
+    expect(r.calls.length, 'no proposal-sign call was captured').toBe(1);
+    expect(r.calls[0].action).toBe('decline');
+    expect(r.calls[0].reason).toBe('Found another contractor');
+    expect(r.calls[0].key).toBe(`proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    expect(r.tables, 'the page no longer touches signed_proposals directly').not.toContain('signed_proposals');
   });
 
   test('declining with no reason picked still succeeds, reason is never a blocker', async () => {
@@ -1969,9 +1970,9 @@ test.describe('sign.html: decline reason picker', () => {
     await page.fill('#decline-other-text', 'Budget got cut this quarter');
     await page.click('#decline-confirm-btn');
     await page.waitForTimeout(500);
-    const rows = await page.evaluate(() => window.__declineUpserts);
+    const rows = await page.evaluate(() => window.__declineCalls);
     expect(rows.length).toBe(1);
-    expect(rows[0].decline_reason).toBe('Other: Budget got cut this quarter');
+    expect(rows[0].reason).toBe('Other: Budget got cut this quarter');
   });
 
   test('no console errors from the decline reason picker', async () => {

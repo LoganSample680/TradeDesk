@@ -519,19 +519,25 @@ test.describe('sign.html: signature saved on sign, payment screen fits a 375 pho
   });
 
   test('signing and reaching payment saves the signature right away, before any payment choice', async () => {
+    // Since the security lockdown (20261049) the page never writes
+    // signed_proposals itself: every signature goes through the proposal-sign
+    // function. Watch that function's calls, and watch the table so a direct
+    // write sneaking back in fails here too.
     await page.evaluate(async () => {
       if (getComputedStyle(document.getElementById('sig-name')).display === 'none' || !document.getElementById('sig-name').offsetParent) {
         approveAndSign(); if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
       }
       await _whenSupaReady();
-      window.__ups = [];
+      window.__signs = []; window.__direct = [];
+      const oi = _supa.functions.invoke.bind(_supa.functions);
+      _supa.functions.invoke = (name, opts) => {
+        if (name === 'proposal-sign') { window.__signs.push(opts && opts.body); return Promise.resolve({ data: { ok: true }, error: null }); }
+        return oi(name, opts);
+      };
       const of = _supa.from.bind(_supa);
       _supa.from = (t) => {
         const q = of(t);
-        if (t === 'signed_proposals') {
-          const ou = q.upsert;
-          q.upsert = (row, o) => { window.__ups.push(row); return ou ? ou.call(q, row, o) : Promise.resolve({ data: null, error: null }); };
-        }
+        if (t === 'signed_proposals') ['upsert', 'insert', 'update'].forEach(m => { const o = q[m]; q[m] = (...a) => { window.__direct.push(m); return o ? o.apply(q, a) : q; }; });
         return q;
       };
     });
@@ -539,15 +545,16 @@ test.describe('sign.html: signature saved on sign, payment screen fits a 375 pho
     await page.waitForTimeout(150);
     await page.evaluate(() => goToPayment());
     await page.waitForTimeout(300);
-    const r = await page.evaluate(() => (window.__ups || []).map(u => ({ bid: u.bid_id, name: u.client_signed_name, method: u.payment_method, status: u.payment_status, signed: !!u.signed_at })));
+    const r = await page.evaluate(() => (window.__signs || []).map(b => ({ action: b.action, name: b.signerName, method: b.method, key: !!b.key })));
     expect(r.length).toBe(1);
-    expect(r[0]).toEqual({ bid: String(FAKE_BID_ID_1), name: 'Alice Smith', method: 'later', status: 'pending_later', signed: true });
-    // Picking a method afterward writes over the same row with that method.
+    expect(r[0]).toEqual({ action: 'sign', name: 'Alice Smith', method: 'later', key: true });
+    // Picking a method afterward sends that method on the same link.
     await page.evaluate(() => _paySign('cash'));
     await page.locator('#sec-cash-confirm-btn').click();
     await page.waitForTimeout(300);
-    const after = await page.evaluate(() => window.__ups.map(u => u.payment_method));
-    expect(after).toEqual(['later', 'cash']);
+    const after = await page.evaluate(() => ({ methods: window.__signs.map(b => b.method), direct: window.__direct }));
+    expect(after.methods).toEqual(['later', 'cash']);
+    expect(after.direct, 'the page never writes signed_proposals itself').toEqual([]);
   });
 
   test('the payment screen at 375: no bleed, Pay in Full inside its card, Back is a text link, methods look tappable', async () => {

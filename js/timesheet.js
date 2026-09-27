@@ -275,6 +275,13 @@ async function _tsSubmit(wk){
     try{const pr=await _supa.rpc('timesheet_set_pay',{p_week_start:wk,p_pay_rate:rate});if(!(pr&&pr.error))row.pay_rate=rate;}catch(_e){}
   }
   _tsReviewClose();
+  // THE APPROVE LINK GOES TO THE BOSS, NOT THROUGH ME (20261049, H6). The
+  // token above only VIEWS the week; the one that approves it is emailed by
+  // the server to the business owner's login email and never reaches this
+  // phone. Fire and forget: a failed email leaves the week submitted, and a
+  // resend mints a fresh pair.
+  const _tsNotify=_tsContractor()!==_tsUid();
+  if(_tsNotify){try{_supa.functions.invoke('timesheet-notify',{body:{weekStart:wk}}).catch(()=>{});}catch(_e){}}
   // The text: the same message as always, then the stamp, then what to DO
   // with it (owner 2026-09-05: "would love something that says click below to
   // approve or something"). A bare URL under a wall of hours reads as a
@@ -296,7 +303,11 @@ async function _tsSubmit(wk){
     // in the message so a phone makes the whole tail tappable, which is what
     // the 2026-09-05 shape was for and is not being undone here.
     'This link opens on one phone only, the first one to tap it.\n\n'+
-    'Tap to review and approve:\n'+_tsLink(row.token);
+    // The link in a text is for READING. Approving happens from the email the
+    // server sent the owner, because anybody holding this text (the person
+    // who sent it included) could otherwise approve their own week.
+    (_tsNotify?'The approve button is in the email TradeDesk sent the business owner.\n\n':'')+
+    'Tap to review:\n'+_tsLink(row.token);
   try{if(typeof pwaShare==='function')await pwaShare({title:'Timesheet',text});}catch(_e){}
   try{if(typeof renderTimeLog==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))renderTimeLog({cached:true});}catch(_e){}
   return text;
