@@ -1915,22 +1915,17 @@ function _tmSayExample(){
   const t=(typeof _geiTrade!=='undefined'&&_geiTrade)||(typeof getActiveTrade==='function'?getActiveTrade():'');
   return _TM_SAY_EXAMPLE[t]||'Tear out the old vanity, run new supply lines, set the new one and top, then caulk it and test everything';
 }
-function _tmVoiceBtn(){
-  return (typeof _voiceCapable==='function'&&_voiceCapable())
-    ?'<button type="button" class="ios-btn ios-btn-tint" onclick="_geiScopeTalk()">'+
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
-      '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button>'
-    :'';
-}
-function _tmSayBox(ph){
-  return '<textarea id="gei-scope-say" class="ios-say" rows="3" placeholder="'+escHtml(ph)+'"></textarea>';
+// The scope box is Tim's shared say box (js/tim.js timSayBox); only its words,
+// and what happens when he stops talking, are the estimate's.
+function _geiScopeSayDone(){
+  _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');
 }
 function _tmScopeIosHtml(){
   const cid='tm-scope-wrap';
   const steps=_geiScopeChips||[];
   const btns='<div style="margin-top:14px">'+
       '<button type="button" class="ios-btn ios-btn-fill" onclick="_geiScopeBuild(\''+cid+'\')">Build the steps</button>'+
-      _tmVoiceBtn()+'</div>';
+      timMicBtn('gei-scope-say')+'</div>';
   // THE PAGE'S ONE BUTTON IS AT THE BOTTOM (2026-09-23, "does it look like
   // something a pro UX designer would ship?"). Build the steps is the bar's
   // job while there are none, so the box stands alone here with one line
@@ -1939,15 +1934,10 @@ function _tmScopeIosHtml(){
   // under them says what Tim does with it, because that is the part nobody
   // expects: it comes back in order, with what was left out.
   if(!steps.length){
-    const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
-    return '<div class="ios-sec">'+
-      '<div class="ios-group">'+_tmSayBox(_tmSayExample())+'</div>'+
-      (voice?'<div style="margin-top:12px">'+_tmVoiceBtn()+'</div>':'')+
-      '<div class="ios-foot">'+(voice
-        ?'Type it or talk it, the way you would tell your crew. Tim puts it in order and finds what you left out.'
-        :'Type it, or tap the mic on your keyboard and talk. Tim puts it in order and finds what you left out.')+'</div>'+
-      '<div class="ios-links left"><button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button></div>'+
-    '</div>';
+    return timSayBox({id:'gei-scope-say',done:'_geiScopeSayDone',placeholder:_tmSayExample(),
+      foot:{voice:'Type it or talk it, the way you would tell your crew. Tim puts it in order and finds what you left out.',
+        typed:'Type it, or tap the mic on your keyboard and talk. Tim puts it in order and finds what you left out.'},
+      links:'<button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button>'});
   }
   const ed=_tmScopeEditing;
   const rows=steps.map((l,i)=>
@@ -1961,7 +1951,7 @@ function _tmScopeIosHtml(){
   const reorder=(steps.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder())
     ?'<button type="button" class="ios-row ios-link" onclick="_geiPutScopeInOrder()">Put these in work order</button>':'';
   const more=_tmSayMoreOpen
-    ?_tmSayBox('What else? Say it the way you would tell your crew.')
+    ?timSayField('gei-scope-say','What else? Say it the way you would tell your crew.','_geiScopeSayDone')
     :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
   return '<div class="ios-sec">'+
       '<div class="ios-group">'+rows+reorder+more+'</div>'+
@@ -2004,7 +1994,7 @@ function _tmWireSwipe(root){
 }
 function _geiScopeComposerHtml(containerId){
   const mic=(typeof _voiceCapable==='function'&&_voiceCapable())
-    ? '<button type="button" onclick="_geiScopeTalk()" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;'+
+    ? '<button type="button" onclick="_timTalkToggle(\'gei-scope-say\')" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;'+
       'padding:10px 14px;border-radius:var(--r-pill,999px);border:0;background:var(--ink);color:var(--text-cream,#fff);'+
       'font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">'+
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'+
@@ -2015,7 +2005,9 @@ function _geiScopeComposerHtml(containerId){
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">Tell me what you are doing</div>'+
     '<div style="font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:9px">'+
       'The way you would say it to your crew. I will break it into steps and tell you what you left out.</div>'+
-    '<textarea id="gei-scope-say" rows="3" placeholder="'+escHtml(_tmSayExample())+'" '+
+    // Same box id and done hook as Tim's shared say box (js/tim.js), in the
+    // older inline look this panel has always had.
+    '<textarea id="gei-scope-say" rows="3" data-tim-done="_geiScopeSayDone" placeholder="'+escHtml(_tmSayExample())+'" '+
       'style="width:100%;box-sizing:border-box;padding:11px 12px;border:0;border-radius:var(--r-md);background:var(--bg2);'+
       'box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text);line-height:1.5;resize:vertical"></textarea>'+
     '<div style="display:flex;gap:8px;align-items:center;margin-top:9px">'+
@@ -2028,13 +2020,6 @@ function _geiScopeComposerHtml(containerId){
       'padding:2px 0;font-size:12px;color:var(--text3);cursor:pointer;font-family:inherit;text-decoration:underline">'+
       'Or pick from a list</button>'+
   '</div>';
-}
-
-// Tap to start, tap to stop. The owner was explicit that he would never hold a
-// button on a job site, and a scope is thirty seconds of talking, not three.
-function _geiScopeTalk(){
-  if(typeof _timTalkToggle!=='function')return;
-  _timTalkToggle('gei-scope-say');
 }
 
 function _geiScopeBuild(containerId){
@@ -2912,22 +2897,14 @@ function _attachCardHTML(){
 // lines from his own book.
 let _byoSayOpen=false,_byoMissed=[];
 function _byoSayHtml(){
-  const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
   const more=_byoItems.length>0;
-  return '<div class="ios-sec">'+
-    '<div class="ios-group"><textarea id="byo-say" class="ios-say" rows="3" placeholder="'+escHtml(more?'What else? Say it the way you would tell your crew.':_tmSayExample())+'"></textarea></div>'+
-    (voice?'<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-tint" onclick="_byoTalk()">'+
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button></div>':'')+
-    '<div class="ios-foot">'+(voice
-      ?'Type it or talk it. Tim makes the lines, prices them from your book, and finds what you left out.'
-      :'Type it, or tap the mic on your keyboard and talk. Tim makes the lines, prices them from your book, and finds what you left out.')+'</div>'+
-    '<div class="ios-links left">'+
-      '<button type="button" onclick="_byoAddItem(_byoWorkSection())">Add a line yourself</button>'+
-      (more?'<button type="button" onclick="_byoSayOpen=false;_byoRenderSections()">Cancel</button>':'')+
-    '</div>'+
-  '</div>';
+  return timSayBox({id:'byo-say',done:'_byoSayBuild',
+    placeholder:more?'What else? Say it the way you would tell your crew.':_tmSayExample(),
+    foot:{voice:'Type it or talk it. Tim makes the lines, prices them from your book, and finds what you left out.',
+      typed:'Type it, or tap the mic on your keyboard and talk. Tim makes the lines, prices them from your book, and finds what you left out.'},
+    links:'<button type="button" onclick="_byoAddItem(_byoWorkSection())">Add a line yourself</button>'+
+      (more?'<button type="button" onclick="_byoSayOpen=false;_byoRenderSections()">Cancel</button>':'')});
 }
-function _byoTalk(){if(typeof _timTalkToggle==='function')_timTalkToggle('byo-say');}
 // The price for a line Tim wrote: HIS OWN BOOK, or none. A going rate from the
 // trade catalog was tried and put $33 on "run new gas line to the heater"
 // (2026-09-23): a guessed number on a contract is worse than a blank one that
@@ -2944,13 +2921,8 @@ function _byoAddLine(text,sec){
   _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
 }
 function _byoSayBuild(){
-  const el=document.getElementById('byo-say');
-  const said=el?String(el.value||'').trim():'';
-  if(!said){
-    if(el){try{el.focus();}catch(_e){}}
-    if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
-    return;
-  }
+  const said=timSaid('byo-say','Type or say the job in the box first');
+  if(!said)return;
   if(typeof timScopeBuild!=='function')return;
   const built=timScopeBuild(said,{rejected:[]});
   if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}

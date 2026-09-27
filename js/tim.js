@@ -1562,6 +1562,54 @@ function _timTalkPanel(){
 // mic, same waveform, same promise, different destination, so the id comes in
 // rather than being assumed.
 let _timTalkTarget='_tim-say';
+
+// ── THE SAY BOX: one Talk to Tim for every screen (owner 2026-09-27) ────────
+// "Talk to Tim code should be shared as well, don't hand roll another one, it
+// just points at proposals and invoices." The T&M scope, the Build Your Own
+// list and the quick invoice each had their own copy of this box, button and
+// read-the-box code. Now a screen names three things and nothing else: the
+// box's id, what to call when he stops talking (data-tim-done, read by
+// _timTalkStop), and its own words. A new screen that wants Talk to Tim calls
+// timSayBox; it never grows a fourth copy.
+const _TIM_MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>';
+function _timSayVoice(){return typeof _voiceCapable==='function'&&!!_voiceCapable();}
+function timSayField(id,placeholder,done){
+  return '<textarea id="'+escHtml(id)+'" class="ios-say" rows="3" data-tim-done="'+escHtml(done||'')+'" placeholder="'+escHtml(placeholder||'')+'"></textarea>';
+}
+function timMicBtn(id){
+  return _timSayVoice()?'<button type="button" class="ios-btn ios-btn-tint" onclick="_timTalkToggle(\''+escHtml(id)+'\')">'+_TIM_MIC_SVG+'Talk to Tim</button>':'';
+}
+// o: {id, done, placeholder, foot:{voice,typed}, links: html}
+function timSayBox(o){
+  const voice=_timSayVoice();
+  const foot=o.foot?(voice?o.foot.voice:o.foot.typed):'';
+  return '<div class="ios-sec">'+
+    '<div class="ios-group">'+timSayField(o.id,o.placeholder,o.done)+'</div>'+
+    (voice?'<div style="margin-top:12px">'+timMicBtn(o.id)+'</div>':'')+
+    (foot?'<div class="ios-foot">'+escHtml(foot)+'</div>':'')+
+    (o.links?'<div class="ios-links left">'+o.links+'</div>':'')+
+  '</div>';
+}
+// What is in the box, or '' after asking for words where he is looking.
+function timSaid(id,emptyMsg){
+  const el=document.getElementById(id);
+  const said=el?String(el.value||'').trim():'';
+  if(!said){
+    if(el){try{el.focus();}catch(_e){}}
+    if(typeof showToast==='function')showToast(emptyMsg||'Type or say it in the box first','✏️',2600);
+  }
+  return said;
+}
+// The things he said, one per step. Nothing Tim recognised as a step: the
+// sentence itself, cleaned up, is still what he said.
+function timSaySteps(said){
+  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[]}):null;
+  const steps=(built&&Array.isArray(built.steps)?built.steps.map(st=>String(st.text||'').trim()):[]).filter(Boolean);
+  if(steps.length)return steps;
+  const t=String(said||'').trim().replace(/\s+/g,' ');
+  return t?[t.charAt(0).toUpperCase()+t.slice(1)]:[];
+}
+
 function _timTalkToggle(target){
   if(_timTalking){_timTalkStop();return;}
   _timTalkTarget=target||'_tim-say';
@@ -1637,13 +1685,9 @@ function _timTalkStop(silent){
     // the steps are built the moment the man stops talking, in order, with
     // what he left out (owner, 2026-09-23). Tapping Build after talking was a
     // second thing to do that the button's own name had already promised.
-    if(_timTalkTarget==='byo-say'){if(typeof _byoSayBuild==='function')_byoSayBuild();return;}
-    if(_timTalkTarget==='qi-say'){if(typeof _qiSayBuild==='function')_qiSayBuild();return;}
-    if(_timTalkTarget==='gei-scope-say'){
-      if(typeof _geiScopeBuild==='function')
-        _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');
-      return;
-    }
+    // The box says what happens next (data-tim-done, set by timSayField).
+    const done=el&&el.dataset?el.dataset.timDone:'';
+    if(done){if(typeof window[done]==='function')window[done]();return;}
     if(_timTalkTarget!=='_tim-say')return;
     _timShowRead(said);
   };

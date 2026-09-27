@@ -303,6 +303,40 @@ test.describe('Quick invoice', () => {
     expect(r.work.join(' ')).toMatch(/snaked the main line/i);
   });
 
+  // Owner 2026-09-27: "Talk to Tim code should be shared as well, don't hand
+  // roll another one, it just points at proposals and invoices."
+  test('Talk to Tim is one shared box: the invoice, BYO and T&M boxes are the same markup, each naming only what happens when he stops', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      window._voiceCapable = () => true;
+      openQuickInvoice(901);
+      const qi = document.getElementById('qi-say');
+      const qiBtn = [...document.querySelectorAll('#qi-page button')].find(b => /Talk to Tim/.test(b.textContent));
+      const byo = timSayBox({ id: 'byo-say', done: '_byoSayBuild', placeholder: 'x' });
+      const gone = ['_qiTalk', '_qiSaySteps', '_byoTalk', '_geiScopeTalk', '_tmSayBox', '_tmVoiceBtn'].filter(n => typeof window[n] === 'function');
+      // Stopping talking calls whatever the box names, on any screen.
+      const calls = [];
+      window.__fakeDone = () => calls.push(document.getElementById('fake-say').value);
+      document.body.insertAdjacentHTML('beforeend', timSayField('fake-say', 'p', '__fakeDone'));
+      _timTalkTarget = 'fake-say'; _timTalking = true; window._voiceStop = async () => 'Set the new toilet';
+      await _timTalkStop();
+      document.getElementById('fake-say').remove();
+      return {
+        qiDone: qi.dataset.timDone, qiClass: qi.className, qiBtn: qiBtn && qiBtn.getAttribute('onclick'),
+        same: byo.replace(/byo-say/g, 'ID').replace(/_byoSayBuild/g, 'DONE').replace(/placeholder="[^"]*"/, '') ===
+          timSayBox({ id: 'qi-say', done: '_qiSayBuild', placeholder: 'y' }).replace(/qi-say/g, 'ID').replace(/_qiSayBuild/g, 'DONE').replace(/placeholder="[^"]*"/, ''),
+        gone, calls, steps: timSaySteps('fixed it'),
+      };
+    });
+    expect(r.qiDone).toBe('_qiSayBuild');
+    expect(r.qiClass).toBe('ios-say');
+    expect(r.qiBtn).toBe("_timTalkToggle('qi-say')");
+    expect(r.same, 'two screens, one box').toBe(true);
+    expect(r.gone, 'the hand-rolled copies are deleted').toEqual([]);
+    expect(r.calls).toEqual(['Set the new toilet']);
+    expect(r.steps).toEqual(['Fixed it']);
+  });
+
   test('changing a rate reprices that line and the total', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => openQuickInvoice(901));

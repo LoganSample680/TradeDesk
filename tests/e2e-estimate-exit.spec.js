@@ -101,7 +101,7 @@ test.describe('leaving a T&M or BYO estimate', () => {
     window.__micOn = false;
     window._voiceStart = (el, cb) => { window.__micOn = true; };
     window._voiceStop = async () => { window.__micOn = false; return heard; };
-    if (mode === 'byo') _byoTalk(); else _geiScopeTalk();
+    _timTalkToggle(mode === 'byo' ? 'byo-say' : 'gei-scope-say');
   }, { heard, mode });
   const box = { tm: 'gei-scope-say', byo: 'byo-say' };
 
