@@ -4576,6 +4576,24 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
     expect(r.filed).toBe(true);
   });
 
+  // The midnight-clock run caught one photo coming back twice: the relaunch
+  // restore and tdPhotoFlush's restore overlapped, and both passed the "already
+  // there?" check before either pushed (2026-09-26).
+  test('two restores at once bring every photo back once, not twice', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      for (let i = 0; i < 3; i++) await tdSavePhoto({ file: await window.__big(800, 600), type: 'after', clientId: 501, addr: '4835 NE Kincaid Rd, Topeka, KS 66617', stamp: false });
+      const ids = photos.map(p => String(p.id)).sort();
+      photos.length = 0; localStorage.removeItem('zp3_photos');
+      const counts = await Promise.all([_pcOutboxRestore(), _pcOutboxRestore(), _pcOutboxRestore()]);
+      const again = await _pcOutboxRestore();
+      return { ids, counts, again, back: photos.map(p => String(p.id)).sort() };
+    });
+    expect(r.back).toEqual(r.ids);
+    expect(r.counts).toEqual([3, 3, 3]);
+    expect(r.again).toBe(0);
+  });
+
   test('signal comes back: every photo goes up full size, filed right, and leaves the outbox', async () => {
     const r = await page.evaluate(async () => {
       await window.__reset(); window.__offline();
