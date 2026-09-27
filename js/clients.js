@@ -715,9 +715,9 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_stylePickCancel()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('truebid','blue',svgIcon('🛰️',{size:36}),'The flagship','TrueBid','Powered by the TrueSuite, minimal typing, nothing guessed',
-          ['TrueScan measures every room by LiDAR','TrueMeasure traces any property from above','The right tool opens automatically for your trade'])+
-        card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
+        card('truebid','blue',svgIcon('🛰️',{size:36}),'TrueBid','Measure it first','Your phone measures it, you set the price',
+          ['Scan the rooms with your phone','Trace the property from above on a map','The right tool opens for your trade'])+
+        card('freeform','green',svgIcon('🧩',{size:36}),'Line by line','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
         card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Bill the hours when you can\'t lock in a price',
           ['Your hourly rate, already filled in','Say the job, Tim writes the steps','The most it can cost, when they want one'],_tmLock)+
@@ -1187,6 +1187,9 @@ function openNewClient(){
   document.getElementById('client-form-wrap').style.display='block';
   const pt=document.getElementById('clients-page-title');if(pt)pt.textContent='New Lead';
   const nb=document.getElementById('clients-new-btn');if(nb)nb.style.display='none';
+  const _cfw=document.getElementById('client-form-wrap');
+  if(_cfw&&!_cfw._cfDraftWired){_cfw._cfDraftWired=true;_cfw.addEventListener('input',_cfDraftSave);_cfw.addEventListener('change',_cfDraftSave);}
+  if(_cfDraftRestore()&&typeof showToast==='function')showToast('Picked up the lead you started','📝');
   window.scrollTo(0,0);
   setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
 }
@@ -1446,7 +1449,32 @@ function deleteClient(){
     closeClientForm();goPg('pg-clients');
   },{title:'Delete client',yes:'Delete everything',danger:true});
 }
+// AN UNSENT NEW LEAD SURVIVES A REFRESH. A name and a phone number typed in a
+// driveway were gone the moment the phone locked, the app reloaded, or he
+// tapped away to check something. The draft lives in this browser only (a
+// per-device convenience, never account data), is written as he types, put
+// back when he opens New client again, and cleared on Save or Cancel.
+const _CF_DRAFT_KEY='zp3_new_lead_draft';
+const _CF_DRAFT_IDS=['cf-name','cf-phone','cf-street','cf-city','cf-state','cf-zip','cf-email','cf-source','cf-ref','cf-partytype','cf-notes'];
+function _cfDraftSave(){
+  if(editClientId)return;
+  const d={};let any=false;
+  _CF_DRAFT_IDS.forEach(id=>{const el=document.getElementById(id);if(el&&el.value){d[id]=el.value;any=true;}});
+  try{if(any)localStorage.setItem(_CF_DRAFT_KEY,JSON.stringify(d));else localStorage.removeItem(_CF_DRAFT_KEY);}catch(_e){}
+}
+function _cfDraftRestore(){
+  let d=null;
+  try{d=JSON.parse(localStorage.getItem(_CF_DRAFT_KEY)||'null');}catch(_e){d=null;}
+  if(!d||typeof d!=='object'||Array.isArray(d))return false;
+  let any=false;
+  _CF_DRAFT_IDS.forEach(id=>{const el=document.getElementById(id);if(el&&typeof d[id]==='string'&&d[id]){el.value=d[id];any=true;}});
+  const src=document.getElementById('cf-source');
+  if(src&&src.value&&typeof toggleRefField==='function')toggleRefField(src);
+  return any;
+}
+function _cfDraftClear(){try{localStorage.removeItem(_CF_DRAFT_KEY);}catch(_e){}}
 function closeClientForm(){
+  if(!editClientId)_cfDraftClear();
   document.getElementById('client-form-wrap').style.display='none';
   document.getElementById('client-list').style.display='';
   const sw2=document.getElementById('cf-search-wrap');if(sw2)sw2.style.display='';
@@ -1780,7 +1808,10 @@ function renderClientDetail(){
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
   // TIER as a small filled pill + source, reads more finished than plain text.
-  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">TIER '+_tier+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
+  // Plain words, not a letter grade: "TIER C" on a lead he met ten minutes
+  // ago read as a verdict on the customer. A lead with no work yet is a lead.
+  const _tierWord=(!_wonBids.length&&!c.tier)?'New lead':({A:'Top customer',B:'Regular customer',C:'Customer'}[_tier]||'Customer');
+  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">'+_tierWord+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
   // Monogram avatar (first + last initial) gives the card an identity/anchor.
   const _words=(c.name||'?').trim().split(/\s+/).filter(Boolean);
   const _initials=(((_words[0]||'?')[0]||'?')+(_words.length>1?((_words[_words.length-1]||'')[0]||''):'')).toUpperCase();
@@ -1898,23 +1929,26 @@ function renderClientDetail(){
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
   if(_cdActions){
+    // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
+    // people; scheduling a visit now lives in the More menu, and this is the
+    // single obvious "make a quote" button.
+    const _lock=!_canEstimate();
+    const _newPropBtn='<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
+        svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
+      '</button>';
     if(_cdStage==='incomplete'){
+      // A lead with no address still gets New proposal. He is often standing
+      // in the kitchen with the customer, and the address goes on the estimate
+      // itself; the onboarding link is the option, not the only way forward.
       const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
       _cdActions.innerHTML=
-        '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
-          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding, send link so they can fill in their address &amp; project details</div>'+
+        '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:10px">'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' No address yet. Send a link so they can fill in their address &amp; project details, or start the proposal now.</div>'+
           '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📲')+' Send onboarding link</button>'+
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
-        '</div>';
+        '</div>'+_newPropBtn;
     }else{
-      // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
-      // people; scheduling a visit now lives in the More menu, and this is the
-      // single obvious "make a quote" button.
-      const _lock=!_canEstimate();
-      _cdActions.innerHTML=
-        '<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
-          svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
-        '</button>';
+      _cdActions.innerHTML=_newPropBtn;
     }
   }
   renderCDTimeline();

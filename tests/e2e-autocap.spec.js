@@ -1,8 +1,10 @@
 // @ts-check
-// Auto-capitalization (utils.js _autoCapWords + the spacebar-triggered
-// normalizers). Every typed word title-cases as you type, via the native
-// autocapitalize="words" attribute on mobile and a desktop spacebar-keydown
-// fallback. Critically, NEITHER mutates a field during a programmatic value-set
+// Auto-capitalization (utils.js _autoCapWords / _autoCapSentences + the
+// spacebar-triggered normalizers). A proper-noun field (a name, a street, a
+// city) title-cases every word; every other free-text field is sentence case
+// (Earl audit 2026-09-27: Title Casing a line title printed "Replce 50 Gal
+// Water Heter" on a customer's proposal). Native autocapitalize on mobile and
+// a desktop spacebar-keydown fallback. Critically, NEITHER mutates a field during a programmatic value-set
 // (page.fill fires no keydown), so the rest of the suite is unaffected.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
@@ -38,12 +40,16 @@ test.describe('auto-capitalize free-text fields', () => {
     expect(r.spaces).toBe('  Living   Room  ');
   });
 
-  test('eligible text fields get autocapitalize="words"; excluded types do not', async () => {
+  // Was: every eligible field got "words". Now a plain text field and a
+  // textarea are "sentences" and a name/address field keeps "words" (Earl audit).
+  test('eligible text fields get sentences, name fields get words; excluded types get nothing', async () => {
     const r = await page.evaluate(() => {
       const host = document.createElement('div'); document.body.appendChild(host);
       host.innerHTML =
         '<input type="text" id="_ac_text">' +
         '<textarea id="_ac_ta"></textarea>' +
+        '<input type="text" id="_ac_name" autocomplete="name">' +
+        '<input type="text" id="cf-street">' +
         '<input type="email" id="_ac_email">' +
         '<input type="tel" id="_ac_tel">' +
         '<input type="number" id="_ac_num">' +
@@ -52,13 +58,15 @@ test.describe('auto-capitalize free-text fields', () => {
       _applyAutoCapAttrs(host);
       const ac = id => document.getElementById(id).getAttribute('autocapitalize');
       const out = {
-        text: ac('_ac_text'), ta: ac('_ac_ta'), email: ac('_ac_email'),
+        text: ac('_ac_text'), ta: ac('_ac_ta'), name: ac('_ac_name'), street: ac('cf-street'), email: ac('_ac_email'),
         tel: ac('_ac_tel'), num: ac('_ac_num'), im: ac('_ac_im'), opt: ac('_ac_opt'),
       };
       host.remove(); return out;
     });
-    expect(r.text).toBe('words');
-    expect(r.ta).toBe('words');
+    expect(r.text).toBe('sentences');
+    expect(r.ta).toBe('sentences');
+    expect(r.name).toBe('words');
+    expect(r.street).toBe('words');
     expect(r.email).toBe(null);
     expect(r.tel).toBe(null);
     expect(r.num).toBe(null);
@@ -96,16 +104,23 @@ test.describe('auto-capitalize free-text fields', () => {
     expect(r.own).toBe('off');
   });
 
-  test('a real spacebar keydown title-cases the value (desktop fallback)', async () => {
+  // Was: any text field title-cased to "Master Bedroom". Now that is a name
+  // field's behavior only; a free-text field is sentence case (Earl audit).
+  test('a real spacebar keydown title-cases a name field and sentence-cases free text (desktop fallback)', async () => {
     const out = await page.evaluate(async () => {
-      const i = document.createElement('input'); i.type = 'text';
-      document.body.appendChild(i); i.focus();
-      i.value = 'master bedroom';
-      i.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
-      await new Promise(r => setTimeout(r, 20));   // handler normalizes on next tick
-      const v = i.value; i.remove(); return v;
+      const run = async (attrs) => {
+        const i = document.createElement('input'); i.type = 'text';
+        Object.keys(attrs).forEach(k => i.setAttribute(k, attrs[k]));
+        document.body.appendChild(i); i.focus();
+        i.value = 'master bedroom';
+        i.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        await new Promise(r => setTimeout(r, 20));   // handler normalizes on next tick
+        const v = i.value; i.remove(); return v;
+      };
+      return { name: await run({ autocomplete: 'name' }), free: await run({}) };
     });
-    expect(out).toBe('Master Bedroom');
+    expect(out.name).toBe('Master Bedroom');
+    expect(out.free).toBe('Master bedroom');
   });
 
   test('page.fill does NOT capitalize (no keydown), the suite stays safe', async () => {

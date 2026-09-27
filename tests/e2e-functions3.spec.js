@@ -8677,28 +8677,38 @@ test.describe('Tax, legal, and template functions', () => {
 
   // Regression: the BYO price field was a native <input type="number">, which
   // rejects commas at the keystroke level (worst on iOS Safari/iPad, inconsistent
-  // elsewhere: the "won't accept comma" report). Fixed: the field is now plain
-  // text with a live comma-formatting oninput handler (_byaFormatPriceInput),
-  // and reads go through _byaPriceValue which strips commas before parsing,
-  // so typing "1500" displays as "1,500" and still stores as the number 1500.
-  test('_bya-price field auto-formats with commas and parses back to the correct number', async () => {
+  // elsewhere: the "won't accept comma" report). The field is plain text with
+  // the shared _fmtMoneyInput formatter (js/utils.js), and reads go through
+  // _byaPriceValue which strips commas before parsing, so typing "1500"
+  // displays as "1,500" and still stores as the number 1500. The cents case is
+  // new: the old BYO-only formatter (_byaFormatPriceInput, deleted 2026-09-27)
+  // stripped the decimal point, so "1289.50" saved as 128950.
+  test('_bya-price field auto-formats with commas, keeps cents, and parses back to the correct number', async () => {
     const result = await page.evaluate(() => {
-      if (typeof _byoAddItem !== 'function' || typeof _byaFormatPriceInput !== 'function') return { skip: true };
+      if (typeof _byoAddItem !== 'function') return { skip: true };
       _byoAddItem('Introduction');
       const el = document.getElementById('_bya-price');
       if (!el) return { skip: true };
-      const fieldType = el.type;
+      const fieldType = el.type, inputMode = el.getAttribute('inputmode');
       el.value = '1500';
-      _byaFormatPriceInput(el);
+      _fmtMoneyInput(el);
       const displayed = el.value;
       const parsed = (typeof _byaPriceValue === 'function') ? _byaPriceValue('_bya-price') : null;
+      el.value = '1289.50';
+      _fmtMoneyInput(el);
+      const cents = el.value;
+      const centsParsed = _byaPriceValue('_bya-price');
       document.getElementById('_byo-add-modal')?.remove();
-      return { fieldType, displayed, parsed };
+      return { fieldType, inputMode, displayed, parsed, cents, centsParsed, oldGone: typeof _byaFormatPriceInput };
     });
     if (result.skip) return;
     expect(result.fieldType, 'must not be type="number", that is what rejected commas').not.toBe('number');
+    expect(result.inputMode, 'a keypad with a decimal point').toBe('decimal');
     expect(result.displayed).toBe('1,500');
     expect(result.parsed).toBe(1500);
+    expect(result.cents).toBe('1,289.50');
+    expect(result.centsParsed).toBe(1289.5);
+    expect(result.oldGone).toBe('undefined');
   });
 
   test('_byaConfirm: calls without throwing', async () => {

@@ -1599,7 +1599,10 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-lbl{flex:1;min-width:0}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-lbl small{display:block;font-size:14px;color:var(--ios-2);margin-top:2px;line-height:1.35}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-val{display:flex;align-items:center;gap:1px;flex-shrink:0;color:var(--ios-2);font-size:17px}
-:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-val input{min-width:2ch;max-width:140px;border:0!important;background:none!important;box-shadow:none!important;outline:none;text-align:right;font-family:inherit;font-size:17px;color:var(--text);width:108px;padding:0!important;height:auto!important;min-height:0!important;border-radius:0!important}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-val input{min-width:2ch;max-width:140px;border:0!important;background:none!important;box-shadow:none!important;outline:none;text-align:right;font-family:inherit;font-size:17px;color:var(--text);width:108px;padding:12px 0!important;margin:-12px 0;height:auto!important;min-height:44px!important;box-sizing:border-box;border-radius:0!important}
+/* The 44px above is hit area, not size: equal negative margins hand the
+   height back, so the row looks exactly as before and a thumb that lands a
+   little high or low still gets the box (Your cost, Deposit, the T&M rate). */
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-val input::placeholder{color:var(--ios-2);opacity:.6}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-val input[readonly]{color:var(--ios-2)}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-chev{flex-shrink:0;color:var(--ios-2);opacity:.55;font-size:22px;line-height:1;margin-right:-4px}
@@ -1990,6 +1993,12 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-pill{background:#2C74C9}
 /* ── Misc utils ── */
 .nav-banner{background:var(--c-green-soft);border:1px solid var(--c-green-edge);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .iform{background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;margin-bottom:10px;border-left:3px solid var(--denim)}
+/* Save client stays under the thumb. It sat below a dozen optional fields,
+   off the bottom of a 667px screen. Sticky, not fixed: it keeps its own place
+   in the form's flow, so it reserves its space and never covers a field (15.1).
+   On a phone it rides above the tab bar instead of behind it. */
+#client-form-wrap .cf-actions{position:sticky;bottom:0;z-index:5;margin:16px -14px -14px;padding:12px 14px;background:var(--bg-card);border-top:1px solid var(--line);border-radius:0 0 var(--r-lg) var(--r-lg)}
+@media(max-width:767px){#client-form-wrap .cf-actions{bottom:calc(64px + env(safe-area-inset-bottom,0px))}}
 hr{border:none;border-top:1px solid var(--line);margin:10px 0}
 .divider{height:1px;background:var(--line);margin:14px 0}
 .muted{color:var(--text-3)}
@@ -2442,7 +2451,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .stat-s{font-size:10px;color:var(--text-3);margin-top:4px;font-weight:500}
 
 /* Eyebrow-as-button (← Pick a different type) */
-.link-back{background:none;border:0;cursor:pointer;font-family:var(--font-ui);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--denim);padding:0;margin-bottom:6px;display:inline-block}
+.link-back{background:none;border:0;cursor:pointer;font-family:var(--font-ui);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--denim);padding:16px 0;margin:-16px 0 -10px;min-height:44px;box-sizing:border-box;display:inline-block}
 .link-back:hover{color:var(--denim-deep)}
 
 /* Right-side summary rail (estimate, T&M, BYO) */
@@ -3246,7 +3255,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
 
-      <div class="brow" style="margin-top:16px">
+      <div class="brow cf-actions">
         <button class="btn btn-p" onclick="saveClient()">Save client</button>
         <button class="btn" onclick="closeClientForm()">Cancel</button>
       </div>
