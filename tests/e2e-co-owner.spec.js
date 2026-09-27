@@ -237,4 +237,43 @@ test.describe('Co-owner', () => {
     expect(r.bad).toEqual([]);
     expect(r.coercedBool).toBe('boolean');
   });
+  // Saving an employee sent active:false on EVERY save, so editing somebody
+  // who had joined switched them off the business: making Blake an owner
+  // locked him out (2026-09-26). Only a brand-new invite starts inactive.
+  test('Team save: editing a member never switches them off; a new invite starts inactive; a co-owner saves to the business', async ({ page }) => {
+    await boot(page);
+    const run = (co, isNew) => page.evaluate(async ({ co, isNew }) => {
+      const ups = [];
+      const saved = { supa: _supa, user: window._supaUser, emp: _isEmployee, cid: _contractorUserId, co: _coOwner, rec: _employeeRecord, list: S.employees, mint: window._mintCrewInviteToken };
+      const chain = { select() { return chain; }, eq() { return chain; }, maybeSingle() { return Promise.resolve({ data: null, error: null }); }, single() { return Promise.resolve({ data: null, error: null }); },
+        then(r, j) { return Promise.resolve({ data: [], error: null }).then(r, j); } };
+      _supa = { from: (t) => ({ ...chain, upsert: (row) => { if (t === 'team_members') ups.push(row); return Promise.resolve({ error: null }); },
+        insert: () => chain, update: () => chain }), rpc: async () => ({ data: null, error: null }),
+        auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } };
+      window._mintCrewInviteToken = async () => null;
+      window._supaUser = { id: co ? 'dad-1' : 'boss-1', email: 'x@x.com' };
+      _isEmployee = co; _contractorUserId = co ? 'boss-1' : null; _coOwner = co;
+      _employeeRecord = co ? { contractor_user_id: 'boss-1', employee_user_id: 'dad-1', role: 'owner', active: true, permissions: { team: true, payroll: true } } : null;
+      S.employees = [{ id: 7, name: 'Blake Sample', email: 'blake@x.com', role: 'manager', permissions: {} }];
+      try {
+        if (isNew) { openAddEmployeeModal(); document.getElementById('emp-name').value = 'New Guy'; document.getElementById('emp-email').value = 'new@x.com'; await _saveEmployee(null); }
+        else { openEditEmployeeModal(0); document.getElementById('emp-role').value = 'owner'; await _saveEmployee(0); }
+      } catch (e) { ups.push({ threw: String(e) }); }
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      _supa = saved.supa; window._supaUser = saved.user; _isEmployee = saved.emp; _contractorUserId = saved.cid; _coOwner = saved.co; _employeeRecord = saved.rec; S.employees = saved.list; window._mintCrewInviteToken = saved.mint;
+      applyPermissions();
+      return ups;
+    }, { co, isNew });
+    const edit = await run(false, false);
+    const invite = await run(false, true);
+    const coEdit = await run(true, false);
+    expect(edit.length).toBe(1);
+    expect(edit[0]).toMatchObject({ contractor_user_id: 'boss-1', email: 'blake@x.com', role: 'owner' });
+    expect('active' in edit[0], 'an edit never touches whether they are on the team').toBe(false);
+    expect('invited_at' in edit[0]).toBe(false);
+    expect(invite[0]).toMatchObject({ email: 'new@x.com', active: false });
+    expect(typeof invite[0].invited_at).toBe('string');
+    expect(coEdit[0].contractor_user_id, 'a co-owner edits the business roster, not their own').toBe('boss-1');
+    expect('active' in coEdit[0]).toBe(false);
+  });
 });

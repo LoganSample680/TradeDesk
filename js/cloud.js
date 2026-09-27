@@ -750,7 +750,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.18';
+const APP_VERSION='09.26.26.19';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4879,7 +4879,14 @@ async function _saveEmployee(idx){
     // '{}' forever, so every employee perm reads false, locking employees out of
     // everything (a collect tech wouldn't even see payment amounts). This is the
     // authoritative write the owner's permission checkboxes depend on.
-    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
+    // The BUSINESS's roster, not the signed-in login's: a co-owner edits the team too.
+    const tmRow={contractor_user_id:_effectiveUid(),email,name,role:emp.role,permissions:emp.permissions||{}};
+    // ONLY A NEW INVITE STARTS INACTIVE (2026-09-26). This upsert sent
+    // active:false on every save, so editing anybody who had already joined,
+    // down to fixing a phone number, switched them off the business: making
+    // Blake an owner locked him out of it. An existing row keeps its status
+    // and its invite date; joining is what turns a row on.
+    if(isNew){tmRow.active=false;tmRow.invited_at=new Date().toISOString();}
     // Pay is written ONLY when the editor can view comp, otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
@@ -4887,7 +4894,7 @@ async function _saveEmployee(idx){
     if(error){console.warn('team_members upsert failed:',error);return;}
     // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
-      const cid=_supaUser.id;
+      const cid=_effectiveUid();
       const _tok2=await _mintCrewInviteToken(cid,emp.email); // server-verified claim token (null → legacy email-match link)
       const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
