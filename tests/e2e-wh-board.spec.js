@@ -26,6 +26,10 @@ test.describe('Water heater flush board', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The first cloud load replaces clients/jobs/bids with the cloud's rows
+    // (supaLoadFromCloud). It lands ~5s after boot on Chromium and ~10s on
+    // WebKit, so a fixture seeded before it is wiped mid-file. Seed after it.
+    await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, null, { timeout: 20000 });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -355,8 +359,11 @@ test.describe('Water heater flush board', () => {
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting' });
         _renderWhBoard();
         const landscaper = document.getElementById('dash-wh-board').style.display;
-        window.getActiveTrade = () => 'painting';
-        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'painting,electrical' });
+        // Every trade TradeDesk sets up now has a recurring service (painting
+        // has deck stain, electrical has generators), so only a trade outside
+        // them all keeps the board hidden.
+        window.getActiveTrade = () => 'pest control';
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'pest control' });
         _renderWhBoard();
         const without = document.getElementById('dash-wh-board').style.display;
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: ['landscaping', 'plumbing'] });

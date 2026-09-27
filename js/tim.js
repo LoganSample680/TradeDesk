@@ -45,7 +45,7 @@ const TIM_PLACES=[
   {pg:'pg-proposals',   name:'Proposals',   say:['proposals','my proposals','bids','my bids','quotes','sent estimates']},
   // The recurring service list (#94, widened 2026-09-27 past water heaters).
   // "Service due" is its on-screen name; the old words still land there.
-  {pg:'pg-wh-list',     name:'Service due', say:['service due','recurring service','annual service','water heater list','water heaters','flush list','water heater flushes','water filters','gutter cleaning']},
+  {pg:'pg-wh-list',     name:'Service due', say:['service due','recurring service','annual service','water heater list','water heaters','flush list','water heater flushes','water filters','gutter cleaning','condenser cleanings','coil cleanings','ac tune ups','ac tune-ups','backflow tests','generator services']},
   {pg:'pg-money',       name:'Collect',     say:['collect','invoices','payments','get paid','whats owed','who owes me']},
   {pg:'pg-tracker',     name:'Books',       say:['books','bookkeeping','the numbers','profit','income','expenses','mileage','p and l','my money']},
   {pg:'pg-taxes',       name:'Taxes',       say:['taxes','tax','write offs','deductions','1099s']},
