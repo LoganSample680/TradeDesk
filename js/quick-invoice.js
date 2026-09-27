@@ -217,7 +217,7 @@ function openQuickInvoice(cid){
   const un=_qiUnbilled(cid);
   const hasWork=un.lines.length>0;
   const mode=c.qiMode||(hasWork?'hourly':'set');
-  _qi={cid,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],pbOpen:false,loading:true,modeSet:!!c.qiMode};
+  _qi={cid,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode};
   goPg('pg-qi');
   renderQuickInvoice();
   // The visits load once, then the screen paints once more (the shimmer in
@@ -279,6 +279,10 @@ function renderQuickInvoice(){
       _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
         escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
         '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
+      _qiSayHtml()+
+      (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-h"><span>Work done</span></div><div class="ios-group">'+
+        _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
+        '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       (hourly?'<div class="ios-sec"><div class="ios-h"><span>Since the last invoice</span></div><div class="ios-group">'+
         ((tracked+(_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':''))||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
       '</div></div>':'')+
@@ -331,6 +335,62 @@ function qiOpenJob(bidId){
 // estimate.js: _propBrand, _propDoc, _propCover, _propSection, _propSignoff),
 // so the customer gets the same letterhead, colour and page on the bill as on
 // the proposal. Only the body is the invoice's: the lines and what is due.
+// TALK TO TIM ON THE INVOICE (owner 2026-09-27: "Do we add in talk to Tim
+// like we do for proposals to speak to what we did?"). The same box, button and
+// splitter the Build Your Own proposal uses (_byoSayHtml, timScopeBuild), so
+// it works the same everywhere. Hourly: what he says is the work done, listed
+// on the invoice above the hours, never a price. Set price: each thing he did
+// is a line, priced from his own book when it knows it, blank when it does not
+// (a guessed number on a bill is worse than a blank that asks).
+function _qiSayHtml(){
+  const voice=(typeof _voiceCapable==='function'&&_voiceCapable());
+  const hourly=_qi&&_qi.mode==='hourly';
+  return '<div class="ios-sec">'+
+    '<div class="ios-group"><textarea id="qi-say" class="ios-say" rows="3" placeholder="'+escHtml(hourly?'What did you do? Say it the way you would tell the customer.':'What did you do? Tim makes the lines and prices them from your book.')+'"></textarea></div>'+
+    (voice?'<div style="margin-top:12px"><button type="button" class="ios-btn ios-btn-tint" onclick="_qiTalk()">'+
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>Talk to Tim</button></div>':'')+
+    '<div class="ios-links left"><button type="button" onclick="_qiSayBuild()">'+(hourly?'Add to work done':'Make the lines')+'</button></div>'+
+  '</div>';
+}
+function _qiTalk(){if(typeof _timTalkToggle==='function')_timTalkToggle('qi-say');}
+function _qiSaySteps(said){
+  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[]}):null;
+  const steps=(built&&Array.isArray(built.steps)?built.steps.map(st=>String(st.text||'').trim()):[]).filter(Boolean);
+  if(steps.length)return steps;
+  // Nothing Tim recognised as a step: the sentence itself, cleaned up, is
+  // still what he did.
+  const t=String(said||'').trim().replace(/\s+/g,' ');
+  return t?[t.charAt(0).toUpperCase()+t.slice(1)]:[];
+}
+function _qiSayBuild(){
+  if(!_qi)return;
+  const el=document.getElementById('qi-say');
+  const said=el?String(el.value||'').trim():'';
+  if(!said){
+    if(el){try{el.focus();}catch(_e){}}
+    if(typeof showToast==='function')showToast('Type or say what you did first','✏️',2600);
+    return;
+  }
+  const steps=_qiSaySteps(said);
+  if(_qi.mode==='hourly'){
+    const have=new Set(_qi.work.map(w=>w.toLowerCase()));
+    steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);have.add(st.toLowerCase());}});
+  }else{
+    const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
+    _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
+    const have=new Set(_qi.typed.map(l=>String(l.desc).toLowerCase()));
+    steps.forEach(st=>{
+      if(have.has(st.toLowerCase()))return;have.add(st.toLowerCase());
+      const own=(typeof _pbFind==='function')?_pbFind(st,trade):null;
+      _qi.typed.push({desc:st,amount:own&&Number(own.rate)>0?Number(own.rate):''});
+    });
+    if(!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
+  }
+  renderQuickInvoice();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);renderQuickInvoice();}
+
 function _qiDocHtml(num){
   if(!_qi)return '';
   const c=getClientById(_qi.cid)||{};
@@ -348,8 +408,14 @@ function _qiDocHtml(num){
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
       label:'Invoice',num:num||'Draft',date:todayKey(),name:escHtml(c.name||''),addr:escHtml(c.addr||''),phone:escHtml(c.phone||''),
       project:escHtml(_qiMoney(total))+' due',until:null,forLabel:'Billed to'})+
-    _propSection('Work performed','',table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
+    _propSection('Work performed','',_qiWorkListHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     _propSignoff(bname,'Thank you for choosing'));
+}
+// What he said he did, as a plain list above the charges. Hourly only.
+function _qiWorkListHtml(){
+  const w=(_qi&&_qi.mode==='hourly'&&Array.isArray(_qi.work))?_qi.work:[];
+  if(!w.length)return '';
+  return '<ul style="margin:0 0 16px;padding:0 0 0 20px;font-size:15px;line-height:1.55;color:#0b1220">'+w.map(x=>'<li>'+escHtml(x)+'</li>').join('')+'</ul>';
 }
 // What the customer will get, before anything is saved or sent: the same
 // full-screen preview a proposal opens in.
@@ -367,7 +433,8 @@ function _qiSave(){
   const bid={id:_newBidId(),client_id:c.id,client_name:c.name||'',name:c.name||'',phone:c.phone||'',addr:c.addr||'',
     type:'Invoice',kind:'quick_invoice',status:'Closed Won',draft:false,
     bid_date:todayKey(),completion_date:todayKey(),amount:total,deposit:0,
-    desc:lines.map(l=>l.desc).join('\n'),lineItems:lines.map(l=>({desc:l.desc,amount:l.amount})),
+    desc:(hourly?_qi.work:[]).concat(lines.map(l=>l.desc)).join('\n'),lineItems:lines.map(l=>({desc:l.desc,amount:l.amount})),
+    qiWork:hourly?_qi.work.slice():[],
     qiMode:_qi.mode,
     qiTimeThrough:hourly?_qi.through:null,
     qiExpenseIds:hourly?_qi.tracked.filter(l=>l.kind==='receipt').map(l=>l.expId):[]};

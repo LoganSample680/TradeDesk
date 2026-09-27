@@ -197,6 +197,65 @@ test.describe('Quick invoice', () => {
     expect(r.loading).toBe(false);
   });
 
+  // "Do we add in talk to Tim like we do for proposals to speak to what we
+  // did?" (owner 2026-09-27). Same box and splitter as Build Your Own.
+  test('Talk to Tim, hourly: what he did is listed as work done, on the preview and the saved invoice, never a price', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      _activeTrade = 'plumbing';
+      openQuickInvoice(901); _qiSetMode('hourly');
+      const before = _qiTotal();
+      document.getElementById('qi-say').value = 'Pulled the old water heater, set a tankless and hauled the old one away';
+      _qiSayBuild();
+      const work = _qi.work.slice(), after = _qiTotal();
+      const box = document.getElementById('qi-say').value;
+      const doc = _qiDocHtml();
+      _qiDropWork(work.length - 1);
+      const dropped = _qi.work.length;
+      const bid = _qiSave();
+      return { work, before, after, box, docHas: work.every(w => doc.includes(w)), dropped, saved: bid && bid.qiWork, desc: bid && bid.desc };
+    });
+    expect(r.work.length).toBeGreaterThanOrEqual(2);
+    expect(r.after, 'work done never changes the price').toBe(r.before);
+    expect(r.box, 'the box is cleared for the next thing').toBe('');
+    expect(r.docHas).toBe(true);
+    expect(r.dropped).toBe(r.work.length - 1);
+    expect(r.saved.length).toBe(r.work.length - 1);
+    expect(r.desc.split('\n')[0]).toBe(r.work[0]);
+  });
+
+  test('Talk to Tim, set price: each thing he did is a line, priced from his book when it knows it, blank when it does not', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      _activeTrade = 'plumbing';
+      openQuickInvoice(902); _qiSetMode('set');
+      document.getElementById('qi-say').value = 'Replace water heater and fixed the leak under the sink';
+      _qiSayBuild();
+      return _qi.typed.map(l => ({ desc: l.desc, amount: l.amount }));
+    });
+    expect(r.length).toBeGreaterThanOrEqual(2);
+    const heater = r.find(l => /water heater/i.test(l.desc));
+    expect(heater && heater.amount, 'his price book rate').toBe(1400);
+    expect(r.some(l => l.amount === ''), 'an unknown line is left blank to price').toBe(true);
+  });
+
+  test('Talk to Tim: an empty box asks for words; Done talking builds the lines by itself', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      const toasts = []; const t = window.showToast; window.showToast = (m) => toasts.push(m);
+      _qiSayBuild();
+      window.showToast = t;
+      // Done talking with words in the box goes straight to the build, the way
+      // the proposal box does.
+      _timTalkTarget = 'qi-say'; _timTalking = true; window._voiceStop = async () => 'Snaked the main line';
+      await _timTalkStop();
+      return { toasts, work: _qi.work.slice() };
+    });
+    expect(r.toasts).toEqual(['Type or say what you did first']);
+    expect(r.work.join(' ')).toMatch(/snaked the main line/i);
+  });
+
   test('changing a rate reprices that line and the total', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => openQuickInvoice(901));
