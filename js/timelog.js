@@ -3519,9 +3519,10 @@ function _tlAvatarLabel(name){
   return name==='Owner (me)'?'Me':(typeof initials==='function'?initials(name):(name||'?').slice(0,2));
 }
 // Owner/manager Team-scope summary: one row per employee, hours + on-site/
-// drive/supply split, no dollars ("don't need pay rate here just time"). $
-// cost still lives in Crew Cost (_crewCostRender); this is purely a time
-// report. Works on any row subset (a whole week or one drilled-down day),
+// drive/supply split ("don't need pay rate here just time"), plus exactly one
+// money line since 2026-09-27: "Owes $X this week" (owner asked, off the one
+// pay function). Loaded cost still lives in Crew Cost (_crewCostRender).
+// Works on any row subset (a whole week or one drilled-down day),
 // the caller decides the scope. selfUid tags the viewer's own row "(you)".
 // What on this person's rows actually needs a human (research 2026-08-29:
 // "most timesheets require no intervention, with flags ensuring the ones
@@ -3542,7 +3543,11 @@ function _tlAvatarLabel(name){
 // Collapsed shows what the research says a contractor scans for: who, how
 // long, how it split, and whether anything needs them. Open shows their days
 // and their rows, nobody else's.
-function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
+// owe: uid -> {wages} for THIS week (js/payroll-summary.js _payOweWeekMap),
+// passed only by the Team render, which only runs for _canViewComp. A crew
+// member's own Me card never gets one, so nobody sees anybody's money but
+// the people who pay it.
+function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo,owe){
   const byEmp=_tlEmpWeekAgg(rows,cid);
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   // Unpaid rows carry no paid minutes so they never reach _tlEmpWeekAgg, but
@@ -3564,7 +3569,9 @@ function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
     const empRows=rowsBy[uid];
     const e=byEmp[uid]||{min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,
       name:(empRows.find(r=>r&&r.personName)||{}).personName||'Crew'};
-    const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows)));
+    const o=owe&&owe[uid];
+    const oweHtml=o?'<div class="tl-emp-owe">Owes '+fmt(o.wages)+' this week'+(o.kind==='1099'?' (1099)':'')+'</div>':'';
+    const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows))+oweHtml);
     // THE CARD OPENS ONTO THAT PERSON'S MONTH, AS BARS (owner 2026-08-30,
     // asked how the bar affordance carries to Team: "1").
     //
@@ -4070,14 +4077,33 @@ async function renderTimeLog(opts){
       // always a truthful answer, so fall back to it rather than a blank.
       _tlDrill.uid=null;_tlDrill.level='month';
     }
-    el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
+    // ── WHAT YOU OWE THIS WEEK (owner 2026-09-27) ──────────────────────────
+    // Earl opened this screen on a Friday to learn what to pay his three
+    // guys and the only dollar answer was four taps away in Taxes. It is the
+    // first thing on Team now, off the SAME pay function as Payroll and
+    // Crew Cost (_payPersonPeriod), and each card says what that person is
+    // owed. Rates arrive with _loadTeamComp; until they do, one repaint.
+    let owe=null,oweTotal=0;
+    if(typeof _payOweWeekMap==='function'){
+      if(typeof _teamCompLoaded!=='undefined'&&!_teamCompLoaded&&typeof _loadTeamComp==='function'){
+        _teamCompLoaded=true;
+        const _was=JSON.stringify(_teamComp||{});
+        _loadTeamComp().then(()=>{try{if(JSON.stringify(_teamComp||{})!==_was&&_tlScope==='team'&&document.getElementById('pg-timelog')?.classList.contains('active'))renderTimeLog({cached:true});}catch(_e){}});
+      }
+      owe=_payOweWeekMap(visible);
+      oweTotal=Object.keys(owe).reduce((s,k)=>s+(owe[k].wages||0),0);
+    }
+    const oweBtn=owe?'<button type="button" id="tl-owe-btn" class="tl-owe-btn" onclick="openPayOwe()">'+
+        '<span class="tl-owe-l">'+(typeof svgIcon==='function'?svgIcon('💵',{size:15}):'')+' What you owe this week</span>'+
+        '<span class="tl-owe-r"><b>'+fmt(oweTotal)+'</b> ›</span></button>':'';
+    el.innerHTML=oweBtn+_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
         selMo,'')+
       // The crew list moves too. Coming back out of one person's week is an UP
       // like any other, and arrowing between months is a sideways like any
       // other: without the class, the one screen you return to was the one
       // screen that just appeared.
       '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
-        '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
+        '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo,owe)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
   }

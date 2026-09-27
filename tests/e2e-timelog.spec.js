@@ -2370,13 +2370,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
+        // AMENDED 2026-09-27 (§10.4): the owner asked for money on Team, in
+        // exactly two places, "What you owe this week" at the top and "Owes $X
+        // this week" on a card (js/payroll-summary.js _payOweWeekMap). Those
+        // two are cut out; anywhere else a $ is still a leak.
+        const box = document.createElement('div'); box.innerHTML = ownerHtml;
+        box.querySelectorAll('#tl-owe-btn, .tl-emp-owe').forEach(e => e.remove());
         return {
           ownerHasBothPeople: ownerHtml.includes('Owner (me)') && ownerHtml.includes('Test Crew Member'),
-          ownerHasDollar: ownerHtml.includes('$'),
+          ownerHasOweEntry: ownerHtml.includes('What you owe this week'),
+          ownerHasDollar: box.innerHTML.includes('$'),
           empHasDollar: empHtml.includes('$'),
         };
       });
       expect(r.ownerHasBothPeople).toBe(true);
+      expect(r.ownerHasOweEntry).toBe(true);
       expect(r.ownerHasDollar).toBe(false);
       expect(r.empHasDollar).toBe(false);
     });
