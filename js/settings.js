@@ -2150,8 +2150,11 @@ function obBtn(label,onclick,secondary){
 }
 function obInput(id,label,placeholder,type,value){
   return '<div style="margin-bottom:18px">'+
-    '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">'+label+'</label>'+
-    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
+    // Readable labels and 48px fields (Earl audit 2026-09-27): 12px grey caps
+    // over 42px boxes was built for a designer's eyes, not a man in bifocals.
+    // 16px text also stops iOS zooming the page on focus.
+    '<label for="'+id+'" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">'+label+'</label>'+
+    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
   '</div>';
 }
 
@@ -2192,10 +2195,10 @@ function obStepAccount(el){
     (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+
     (oauth?'':obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
-    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">State</label>'+
-    '<select id="ob-state" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-bphone" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">Phone</label>'+
+    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-state" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">State</label>'+
+    '<select id="ob-state" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     // The two real documents, not a paraphrase in an alert. Apple asks for a
     // reachable privacy policy, and a person signing up is entitled to read the
@@ -2462,21 +2465,34 @@ function obStepServices(el){
     shown.map((j,i)=>{
       const idx=jobs.indexOf(j);
       const on=_ob.svcPicked.includes(idx);
-      return '<button onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
+      return '<button type="button" class="ob-svc" data-svc="'+idx+'" aria-pressed="'+on+'" onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:48px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
         '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name)+'</span>'+
-        '<span style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
+        '<span class="ob-svc-price" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
       '</button>';
     }).join('')+
     '</div>'+
     (!all&&jobs.length>_OB_SVC_SHOWN?'<button onclick="_ob.svcAll=true;renderObStep()" style="width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:14px">Show all '+jobs.length+' '+escHtml(tLabel.toLowerCase())+' jobs</button>':'')+
-    obBtn(_ob.svcPicked.length?'Add '+_ob.svcPicked.length+' to my price book':'Continue','obNextServices()')+
+    '<div id="ob-svc-go">'+obBtn(_obSvcGoLabel(),'obNextServices()')+'</div>'+
     obBtn('Skip, I will build it as I go','obNextServices(true)','quiet');
 }
+function _obSvcGoLabel(){return (_ob.svcPicked||[]).length?'Add '+_ob.svcPicked.length+' to my price book':'Continue';}
+// Toggled IN PLACE, the way obSelectType flips the trade buttons (Earl audit
+// 2026-09-27): re-rendering the whole step threw him back to the top of the
+// list after every tap, so the job he wanted next was a scroll away again.
 function obToggleSvc(i){
   _ob.svcPicked=_ob.svcPicked||[];
   const at=_ob.svcPicked.indexOf(i);
   if(at===-1)_ob.svcPicked.push(i);else _ob.svcPicked.splice(at,1);
-  renderObStep();
+  const on=at===-1;
+  const btn=document.querySelector('#ob-body .ob-svc[data-svc="'+i+'"]');
+  if(!btn){renderObStep();return;}
+  btn.style.borderColor=on?'var(--blue)':'var(--border2)';
+  btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+  btn.setAttribute('aria-pressed',String(on));
+  const price=btn.querySelector('.ob-svc-price');
+  if(price)price.style.color=on?'var(--blue)':'var(--text3)';
+  const go=document.querySelector('#ob-svc-go button');
+  if(go)go.textContent=_obSvcGoLabel();
 }
 function obNextServices(skip){
   if(!skip&&(_ob.svcPicked||[]).length){

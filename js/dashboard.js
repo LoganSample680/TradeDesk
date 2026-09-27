@@ -102,7 +102,7 @@ function _renderDashSetupTodo(){
     drive.setAttribute('aria-disabled',hasVehicle?'false':'true');
     drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
   }
-  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';_setupTodoLocSync(false);return;}
   // No flash on sign-in. renderDash() fires once the moment we land on the
   // dashboard (goPg('pg-dash')), BEFORE the account's cloud settings have loaded,
   // so S.setupDone / vehicles / logo / skipped are all still empty. Rendering the
@@ -245,6 +245,7 @@ function _renderDashSetupTodo(){
   const doneCount=BASE_DONE+ALL.filter(t=>t.done||skipped.includes(t.id)).length;
 
   if(!remaining.length){
+    _setupTodoLocSync(false);
     // Everything handled, one clean, adult "done" moment, then gone for good. No
     // confetti, no mascot; just a confident seal a pro respects. Dismiss retires it.
     if(S.setupDone){el.style.display='none';el.innerHTML='';return;}
@@ -258,6 +259,8 @@ function _renderDashSetupTodo(){
     return;
   }
   const pct=Math.max(0,Math.min(100,Math.round(doneCount/total*100)));
+  const hidden=remaining.length>_SETUP_TODO_PEEK?remaining.length-_SETUP_TODO_PEEK:0;
+  const shown=(hidden&&!_setupTodoAll)?remaining.slice(0,_SETUP_TODO_PEEK):remaining;
   el.style.display='block';
   el.innerHTML=
     '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--blue);box-shadow:0 2px 12px rgba(45,93,168,.12)">'+
@@ -271,22 +274,47 @@ function _renderDashSetupTodo(){
         '<div style="height:6px;border-radius:6px;background:rgba(45,93,168,.15);margin-top:9px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--blue);border-radius:6px;transition:width .4s cubic-bezier(.22,1,.36,1)"></div></div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:6px">'+doneCount+' of '+total+' done · knock these out once and this card’s gone for good.</div>'+
       '</div>'+
-      remaining.map(it=>
-        '<div class="td-setup-row" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
+      shown.map(it=>
+        '<div class="td-setup-row" data-setup-id="'+it.id+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
           '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
           '<span style="flex:1;min-width:0">'+
             '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
-            (it.noSkip?'':'<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>')+
+            // 44px tall and pulled clear of the blue button above it: at 13px
+            // high it sat under his thumb aimed at the CTA (Earl audit 2026-09-27).
+            (it.noSkip?'':'<button class="td-setup-skip" onclick="_skipSetupTodo(\''+it.id+'\')" style="display:inline-flex;align-items:center;min-height:44px;min-width:44px;margin:4px 0 -10px -8px;background:none;border:none;padding:0 8px;font-size:12px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>')+
           '</span>'+
           '<button class="td-setup-cta" onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
         '</div>'
       ).join('')+
+      (hidden?'<button type="button" class="td-setup-more" onclick="_setupTodoAll=!_setupTodoAll;_renderDashSetupTodo()" style="display:block;width:100%;min-height:44px;border:none;border-top:1px solid var(--border);background:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+
+        (_setupTodoAll?'Show fewer':'Show all '+remaining.length)+'</button>':'')+
     '</div>';
   // Drop the trailing row's divider so the last item sits flush with the card edge.
   const rows=el.querySelectorAll('.td-setup-row');
-  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+  if(rows.length&&!hidden)rows[rows.length-1].style.borderBottom='none';
+  // Location is said ONCE on the dashboard. The red banner (js/geo-track.js
+  // _geoPermissionBanner) stands down while this card shows the location row,
+  // so when the row appears or goes away the banner has to look again.
+  _setupTodoLocSync(shown.some(it=>it.id==='location'));
 }
+function _setupTodoLocSync(locNow){
+  if(locNow===_setupTodoLocShown)return;
+  _setupTodoLocShown=locNow;
+  try{if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();}catch(_e){}
+}
+// True while the checklist is on screen WITH its location row: the banner's
+// cue to stay quiet so "Turn on location" is never said twice.
+function _setupTodoShowsLocation(){
+  const el=document.getElementById('dash-setup-todo');
+  return !!(el&&el.style.display!=='none'&&el.querySelector('[data-setup-id="location"]'));
+}
+// The checklist shows its NEXT TWO items and a Show all (Earl audit
+// 2026-09-27): eight rows pushed the money a full screen down on an iPhone SE.
+// Session-only on purpose: every boot opens short again.
+let _setupTodoAll=false;
+let _setupTodoLocShown=false;
+const _SETUP_TODO_PEEK=2;
 // HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
 // store is not business until somebody stands behind it. Pinned to the very
 // top of the dashboard, above the money tiles, exactly like the setup
@@ -1045,13 +1073,17 @@ function _setupTeamChooser(){
   document.body.appendChild(ov);
 }
 function _setupTeamRoute(kind){
-  // Both land on the team surface where you invite a person and set W-2 vs 1099;
-  // once a real member exists the item clears (skip records intent meanwhile).
-  if(typeof goPg==='function')goPg('pg-settings');
-  setTimeout(()=>{
-    if(typeof _openSetDetail==='function')_openSetDetail('team');
-    if(typeof openInviteEmployeeModal==='function')openInviteEmployeeModal();
-  },180);
+  // The form opens RIGHT WHERE HE IS (Earl audit 2026-09-27). This used to
+  // jump to Settings and open a 'team' section that does not exist, so a
+  // Cancel left a blank Settings page, and it opened the employee form for a
+  // 1099 sub too. Now W-2 opens the employee form, 1099 opens the sub form,
+  // Cancel leaves him on the dashboard, and only a SAVE takes him to Fleet &
+  // Team, on the Team tab, to see who he just added (_crewAddLand, cloud.js).
+  if(kind==='1099'){if(typeof openAddSubModal==='function')openAddSubModal();}
+  else if(typeof openAddEmployeeModal==='function')openAddEmployeeModal();
+  // Set AFTER the open: opening either form clears it, so a later add from
+  // anywhere else never inherits this trip.
+  if(typeof _crewAddFromSetup!=='undefined')_crewAddFromSetup=true;
 }
 function _skipSetupTodo(id){
   if(id==='qrcode')return; // not skippable — no UI path to this either, belt-and-suspenders

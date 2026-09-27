@@ -3015,7 +3015,9 @@ test.describe('TrueShot: the uploaded file carries its GPS', () => {
 
   test('the shutter fires at the capture, before the slow encode', async () => {
     const order = await page.evaluate(() => {
-      const src = String(tdCaptureShoot || '');
+      // The shutter body is _pcShootNow; tdCaptureShoot only registers it as
+      // in flight so Done waits for it (Earl audit 2026-09-27).
+      const src = String(_pcShootNow || '');
       return { flashAt: src.indexOf('_pcFlash()'), encodeAt: src.indexOf('toBlob') };
     });
     expect(order.flashAt, 'the flash is in the shutter path').toBeGreaterThan(-1);

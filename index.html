@@ -1184,6 +1184,8 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .seg{display:inline-flex;background:var(--cream);border-radius:var(--r);padding:3px;box-shadow:inset 0 0 0 1px var(--line);gap:0}
 .seg-btn{padding:6px 12px;font-size:11px;font-weight:700;color:var(--text-2);border:0;background:none;cursor:pointer;border-radius:var(--r-sm);font-family:inherit;letter-spacing:-.1px}
 .seg-btn.on{background:var(--bg-card);color:var(--text);box-shadow:var(--shadow-card)}
+/* The dashboard's period switch is a thumb target (Earl audit 2026-09-27: 25px tall). */
+#dash-period-seg .seg-btn{min-height:44px;min-width:44px;padding:0 10px}
 
 /* ── Grid layouts ── */
 .split-2-wide{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:flex-start;margin-bottom:14px}
@@ -2565,8 +2567,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 .pc-dot.idle{background:rgba(255,255,255,.45);box-shadow:none}
 .pc-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);border-radius:999px;padding:6px 13px;font:600 12px var(--pc-font);background:rgba(28,28,30,.72);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
 .pc-hint.gold{background:var(--pc-yellow);color:#241c00}
-.pc-seg{display:flex;justify-content:center;gap:22px;padding:16px 14px 0}
-.pc-seg-btn{border:none;background:none;padding:6px 2px;font:600 13px var(--pc-font);letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.62);touch-action:manipulation}
+.pc-seg{display:flex;justify-content:center;gap:10px;padding:6px 14px 0}
+.pc-seg-btn{border:none;background:none;padding:0 8px;min-height:44px;min-width:64px;font:600 13px var(--pc-font);letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.62);touch-action:manipulation}
 .pc-seg-btn.on{color:var(--pc-yellow)}
 .pc-shutrow{flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 30px calc(18px + env(safe-area-inset-bottom,0px));max-height:170px}
 .pc-last{width:48px;height:48px;border-radius:9px;border:none;padding:0;background:#1c1c1e center/cover no-repeat;position:relative;touch-action:manipulation}
@@ -4383,7 +4385,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-icon"><span data-ico="📋" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Legal &amp; terms</div>
-            <div class="set-idx-sub">Proposal terms, change-order clause, UETA disclosure</div>
+            <div class="set-idx-sub">Proposal terms, change-order clause, e-signature consent</div>
           </div>
           <div class="set-idx-meta" id="set-meta-legal"></div>
           <div class="set-idx-chev">›</div>
@@ -4852,7 +4854,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
       <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📋" data-ico-size="18"></span></div>
-      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Legal &amp; terms</div><div style="font-size:11px;color:var(--text3)">Proposal terms, change-order clause, UETA disclosure</div></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Legal &amp; terms</div><div style="font-size:11px;color:var(--text3)">Proposal terms, change-order clause, e-signature consent</div></div>
     </div>
     <div style="padding:16px">
       <div class="tip" style="margin-bottom:14px">These terms appear on every proposal and are required for enforceable contracts in most states. Keep them up to date each year.</div>
@@ -4864,7 +4866,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="padding:14px 16px">
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Custom terms</div>
           <textarea id="set-custom-terms" rows="5" style="font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Add any custom terms that will appear after the standard template…"></textarea>
-          <div style="font-size:10px;color:var(--text3);margin-top:4px">Standard UETA disclosure and payment terms are always included. This field adds to them.</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">The e-signature consent and payment terms are always included. This field adds to them.</div>
         </div>
       </div>
       <div class="set-form-card">
@@ -4879,7 +4881,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="set-form-card" style="margin-bottom:16px">
         <div class="set-form-card-hd">
           <div style="font-size:24px;line-height:1"><span data-ico="✍" data-ico-size="24"></span></div>
-          <div><div style="font-size:15px;font-weight:800">UETA disclosure</div><div style="font-size:11px;color:var(--text3)">Electronic signature consent statement</div></div>
+          <div><div style="font-size:15px;font-weight:800">E-signature consent</div><div style="font-size:11px;color:var(--text3)">The line that makes a signature on a phone as legal as one on paper (the UETA law)</div></div>
         </div>
         <div style="padding:14px 16px">
           <div id="set-ueta-preview" style="font-size:11px;color:var(--text3);line-height:1.6;padding:10px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">By clicking "I Agree," you consent to the use of electronic records and signatures in accordance with the Electronic Signatures in Global and National Commerce Act (ESIGN) and applicable state law (UETA).</div>

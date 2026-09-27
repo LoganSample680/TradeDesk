@@ -3134,6 +3134,10 @@ async function _geoPermissionBanner(){
   // could turn their own tracking off and never be told was the owner. It is
   // their mileage deduction, so they get the same banner the crew gets.
   if(!S.teamTracking&&_isEmployee){el.style.display='none';return;}
+  // Said ONCE (Earl audit 2026-09-27): while the setup checklist is showing
+  // its own location row, that row is the ask and this card stands down.
+  // The checklist calls back here whenever that row comes or goes.
+  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';return;}
   // iOS's OWN word first, via the same _geoNatProblem the setup checklist
   // reads (7.3): one vocabulary, one set of copy, one fix path. The web
   // permission API below is the browser fallback and CANNOT see accuracy at
@@ -3203,6 +3207,8 @@ async function _geoPermissionBanner(){
     }
   }catch(_e){}
   if(state==='granted'){el.style.display='none';return;}
+  // The await above is a gap the checklist can repaint in.
+  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';return;}
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML=_geoBannerHtml('Location is off',

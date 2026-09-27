@@ -84,7 +84,12 @@ function goPg(id){
       setTimeout(()=>{ goPg('pg-team'); setFleetTab('fleet'); },150);
     }
   }
-  if(id==='pg-team'){renderTeam();renderFleetVehicles();}
+  if(id==='pg-team'){
+    // setFleetTab renders the tab it lands on, and keeps the header's add
+    // button matching it (the markup ships Fleet active with the Team button).
+    if(typeof setFleetTab==='function'&&typeof _fleetDefaultTab==='function')setFleetTab(_fleetDefaultTab());
+    renderTeam();renderFleetVehicles();
+  }
   if(id==='pg-dispatch'){if(typeof renderDispatch==='function')renderDispatch();}
   if(id==='pg-licensing')renderLicensing();
   if(id==='pg-wh-list'&&typeof renderWhList==='function')renderWhList();
