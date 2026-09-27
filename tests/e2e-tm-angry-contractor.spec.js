@@ -205,6 +205,13 @@ test.describe('Earl, 58, hates technology', () => {
     await fresh();
     await say('set a tankless'); await page.evaluate(() => _geiScopeBuild('tm-scope-wrap'));
     await typeIn('tm-i-rate', '85');
+    // Changed 2026-09-26 (§10.4, owner: "even I would race to get the proposal
+    // done, there was a ton of shit I would've missed if my hand wasn't held,
+    // rate, how much my hourly number was, how many people, Tim's
+    // recommendations"). Send now waits until Tim's leftovers are answered and
+    // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
+    // Typing the rate is checking it; Tim's leftovers are answered here.
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
     expect(await bar()).toEqual(['Sign here', 'Send it']);
     await page.locator('#tm-i-rate').fill('');
     await page.locator('#tm-i-rate').dispatchEvent('input');

@@ -1544,6 +1544,10 @@ test.describe('the ceiling leads, not the guess', () => {
       _tmLayers = new Set(['rate']); _tmRatePerMan = 95;
       const e = document.getElementById('tm-i-rate'); if (e) e.value = '95';
       _geiScopeChips = ['x'];
+      // Changed 2026-09-26 (§10.4, owner: "there was a ton of shit I would've
+      // missed if my hand wasn't held"): Send waits for Tim's leftovers and
+      // the rate check. Both done here, so the bar is Send.
+      _geiScopeMissed = []; _tmMarkRateChecked();
       _tmApplyLayers();
       // The rail AND the Billing section since the iOS makeover (2026-09-23),
       // and the bar at the bottom, which names the next thing (tm-dock).

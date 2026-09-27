@@ -99,7 +99,14 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
   test('in a state with no deposit limit, any figure stands', async () => {
     const s = await (open({ addr: '412 Bell St, Topeka, KS 66603', dep: 5000 }).then(state));
     expect(s.problems).toEqual([]);
-    expect(s.bar).toEqual(['Sign here', 'Send it']);
+    // Changed 2026-09-26 (§10.4, owner: "even I would race to get the proposal
+    // done, there was a ton of shit I would've missed if my hand wasn't held,
+    // rate, how much my hourly number was, how many people, Tim's
+    // recommendations"). Send now waits until Tim's leftovers are answered and
+    // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
+    expect(s.bar).toEqual(['Check your rate']);
+    await page.evaluate(() => _tmMarkRateChecked());
+    expect((await state()).bar).toEqual(['Sign here', 'Send it']);
   });
 
   // Massachusetts: a third of the contract price. No ceiling, no price.

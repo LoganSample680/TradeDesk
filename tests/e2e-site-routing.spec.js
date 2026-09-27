@@ -36,6 +36,7 @@ const ROUTES = [
   '/plumbing-contractor-software',
   '/handyman-contractor-software',
   '/ai-answering-service-for-contractors',
+  '/beta',
   '/tools/lien-deadlines',
   '/privacy',
   '/terms',
@@ -263,6 +264,30 @@ test.describe('marketing site routing', () => {
     }
   });
 
+  // Shard 6, 2026-09-15. The sitemap published a lastmod one day in the FUTURE.
+  //
+  // scripts/sitemap-lastmod.js had two clocks in it. A file changed by the
+  // current commit got Central ("today"), but a file changed earlier was read
+  // with `git log %cs`, and %cs reports the date in the commit's own timezone,
+  // which on this runner is UTC. So every commit between 7pm Central and
+  // midnight recorded tomorrow, and the sitemap claimed a page was modified on a
+  // day that had not happened yet.
+  //
+  // The test above catches it, but only for the five hours a day it is true, and
+  // only after the pre-commit hook has already written the file, which is after
+  // the local test run. This one is deterministic: it names the instant.
+  test('a commit made in the Central evening is dated that evening, not tomorrow', () => {
+    const { centralDate } = require('../scripts/sitemap-lastmod.js');
+
+    // 01:42:28Z is 8:42pm Central the previous day. This is the exact commit
+    // that shipped the bad stamp.
+    expect(centralDate(Date.parse('2026-09-15T01:42:28Z'))).toBe('2026-09-14');
+    // 11:59pm Central, the last minute that still belongs to the 14th.
+    expect(centralDate(Date.parse('2026-09-15T04:59:00Z'))).toBe('2026-09-14');
+    // 12:10am Central, the first minute that does not.
+    expect(centralDate(Date.parse('2026-09-15T05:10:00Z'))).toBe('2026-09-15');
+  });
+
   test('the IndexNow key is published and self-consistent', async () => {
     const root = path.join(__dirname, '..');
     const keyFile = fs.readdirSync(root).find(f => /^[0-9a-f]{8,128}\.txt$/.test(f));
@@ -323,6 +348,24 @@ test.describe('marketing site routing', () => {
     // The landing page's hero and header both carry a CTA.
     expect(html['/']).toContain('href="/?signup=1"');
     expect(html['/']).toContain('href="/?app=1"');
+  });
+
+  test('no served page carries an em dash', () => {
+    // CLAUDE.md's standing rule, and it had been broken in the place it shows
+    // most: the landing page's <title>, which is the single string Google
+    // prints under your result, plus og:title and twitter:title. Caught
+    // 2026-09-13 while reading the page Google had actually crawled.
+    for (const r of ROUTES) {
+      const hits = (html[r].match(/&mdash;|\u2014/g) || []).length;
+      expect(hits, `${r} carries ${hits} em dash(es)`).toBe(0);
+    }
+    // intake.html is noindexed, so it is not a ROUTE, but a contractor's own
+    // client reads it. It counts as app copy.
+    const intake = fs.readFileSync(path.join(__dirname, '..', 'intake.html'), 'utf8');
+    expect((intake.match(/&mdash;|\u2014/g) || []).length, 'intake.html').toBe(0);
+    // ops.html is deliberately NOT checked: its em dashes are the empty-cell
+    // placeholder in a data table, a symbol rather than prose, and the rule is
+    // about writing that reads machine-written.
   });
 
   test('no page tells a crawler the product is a browser-only PWA', () => {
@@ -432,6 +475,44 @@ test.describe('marketing site routing', () => {
     expect(t, 'says it is not painting-only').toMatch(/not painting-only/i);
     expect(t, 'says it is not an answering service').toMatch(/not an AI call-answering/i);
     expect(t, 'no em dashes (CLAUDE.md)').not.toMatch(/\u2014/);
+  });
+
+  // The repo outranking the product page, observed 2026-09-15 ────────────────
+  //
+  // Asked to describe TradeDesk, an AI search answered out of the GitHub repo
+  // instead of the landing page, and quoted README.md's deployment section back:
+  // "every push to main goes live automatically." True, useless to a contractor,
+  // and it is what a prospect was being told the product is.
+  //
+  // The cause is not that the landing page is weak. It is that github.com is a
+  // far stronger domain and nothing connected the two documents, so they read as
+  // rival pages about the same brand name rather than one entity and its source
+  // code. sameAs is the standard signal for exactly that, and it was missing.
+  test('the structured data claims the GitHub repo as the same entity', () => {
+    const h = html['/'];
+    const blocks = [...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+    const nodes = blocks.flatMap(b => b['@graph'] || [b]);
+    const REPO = 'https://github.com/LoganSample680/TradeDesk';
+
+    for (const type of ['Organization', 'SoftwareApplication']) {
+      const n = nodes.find(x => x['@type'] === type);
+      expect(n, `${type} node present`).toBeTruthy();
+      expect(n.sameAs, `${type} must claim the repo`).toContain(REPO);
+    }
+  });
+
+  // The other half: if an AI does quote the repo, it must not quote build
+  // mechanics at a contractor. The README leads with where the real description
+  // lives, and says outright that the code notes are not the product.
+  test('the README points at the product page before it says anything else', () => {
+    const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+    const head = readme.slice(0, 600);
+    expect(head, 'canonical pointer is in the first thing a crawler reads').toContain('https://tradedeskpro.app');
+    // The blockquote marker wraps into the middle of the sentence, so the gap
+    // between words can contain "> " as well as whitespace.
+    expect(head, 'says the repo is not the product description').toMatch(/not the[\s>]+product description/i);
+    expect(readme, 'no deploy mechanics presented as product fact')
+      .not.toMatch(/push to `?main`? goes live/i);
   });
 
   // Markup-only Q&A that does not match what a visitor sees risks a Google

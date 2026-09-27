@@ -19,7 +19,16 @@ let xml = fs.readFileSync(smFile, 'utf8');
 
 // Same convention as bump-version.js: the business runs on US Central, so
 // "today" means today there, not wherever a runner happens to live.
-const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+//
+// Every date this script emits goes through here, which is the point. It used to
+// read a past commit's date with `git log %cs`, and %cs reports the date in the
+// COMMIT'S OWN timezone, which on a UTC runner is UTC. So a commit made at 8:42pm
+// Central was recorded as the next day, and the sitemap published a lastmod in
+// the future. Google discounts lastmod permanently once it catches a site doing
+// that, so this is not cosmetic. Two clocks in one file is the bug; there is now
+// one.
+const centralDate = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+const today = centralDate(Date.now());
 
 // Cloudflare Pages serves foo.html at /foo, so the route IS the file path.
 // "/" is the marketing home, which is landing.html (index.html is the app).
@@ -35,11 +44,16 @@ const staged = new Set(
 const dateFor = (rel) => {
   if (staged.has(rel)) return today;            // this commit is the change
   try {
-    const d = execSync(`git -C "${root}" log -1 --format=%cs -- "${rel}"`).toString().trim();
-    return d || today;                          // never committed yet
+    // %ct is the commit time as unix seconds, which carries no timezone of its
+    // own, so converting it here puts it on the same clock as `today` above.
+    const ts = execSync(`git -C "${root}" log -1 --format=%ct -- "${rel}"`).toString().trim();
+    return ts ? centralDate(Number(ts) * 1000) : today;   // never committed yet
   } catch (_e) { return today; }
 };
 
+// Only stamp when run as the hook. Requiring this file (the test does) must not
+// rewrite the sitemap or stage anything.
+if (require.main === module) {
 let changed = 0;
 xml = xml.replace(/<url>[\s\S]*?<\/url>/g, (block) => {
   const loc = (block.match(/<loc>([^<]+)<\/loc>/) || [])[1];
@@ -57,3 +71,8 @@ xml = xml.replace(/<url>[\s\S]*?<\/url>/g, (block) => {
 fs.writeFileSync(smFile, xml, 'utf8');
 execSync(`git -C "${root}" add sitemap.xml`);
 process.stdout.write(`[sitemap-lastmod] ${changed} url${changed === 1 ? '' : 's'} stamped\n`);
+}
+
+// Exported so the timezone rule can be tested directly rather than inferred from
+// a sitemap that only goes wrong for five hours a day.
+module.exports = { centralDate };

@@ -405,8 +405,12 @@ test.describe('Water heater flush board', () => {
   });
 
   test('tapping the row asks "What did Dana say?" and each answer does its job', async () => {
-    await seed();
+    // Open the dashboard FIRST, then seed: seeding draws the board, and a
+    // dashboard repaint after it on a slow engine must not stand between the
+    // rows being drawn and the tap under test.
     await page.evaluate(() => goPg('pg-dash'));
+    await seed();
+    await page.waitForSelector('#dash-wh-board .td-wh-row', { state: 'attached' });
     // A DOM click, so the boot shimmer still covering the dashboard on a slow
     // engine cannot hold the tap hostage. What is under test is the row's own
     // handler, not the shimmer.
@@ -424,8 +428,9 @@ test.describe('Water heater flush board', () => {
   });
 
   test('the Text button texts, it does not open the question', async () => {
-    await seed();
     await page.evaluate(() => { window._whOpenSms = () => {}; goPg('pg-dash'); });
+    await seed();
+    await page.waitForSelector('#dash-wh-board .td-wh-row', { state: 'attached' });
     await page.evaluate(() => document.querySelector('#dash-wh-board .td-wh-txt').click());
     const r = await page.evaluate(() => ({ ask: !!document.getElementById('_wh-ask-ov'), text: !!document.getElementById('_wh-text-ov') }));
     expect(r.ask).toBe(false);
@@ -478,8 +483,12 @@ test.describe('Water heater flush board', () => {
   });
 
   test('swipe right schedules, swipe left marks doing it themselves, a short swipe does nothing', async () => {
-    await seed();
+    // Open the dashboard FIRST, then seed: seeding draws the board, and a
+    // dashboard repaint after it on a slow engine must not stand between the
+    // rows being drawn and the tap under test.
     await page.evaluate(() => goPg('pg-dash'));
+    await seed();
+    await page.waitForSelector('#dash-wh-board .td-wh-row', { state: 'attached' });
     const swipe = (dx) => page.evaluate((dx) => {
       const row = document.querySelector('#dash-wh-board .td-wh-row');
       const r = row.getBoundingClientRect();
@@ -501,8 +510,12 @@ test.describe('Water heater flush board', () => {
     await swipe(-250);
     expect(await boardNames()).toEqual([]);
     await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
-    await seed();
+    // Open the dashboard FIRST, then seed: seeding draws the board, and a
+    // dashboard repaint after it on a slow engine must not stand between the
+    // rows being drawn and the tap under test.
     await page.evaluate(() => goPg('pg-dash'));
+    await seed();
+    await page.waitForSelector('#dash-wh-board .td-wh-row', { state: 'attached' });
     await swipe(250);
     await page.waitForFunction(() => window._schedPrefill && document.getElementById('s-name').value.includes('flush'));
     expect(await page.evaluate(() => document.getElementById('s-name').value)).toBe('Dana Due, water heater flush');

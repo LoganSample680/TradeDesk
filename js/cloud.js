@@ -118,8 +118,22 @@ async function loadStripeConnectStatus(){
   if(el)_renderStripeConnectUI(el,data);
 }
 
+// A co-owner sees the business's card payments but never starts, resumes or
+// unlinks them: onboarding and disconnect act on the SIGNED-IN login, so from
+// a co-owner they would open a second Stripe account under the wrong person.
+const _STRIPE_CO_OWNER_NOTE='Card payments are set up from the login that created this business.';
+function _stripeCoOwnerBlocked(){
+  if(typeof _coOwner!=='undefined'&&_coOwner){zAlert(_STRIPE_CO_OWNER_NOTE,{title:'Card payments'});return true;}
+  return false;
+}
 function _renderStripeConnectUI(el,data){
   if(!el)return;
+  if(typeof _coOwner!=='undefined'&&_coOwner){
+    const on=!!(data&&data.connected&&data.charges_enabled);
+    el.innerHTML='<div style="font-size:13px;font-weight:700;color:'+(on?'var(--green-mid)':'var(--text2)')+'">'+(on?'Stripe connected, payments active':'Card payments are not on yet')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5">'+escHtml(_STRIPE_CO_OWNER_NOTE)+'</div>';
+    return;
+  }
   if(!data||!data.connected){
     // A stored account the backend couldn't verify in THIS environment (e.g. a
     // live account viewed from a test-mode preview, or a deleted account). Offer
@@ -169,6 +183,7 @@ function _renderStripeConnectUI(el,data){
 }
 
 async function startStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
   try{
@@ -198,6 +213,7 @@ function openStripeConnect(){
 // (it may be the owner's real account). Replaces the manual Supabase clear we
 // used to run before reconnecting a test account.
 async function disconnectStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   zConfirm(
     'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted, you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
@@ -303,14 +319,30 @@ function _restoreIdentityFromCache(){
     const _ac=_uid?JSON.parse(localStorage.getItem('zp3_acct_'+_uid)||'null'):null;
     if(!_ac||!_ac.user)return false;
     _user=_ac.user;
-    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
     _activeTrade=_ac.activeTrade||'general';
     if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;}
     if(_ac.config)_config=_ac.config;
     _renderNavTradeSwitcher();applyPermissions();
     return true;
   }catch(_e){return false;}
+}
+// The server's answer to "is this login an owner of that business"
+// (is_co_owner, migration 20261048). A no takes the owner screens away and
+// rewrites the offline cache; a network failure changes nothing (the server
+// refuses anything the login may not do whatever the screens show).
+async function _verifyCoOwner(boss){
+  try{
+    if(!_supa||!boss)return;
+    const{data,error}=await _supa.rpc('is_co_owner',{boss});
+    if(error||data!==false)return;
+    if(String(_contractorUserId)!==String(boss))return;
+    _coOwner=false;
+    try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c){c.coOwner=false;localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+    applyPermissions();
+    if(typeof _ownerUI==='function'&&!_ownerUI()){const a=document.querySelector('.pg.active');if(a&&typeof goPg==='function'&&['pg-taxes','pg-settings','pg-team','pg-money','pg-tracker'].includes(a.id))goPg('pg-dash');}
+  }catch(_e){}
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
@@ -410,7 +442,7 @@ async function loadAccountData(){
       // this tab (switching accounts doesn't reload the page), so without this an owner
       // signing in right after an employee session inherits the employee's nav gating,
       // Settings, Team, Tracker, etc. all vanish even though this account is a full owner.
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user=u;
       const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
       _account=a;
@@ -438,6 +470,12 @@ async function loadAccountData(){
     const _linkAsCrew=(row,welcome)=>{
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
+      // CO-OWNER: Owner / Admin on the Team page. Only the business's owners can
+      // set that role (team_members_guard), so the row is enough to draw the
+      // owner screens now; the server check below confirms it and takes them
+      // away if the membership is gone. Every data path stays crew either way.
+      _coOwner=row.role==='owner';
+      if(_coOwner)_verifyCoOwner(row.contractor_user_id);
       applyPermissions();
       // Owner report 2026-07-17: a returning already-linked crew member landed
       // in a stale test account with zero indication anything had happened,
@@ -446,8 +484,8 @@ async function loadAccountData(){
       // a returning session gets a plain factual toast, so a wrong link is
       // never silent, the signed-in person always has a signal to notice.
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
-      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
-      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+      else if(!_coOwner)showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId,coOwner:_coOwner}));}catch(_e){}
       return true;
     };
     const _pend=(()=>{try{return JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');}catch(_e){return null;}})();
@@ -505,7 +543,7 @@ async function loadAccountData(){
     if(_pi?.cid){
       const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
       if(!_piErr){
-        _isEmployee=true;_contractorUserId=_pi.cid;
+        _isEmployee=true;_contractorUserId=_pi.cid;_coOwner=false;
         _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
         _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
         applyPermissions();
@@ -527,7 +565,7 @@ async function loadAccountData(){
     // No users row, check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user={id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
       applyPermissions();
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:_activeTrade||'general',isEmployee:false}));}catch(_e){}
@@ -543,8 +581,8 @@ async function loadAccountData(){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
         // Explicit both ways, _isEmployee is a shared global that may already be true
         // from a different account earlier in this tab (see _applyEmployeeNavGating).
-        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
         _activeTrade=_ac.activeTrade||'general';
         if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
@@ -712,7 +750,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.6';
+const APP_VERSION='09.26.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2032,14 +2070,29 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  // Render the real content underneath the shimmer, then let each card swap
+  // over (js/dashboard.js _dashRevealSkeletons).
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   // Pour only if the boot overlay already lifted. A fast sync that settles
   // while the overlay is still up must leave the pour to _removeBootOverlay
   // (skel mode is off now, so the lift arms it), or the once-guard would burn
   // the cascade invisibly behind the overlay.
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
+  // A logo with no brand colour yet: take it from the logo, read at boot by
+  // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
+  // so a colour picked on another device is never overwritten.
+  try{
+    // Cache the logo's look and boot-sized copy (js/brand-look.js), so the next
+    // boot paints the real logo even when it is too big for the settings cache.
+    // An account with a logo but no brand colour takes it from the logo.
+    if(_authSettingsLoaded&&S.logoData&&typeof tdBootCacheLogo==='function'){
+      tdBootCacheLogo(S.logoData,'zp3_boot_look',lk=>{
+        if(!S.brandColor&&typeof _tdBrandFromLogo==='function')_tdBrandFromLogo(lk);
+      });
+    }
+  }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
   // Well after the pour so it never competes with the boot render.
   try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
@@ -2078,9 +2131,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
-        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
+        const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
@@ -2090,15 +2149,17 @@ function _removeBootOverlay(immediate){
     // _bootSyncSettled pours the cascade then. Everything else pours now.
     // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
     // if no render has run yet this boot.
+    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
+    // EVEN while the first sync is in flight, as shimmer cards; the data then
+    // lands in place (_bootSyncSettled). One pour either way.
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
-    }else{
-      try{_armBootCascade();}catch(_e){}
     }
+    try{_armBootCascade();}catch(_e){}
   }
   o.classList.add('td-fadeout');
+  setTimeout(()=>{try{o.remove();}catch(_e){}},640);
   setTimeout(()=>{
-    o.remove();
     const resumeBid=localStorage.getItem('_sw_resume_bid');
     if(resumeBid){
       localStorage.removeItem('_sw_resume_bid');
@@ -2455,7 +2516,7 @@ async function supaInit(){
           // loadAccountData() re-derives this from the incoming account's own row, but reset
           // it here too as the single foundational cross-account boundary (belt-and-suspenders
           // with the per-branch resets in loadAccountData).
-          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
@@ -2962,7 +3023,7 @@ function openInviteEmployeeModal(){
         '<option value="tech">Field Tech</option>'+
         '<option value="office">Office / CSR</option>'+
         '<option value="manager">Manager</option>'+
-        '<option value="owner">Owner / Admin</option>'+
+        '<option value="owner">Owner (sees and runs everything)</option>'+
       '</select></div>'+
     '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
       '<select id="_inv-class" style="font-size:14px;padding:10px">'+
@@ -3965,10 +4026,10 @@ let _pendingPermReqs=[];
 let _permReqsLoaded=false;
 
 async function _loadPendingPermRequests(){
-  if(_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  if(!_ownerUI()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   try{
     const{data,error}=await _supa.from('td_permission_requests').select('*')
-      .eq('contractor_user_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:true});
+      .eq('contractor_user_id',_effectiveUid()).eq('status','pending').order('created_at',{ascending:true});
     if(error){if(_isMissingTableErr(error))return;throw error;}
     _pendingPermReqs=data||[];
     if(typeof renderTeam==='function')renderTeam();
@@ -3996,7 +4057,7 @@ async function _approvePermissionRequest(reqId){
     const emp=(S.employees||[]).find(e=>(e.email||'').toLowerCase()===(req.employee_email||'').toLowerCase());
     if(emp){emp.permissions=emp.permissions||{};emp.permissions.estimate=true;_settingsChanged();}
     await _supa.from('team_members').update({permissions:emp?emp.permissions:{estimate:true}})
-      .eq('contractor_user_id',_supaUser.id).eq('email',req.employee_email);
+      .eq('contractor_user_id',_effectiveUid()).eq('email',req.employee_email);
     await _supa.from('td_permission_requests').update({status:'approved',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
     _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
     if(typeof showToast==='function')showToast('Estimate access granted to '+(req.employee_name||req.employee_email||'employee'),'✅');
@@ -4020,8 +4081,8 @@ function renderTeam(){
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
   // Owner: lazy-load pending estimate-access requests once, then re-render.
-  if(!_isEmployee&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
-  const _reqHtml=(!_isEmployee&&_pendingPermReqs.length)
+  if(_ownerUI()&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
+  const _reqHtml=(_ownerUI()&&_pendingPermReqs.length)
     ?'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Pending access requests</div>'+
       _pendingPermReqs.map(r=>
         '<div style="padding:10px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:var(--r);margin-bottom:8px">'+
@@ -4047,7 +4108,7 @@ function renderTeam(){
   //
   // 20s floor so flipping between the Fleet and Team tabs does not re-query on
   // every tap, while any real trip back to this screen gets fresh rows.
-  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser){
+  if(_ownerUI()&&S.teamTracking&&supaEnabled()&&_supaUser){
     const _age=_teamGeoAt?Date.now()-_teamGeoAt:Infinity;
     if(!_teamGeoLoaded||_age>_TEAM_GEO_MIN_GAP_MS){
       _teamGeoLoaded=true;_teamGeoAt=Date.now();
@@ -4155,7 +4216,7 @@ function renderTeam(){
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
-    if(!_isEmployee&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
+    if(_ownerUI()&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
     else _psCard.style.display='none';
   }
   // Devices
@@ -4275,7 +4336,7 @@ let _teamComp={};
 let _teamCompLoaded=false;
 // Only the account owner or a payroll-permitted manager may see/edit pay.
 function _canViewComp(){
-  if(!_isEmployee)return true;                       // contractor/owner
+  if(_ownerUI())return true;                         // contractor/owner/co-owner
   return !!_employeeRecord?.permissions?.payroll;    // manager with payroll perm
 }
 // Effective hourly rate for job costing: salary ÷ 2080 work-hours, else the rate as-is.
@@ -4323,7 +4384,7 @@ const _GEO_PING_LOOKBACK_MS=30*86400000;
 // (20260828_device_status_manager_read.sql). All three have to agree, or a
 // manager is notified about something they cannot then look at.
 function _teamGeoAllowed(){
-  if(typeof _isEmployee==='undefined'||!_isEmployee)return true;
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
   const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
   return !!(p.payroll||p.team);
 }
@@ -4682,7 +4743,7 @@ function _employeeModalHTML(emp,idx){
           '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
           '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
-          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
+          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner (sees and runs everything)</option>'+
         '</select></div>'+
       '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
@@ -7498,7 +7559,9 @@ async function supaSaveToCloud(){
     // a separate marker, so a peer's reload path has a single event to coalesce (no render storm).
     // Trade-off vs the old settings-first: a force-quit AFTER the tables but BEFORE this write
     // loses only the (tiny) settings delta; the bigger table data has already committed.
-    if(!_isEmployee && _authSettingsLoaded){
+    // A co-owner writes the business's Settings like the owner (zj_data policy
+    // co_owner_manages_settings); uid here is _effectiveUid, the business.
+    if(_ownerUI() && _authSettingsLoaded){
       // Strip only stateRates (anon-readable reference data, never a user setting).
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
       const{stateRates:_sr0,...sForCloud}=S;
@@ -7538,7 +7601,7 @@ async function supaSaveToCloud(){
       }
       // Catch up on the peer change our cursor overwrite just masked (see the pre-read note).
       if(_peerMovedCursor)_scheduleReconcile(800);
-    } else if(!_isEmployee && !_authSettingsLoaded){
+    } else if(_ownerUI() && !_authSettingsLoaded){
       // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
       // blob over the cloud (the boot clobber), defer to the post-load flush.
       _logSave('skip-settings','settings not hydrated, deferring to post-load flush');
@@ -9963,39 +10026,15 @@ function showDailyBriefing(){
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
   // Reload bridge, painted SYNCHRONOUSLY before the save/reload so a version
-  // update NEVER shows the dashboard flashing between the old and new build. Uses
-  // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
-  // gradient glowing bar) so old-build → reload → new-build reads as ONE
-  // continuous loading screen instead of two separate boots.
+  // update NEVER shows the dashboard flashing between the old and new build.
+  // Built by the same tdBootFill as the boot screen (js/brand-look.js), so
+  // old-build -> reload -> new-build reads as ONE continuous loading screen.
   if(document.getElementById('_update-ov'))return;
-  const logo=S?.logoData||'';
-  const bname=(S?.bname||'').trim();
-  const brand=S?.brandColor||'';
-  const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-  let r=45,g=93,b=168,lr=115,lg=163,lb=238;
-  if(brand){const h=brand.replace('#','');r=parseInt(h.substr(0,2),16)||0;g=parseInt(h.substr(2,2),16)||0;b=parseInt(h.substr(4,2),16)||0;lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);}
-  const bg='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-  const barFg='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';
-  const barGlow='0 0 12px rgba('+r+','+g+','+b+',.55)';
-  const markTile=brand?'background:linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)':'';
-  const mark=logo?'':(bname
-    ?'<div class="sbo-mark" style="'+markTile+'"><span class="sbo-monogram">'+esc((bname[0]||'').toUpperCase())+'</span></div>'
-    :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
-  const nameBlock=logo
-    ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>':'')
-    :bname
-      ?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>'
-      :'<div style="display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span></div>';
   const ov=document.createElement('div');
   ov.id='_update-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
-  ov.innerHTML=
-    '<div class="sbo-glow"'+(brand?' style="background:radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)"':'')+'></div>'+
-    '<div class="sbo-center">'+mark+nameBlock+'<div class="sbo-tag">Updating…</div></div>'+
-    '<div class="sbo-foot">'+
-      '<div class="sbo-track"><div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:1.6s"></div><div class="sbo-sheen"></div></div>'+
-      '<div class="sbo-hint">Loading the latest version…</div>'+
-    '</div>';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden';
+  if(typeof tdBootFill==='function')tdBootFill(ov,{logo:S?.logoData||'',name:S?.bname||'',brand:S?.brandColor||'',
+    status:'Updating…',cacheKey:'zp3_boot_look'});
   document.body.appendChild(ov);
 }
 let _reloadPending=false;

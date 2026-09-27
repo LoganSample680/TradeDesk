@@ -154,7 +154,7 @@ function applyPermissions(){
   // Never display an email address as the nav name, fall back to business name
   const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
-  if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
+  if(roleEl)roleEl.textContent=_coOwner?'Owner':_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.innerHTML=(name==='My Account'?svgIcon('👤',{size:18}):escHtml(name.charAt(0).toUpperCase()));
 }
 
@@ -413,7 +413,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();
@@ -730,6 +730,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   }
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
+  _geiChecking=false;
   _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
@@ -1811,7 +1812,7 @@ function _byoShowPage(){
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
   _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
-  _byoSayOpen=false;_byoMissed=[];
+  _byoSayOpen=false;_byoMissed=[];_geiChecking=false;
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
@@ -2079,35 +2080,7 @@ function _geiScopeBuild(containerId){
 // Tim guessed becomes a fact until the contractor accepts it.
 function _geiScopeMissedHtml(){
   if(!_geiScopeMissed.length)return '';
-  if(_geiIsTM){
-    // TIM'S OWN CARD (2026-09-23). The same white rows under a grey label made
-    // what Tim thinks was forgotten look like part of the job. Tinted, his mark
-    // on it, and a filled Add, so "in the job" and "Tim's idea" never blur.
-    const n=_timMissTakeable(_geiScopeMissed).length;
-    const ed=_tmScopeEditing;
-    return '<div class="ios-sec">'+
-      '<div class="ios-group ios-tim">'+
-        '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
-          '<span class="who">You did not say</span>'+
-          (n>1?'<button type="button" class="ios-pill" onclick="_geiScopeTakeAllMissed()">Add all '+n+'</button>':'')+
-        '</div>'+
-        _geiScopeMissed.map(im=>{
-          const id=escHtml(JSON.stringify(String(im.id||'')));
-          if(im.ask)return _timMissAskRow(im,'_geiScopeTakeMissed','_geiScopeDropMissed');
-          return '<div class="ios-swipe" data-kind="missed">'+
-            '<div class="ios-row">'+
-              (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="_geiScopeDropMissed('+id+')">−</button>':'')+
-              // The reason is a tap on the words away. Four paragraphs in a
-              // row was a manual; the step names alone read like a list.
-              '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-              '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_geiScopeTakeMissed('+id+')">Add</button>'+
-            '</div>'+
-            '<button type="button" class="ios-del" tabindex="-1" onclick="_geiScopeDropMissed('+id+')">Not needed</button>'+
-          '</div>';
-        }).join('')+
-      '</div>'+
-    '</div>';
-  }
+  if(_geiIsTM)return _timMissCardHtml(_geiScopeMissed,'_geiScopeTakeMissed','_geiScopeDropMissed','_geiScopeTakeAllMissed',_tmScopeEditing);
   const rows=_geiScopeMissed.filter(im=>!im.ask).map(im=>
     '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
@@ -2194,12 +2167,20 @@ function _geiScopePlace(text,stage,last){
 // A missed item with `ask` is a question (the unit's make and model): the
 // answer goes into his own install line, never a line of its own. One with
 // `optIn` (the permit) is his call, so Add all leaves it for him to tap.
+// The box on the screen he is on. T&M and Build Your Own both draw Tim's card,
+// so after a T&M a hidden copy of "Name the unit" stays on the T&M page with
+// the same id, and a plain getElementById read that empty one and said "Type
+// the make and model first" to a man who just had (2026-09-26).
+function _timMissAskEl(id){
+  const sel='[id="tim-ask-'+String(id).replace(/"/g,'')+'"]';
+  return document.querySelector((_geiIsTM?'#gei-tm-page ':'#gei-byo-page ')+sel)||document.querySelector(sel);
+}
 function _timMissAskVal(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   return el?String(el.value||'').trim():'';
 }
 function _timMissAskNeed(id){
-  const el=document.getElementById('tim-ask-'+String(id));
+  const el=_timMissAskEl(id);
   if(el){try{el.focus();}catch(_e){}}
   if(typeof showToast==='function')showToast('Type the make and model first');
 }
@@ -2218,6 +2199,36 @@ function _timMissLearn(im,yes){
 }
 // The question row: what Tim wants to know, why, and the field for the answer
 // with its own Add. Enter adds too, the way the keyboard's Done key should.
+// TIM'S CARD, ONE FOR BOTH SCREENS (2026-09-26). T&M and Build Your Own drew
+// the same card from two copies, and only T&M's got the No. Tinted, his mark
+// on it, a filled Add, and a visible No beside every Add: the bar walks him to
+// this card, so turning one down has to be one tap too, not a swipe.
+function _timMissCardHtml(list,take,drop,takeAll,ed){
+  const n=_timMissTakeable(list).length;
+  return '<div class="ios-sec">'+
+    '<div class="ios-group ios-tim">'+
+      '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
+        '<span class="who">You did not say</span>'+
+        (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
+      '</div>'+
+      list.map(im=>{
+        const id=escHtml(JSON.stringify(String(im.id||'')));
+        if(im.ask)return _timMissAskRow(im,take,drop);
+        return '<div class="ios-swipe" data-kind="missed">'+
+          '<div class="ios-row">'+
+            (ed?'<button type="button" class="ios-minus" aria-label="Not needed" onclick="'+drop+'('+id+')">−</button>':'')+
+            // The reason is a tap on the words away. Four paragraphs in a
+            // row was a manual; the step names alone read like a list.
+            '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
+            '<button type="button" class="ios-no" onclick="'+drop+'('+id+')">No</button>'+
+            '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="'+take+'('+id+')">Add</button>'+
+          '</div>'+
+          '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
+        '</div>';
+      }).join('')+
+    '</div>'+
+  '</div>';
+}
 function _timMissAskRow(im,take,drop){
   const id=escHtml(JSON.stringify(String(im.id||'')));
   const fid='tim-ask-'+escHtml(String(im.id||''));
@@ -2229,6 +2240,7 @@ function _timMissAskRow(im,take,drop){
         'onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+take+'('+id+');}">'+
       '<button type="button" class="ios-pill" onclick="'+take+'('+id+')">Add</button>'+
     '</div>'+
+    '<div class="ios-row ios-ask-skip"><button type="button" class="ios-no" onclick="'+drop+'('+id+')">Skip this</button></div>'+
     '<button type="button" class="ios-del" tabindex="-1" onclick="'+drop+'('+id+')">Not needed</button>'+
   '</div>';
 }
@@ -2641,8 +2653,8 @@ const _PKG_MIN_BIDS=3;      // below this there is no "usually", only a last tim
 const _PKG_SHARE=0.5;       // in at least half his bids to count as usual
 function _pkgBidLines(b){
   const out=[];
-  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
-  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
+  if(Array.isArray(b&&b.byoItems))b.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp&&!it._supply&&it.label)out.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,notes:it.notes||''});});
+  if(!out.length&&Array.isArray(b&&b.geiLines))b.geiLines.forEach(l=>{if(l&&!l._tmLabor&&!l._rrp&&!l._supply&&l.desc)out.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});});
   return out;
 }
 // His own bids for this trade, newest first, drafts and empties excluded: a
@@ -2749,10 +2761,10 @@ let _attachSkipped=[];      // "not this time", for this estimate only
 function _attachCurrent(){
   const out=new Map();
   if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-    if(!it||it._rrp||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
+    if(!it||it._rrp||it._supply||!it.label)return;const k=_pbKey(it.label);if(k&&!out.has(k))out.set(k,String(it.label).trim());
   });
   if(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-    if(!l||l._tmLabor||l._rrp||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
+    if(!l||l._tmLabor||l._rrp||l._supply||!l.desc)return;const k=_pbKey(l.desc);if(k&&!out.has(k))out.set(k,String(l.desc).trim());
   });
   return out;
 }
@@ -2831,8 +2843,8 @@ function _geiAddRememberedLine(l){
     return true;
   }
   if(_geiLines.some(x=>x&&!x._tmLabor&&_pbKey(x.desc)===key))return false;
-  // T&M material categories are a lot, priced as one number, the shape
-  // _tmMatCatSave writes. Matching it is what keeps the row editable.
+  // A T&M material line: a lot, priced as one number, editable in the shared
+  // Materials sheet (js/materials.js).
   _geiLines.push({desc:String(l.label).trim(),notes,qty:1,unit:'lot',rate,total:rate});
   return true;
 }
@@ -2878,7 +2890,7 @@ function _attachCardHTML(){
           :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
-      '<button onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
+      '<button class="att-skip" onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
     '</div>').join('');
   return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
     '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
@@ -2978,19 +2990,7 @@ function _byoDropMissed(id){
 }
 function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
-  const n=_timMissTakeable(_byoMissed).length;
-  return '<div class="ios-sec"><div class="ios-group ios-tim">'+
-    '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+'<span class="who">You did not say</span>'+
-      (n>1?'<button type="button" class="ios-pill" onclick="_byoTakeAllMissed()">Add all '+n+'</button>':'')+'</div>'+
-    _byoMissed.map(im=>{
-      const id=escHtml(JSON.stringify(String(im.id||'')));
-      if(im.ask)return _timMissAskRow(im,'_byoTakeMissed','_byoDropMissed');
-      return '<div class="ios-swipe" data-kind="missed"><div class="ios-row">'+
-        '<span class="ios-lbl" onclick="this.closest(\'.ios-swipe\').classList.toggle(\'why\')">'+escHtml(im.say||'')+'<small>'+escHtml(im.because||'')+'</small></span>'+
-        '<button type="button" class="ios-pill'+(n>1&&!im.optIn?' ghost':'')+'" onclick="_byoTakeMissed('+id+')">Add</button></div>'+
-        '<button type="button" class="ios-del" tabindex="-1" onclick="_byoDropMissed('+id+')">Not needed</button></div>';
-    }).join('')+
-  '</div></div>';
+  return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
 }
 function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
@@ -3003,10 +3003,12 @@ function _byoRenderSections(){
   const sections=[..._defSecs,...new Set(allExtra)];
   // Only the sections with something in them, plus any he made himself. With
   // one in use, no heading at all: a list does not need a title.
-  const used=sections.filter(sec=>_byoItems.some(it=>it.section===sec)||_byoCustomSections.includes(sec));
+  // Materials is NOT drawn here: it is ONE card shared with T&M
+  // (js/materials.js, #97), and the supply house card lives inside it.
+  const used=sections.filter(sec=>sec!==_MAT_SEC&&(_byoItems.some(it=>it.section===sec&&!it._supply)||_byoCustomSections.includes(sec)));
   const titled=used.length>1||_byoCustomSections.length>0;
   const lines=!_byoItems.length?'':used.map(sec=>{
-    const rows=_byoItems.filter(it=>it.section===sec);
+    const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
@@ -3041,7 +3043,8 @@ function _byoRenderSections(){
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+_matCardHTML()+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  _matClaim(wrap);
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3080,7 +3083,8 @@ function _byoRenderSteps(){
   };
   const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
   head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
-  head('byo-step-2',2,'The price',two?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  // Not ticked until he has looked at the total and the deposit.
+  head('byo-step-2',2,'The price',two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }
@@ -3144,6 +3148,7 @@ function _byoCostInput(el){
   _byoUpdateRail();_byoAutosave();
 }
 function _byoDepInput(el){
+  _geiNumsTouched();
   const v=String(el.value||'').replace(/[^0-9.]/g,'');
   const pct=document.getElementById('byo-deposit-pct');if(!pct)return;
   pct.value=v===''?'0':String(Math.max(0,Math.min(100,parseFloat(v)||0)));
@@ -3151,10 +3156,15 @@ function _byoDepInput(el){
 }
 function _byoDockNext(st){
   if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  // Tim before the prices: a step he adds is a line that needs a price, so
+  // pricing first would send him back to pricing (2026-09-26, shared walk).
+  const tim=_geiTimStep(_byoMissed);
+  if(tim)return tim;
   if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
-  return null;
+  return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
+    yes:'Yes: '+_byoMoney(st.total)+', '+D.pct+'% deposit'});
 }
 function _byoDockBuild(){
   const el=document.getElementById('byo-say');
@@ -3951,7 +3961,12 @@ function _byoUpdateRail(){
   _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
+  _geiLines=selected.map(it=>{
+    const l={desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false};
+    // Supply house materials already taxed at the counter are not taxed again.
+    if(it._supply){l._supply=true;if(it._taxPaid)l._taxPaid=true;}
+    return l;
+  });
 
   // Sales tax
   let salesTax=0;
@@ -3965,7 +3980,7 @@ function _byoUpdateRail(){
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
         const sec=(l._byoSection||'').toLowerCase();
-        const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+        const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
         return {desc:l.desc,total:l.total,lineType};
       })});
     salesTax=_stResult.taxAmount||0;
@@ -4220,13 +4235,12 @@ function _byaAddFromBook(sec,i){
   // and the search closes rather than leaving a stale fragment behind.
   const _l=document.getElementById('_bya-label');if(_l)_l.value='';
   const _sg=document.getElementById('_bya-sugg');if(_sg)_sg.innerHTML='';
-  const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
   // The book's own words come with it. This is the whole payoff: the second
   // time he sells a water heater swap, the client's proposal already explains
   // what a water heater swap consists of, and he typed nothing.
-  _byoItems.push(_byoNormItem({id:nextId,section:sec,label:b.desc,qty:1,unit:b.unit||'ea',rate:b.rate,price:b.rate,notes:b.notes||'',on:true}));
+  _matPut(sec,{label:b.desc,qty:1,unit:b.unit||'ea',rate:b.rate,notes:b.notes||''});
   _pbLearn(b.desc,b.rate,b.unit);   // used again, so it climbs
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
   // The sheet stays open on purpose: he is usually adding several.
   _byaBumpCount();
   _byaRenderBook(sec);
@@ -4246,13 +4260,12 @@ function _byaConfirm(sec){
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
-  const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-  _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+  _matPut(sec,{label,qty,unit,rate,notes});
   // THE RATE, never the line total. Handing the book 12 doors' worth of money
   // and calling it the price of a door is the bug this whole change exists for.
   _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
@@ -4261,16 +4274,16 @@ function _byaConfirmAndNext(sec){
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(label){
-    const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-    _byoItems.push(_byoNormItem({id:nextId,section:sec,label,qty,unit,rate,price:qty*rate,notes,on:true}));
+    _matPut(sec,{label,qty,unit,rate,notes});
     _pbLearn(label,rate,unit,notes);
-    _byoRenderSections();_byoUpdateRail();_byoAutosave();
+    _matRefresh();
   }
   // Open next item modal for the same section
   _byoAddItem(sec);
 }
 function _byoEditItem(idx){
-  const it=_byoItems[idx];if(!it)return;
+  // Read through the shared store so a T&M material line opens in this same sheet.
+  const it=_matView(idx);if(!it)return;
   document.getElementById('_byo-add-modal')?.remove();
   const ov=document.createElement('div');ov.id='_byo-add-modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -4299,19 +4312,18 @@ function _byoEditItem(idx){
   },50);
 }
 function _byaEditConfirm(idx){
-  const it=_byoItems[idx];if(!it)return;
+  if(!_matView(idx))return;
   const label=(document.getElementById('_bya-label')?.value||'').trim();
   const rate=_byaPriceValue('_bya-price');
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
-  it.label=label;it.qty=qty;it.unit=unit;it.rate=rate;it.notes=notes;
-  _byoNormItem(it);
+  _matWrite(idx,{label,qty,unit,rate,notes});
   // Editing an item is the other moment he writes the words. Teach the book
   // here too, or a description added on the second pass is lost to the next job.
   _pbLearn(label,rate,unit,notes);
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  _matRefresh();
 }
 // A copy lands directly under the original, named so he can tell them apart at
 // a glance and so two rows reading exactly the same thing never reach a client.
@@ -4556,7 +4568,10 @@ function _presentShell(inner){
   return ov;
 }
 function _presentHdr(sub){
-  const biz=(typeof S!=='undefined'&&S.bname)||(typeof getBusinessName==='function'?getBusinessName():'')||'';
+  // WHITE LABEL: his name or nothing. getBusinessName() falls back to
+  // "TradeDesk", which put our name across the top of the screen his customer
+  // is holding (2026-09-26), the same leak the proposal had.
+  const biz=(typeof S!=='undefined'&&S.bname)||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   // Clear of the Dynamic Island, same as the preview bar: the exit is up here.
   return '<div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(245,239,226,.10);box-sizing:border-box">'+
     '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:#F5EFE2;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(biz)+'</div>'+
@@ -4794,6 +4809,7 @@ function _buildComparisonPreview(){
 }
 // ─── End comparison ──────────────────────────────────────────────────────────
 function _tmCrewStep(delta){
+  _tmTouchedRate();
   _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
   const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
   const lbl=document.getElementById('tm-i-crew-label');
@@ -5011,92 +5027,9 @@ function _tmRenderMoneyRows(n){
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
-  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
-  if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>'+_attachCardHTML();
-    return;
-  }
-  // Same card as BYO (§7.3): a T&M job forgets the isolation valves exactly the
-  // same way a fixed-price one does, and one renderer is what keeps the two
-  // from drifting apart again.
-  el.innerHTML=mats.map(({l,i})=>{
-    const rawTotal=l.total||((l.qty||0)*(l.rate||0));
-    return _geiItemRowHtml({
-      label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
-      editFn:'_tmEditMatCat('+i+')',delFn:'_tmDelMatCat('+i+')',delTitle:'Remove category'
-    });
-  }).join('')+_attachCardHTML();
-}
-function _tmAddMatCat(){ _tmMatCatModal(-1); }
-function _tmEditMatCat(idx){ _tmMatCatModal(idx); }
-function _tmMatCatModal(idx){
-  const isEdit=idx>=0;
-  const l=isEdit?_geiLines[idx]:null;
-  if(isEdit&&(!l||l._tmLabor))return;
-  const cur=isEdit?(l.total||((l.qty||0)*(l.rate||0))):0;
-  document.getElementById('_tm-mat-modal')?.remove();
-  const ov=document.createElement('div');
-  ov.id='_tm-mat-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
-    '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Description <span style="font-weight:400;color:var(--text3)">, what it consists of</span></label><textarea id="tcm-notes" rows="3" placeholder="e.g. Sherwin-Williams Duration, two coats, tinted to the approved color" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">The client reads this on the proposal. Tab from here to save.</div>'+
-    '<div style="display:flex;gap:10px">'+
-      '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
-      '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
-    '</div>'+
-  '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>{
-    const nameEl=document.getElementById('tcm-name');
-    const costEl=document.getElementById('tcm-cost');
-    const notesEl=document.getElementById('tcm-notes');
-    if(nameEl)nameEl.focus();
-    // Same tab-chain as BYO's "Add item" modal (§ notes structure must match): Name → Cost
-    // → Notes, Tab from Notes saves. Enter now makes a newline in the notes textarea.
-    if(notesEl){
-      notesEl.addEventListener('keydown',e=>{
-        if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();_tmMatCatSave(idx);}
-      });
-    }
-    if(nameEl){
-      nameEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();costEl?.focus();}
-      });
-    }
-    if(costEl){
-      costEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
-      });
-    }
-  },50);
-}
-function _tmMatCatSave(idx){
-  const name=(document.getElementById('tcm-name')?.value||'').trim();
-  if(!name){document.getElementById('tcm-name')?.focus();return;}
-  const notes=(document.getElementById('tcm-notes')?.value||'').trim();
-  const cost=parseFloat(document.getElementById('tcm-cost')?.value)||0;
-  if(idx>=0){
-    const l=_geiLines[idx];if(!l)return;
-    l.desc=name;l.notes=notes;l.qty=1;l.unit='lot';l.rate=cost;l.total=cost;
-  } else {
-    _geiLines.push({desc:name,notes,qty:1,unit:'lot',rate:cost,total:cost});
-  }
-  // Same moment BYO's modal teaches the book, so a T&M category he describes
-  // once arrives already described on the next job.
-  _pbLearn(name,cost,'lot',notes);
-  document.getElementById('_tm-mat-modal')?.remove();
-  _tmRenderMatList();_tmInputChange();
-}
-function _tmDelMatCat(idx){
-  const l=_geiLines[idx];if(!l||l._tmLabor)return;
-  if(!confirm('Remove "'+(l.desc||'this category')+'"?'))return;
-  _geiLines.splice(idx,1);
-  _tmRenderMatList();_tmInputChange();
+  // The same Materials card BYO draws (js/materials.js, §7.3).
+  el.innerHTML=_matCardHTML()+_attachCardHTML();
+  _matClaim(el);
 }
 // ── THE LAYERS ──────────────────────────────────────────────────────────────
 //
@@ -5533,8 +5466,6 @@ function _tmApplyLayers(){
     // request to get the job done equals more men on it therefore increased
     // cost for T&M". Three reasons, each only by a change order they sign.
     :'Past the most it can cost: hidden damage, work they add, or a rush that needs more crew. Each is a change order they sign.';
-  const matH=document.getElementById('tm-mat-head');
-  if(matH)matH.textContent='Material categories';
   // Last, so every figure it reads is the one this pass just settled.
   _tmFoldAll();
   _tmRenderAddRow(rule,locked);
@@ -5869,7 +5800,10 @@ function _tmRenderSteps(all,rule){
     const h=document.getElementById('tm-step-1');
     if(h)h.insertAdjacentHTML('beforeend','<button type="button" class="s" id="tm-scope-edit" onclick="_tmScopeEdit()">'+(_tmScopeEditing?'Done':'Edit')+'</button>');
   }
-  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?'done':'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  // Not ticked until he has looked at the numbers: a pre-filled rate is not a
+  // checked one.
+  const chk=!_tmLayers.has('rate')||_tmRateChecked();
+  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────
@@ -5892,8 +5826,93 @@ function _tmDockNext(st,rule,all){
     const say={rate:'Add your rate',est:'Add the days',cap:'Add the most it can cost',dep:'Lower the deposit'}[k]||'Finish How it bills';
     return {label:say,fn:'_tmStepAct(\''+k+'\')'};
   }
+  // HELD BY THE HAND TO SEND (owner, 2026-09-26: "even I would race to get
+  // the proposal done, there was a ton of shit I would've missed if my hand
+  // wasn't held, rate, how much my hourly number was, how many people, Tim's
+  // recommendations"). His rate and one person are filled in for him, so the
+  // bar went straight from Build the steps to Send it and none of them was
+  // ever looked at. Now the bar walks him through each before Send: Tim's
+  // questions (answered or turned down, one tap either way), then the rate and
+  // the people, confirmed in one tap that says the numbers out loud.
+  // Steps he left out are things Tim caught; the permit and the unit are
+  // questions only he can answer. The bar says which it is.
+  // Shared with Build Your Own (_geiTimStep, _geiNumsStep below).
+  const tim=_geiTimStep(_geiScopeMissed);
+  if(tim)return tim;
+  const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
+  return _geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
+    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+}
+// ── THE WALK TO SEND, SHARED BY T&M AND BUILD YOUR OWN (2026-09-26) ──────
+//
+// Owner: "BYO should carry over as much as possible with shared code". Both
+// bars run the same two steps before Send, from the same functions:
+//  1. What Tim caught, then Tim's questions (the permit, the unit), each
+//     answered or turned down on his card.
+//  2. The figures filled in for him, looked at once: T&M's rate and people,
+//     BYO's total and deposit. The first tap takes him there and lights them;
+//     the bar then says the numbers out loud as a Yes.
+// Confirmed once per proposal, remembered by bid; changing a figure counts.
+function _geiTimStep(miss){
+  miss=miss||[];
+  const caught=miss.filter(im=>!im.ask&&!im.optIn).length,asks=miss.length-caught;
+  if(caught)return {label:'Tim caught '+caught+' thing'+(caught>1?'s':'')+' you left out',fn:'_geiGoTimAsks()'};
+  if(asks)return {label:asks>1?('Tim has '+asks+' questions'):'Tim has a question',fn:'_geiGoTimAsks()'};
   return null;
 }
+let _geiNumsOk={},_geiChecking=false;
+function _geiNumsChecked(){
+  const k=String(_geiEditBidId||'');
+  if(_geiNumsOk[k])return true;
+  try{return localStorage.getItem('td_nums_ok_'+k)==='1';}catch(_e){return false;}
+}
+// Changing a figure is looking at it: no Yes needed after. No repaint here,
+// the input's own handler repaints.
+function _geiNumsTouched(){
+  const k=String(_geiEditBidId||'');
+  _geiNumsOk[k]=true;_geiChecking=false;
+  try{localStorage.setItem('td_nums_ok_'+k,'1');}catch(_e){}
+}
+function _geiNumsMark(){
+  _geiNumsTouched();
+  document.querySelectorAll('.tm-guide').forEach(e=>e.classList.remove('tm-guide'));
+  _geiRepaint();
+}
+function _geiNumsStep(o){
+  if(!o.has||_geiNumsChecked())return null;
+  if(_geiChecking)return {label:o.yes,fn:'_geiNumsMark()'};
+  return {label:o.check,fn:'_geiNumsGo(\''+o.target+'\')'};
+}
+function _geiNumsGo(id){
+  _geiChecking=true;
+  _geiGuideTo(document.getElementById(id));
+  _geiRepaint();
+}
+function _geiRepaint(){
+  if(_geiIsTM){if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
+  else if(typeof _byoRenderSteps==='function')_byoRenderSteps();
+}
+// Scroll to the thing and light it, so he sees WHAT he is saying yes to.
+function _geiGuideTo(el){
+  if(!el)return;
+  try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
+  el.classList.remove('tm-guide');void el.offsetWidth;el.classList.add('tm-guide');
+}
+function _geiGoTimAsks(){
+  const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
+  _geiGuideTo(card);
+  // A question with a box (the unit) gets the cursor, so he can just type.
+  // Look the box up when the timer fires: the card can re-render in between,
+  // and focusing the old, detached one lands the cursor nowhere.
+  const sel=(_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim .ios-ask-in';
+  setTimeout(()=>{const f=document.querySelector(sel);if(f)try{f.focus({preventScroll:true});}catch(_e){}},350);
+}
+// The T&M names, kept for Tim and the tests that call them.
+function _tmRateChecked(){return _geiNumsChecked();}
+function _tmMarkRateChecked(){_geiNumsMark();}
+function _tmTouchedRate(){_geiNumsTouched();}
+function _tmCheckRate(){_geiNumsGo('tm-blk-rate');}
+function _tmGoTimAsks(){_geiGoTimAsks();}
 function _tmDockBuild(){
   const el=document.getElementById('gei-scope-say');
   if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
@@ -7108,7 +7127,7 @@ function calcGeiTotal(){
     const _liItems=_geiLines.map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
       const sec=(l._byoSection||'').toLowerCase();
-      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
       return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
     });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
@@ -7547,6 +7566,35 @@ function _propSentence(t){
 // it for panels, a deeper shade for the price card's gradient. Set once per
 // document by sendGenericProposal; read by every piece below.
 let _PT={a:'#1a365d',rgb:[26,54,93]};
+// ── THE DOCUMENT SHELL, shared by the proposal and the invoice ─────────────
+// Owner 2026-09-26: "can invoice share the same code even though one is a
+// proposal and the other is a final doc?" It does: his colour, the page it
+// sits on, the cover, the sections and the sign-off are these functions, and
+// both documents are built from them (sendGenericProposal here, the quick
+// invoice in js/quick-invoice.js). Change the letterhead once and both follow.
+function _propBrand(){
+  let a='#1a365d',a2='#2a4a7f',rgb=[26,54,93];
+  if(typeof S!=='undefined'&&S&&S.brandColor){
+    // adaBrand clamp: the accent renders as text on white AND as a bg under
+    // white text, a light brand pick would fail WCAG both ways. Belt for
+    // legacy stored values; settings.js also clamps at save time now.
+    const h=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
+    const r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);
+    if(!isNaN(r)&&!isNaN(g)&&!isNaN(b)){
+      a='rgb('+r+','+g+','+b+')';
+      a2='rgb('+Math.min(255,r+42)+','+Math.min(255,g+42)+','+Math.min(255,b+42)+')';
+      rgb=[r,g,b];
+    }
+  }
+  return {a,a2,rgb};
+}
+function _propDoc(inner){return '<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">'+inner+'</div>';}
+// The closing line, his name and a thank-you. The wording is the document's.
+function _propSignoff(nm,lead){
+  nm=String(nm||'').trim();
+  if(!nm)return '';
+  return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">${lead||'Thank you for considering'} <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
+}
 function _propTheme(accent,rgb){
   const r=rgb||[26,54,93];
   const dk=r.map(x=>Math.round(x*0.72));
@@ -7654,12 +7702,13 @@ function _propCover(o){
       `<div class="prop-mark" style="min-width:0;${tile?'width:100%':'flex:1 1 220px'}">${mark}</div>`+
       `<span style="flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);padding:5px 10px;border-radius:999px">${o.label}</span>`+
     `</div>`+
-    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">Prepared for <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
+    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">${o.forLabel||'Prepared for'} <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
     `<div style="font-size:32px;font-weight:800;letter-spacing:-.032em;line-height:1.08;margin-top:6px;color:#fff">${o.project}</div>`+
     `<div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px">`+
       (o.addr?chip('pin',o.addr):'')+(o.phone?chip('phone',o.phone):'')+
       (o.duration?chip('clock','Est. duration: '+o.duration):'')+
-      chip('clock','Valid until: '+_propDate(o.until))+
+      // An invoice passes until:null: a bill for finished work has no expiry.
+      (o.until===null?'':chip('clock','Valid until: '+_propDate(o.until)))+
     `</div>`+
     `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
@@ -7792,19 +7841,10 @@ async function sendGenericProposal(previewOnly,opts){
   // boot overlay, so a branded account's proposal actually looks like THEIRS
   // instead of generic navy. Falls back to the original navy when unset, zero
   // visual change for every account that hasn't picked a brand color.
-  let _pAccent='#1a365d',_pAccent2='#2a4a7f',_pRGB=[26,54,93];
-  if(S&&S.brandColor){
-    // adaBrand clamp: the accent renders as text on white AND as a bg under
-    // white text, a light brand pick would fail WCAG both ways. Belt for
-    // legacy stored values; settings.js also clamps at save time now.
-    const _bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
-    const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
-    if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
-      _pAccent='rgb('+_br+','+_bg+','+_bb+')';
-      _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
-      _pRGB=[_br,_bg,_bb];
-    }
-  }
+  // His brand colour, or the original navy when unset (_propBrand, shared
+  // with the invoice).
+  const _pb=_propBrand();
+  let _pAccent=_pb.a,_pAccent2=_pb.a2,_pRGB=_pb.rgb;
   // The brand as a wash and a hairline, for the panels that carry it quietly.
   const _pTint='rgba('+_pRGB.join(',')+',.06)',_pLine='rgba('+_pRGB.join(',')+',.20)';
   _propTheme(_pAccent,_pRGB);
@@ -8209,16 +8249,12 @@ async function sendGenericProposal(previewOnly,opts){
   // claim, and the last thing read before the signature.
   // The sign-off: centred, his name, a thank-you. Courtesy, not a claim, and
   // the last thing read before the signature.
-  const _propFooter=(()=>{
-    const nm=String(_bnameRaw||'').trim();
-    if(!nm)return '';
-    return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">Thank you for considering <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
-  })();
-  const proposalHtml=`<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">`+
+  const _propFooter=_propSignoff(_bnameRaw);
+  const proposalHtml=_propDoc(
     _propCover({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr,name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD})+
     `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
     `<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px ${_PT.line}">${_lineItemsSection}</div>`+
-    `${notesHtml}${_propPanelHtml}${_propFooter}</div>`;
+    `${notesHtml}${_propPanelHtml}${_propFooter}`);
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

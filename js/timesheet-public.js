@@ -150,7 +150,20 @@ function _tspHeader(){
       '<div class="tsp-who"><div class="tsp-eyebrow">Timesheet</div><div class="tsp-name">'+escHtml(d.person_name||'Crew')+'</div>'+
         '<div class="tsp-range">'+escHtml(_tspRange(String(d.week_start||'').slice(0,10)))+'</div></div>'+
       _tspChip()+
-    '</div>';
+    '</div>'+_tspPayHtml();
+}
+// THE WEEK'S PAY (owner 2026-09-26): minutes x the rate the week was submitted
+// at, to the cent. Only when the week carries a rate; a week without one
+// shows the hours alone, exactly as before.
+function _tspPayHtml(){
+  const d=_tsp.data||{};
+  const rate=Number(d.pay_rate)||0,min=Number(d.total_min)||0;
+  if(!(rate>0))return '';
+  const pay=Math.round(min/60*rate*100)/100;
+  const h=Math.floor(min/60),m=min%60;
+  const hm=(h?h+'h':'')+(m?(h?' ':'')+m+'m':'')||'0m';
+  return '<div class="tsp-pay"><div class="tsp-pay-l">Pay this week<small>'+escHtml(hm)+' at $'+escHtml(String(rate).replace(/\.0+$/,''))+'/hr</small></div>'+
+    '<div class="tsp-pay-v">$'+pay.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div></div>';
 }
 function _tspFooter(){
   const d=_tsp.data||{};

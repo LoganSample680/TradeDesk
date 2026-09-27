@@ -86,6 +86,8 @@ test.describe('tim', () => {
       'pg-est-generic': 'the estimate builder. It is opened with a client and a ' +
         'mode by openGenericEstimate, which is the whole estimate path Tim ' +
         'already drives. Landing on it cold shows a form bound to nobody.',
+      'pg-qi': 'the quick invoice. It is always FOR somebody: openQuickInvoice(cid) '+
+        'opens it from the customer picker, and cold it is an invoice to nobody.',
     };
     test('every screen in the app is either reachable by name or listed as needing a subject', async () => {
       const r = await page.evaluate(() => ({
@@ -2385,6 +2387,40 @@ test.describe('tim', () => {
     expect(r.album).toBe(1);                    // the Pine Ct shot, not all three
   });
 
+  test('a question phrased as a question still finds the photos', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ['where are my photos for whitfield',
+      "show me whitfield's pictures", 'do i have any photos of whitfield', 'whitfield photos']
+      .map(s => { const p = timParse(s, { clients: [], photos }); return { q: p.q, n: (p.places || []).length }; }));
+    r.forEach(x => expect(x.q, 'no question words left in the search term').toBe('whitfield'));
+    r.forEach(x => expect(x.n, 'and it still finds both of their properties').toBe(2));
+  });
+
+  test('the words can arrive in any order', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => ({
+      a: tdPhotoSearch('whitfield oak', photos).length,
+      b: tdPhotoSearch('oak whitfield', photos).length,
+      c: tdPhotoSearch('whitfield nowhere', photos).length,
+    }));
+    expect(r.a).toBe(1);
+    expect(r.b, 'the same question, said the other way round').toBe(1);
+    expect(r.c, 'a word that matches nothing still rules the photo out').toBe(0);
+  });
+
+  test('one place opens the property folder, not the bare viewer', async () => {
+    await photoSeed();
+    const r = await page.evaluate(() => {
+      timRun('where are my photos at 412 Oak');
+      const out = { addr: document.querySelector('.pc-fold-addr')?.textContent || null,
+        cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
+      if (typeof tdReviewClose === 'function') tdReviewClose();
+      return out;
+    });
+    expect(r.addr, 'the folder header names the property').toBe('412 Oak St');
+    expect(r.cells).toBeGreaterThan(0);
+  });
+
   test('nothing matches, so he opens the search rather than guessing', async () => {
     await photoSeed();
     const r = await page.evaluate(() => {
@@ -2444,48 +2480,6 @@ test.describe('tim', () => {
     // what is asserted.
     expect(r.val).toBe('');
     expect(r.inThread).toBe(true);
-  });
-
-  // The sentence the owner actually said. It used to leave "where are
-  // whitfield" as the search term, match nothing, and do nothing, while still
-  // classifying correctly as a photo question, so Tim looked like he had
-  // simply ignored him (2026-09-22).
-  test('a question phrased as a question still finds the photos', async () => {
-    await photoSeed();
-    const r = await page.evaluate(() => ['where are my photos for whitfield',
-      "show me whitfield's pictures", 'do i have any photos of whitfield', 'whitfield photos']
-      .map(s => { const p = timParse(s, { clients: [], photos }); return { q: p.q, n: (p.places || []).length }; }));
-    r.forEach(x => expect(x.q, 'no question words left in the search term').toBe('whitfield'));
-    r.forEach(x => expect(x.n, 'and it still finds both of their properties').toBe(2));
-  });
-
-  // Word order is how people talk, so every word has to land rather than the
-  // leftover phrase matching as one string.
-  test('the words can arrive in any order', async () => {
-    await photoSeed();
-    const r = await page.evaluate(() => ({
-      a: tdPhotoSearch('whitfield oak', photos).length,
-      b: tdPhotoSearch('oak whitfield', photos).length,
-      c: tdPhotoSearch('whitfield nowhere', photos).length,
-    }));
-    expect(r.a).toBe(1);
-    expect(r.b, 'the same question, said the other way round').toBe(1);
-    expect(r.c, 'a word that matches nothing still rules the photo out').toBe(0);
-  });
-
-  // He lands somewhere that NAMES the house. The flat viewer shows the shots
-  // and never says whose they are.
-  test('one place opens the property folder, not the bare viewer', async () => {
-    await photoSeed();
-    const r = await page.evaluate(() => {
-      timRun('where are my photos at 412 Oak');
-      const out = { addr: document.querySelector('.pc-fold-addr')?.textContent || null,
-        cells: document.querySelectorAll('#pc-rev .pc-rev-cell').length };
-      if (typeof tdReviewClose === 'function') tdReviewClose();
-      return out;
-    });
-    expect(r.addr, 'the folder header names the property').toBe('412 Oak St');
-    expect(r.cells).toBeGreaterThan(0);
   });
 
   test('cancel on the chooser opens nothing', async () => {
@@ -2853,7 +2847,6 @@ test.describe('tim: the mic is the way in', () => {
     expect(without).toContain('type your own');
   });
 });
-
 
 // ── Time off, said to Tim (owner 2026-09-24: "we're focused on Tim") ────────
 // "Tim, I'm on vacation through Sunday." Writes the same block the Schedule

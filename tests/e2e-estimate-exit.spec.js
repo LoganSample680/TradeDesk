@@ -24,7 +24,10 @@ test.describe('leaving a T&M or BYO estimate', () => {
   test.afterAll(async () => { await ctx.close(); });
 
   const open = (mode, id) => page.evaluate(({ mode, id }) => {
-    document.querySelectorAll('#_style-pick-ov,.zmodal-overlay').forEach(e => e.remove());
+    // .toast too: the tests share one page, and the last test's 3.5s "saved"
+    // toast sits over the bottom of the screen, where the next test looks for
+    // what is on top of Done talking (WebKit, when the runner is slow).
+    document.querySelectorAll('#_style-pick-ov,.zmodal-overlay,.toast').forEach(e => e.remove());
     clients.length = 0; bids.length = 0;
     clients.push({ id, name: 'Ray Whitcomb', addr: '412 Bell St, Topeka, KS 66603', phone: '7855550142' });
     currentClientId = id;

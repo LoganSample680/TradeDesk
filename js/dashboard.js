@@ -165,6 +165,10 @@ function _renderDashSetupTodo(){
       sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
+    // Venmo (owner 2026-09-26): skippable, a business that doesn't take Venmo
+    // says so and it's gone. Per business, like everything on S.
+    {id:'venmo',done:!!(typeof _venmoUser==='function'&&_venmoUser()),icon:'💵',title:'Add your Venmo',
+      sub:'Invoices get a Pay with Venmo link with the amount already in. Don\'t take Venmo? Skip it.',cta:'Add'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
       sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
@@ -1013,6 +1017,7 @@ function _setupTodoGo(id){
     return;
   }
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
+  if(id==='venmo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');setTimeout(()=>{const f=document.getElementById('set-venmo');if(f){f.scrollIntoView({block:'center'});f.focus();}},200);},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}
   if(id==='qrcode'){if(typeof goPg==='function')goPg('pg-qr-leads');setTimeout(()=>{document.getElementById('qr-new-label')?.focus();},160);return;}
@@ -1113,7 +1118,7 @@ function renderDash(){
   if(_subEl)_subEl.textContent='';
 
   const kpiEl=document.getElementById('dash-kpi');
-  if(kpiEl&&_isEmployee){
+  if(kpiEl&&!_ownerUI()){
     // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
     const empId=_employeeRecord?.id;
     const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk))
@@ -1244,7 +1249,7 @@ function renderDash(){
 
   // Hobby loss check, 3 of last 5 years negative profit
   const _hobbyEl=document.getElementById('dash-hobby-warn');
-  if(_hobbyEl&&!_isEmployee){
+  if(_hobbyEl&&_ownerUI()){
     const _cy=new Date().getFullYear();
     let _lossYears=0;
     for(let _yi=0;_yi<5;_yi++){
@@ -1266,8 +1271,8 @@ function renderDash(){
   if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();
 
   const closeTip=document.getElementById('dash-close-tip');
-  if(_isEmployee){if(closeTip)closeTip.style.display='none';}
-  if(!_isEmployee&&closeTip){
+  if(!_ownerUI()){if(closeTip)closeTip.style.display='none';}
+  if(_ownerUI()&&closeTip){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
@@ -1292,7 +1297,7 @@ function renderDash(){
   const csub=document.getElementById('dash-collect-sub');
   if(csub){csub.innerHTML=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
-  if(!_isEmployee)renderPipeline();
+  if(_ownerUI())renderPipeline();
   else{const pe=document.getElementById('dash-pipeline');if(pe)pe.innerHTML='';}
   // Section shared styles
   const _rowStyle='display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px';
@@ -2143,7 +2148,7 @@ function renderDashToday(){
       ?'<span style="margin-left:8px;padding:4px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);font-size:11px;font-weight:700;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid sent</span>'
       :'<button onclick="event.stopPropagation();typeof _openBidBuilder===\'function\'&&_openBidBuilder('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--blue);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid this job</button>'):'';
     // Quick crew assignment row (owner only, non-estimate jobs)
-    const _crewRow=(!_isEmployee&&!isEst)?(()=>{
+    const _crewRow=(_ownerUI()&&!isEst)?(()=>{
       if(_crewEmps.length>0){
         const _aId=j.assignedTo||null; // persists for the job's whole span, not just today
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
@@ -2625,7 +2630,13 @@ function printNoticeOfIntent(bidId){
   const todayD=fmtD(todayKey());
   const payByD=fmtD(addDays(todayKey(),demandDays));
   const lastWork=bid.completion_date||bid.bid_date||todayKey();
-  const fileDeadline=rules?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
+  // A printed Notice of Intent is a legal document: a calendar date on it reads as
+  // a fact. In a `confirm` state the statute fixes the LENGTH of the window but not
+  // what starts it (Idaho 45-507(2): "ninety (90) days after the completion of the
+  // labor or services", never saying whose), so the date we would compute here is a
+  // guess wearing a suit. Print the window in words instead and say what to check.
+  const lienUnsure=!!(rules&&rules.confirm);
+  const fileDeadline=(rules&&!lienUnsure)?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
   const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
   // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
   // separate person (or unknown → fill-in line); on a homeowner account they're the same.
@@ -2670,7 +2681,7 @@ ${gcBlock}
 <div class="row" style="margin-top:18px"><div class="plabel">Amount Past Due</div><div class="amt">${fmt(bal)}</div></div>
 <div class="body" style="margin-top:16px">
   <p>You are hereby notified that the undersigned, <strong>${escHtml(bname)}</strong>, furnished ${escHtml(workDesc)} for the improvement of the property located at <strong>${escHtml(addr)}</strong>, with work last furnished on or about <strong>${fmtD(lastWork)}</strong>.</p>
-  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':''}.</p>
+  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':(lienUnsure?', and must do so within '+escHtml(String(rules.filing_deadline_days))+' days of the date the statutory period begins to run':'')}.</p>
 </div>
 <div class="demand"><strong>DEMAND:</strong> Unless full payment of ${fmt(bal)} is received on or before <strong>${payByD}</strong>, the undersigned intends to file a mechanic's lien against the property described above and to pursue all remedies available under law, which may include recovery of interest, costs, and attorney's fees where permitted.</div>
 <div class="body"><p>To resolve this matter, contact <strong>${escHtml(bname)}</strong>${bphone?' at '+escHtml(bphone):''} immediately.</p></div>

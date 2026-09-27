@@ -18,10 +18,9 @@
 // cannot say scaffold goes up before anything is stripped, and that ordering is
 // the part the owner asked for by name. js/tim-nudge.js decides when he is
 // allowed to interrupt, and the bar is a dollar, a percentage or a law.
-//
-// Owner 2026-09-25, the same direction from the estimate side: "Tim should know
-// trade knowledge." js/trade-knowledge.js holds, per job, the professional scope
-// text and the items commonly left off, and Tim, the
+// HE KNOWS THE TRADE NOW (owner 2026-09-25, reversing 2026-09-17): "Tim
+// should know trade knowledge." Not in this file: js/trade-knowledge.js holds
+// it as data, what each job includes and what gets left off, and Tim, the
 // spoken estimate and the estimate builder all read that one table. Prices
 // are still the contractor's; the price book wins over the library's
 // starting numbers. js/estimate-speak.js is still where a spoken estimate is
@@ -39,7 +38,13 @@ const TIM_PLACES=[
   {pg:'pg-jobs',        name:'Jobs',        say:['jobs','job list','my jobs','work orders']},
   {pg:'pg-schedule',    name:'Schedule',    say:['schedule','my schedule']},
   {pg:'pg-cal',         name:'Calendar',    say:['calendar','the week','weather']},
+  // The Photos page (main, #91). Named by the page, never a bare "photos":
+  // that word alone is the photo lookup below, which is what "photos at 412
+  // Oak" needs it to stay.
+  {pg:'pg-photos',      name:'Photos',      say:['photos page','photo page','the photos page','all photos','all my photos','photo library']},
   {pg:'pg-proposals',   name:'Proposals',   say:['proposals','my proposals','bids','my bids','quotes','sent estimates']},
+  // The water heater flush list (#94). "Annual service" is its on-screen name.
+  {pg:'pg-wh-list',     name:'Annual service', say:['annual service','water heater list','water heaters','flush list','water heater flushes']},
   {pg:'pg-money',       name:'Collect',     say:['collect','invoices','payments','get paid','whats owed','who owes me']},
   {pg:'pg-tracker',     name:'Books',       say:['books','bookkeeping','the numbers','profit','income','expenses','mileage','p and l','my money']},
   {pg:'pg-taxes',       name:'Taxes',       say:['taxes','tax','write offs','deductions','1099s']},
@@ -569,11 +574,6 @@ function _timSaveLead(p,trade){
   return c;
 }
 
-// ── The box ──────────────────────────────────────────────────────────────────
-// Centered modal, the app's one convention for a prompt (7.3). The mic is the
-// same on-device one every note field already uses (js/voice.js): the words are
-// transcribed on the phone, so a sentence said in a client's kitchen stays in
-// the kitchen.
 
 // ── The mark ─────────────────────────────────────────────────────────────────
 //
@@ -1077,7 +1077,9 @@ function _timSheet(id,inner){
 // real boundary, because it is where the figures are computed: anything that
 // reaches it by any route gets nothing.
 function _timCrew(){
-  try{return (typeof _isEmployee!=='undefined')&&!!_isEmployee;}catch(_e){return false;}
+  // A co-owner is an owner here: Tim reads the business's own records, which a
+  // co-owner holds unredacted, so his answers are the business's.
+  try{return (typeof _ownerUI==='function')?!_ownerUI():((typeof _isEmployee!=='undefined')&&!!_isEmployee);}catch(_e){return false;}
 }
 
 // Is there a job on screen at all. Three separate pieces of copy assumed there
@@ -1598,10 +1600,21 @@ function _timTalkBegin(){
   };
   _timWaveTimer=setInterval(tick,110);
   if(typeof _voiceStart==='function'){
-    _voiceStart(el,(joined,heard)=>{
+    Promise.resolve(_voiceStart(el,(joined,heard)=>{
       _timHeard=joined;
       const tr=document.getElementById('_tim-transcript');
       if(tr)tr.textContent=joined?('"'+joined+'"'):'';
+    })).then(ok=>{
+      // The mic did not start. The panel said "Tim is listening" anyway and
+      // heard nothing (2026-09-26). Say so, where he is looking, and stop.
+      if(ok!==false||!_timTalking)return;
+      _timTalking=false;
+      if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
+      const p=document.getElementById('_tim-listen');
+      if(p)p.innerHTML='<div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">'+timMark(22)+
+        '<span style="font-size:13.5px;font-weight:700;color:var(--text-cream)">Tim can\'t hear you</span></div>'+
+        '<div style="font-size:13px;line-height:1.5;color:var(--text-cream-2);margin-bottom:14px">Turn on Microphone and Speech Recognition for TradeDesk in Settings, then try again. You can type it in the meantime.</div>'+
+        '<button type="button" onclick="document.getElementById(\'_tim-listen\')?.remove();document.getElementById(\'_tim-listen-host\')?.remove()" style="width:100%;height:48px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">OK</button>';
     });
   }
 }

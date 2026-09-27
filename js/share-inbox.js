@@ -281,7 +281,11 @@ function _shareInPrompt(items){
     // for a photo of a water heater is noise, and 15.1 is explicit that a
     // control whose value is not wired must not ship.
     (hasVcf?opt('_si-contact',(allVcf?'d':''),'\ud83d\udc64',(n===1?'Add as a lead':'Add as leads'),
-      'Name, phone and address off the card'):'');
+      'Name, phone and address off the card'):'')+
+    // A supply house quote, only while an estimate is actually waiting on one
+    // (js/supply-list.js). Offering it with nothing to fill is noise (15.1).
+    (!allVcf&&n===1&&typeof _supWaitingBids==='function'&&_supWaitingBids().length
+      ?opt('_si-supply','d','\ud83d\udce6','A supply house quote','Reads their prices into your materials list'):'');
   m.innerHTML=
     '<div class="zmodal-title">'+n+' '+noun+(n===1?'':'s')+' shared to TradeDesk</div>'+
     '<div style="font-size:13px;color:var(--text2);margin:6px 0 13px">'+
@@ -316,6 +320,14 @@ function _shareInPrompt(items){
       if(added)showToast(added===1?'Receipt added, check the total':added+' pages added, check the total','🧾');
       else showToast('Could not read the shared file','⚠️');
     }
+  };
+  const spBtn=document.getElementById('_si-supply');
+  if(spBtn)spBtn.onclick=()=>{
+    spBtn.disabled=true;spBtn.style.opacity='.5';
+    // Closed first, for the same reason as the receipt: the estimate and the
+    // quote review both raise their own screens.
+    close();
+    _supFromShare(items[0],paths=>_shareInClear(paths));
   };
   const ctBtn=document.getElementById('_si-contact');
   if(ctBtn)ctBtn.onclick=async()=>{
