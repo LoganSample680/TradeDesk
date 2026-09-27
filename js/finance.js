@@ -1284,7 +1284,11 @@ function markJobCompleteFromDash(jobId,triggerBtn){
   markJobDone(jobId);
 }
 
-function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel){
+// opts.searchFirst: the search box above the list, and typing narrows the
+// list in place instead of stacking a second one under it. For a picker whose
+// list is every customer (the quick invoice), not a handful of suggestions.
+function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel,opts){
+  opts=opts||{};
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   const box=document.createElement('div');
@@ -1294,12 +1298,12 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
 
   let suggestHtml='';
   if(suggestions.length){
-    suggestHtml='<div style="margin-bottom:12px">'+
+    suggestHtml='<div id="qp-sugs" style="margin-bottom:12px">'+
       '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">'+
         escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
-        '<button data-idx="'+i+'" data-action="'+actionType+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
+        '<button data-idx="'+i+'" data-action="'+actionType+'" data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
@@ -1317,12 +1321,13 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
       '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+subtitle+'</div>'+
-    suggestHtml+
-    '<div style="position:relative;margin-bottom:8px">'+
-      '<input id="qp-search" data-qpaction="'+actionType+'" placeholder="Search by name, phone, or address..." oninput="onQPSearch(this)"'+
-        ' style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;color:var(--text);font-family:inherit">'+
-    '</div>'+
-    '<div id="qp-results"></div>'+
+    (()=>{
+      const search='<div style="position:relative;margin-bottom:'+(opts.searchFirst?'12px':'8px')+'">'+
+        '<input id="qp-search" data-qpaction="'+actionType+'"'+(opts.searchFirst?' data-inplace="1"':'')+' placeholder="Search by name, phone, or address..." oninput="onQPSearch(this)"'+
+          ' style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;color:var(--text);font-family:inherit">'+
+      '</div>';
+      return opts.searchFirst?search+suggestHtml+'<div id="qp-results"></div>':suggestHtml+search+'<div id="qp-results"></div>';
+    })()+
     (allowNew?
       '<div id="qp-new-wrap" style="display:none;margin-top:6px">'+
         '<button data-qpaction="'+actionType+'" onclick="quickCreateClient(this.dataset.qpaction)" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:transparent;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+
@@ -1349,6 +1354,22 @@ function onQPSearch(el){
   const res=document.getElementById('qp-results');
   const newWrap=document.getElementById('qp-new-wrap');
   if(!res)return;
+  // The whole-list picker narrows its own list: hide the rows that do not
+  // match, and only offer New client when nothing does.
+  if(el.dataset.inplace){
+    res.innerHTML='';
+    const rows=[...document.querySelectorAll('#qp-sugs button[data-q]')];
+    let shown=0;
+    const qd=q.replace(/\D/g,'');
+    rows.forEach(b=>{
+      const on=!q||b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd));
+      // 'flex', not '': the row's own inline style is what makes it a row.
+      b.style.display=on?'flex':'none';if(on)shown++;
+    });
+    if(!shown&&q)res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
+    if(newWrap)newWrap.style.display=(q&&!shown)?'block':'none';
+    return;
+  }
   if(!q){
     res.innerHTML='';
     if(newWrap)newWrap.style.display='none';

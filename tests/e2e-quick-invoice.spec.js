@@ -50,20 +50,70 @@ test.describe('Quick invoice', () => {
     expect(r.i).toBe(r.p + 1);
   });
 
-  test('the picker: "Worked this week" lists recent customers with their street, and search finds the rest', async ({ page }) => {
+  // Changed 2026-09-26 (owner: "where is the huge quick invoice list we talked
+  // about? Just see a weak ass search"). The list used to be only who was
+  // tracked in the last 7 days, so with no tracked visits there was no list.
+  // It is every customer now, Working now first, with the search on top.
+  test('the picker lists every customer with their street and status, working now first, search on top', async ({ page }) => {
     await boot(page);
     await page.click('#qa-invoice-btn');
     const r = await page.evaluate(() => {
       const box = document.querySelector('.zmodal');
-      return { text: box.textContent, first: box.querySelector('[data-action="invoice"]').textContent };
+      const rows = [...box.querySelectorAll('#qp-sugs [data-action="invoice"]')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
+      const search = box.querySelector('#qp-search'), list = box.querySelector('#qp-sugs');
+      return { text: box.textContent, rows, searchFirst: !!(search.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) };
     });
     expect(r.text).toContain('Quick invoice');
-    expect(r.text).toContain('Worked this week');
-    expect(r.first).toContain('John Doe');
-    expect(r.first).toContain('1418 Maple Ave');
-    expect(r.text).not.toContain('Karen Smith');
-    await page.fill('#qp-search', 'karen');
-    expect(await page.locator('#qp-results').textContent()).toContain('310 W Oak St');
+    expect(r.text).toContain('Your customers');
+    expect(r.rows.length).toBe(3);
+    expect(r.rows[0]).toContain('John Doe');
+    expect(r.rows[0]).toContain('1418 Maple Ave');
+    expect(r.rows[0]).toContain('Working now');
+    expect(r.rows.join(' | ')).toContain('Karen Smith');
+    expect(r.rows.join(' | ')).toContain('310 W Oak St');
+    expect(r.searchFirst, 'the search box sits above the list').toBe(true);
+  });
+
+  test('no tracked time anywhere: the list is still every customer, not an empty search box', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => { window._jobTimeEntriesByJob = {}; jobs.length = 0; openQuickInvoicePicker(); });
+    const n = await page.locator('#qp-sugs [data-action="invoice"]').count();
+    expect(n).toBe(3);
+  });
+
+  test('typing narrows the same list in place; a phone number works; nothing found offers New client', async ({ page }) => {
+    await boot(page);
+    await page.click('#qa-invoice-btn');
+    const shown = () => page.evaluate(() => [...document.querySelectorAll('#qp-sugs [data-action="invoice"]')].filter(b => b.style.display !== 'none').map(b => b.textContent.trim().split(/\s{2,}|\n/)[0]));
+    await page.fill('#qp-search', 'smith');
+    const smith = await shown();
+    await page.fill('#qp-search', '555-0101');
+    const phone = await shown();
+    await page.fill('#qp-search', 'zzzz');
+    const none = await shown();
+    const newShown = await page.locator('#qp-new-wrap').isVisible();
+    await page.fill('#qp-search', '');
+    const all = await shown();
+    expect(smith.join(' ')).toMatch(/Mary Smith/);
+    expect(smith.join(' ')).toMatch(/Karen Smith/);
+    expect(smith.join(' ')).not.toMatch(/John Doe/);
+    expect(phone.join(' ')).toMatch(/John Doe/);
+    expect(phone.length).toBe(1);
+    expect(none).toEqual([]);
+    expect(newShown).toBe(true);
+    expect(all.length).toBe(3);
+    expect(await page.locator('#qp-results button').count(), 'no second list stacked under the first').toBe(0);
+    await page.fill('#qp-search', 'smith');
+    expect(await page.evaluate(() => [...document.querySelectorAll('#qp-sugs [data-action="invoice"]')].filter(b => b.style.display !== 'none').every(b => getComputedStyle(b).display === 'flex')), 'a narrowed row is still a row').toBe(true);
+  });
+
+  test('tapping a customer on the list opens their invoice', async ({ page }) => {
+    await boot(page);
+    await page.click('#qa-invoice-btn');
+    await page.locator('#qp-sugs [data-action="invoice"]', { hasText: 'Karen Smith' }).click();
+    const r = await page.evaluate(() => ({ pg: document.querySelector('.pg.active').id, text: document.getElementById('qi-page').textContent }));
+    expect(r.pg).toBe('pg-qi');
+    expect(r.text).toContain('Karen Smith');
   });
 
   test('Hourly: each person at their own rate, receipts, and the total', async ({ page }) => {
