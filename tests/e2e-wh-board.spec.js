@@ -320,7 +320,7 @@ test.describe('Water heater flush board', () => {
     expect(await boardNames()).toEqual(['Lee Later', 'Dana Due']);
   });
 
-  test('hidden for crew, and for a non-plumber with no water heaters anywhere', async () => {
+  test('hidden for crew, and for a trade no service fits with nothing on the board', async () => {
     await seed();
     const r = await page.evaluate(() => {
       const wasEmp = window._isEmployee;
@@ -330,12 +330,12 @@ test.describe('Water heater flush board', () => {
       window._isEmployee = wasEmp;
       equipment.length = 0;
       bids.length = 0;
-      const plumber = _whPlumbs();
+      const fits = _whPlumbs() || _svcTradeFits();
       _renderWhBoard();
-      return { crew, empty: document.getElementById('dash-wh-board').style.display, plumber };
+      return { crew, empty: document.getElementById('dash-wh-board').style.display, fits };
     });
     expect(r.crew).toBe('none');
-    expect(r.empty).toBe(r.plumber ? 'block' : 'none');
+    expect(r.empty).toBe(r.fits ? 'block' : 'none');
   });
 
   // Owner 2026-09-26: "show it for any plumbing line". A landscaper who also
@@ -350,15 +350,21 @@ test.describe('Water heater flush board', () => {
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting,plumbing' });
         _renderWhBoard();
         const withLine = document.getElementById('dash-wh-board').style.display;
+        // Owner 2026-09-27: the board carries gutters and irrigation now, so a
+        // landscaper sees it too. Only a trade no service fits keeps it hidden.
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting' });
+        _renderWhBoard();
+        const landscaper = document.getElementById('dash-wh-board').style.display;
+        window.getActiveTrade = () => 'painting';
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'painting,electrical' });
         _renderWhBoard();
         const without = document.getElementById('dash-wh-board').style.display;
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: ['landscaping', 'plumbing'] });
         const arrayForm = _whPlumbs();
-        return { withLine, without, arrayForm };
+        return { withLine, landscaper, without, arrayForm };
       } finally { _config = keep.cfg; window.getActiveTrade = keep.active; _renderWhBoard(); }
     });
-    expect(r).toEqual({ withLine: 'block', without: 'none', arrayForm: true });
+    expect(r).toEqual({ withLine: 'block', landscaper: 'block', without: 'none', arrayForm: true });
   });
 
   test('bad input never throws', async () => {
@@ -550,7 +556,9 @@ test.describe('Water heater flush board', () => {
       return { caps, all, sub, byAddr, none, active: document.getElementById('pg-wh-list').classList.contains('active') };
     });
     expect(r.active).toBe(true);
-    expect(r.caps).toEqual(['Due now · 1', 'Rolled to next month · 1', 'Set for the year · 3', 'No install date · 1']);
+    // "Set for the year" became "Coming up" once a service can come round
+    // every 3 months (owner 2026-09-27).
+    expect(r.caps).toEqual(['Due now · 1', 'Rolled to next month · 1', 'Coming up · 3', 'No date yet · 1']);
     expect(r.all).toContain('Dana Due');
     expect(r.all).toContain('Nia Nodate');
     expect(r.all.filter(n => n === 'Lee Later').length, 'furnaces never show, only water heaters').toBe(1);
