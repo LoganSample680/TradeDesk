@@ -604,28 +604,75 @@ function clockIn(jobId,scopeId,scopeLabel){
   showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
-function clockOut(saveEntry,silent){
+// Past this, a clock-out is far more likely a clock left running overnight than
+// a real shift, so he is asked when he actually stopped instead of banking it.
+const _CLOCK_ASK_MS=12*3600*1000;
+// When did the work actually stop? The last thing that moved on HIS record
+// after he clocked in (a time row closed, a trip logged, a job finished), or,
+// when nothing did, eight hours after he clocked in: a normal day, never the
+// twenty he did not work. Never later than now.
+function _clockLastActivityMs(startMs){
+  const now=Date.now();
+  let best=0;
+  const see=v=>{const t=typeof v==='number'?v:Date.parse(v||'');if(t>startMs&&t<now&&t>best)best=t;};
+  try{
+    const{loggedByUid}=_tlLoggedByInfo();
+    (Array.isArray(timeEntries)?timeEntries:[]).forEach(e=>{if(e&&!e.open&&(e.logged_by_uid||null)===loggedByUid)see(e.end_time);});
+    (Array.isArray(mileage)?mileage:[]).forEach(m=>{if(m&&(!m.logged_by_id||m.logged_by_id===loggedByUid))see(m.end_time||m.endedAt||m.loggedAt);});
+    (Array.isArray(jobs)?jobs:[]).forEach(j=>{if(j&&j.completedAt)see(j.completedAt);});
+  }catch(_e){}
+  return best||Math.min(now,startMs+8*3600*1000);
+}
+function _clockAskStop(){
+  const t=_activeTimer;if(!t)return;
+  document.getElementById('_clock-stop-ov')?.remove();
+  const guess=_clockLastActivityMs(t.startTime);
+  const pad=n=>String(n).padStart(2,'0');
+  const loc=ms=>{const d=new Date(ms);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());};
+  const hrs=Math.round((Date.now()-t.startTime)/3600000);
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_clock-stop-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">When did you actually stop?</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">The clock has been running '+hrs+' hours, since '+new Date(t.startTime).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'})+'.</div>'+
+    '<input type="datetime-local" id="_clock-stop-at" value="'+loc(guess)+'" min="'+loc(t.startTime)+'" max="'+loc(Date.now())+'" style="width:100%;box-sizing:border-box;font-size:16px;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:14px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button id="_clock-stop-all" style="min-height:44px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">I worked it all</button>'+
+      '<button id="_clock-stop-save" style="min-height:44px;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  box.querySelector('#_clock-stop-all').onclick=()=>{ov.remove();clockOut(true,false,Date.now());};
+  box.querySelector('#_clock-stop-save').onclick=()=>{
+    const raw=box.querySelector('#_clock-stop-at').value;
+    const ms=raw?new Date(raw).getTime():NaN;
+    if(!(ms>t.startTime)||ms>Date.now()+60000){zAlert('Pick a time after you clocked in and not in the future.');return;}
+    ov.remove();clockOut(true,false,ms);
+  };
+}
+function clockOut(saveEntry,silent,endMs){
   if(!_activeTimer)return;
+  if(saveEntry!==false&&!silent&&endMs==null&&Date.now()-_activeTimer.startTime>_CLOCK_ASK_MS){_clockAskStop();return;}
+  const _endMs=(endMs!=null&&endMs>_activeTimer.startTime)?Math.min(endMs,Date.now()):Date.now();
   _tdHaptic('thud');   // day's work banked, same weight as clocking in
   clearInterval(_activeTimer.timerInterval);
   // Clear the lock-screen card FIRST, before any of the save paths below can
   // return early: a clock card outliving the clock is worse than never having
   // shown one, it tells the contractor they are still on the meter.
   if(typeof _liveActClockOut==='function')_liveActClockOut();
-  const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
+  const minutes=Math.max(1,Math.round((_endMs-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
   const scopeLabel=_activeTimer.scopeLabel;
   const openEntry=_activeTimer.entryId!=null?timeEntries.find(e=>e.id===_activeTimer.entryId):null;
   if(saveEntry!==false){
     if(openEntry){
-      openEntry.end_time=new Date().toISOString();openEntry.minutes=minutes;openEntry.open=false;
+      openEntry.end_time=new Date(_endMs).toISOString();openEntry.minutes=minutes;openEntry.open=false;
     }else{
       // Defensive fallback only, the open row should always exist (written by
       // clockIn above). Never silently drop real logged time if it's somehow
       // missing (deleted mid-timer, or a session from before this fix).
       const{loggedByUid,loggedByName}=_tlLoggedByInfo();
-      timeEntries.push({id:_newId(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
+      timeEntries.push({id:_newId(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date(_endMs).toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
     }
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
@@ -1330,10 +1377,56 @@ function getBidStage(b){
   return{stage:'signed',label:'Signed: schedule job',color:'var(--blue)',priority:3,jobs:bidJobs};
 }
 
+// Jobs the proposal cards do not already stand for: a walk-up service call
+// booked straight onto the calendar has no won proposal behind it, and the
+// board used to be built ONLY from proposals, so those jobs vanished from this
+// screen (Earl audit 2026-09-27). Scoped to what this viewer may see.
+function _jobsPageLooseJobs(wonBidsList){
+  const wonIds=new Set((wonBidsList||[]).map(b=>b.id));
+  const all=_jobsForViewer(jobs).filter(j=>j&&j.eventType!=='estimate'&&j.start&&j.status!=='canceled'&&!j.cancelled);
+  return _moneyVisible()?all.filter(j=>!(j.bid_id&&wonIds.has(j.bid_id))):all;
+}
+function _jobsPageFilterJobs(list,tk){
+  const done=j=>j.status==='done'||!!j.completion_date;
+  let out;
+  if(jobFilter==='scheduled')out=list.filter(j=>!done(j)&&j.start>tk);
+  else if(jobFilter==='active')out=list.filter(j=>_jobDueForDone(j,tk));
+  else if(jobFilter==='completed')out=list.filter(done);
+  else out=list.filter(j=>!done(j));
+  return out.sort((a,b)=>(a.start+(a.time||'')).localeCompare(b.start+(b.time||'')));
+}
+function _jobsPageJobCard(j,tk){
+  const c=j.client_id!=null?getClientById(j.client_id):null;
+  const addr=(j.addr||(c&&c.addr)||'').split(',')[0];
+  const when=parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(j.time?' · '+fmtTime(j.time):'');
+  const isDone=j.status==='done'||!!j.completion_date;
+  const due=_jobDueForDone(j,tk);
+  const acts=[];
+  if(due)acts.push('<button onclick="event.stopPropagation();markJobDone('+j.id+')" class="btn btn-sm btn-g" style="border-radius:20px;min-height:44px">✓ Mark done</button>');
+  if(!isDone&&_seesAllJobs())acts.push('<button onclick="event.stopPropagation();rescheduleJob('+j.id+')" class="btn btn-sm" style="border-radius:20px;min-height:44px">Reschedule</button>');
+  const open=c?'openJobSheet('+c.id+')':'void(0)';
+  return '<div class="tf-card" data-job-id="'+j.id+'" onclick="'+open+'">'+
+    '<div class="tf-icon '+(isDone?'t-green':due?'t-green':'t-blue')+'" style="font-size:14px">'+(isDone?svgIcon('✅'):due?svgIcon('🔨'):svgIcon('📅'))+'</div>'+
+    '<div class="tf-body">'+
+      '<div class="tf-name">'+escHtml(j.name||(c&&c.name)||'Job')+'</div>'+
+      '<div class="tf-sub" style="color:var(--text3)">'+escHtml(addr)+(addr?' · ':'')+when+(isDone?' · Done':'')+'</div>'+
+      (acts.length?'<div class="tf-acts">'+acts.join('')+'</div>':'')+
+    '</div>'+
+    ((_moneyVisible()&&j.value)?'<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800">'+fmt(j.value)+'</div></div>':'')+
+  '</div>';
+}
 function renderJobsPage(){
   const el=document.getElementById('jobs-list');if(!el)return;
   const tk=todayKey();
   const wonBidsList=bids.filter(b=>b.status==='Closed Won');
+  const _loose=_jobsPageFilterJobs(_jobsPageLooseJobs(wonBidsList),tk);
+  const _looseHtml=_loose.length?'<div id="jobs-loose" style="margin-top:14px"><div class="td-micro" style="margin:0 0 6px 2px">'+(_moneyVisible()?'Jobs without a proposal':'Your jobs')+'</div><div class="card card-pad-0">'+_loose.map(j=>_jobsPageJobCard(j,tk)).join('')+'</div></div>':'';
+  // Crew who may not see money get the jobs themselves, never the proposal
+  // cards (those are priced). Same data, no dollars.
+  if(!_moneyVisible()){
+    el.innerHTML=_looseHtml||'<div class="empty"><div class="em-emoji">'+svgIcon('📋',{size:44})+'</div><h3>No jobs here right now</h3><p>Jobs you are put on show up here.</p></div>';
+    return;
+  }
 
   // Update nav badge
   const badge=document.getElementById('nb-jobs-badge');
@@ -1353,6 +1446,7 @@ function renderJobsPage(){
   // Board view = kanban; filtered views = list
   if(jobFilter==='all'){
     _renderJobsKanban(el,tk,wonBidsList);
+    if(_looseHtml)el.insertAdjacentHTML('beforeend',_looseHtml);
     return;
   }
 
@@ -1372,7 +1466,8 @@ function renderJobsPage(){
       if(jB)return 1;
       return (stA.priority||9)-(stB.priority||9);
     });
-  if(!filtered.length){el.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📋',{size:44})+'</div><h3>No '+jobFilter+' jobs right now</h3><p><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></p></div>';return;}
+  if(!filtered.length&&!_looseHtml){el.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📋',{size:44})+'</div><h3>No '+jobFilter+' jobs right now</h3><p><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></p></div>';return;}
+  if(!filtered.length){el.innerHTML=_looseHtml;return;}
   el.innerHTML='<div style="margin-top:4px">'+filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Client',id:b.client_id,phone:'',addr:b.addr||''};
     const st=getBidStage(b);
@@ -1407,6 +1502,9 @@ function renderJobsPage(){
     const hasTasks=b.roomScopeMap&&Object.values(b.roomScopeMap).some(r=>Object.values(r).some(v=>v&&v.active));
     const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">'+svgIcon('📋')+' Checklist</button>':'';
     const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div class="tf-acts">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
+    // A proposal job that is due but whose stage never read 'active' still
+    // gets its Mark done (the stage is derived, nothing sets it by hand).
+    if(!primaryBtn&&nextJob&&_jobDueForDone(nextJob,tk))primaryBtn='<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm btn-g" style="border-radius:20px">✓ Mark done</button>';
     const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
     return '<div class="tf-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
@@ -1423,7 +1521,7 @@ function renderJobsPage(){
         amtSub+
       '</div>'+
     '</div>';
-  }).join('')+'</div>';
+  }).join('')+'</div>'+_looseHtml;
 }
 
 function _renderJobsKanban(el,tk,wonBidsList){
@@ -1587,21 +1685,23 @@ function openJobSheet(clientId){
         '<div style="font-size:20px;font-weight:800;line-height:1.15">'+escHtml(c.name||'')+'</div>'+
         (c.addr?'<div style="font-size:12px;opacity:.75;margin-top:4px">'+svgIcon('📍')+' '+escHtml(c.addr)+'</div>':'')+
       '</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" aria-label="Close" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
     '</div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'+
       '<span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.18);color:#fff;letter-spacing:.02em">'+st.label+'</span>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="event.stopPropagation()">'+svgIcon('📞')+' Call</a>':'')+
-        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🗺')+' Drive</button>':'')+
-        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🚗')+' OMW</button>':'')+
+        // 44px tall: these are the buttons tapped standing in a driveway with
+        // gloves on (Earl audit 2026-09-27, they measured 23 to 30px).
+        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:22px;display:inline-flex;align-items:center;gap:4px;min-height:44px;box-sizing:border-box" onclick="event.stopPropagation()">'+svgIcon('📞')+' Call</a>':'')+
+        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:22px;cursor:pointer;font-family:inherit;min-height:44px">'+svgIcon('🗺')+' Drive</button>':'')+
+        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:22px;cursor:pointer;font-family:inherit;min-height:44px">'+svgIcon('🚗')+' OMW</button>':'')+
         // A change order used to live at the very bottom of this sheet, under
         // payment, schedule, supplies, scope, photos, spec, subs, notes and
         // tasks. On site with one hand free, that is the same as not having
         // one, and the whole point is that he writes it while the client is
         // standing there. It is a header action now.
-        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="background:rgba(255,255,255,.22);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' Change order</button>':'')+
-        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">Full record ›</button>'+
+        ((bid&&_moneyVisible())?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="background:rgba(255,255,255,.22);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:22px;cursor:pointer;font-family:inherit;min-height:44px">'+svgIcon('📋')+' Change order</button>':'')+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:22px;cursor:pointer;font-family:inherit;min-height:44px">Full record ›</button>'+
       '</div>'+
     '</div>';
   box.appendChild(hdr);
@@ -1612,7 +1712,8 @@ function openJobSheet(clientId){
 
   // ── Payment section ─────────────────────────────────────────
   let payHtml='';
-  if(bid){
+  const _money=_moneyVisible();
+  if(bid&&_money){
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
     const barColor=pct>=100?'var(--green-mid)':pct>0?'var(--blue)':'var(--border2)';
     payHtml=
@@ -1679,8 +1780,8 @@ function openJobSheet(clientId){
           '<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:12px 14px">'+
             '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">'+_fmtHrsShort(_or.overHrs)+' past the estimate'+(_or.overPct>0?' ('+_or.overPct+'% over)':'')+'</div>'+
             (_overrunText(_or,true)?'<div style="font-size:12px;color:#92400E;line-height:1.5;margin-bottom:10px">'+escHtml(_overrunText(_or,true))+'</div>':'')+
-            (_or.suggested>0?'<div style="font-size:12px;color:#92400E;margin-bottom:10px">Suggested change order: <strong>'+fmt(_or.suggested)+'</strong> at $'+_or.rate+'/hr</div>':'')+
-            '<button onclick="this.closest(\'.zmodal-overlay\').remove();openOverrunCO('+_orJob.id+','+clientId+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;min-height:44px">Write the change order →</button>'+
+            (_money&&_or.suggested>0?'<div style="font-size:12px;color:#92400E;margin-bottom:10px">Suggested change order: <strong>'+fmt(_or.suggested)+'</strong> at $'+_or.rate+'/hr</div>':'')+
+            (!_money?'':'<button onclick="this.closest(\'.zmodal-overlay\').remove();openOverrunCO('+_orJob.id+','+clientId+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;min-height:44px">Write the change order →</button>')+
           '</div>'+
         '</div>';
   }
@@ -1692,16 +1793,17 @@ function openJobSheet(clientId){
     schedHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📅')+' Schedule</div>'+
-        '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
-          '<div>'+
+        // Wraps: three buttons beside the date ran 44px off a 375px screen.
+        '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px">'+
+          '<div style="min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--blue-dk)">'+dt+(nextJob.time?' · '+fmtTime(nextJob.time):'')+'</div>'+
-            '<div style="font-size:11px;color:var(--blue);margin-top:2px">'+(nextJob.days||1)+' day'+(nextJob.days!==1?'s':'')+' est.</div>'+
+            '<div style="font-size:11px;color:var(--blue);margin-top:2px">'+(nextJob.days||1)+' day'+(parseInt(nextJob.days)!==1?'s':'')+' est.</div>'+
           '</div>'+
-          '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">'+
-            '<button onclick="_extendJob('+nextJob.id+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--green-mid);background:var(--green-lt);color:var(--green-mid);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+Days</button>'+
-            '<button onclick="openPushBackModal('+nextJob.id+','+clientId+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--amber);background:var(--amber-lt);color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Push back</button>'+
-            '<button onclick="this.closest(\'.zmodal-overlay\').remove();goPg(\'pg-schedule\')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
-          '</div>'+
+          (_seesAllJobs()?'<div class="js-sched-acts" style="display:flex;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%">'+
+            '<button onclick="_extendJob('+nextJob.id+',this.closest(\'.zmodal-overlay\'))" style="min-height:44px;padding:7px 12px;border-radius:var(--r);border:1px solid var(--green-mid);background:var(--green-lt);color:var(--green-mid);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+Days</button>'+
+            '<button onclick="openPushBackModal('+nextJob.id+','+clientId+',this.closest(\'.zmodal-overlay\'))" style="min-height:44px;padding:7px 12px;border-radius:var(--r);border:1px solid var(--amber);background:var(--amber-lt);color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Push back</button>'+
+            '<button id="js-resched-btn" onclick="this.closest(\'.zmodal-overlay\').remove();rescheduleJob('+nextJob.id+')" style="min-height:44px;padding:7px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
+          '</div>':'')+
         '</div>'+
       '</div>';
   } else if(bid&&st.stage==='signed'){
@@ -1856,7 +1958,8 @@ function openJobSheet(clientId){
   // ── Actual material costs vs estimated ──────────────────────
   const clientExpenses=expenses.filter(e=>e.client_id===clientId);
   let actualCostsHtml='';
-  if(bid&&clientExpenses.length){
+  if(!_money){}
+  else if(bid&&clientExpenses.length){
     const totalActual=clientExpenses.reduce((s,e)=>s+(e.amount||0),0);
     const estimatedCost=Math.round(bid.amount*(1-((S.margin||40)/100)));
     const actualMargin=bid.amount>0?Math.round((bid.amount-totalActual)/bid.amount*100):0;
@@ -1912,13 +2015,13 @@ function openJobSheet(clientId){
   const jobSubs=(subsJob&&subsJob.subs)||[];
   const subRoster=S.subcontractors||[];
   let subsHtml='';
-  if(subsJobId){
+  if(subsJobId&&_money){
     const totalOwed=jobSubs.filter(s=>!s.paid).reduce((s,x)=>s+(x.amount||0),0);
     subsHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(jobSubs.length?'10px':'0')+'">'+
           '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('🔨')+' Subcontractors'+(totalOwed>0?' <span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#991B1B;padding:1px 7px;border-radius:8px">'+fmt(totalOwed)+' owed</span>':'')+'</div>'+
-          '<button onclick="openAssignSubModal('+subsJobId+','+clientId+')" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--blue);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Assign sub</button>'+
+          '<button onclick="openAssignSubModal('+subsJobId+','+clientId+')" style="min-height:44px;padding:5px 14px;border-radius:22px;border:none;background:var(--bg2);color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+ Assign sub</button>'+
         '</div>'+
         (jobSubs.length?
           jobSubs.map((sub,si)=>
@@ -1982,13 +2085,13 @@ function openJobSheet(clientId){
   }
 
   // ── Job actions ──────────────────────────────────────────────
-  const jobActions=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status==='active');
+  const jobActions=getClientJobs(clientId).filter(j=>_jobDueForDone(j,tk));
   let actionsHtml=
     '<div style="padding:14px 20px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('⚡')+' Actions</div>'+
       '<div style="display:grid;gap:8px">'+
         (jobActions.length?
-          jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete, '+escHtml(j.name||'')+'</button>').join('')
+          jobActions.map(j=>'<button class="js-mark-done" onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="min-height:44px;padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete, '+escHtml(j.name||'')+'</button>').join('')
         :'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">'+svgIcon('📋')+' Full client record & history</button>'+
       '</div>'+
@@ -1996,7 +2099,7 @@ function openJobSheet(clientId){
 
   // ── Change order history ─────────────────────────────────────
   let coHistoryHtml='';
-  const allCOs=wonBids.flatMap(wb=>(wb.changeOrders||[]).map(co=>({...co,bidId:wb.id})));
+  const allCOs=_money?wonBids.flatMap(wb=>(wb.changeOrders||[]).map(co=>({...co,bidId:wb.id}))):[];
   if(allCOs.length){
     coHistoryHtml='<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('📋')+' Change Orders</div>'+
@@ -2665,7 +2768,7 @@ function markJobDone(jobId){
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Completion date</label>'+
       '<input type="date" id="job-done-date" value="'+todayKey()+'" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text)">'+
     '</div>'+
-    (bid?
+    ((bid&&_moneyVisible())?
       '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:14px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
           '<div style="font-size:13px;font-weight:700">Need to change the final price?</div>'+
@@ -2869,7 +2972,7 @@ async function confirmJobDone(jobId){
     const expBox=document.createElement('div');expBox.className='zmodal';
     expBox.innerHTML=
       '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Any material costs?</div>'+
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Log paint, supplies, or other materials to track your real profit on this job.</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Log parts, supplies, or other materials to track your real profit on this job.</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">No costs</button>'+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openExpenseForJob('+_jid+','+_cid+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Log expenses →</button>'+

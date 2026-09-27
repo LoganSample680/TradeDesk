@@ -259,23 +259,16 @@ test.describe('Tax page, calcTax and tab rendering', () => {
     assertNoErrors(page, 'calcTax render');
   });
 
-  test('estimateTax: returns a positive number for positive net income', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(50000, new Date().getFullYear()); } catch(e) { return null; }
+  // estimateTax was a second copy of the tax math (2026-09-27); every caller
+  // reads taxYearSnapshot now, so a positive year must give a positive bill.
+  test('taxYearSnapshot: positive income gives a positive tax, estimateTax is gone', async () => {
+    const r = await page.evaluate(() => {
+      const sv = income; income = [{ date: '2025-05-01', amount: 50000 }];
+      try { return { tax: taxYearSnapshot('2025').totalOwed, old: typeof estimateTax }; }
+      finally { income = sv; }
     });
-    if (result !== null) {
-      expect(typeof result).toBe('number');
-      expect(result).toBeGreaterThan(0);
-    }
-  });
-
-  test('estimateTax: zero net income returns zero tax', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(0, new Date().getFullYear()); } catch(e) { return null; }
-    });
-    if (result !== null) expect(result).toBe(0);
+    expect(r.tax).toBeGreaterThan(0);
+    expect(r.old).toBe('undefined');
   });
 
   test('setTaxTab: switches between summary and payments tabs', async () => {
@@ -1280,6 +1273,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       places.length = 0;   // fresh account: no saved places either
       window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1338,6 +1334,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       // pinned.
       const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
       const _origMotionPerm = _motionPermCache; _motionPermCache = 'prompt';
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1432,6 +1431,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
       window.saveAll = () => {};
       _setVehicles([]); S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const before = document.getElementById('dash-setup-todo').querySelectorAll('.td-setup-row').length;
       _skipSetupTodo('logo');
@@ -2623,48 +2625,25 @@ test.describe('Employee dispatch and daily view', () => {
     assertNoErrors(page, 'dispatch page navigation');
   });
 
-  test('invite employee modal opens and generates link', async () => {
-    // Set contractor mode
+  // The "Add Team Member" invite modal was a second add-crew form beside
+  // _openEmpModal; it is deleted (Earl audit 2026-09-27). Its invite link now
+  // comes from the one builder, _crewInviteUrl, which Text invite uses.
+  test('invite employee: one form, and the invite link carries the crew invite', async () => {
     await page.evaluate(() => {
       _isEmployee = false;
       _supaUser = { id: 'test-contractor-id', email: 'contractor@test.com' };
       _contractorUserId = 'test-contractor-id';
     });
-
-    // Call the function directly
-    const result = await page.evaluate(() => {
-      if (typeof openInviteEmployeeModal !== 'function') return { fnExists: false };
-      openInviteEmployeeModal();
-      const nameInput = document.getElementById('_inv-name');
-      return { fnExists: true, modalOpen: !!nameInput };
+    const r = await page.evaluate(() => {
+      const gone = typeof openInviteEmployeeModal === 'undefined' && typeof _submitInviteEmployee === 'undefined';
+      openAddEmployeeModal();
+      const form = !!document.getElementById('emp-name') && !document.getElementById('_inv-name');
+      document.getElementById('emp-modal-overlay')?.remove();
+      const link = _crewInviteUrl({ id: 42, name: 'Test Invitee', email: '' }, null);
+      return { gone, form, hasLink: link.includes('emp_invite=') };
     });
-
-    if (!result.fnExists) {
-      // Function may not be exposed; skip gracefully
-      assertNoErrors(page, 'invite employee modal, function check');
-      return;
-    }
-
-    expect(result.modalOpen).toBe(true);
-
-    // Fill in name and submit
-    const linkResult = await page.evaluate(() => {
-      const nameInput = document.getElementById('_inv-name');
-      if (nameInput) nameInput.value = 'Test Invitee';
-      const roleSelect = document.getElementById('_inv-role');
-      if (roleSelect) roleSelect.value = 'worker';
-      // Call submit
-      if (typeof _submitInviteEmployee === 'function') _submitInviteEmployee();
-      // Check for invite link box
-      const linkBox = document.getElementById('_inv-link-box');
-      const linkText = linkBox ? linkBox.textContent : '';
-      // Cleanup
-      document.getElementById('_emp-invite-ov')?.remove();
-      return { hasLink: linkText.includes('emp_invite') };
-    });
-
-    expect(linkResult.hasLink).toBe(true);
-    assertNoErrors(page, 'invite employee modal link generation');
+    expect(r).toEqual({ gone: true, form: true, hasLink: true });
+    assertNoErrors(page, 'invite employee: one form');
   });
 
   test('employee daily view shows when _isEmployee flag set', async () => {

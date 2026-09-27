@@ -164,6 +164,8 @@ test.describe('Venmo', () => {
     const r = await page.evaluate(() => {
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       S.setupSkipped = []; S.setupDone = false; S.venmoUser = '';
+      // Venmo is the fourth item; the card shows two until Show all (Earl audit 2026-09-27).
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const has = () => /_setupTodoGo\('venmo'\)/.test(document.getElementById('dash-setup-todo').innerHTML);
       const shown = has();

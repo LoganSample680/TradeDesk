@@ -666,7 +666,7 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.vendor).toBe('Home Depot');
       // The receipt in their hand is dated the day of the VISIT, not the day
       // they finally answered the card.
-      expect(out.date).toBe('08/20/2026');
+      expect(out.date).toBe('2026-08-20'); // em-date is a native date input now, which holds ISO
       expect(out.cat).toBe('materials');
     });
 
