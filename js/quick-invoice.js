@@ -126,14 +126,74 @@ function _qiPropJobs(cid){
   });
   return out;
 }
+// WHERE THE TIME ACTUALLY IS (2026-09-26, owner on John Doe: "yes there is
+// time at John Doe"). This read only _jobTimeEntriesByJob, the job_id rows,
+// and the tracker has not written a job_id since the deriver took over
+// (CLAUDE.md 17): a visit is a row with job_id null whose dest_place is the
+// fence's name, "John Doe (2950 SW McClure Rd)". So his 4-hour days showed
+// "Nothing tracked". Now the visits come from the same fetch Crew Cost and
+// the Time Log read (_fetchCrewLabor), matched to this customer by the names
+// his fences carry (the same _geoFenceName the deriver writes) and by his
+// jobs' ids. Drives, supply stops, the office and dismissed rows are not time
+// at a customer and never count.
+function _qiPlaceNames(c){
+  const nm=(n,w)=>typeof _geoFenceName==='function'?_geoFenceName(n,w):(w?(String(n).trim()+' ('+w+')'):String(n).trim());
+  const st=a=>String(a||'').split(',')[0].trim();
+  const out=new Set();
+  if(!c||!c.name)return out;
+  out.add(nm(c.name,st(c.addr)));
+  (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
+    if(!a||!a.addr)return;
+    out.add(nm(c.name,(a.label&&String(a.label).trim())||st(a.addr)));
+    out.add(nm(c.name,st(a.addr)));
+  });
+  (jobs||[]).forEach(j=>{if(j&&String(j.client_id)===String(c.id))out.add(nm(c.name,st(j.addr||j.address)));});
+  return out;
+}
+const _QI_NOT_A_VISIT=/^(drive|dismissed|place|unsaved|personal|shop)/;
+function _qiVisitsFor(c,entries,names){
+  const cid=String(c.id);
+  const mine=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid&&!_qiPropBid(j)).map(j=>String(j.id)));
+  const theirs=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid).map(j=>String(j.id)));
+  const places=_qiPlaceNames(c);
+  return (entries||[]).filter(e=>{
+    if(!e)return false;
+    if(e.job_id!=null&&e.job_id!=='')return mine.has(String(e.job_id));   // a proposal job's time stays on that job
+    if(_QI_NOT_A_VISIT.test(String(e.source||'')))return false;
+    return places.has(String(e.dest_place||'').trim())&&!theirs.has(String(e.job_id));
+  }).map(e=>({arrivedAt:e.arrived_at,departedAt:e.departed_at,minutes:e.minutes,
+    employeeName:(names&&names[e.employee_user_id])||(String(e.employee_user_id)===String(_qiBizUid())?_qiOwnerName():null)}));
+}
+function _qiBizUid(){return (typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';}
+function _qiOwnerName(){return (typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'You';}
+async function _qiLoadVisits(cid){
+  const c=getClientById(cid);if(!c||typeof _fetchCrewLabor!=='function')return null;
+  // Offline or signed out: no answer, so the screen keeps what it has.
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return null;
+  const {through}=_qiBilled(cid);
+  const since=new Date(Math.max(through||0,Date.now()-180*86400000)).toISOString();
+  const lab=await _fetchCrewLabor(since);
+  return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name);
+}
+
 // The unbilled work: one line per person (their minutes at this customer's
 // jobs since the last quick invoice), then one line per unbilled receipt.
-function _qiUnbilled(cid){
+function _qiUnbilled(cid,visits){
   const {through,exp}=_qiBilled(cid);
   const byPerson={};let last=through;
+  // What the job cache holds, plus the loaded visits, each visit once (the
+  // two overlap on job_id rows): same person, same arrival.
   const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
-  (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)&&!_qiPropBid(j)).forEach(j=>{
-    (byJob[j.id]||[]).forEach(e=>{
+  let src=[];
+  (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)&&!_qiPropBid(j)).forEach(j=>{src=src.concat(byJob[j.id]||[]);});
+  if(Array.isArray(visits))src=src.concat(visits);
+  const seen=new Set();
+  src=src.filter(e=>{
+    const k=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'')+'|'+String(e&&e.employeeName||'');
+    if(seen.has(k))return false;seen.add(k);return true;
+  });
+  {
+    src.forEach(e=>{
       const a=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'');
       const d=Date.parse(e&&(e.departedAt||e.departed_at)||'');
       if(!(a>through)||!(d>a))return;              // billed already, or still open
@@ -142,7 +202,7 @@ function _qiUnbilled(cid){
       byPerson[who]=(byPerson[who]||0)+mins;
       if(d>last)last=d;
     });
-  });
+  }
   const lines=Object.keys(byPerson).sort().map(who=>{
     const rate=_qiRateFor(who),mins=byPerson[who];
     return {kind:'time',who,mins,rate,desc:who+': '+_qiMins(mins)+' on site',amount:Math.round(mins/60*rate*100)/100};
@@ -157,11 +217,26 @@ function openQuickInvoice(cid){
   const un=_qiUnbilled(cid);
   const hasWork=un.lines.length>0;
   const mode=c.qiMode||(hasWork?'hourly':'set');
-  _qi={cid,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],pbOpen:false};
+  _qi={cid,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],pbOpen:false,loading:true,modeSet:!!c.qiMode};
   goPg('pg-qi');
   renderQuickInvoice();
+  // The visits load once, then the screen paints once more (the shimmer in
+  // the tracked rows until then, never a "Loading" line: CLAUDE.md 8.4).
+  const me=_qi;
+  Promise.resolve(_qiLoadVisits(cid)).catch(()=>null).then(v=>{
+    if(_qi!==me)return;                         // he left, or opened someone else
+    me.loading=false;
+    if(Array.isArray(v)){
+      const u=_qiUnbilled(cid,v);
+      const rates={};me.tracked.forEach(l=>{if(l.kind==='time')rates[l.who]=l.rate;});
+      me.tracked=u.lines.map(l=>(l.kind==='time'&&rates[l.who]!=null)?Object.assign(l,{rate:rates[l.who],amount:Math.round(l.mins/60*rates[l.who]*100)/100}):l);
+      me.through=u.through;
+      if(!me.modeSet&&me.tracked.some(l=>l.kind==='time'))me.mode='hourly';
+    }
+    renderQuickInvoice();
+  });
 }
-function _qiSetMode(m){if(!_qi)return;_qi.mode=m;renderQuickInvoice();}
+function _qiSetMode(m){if(!_qi)return;_qi.mode=m;_qi.modeSet=true;renderQuickInvoice();}
 function _qiLines(){
   if(!_qi)return [];
   const typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0).map(l=>({kind:'line',desc:String(l.desc||'').trim(),amount:Number(l.amount)||0}));
@@ -193,7 +268,7 @@ function renderQuickInvoice(){
   const total=_qiTotal();
   host.innerHTML=
     '<div class="ios-nav"><button type="button" class="ios-navbtn" onclick="qiCancel()">Cancel</button>'+
-      '<button type="button" class="ios-navbtn bold" onclick="qiSeeIt()">See it</button></div>'+
+      '<button type="button" class="ios-navbtn bold" onclick="qiSeeIt()">Preview</button></div>'+
     '<div class="ios-large"><h1 class="ios-title" style="cursor:default">Invoice</h1>'+
       '<div class="ios-sub">'+escHtml(c.name||'')+((c.addr||'')?' · '+escHtml(String(c.addr).split(',')[0]):'')+'</div>'+
       _qiStatusPill(_qi.cid)+'</div>'+
@@ -205,7 +280,7 @@ function renderQuickInvoice(){
         escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
         '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
       (hourly?'<div class="ios-sec"><div class="ios-h"><span>Since the last invoice</span></div><div class="ios-group">'+
-        (tracked||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
+        ((tracked+(_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':''))||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
       '</div></div>':'')+
       '<div class="ios-sec"><div class="ios-h"><span>'+(hourly?'Add a line':'What you did')+'</span></div><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a line</button>'+

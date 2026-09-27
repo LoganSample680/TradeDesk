@@ -137,6 +137,66 @@ test.describe('Quick invoice', () => {
     expect(r.send).toBe('Text it to John');
   });
 
+  // The tracker writes a visit as job_id null + dest_place "Name (street)"
+  // (CLAUDE.md 17). The invoice read only job_id rows, so John Doe's real
+  // 4-hour days showed "Nothing tracked" (owner 2026-09-26, with a screenshot).
+  test('visits the tracker filed by place, not job, are billed: his name and street, each person, drives and other customers left off', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      window._jobTimeEntriesByJob = {};
+      clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
+      const H = 3600e3, t = Date.parse('2026-09-22T13:00:00Z');
+      const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 4 * H).toISOString(), minutes: 240 }, o);
+      const saved = { f: window._fetchCrewLabor, se: window.supaEnabled, su: window._supaUser, sp: window._supa };
+      window._supaUser = { id: 'boss-uid' }; window.supaEnabled = () => true; window._supa = window._supa || {};
+      let resolve; const gate = new Promise(r => { resolve = r; });
+      window._fetchCrewLabor = async () => { await gate; return { name: { 'jack-uid': 'Jack Sample' }, entries: [
+        row({ dest_place: 'John Doe (1418 Maple Ave)' }),
+        row({ dest_place: 'John Doe (1418 Maple Ave)', employee_user_id: 'jack-uid', arrived_at: new Date(t + 24 * H).toISOString(), departed_at: new Date(t + 26 * H).toISOString(), minutes: 120 }),
+        row({ dest_place: 'John Doe (Rental)', arrived_at: new Date(t + 48 * H).toISOString(), departed_at: new Date(t + 49 * H).toISOString(), minutes: 60 }),
+        row({ dest_place: 'John Doe (1418 Maple Ave)', source: 'drive', minutes: 30 }),
+        row({ dest_place: 'John Doe (1418 Maple Ave)', source: 'dismissed', minutes: 90 }),
+        row({ dest_place: 'Mary Smith (77 Lakeview Dr)', minutes: 500 }),
+      ] }; };
+      S.ownerName = 'Mike Sample';
+      openQuickInvoice(901);
+      const shimmer = !!document.querySelector('#qi-page .td-skel');
+      resolve();
+      await new Promise(r => setTimeout(r, 50));
+      const text = document.getElementById('qi-page').textContent;
+      const lines = _qi.tracked.filter(l => l.kind === 'time').map(l => ({ who: l.who, mins: l.mins }));
+      const mode = _qi.mode, nav = document.querySelector('#qi-page .ios-navbtn.bold').textContent;
+      window._fetchCrewLabor = saved.f; window.supaEnabled = saved.se; window._supaUser = saved.su; window._supa = saved.sp;
+      return { shimmer, lines, mode, nav, text };
+    });
+    expect(r.shimmer, 'a shimmer while the visits load, not "Nothing tracked"').toBe(true);
+    expect(r.lines).toEqual([{ who: 'Jack Sample', mins: 120 }, { who: 'Mike Sample', mins: 300 }]);
+    expect(r.mode).toBe('hourly');
+    expect(r.text).not.toContain('Nothing tracked');
+    expect(r.nav).toBe('Preview');
+  });
+
+  test('offline, or the load fails: the screen keeps what it had and says nothing tracked only when that is true', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const saved = { f: window._fetchCrewLabor, se: window.supaEnabled };
+      window.supaEnabled = () => false;
+      openQuickInvoice(901);
+      await new Promise(r => setTimeout(r, 30));
+      const offline = _qi.tracked.filter(l => l.kind === 'time').length;
+      window.supaEnabled = () => true; window._supaUser = window._supaUser || { id: 'u' }; window._supa = window._supa || {};
+      window._fetchCrewLabor = async () => { throw new Error('network'); };
+      openQuickInvoice(901);
+      await new Promise(r => setTimeout(r, 30));
+      const failed = _qi.tracked.filter(l => l.kind === 'time').length, loading = _qi.loading;
+      window._fetchCrewLabor = saved.f; window.supaEnabled = saved.se;
+      return { offline, failed, loading };
+    });
+    expect(r.offline).toBe(2);
+    expect(r.failed).toBe(2);
+    expect(r.loading).toBe(false);
+  });
+
   test('changing a rate reprices that line and the total', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => openQuickInvoice(901));
