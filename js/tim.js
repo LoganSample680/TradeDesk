@@ -123,6 +123,7 @@ function timSubject(text){
 // Does the sentence ask to BUILD something, as opposed to go look at something?
 // "build me a T and M for Logan Sample" is a build even when Logan Sample is
 // not a customer yet, and that difference is the whole point of the flag.
+const _TIM_SAY_HINT='Quote Dana by the hour';
 function timWantsBuild(text){
   const t=_timNorm(text);
   return /\b(build|start|make|write|create|new|draw up|put together|set up)\b/.test(t)
@@ -1157,7 +1158,9 @@ function _timAskHtml(){
     '</button>';
   return '<div id="_tim-row" data-empty="1" style="display:flex;align-items:center;gap:10px;padding:13px 16px 0">'+
     '<input id="_tim-say" type="text" autocomplete="off" placeholder="'+
-      (_timOnEstimate() ? 'Tell Tim what changed' : 'Build a T and M for Dana')+'" '+
+      // Plain words, and a sentence Tim really acts on: "quote" is a build
+      // and "by the hour" is T&M (Earl audit 2026-09-27: "T and M" is jargon).
+      (_timOnEstimate() ? 'Tell Tim what changed' : _TIM_SAY_HINT)+'" '+
       'style="flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 13px;border:0;border-radius:var(--r-md);background:var(--bg2);box-shadow:0 0 0 1px var(--border);font-size:13.5px;font-family:inherit;color:var(--text)">'+
     mic+send+
   '</div>'+

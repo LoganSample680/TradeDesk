@@ -17,8 +17,7 @@
  *   _dispatchMoveUp/_dispatchMoveDown/_dispatchUnassign: dispatch reorder + boundaries
  *   _empPayTypeSync          , pay-type form sync (DOM label/placeholder)
  *   _setEmpRolePreset        , role → permission-checkbox preset
- *   _togglePermInfo          , info-block toggle (missing DOM)
- *   _copyInviteLink          , clipboard copy (no-throw)
+ *   _togglePermInfo / _copyInviteLink: DELETED with the old invite modal (asserted gone)
  *   _cacheUserLayoutLocal    , per-uid layout cache to localStorage
  *   _opDbOpen / _opSyncOps (window.__opSync): durable op-log + shadow sync (§12.2 race)
  *   _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest, supa-backed, no-throw
@@ -419,48 +418,11 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.bogus).toEqual([]);
   });
 
-  // ── _togglePermInfo, info-block display toggle ───────────────────────────
-  test('_togglePermInfo: toggles display block/none, missing el is no-op', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof _togglePermInfo !== 'function') return { skip: true };
-      try {
-        // Missing el → no throw
-        _togglePermInfo('_perminfo-does-not-exist');
-        const el = document.createElement('div'); el.id = '_perminfo-harness'; el.style.display = 'none';
-        document.body.appendChild(el);
-        _togglePermInfo('_perminfo-harness'); const open = el.style.display;   // → block
-        _togglePermInfo('_perminfo-harness'); const closed = el.style.display; // → none
-        el.remove();
-        return { ok: true, open, closed };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (r.skip) return;
-    expect(r.ok).toBe(true);
-    expect(r.open).toBe('block');
-    expect(r.closed).toBe('none');
-  });
-
-  // ── _copyInviteLink, clipboard copy, no-throw ────────────────────────────
-  test('_copyInviteLink: copies without throwing (clipboard + fallback)', async () => {
-    const r = await page.evaluate(async () => {
-      if (typeof _copyInviteLink !== 'function') return { skip: true };
-      try {
-        // Provide a stub copy button so the success-state branch runs
-        document.getElementById('_inv-copy-btn')?.remove();
-        const btn = document.createElement('button'); btn.id = '_inv-copy-btn'; btn.textContent = 'Copy Link';
-        document.body.appendChild(btn);
-        _copyInviteLink('https://example.test/?emp_invite=abc');
-        // Also exercise the document.execCommand fallback by hiding navigator.clipboard
-        const origClip = navigator.clipboard;
-        try { Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }); } catch (_e) {}
-        _copyInviteLink('https://example.test/?emp_invite=def');
-        try { Object.defineProperty(navigator, 'clipboard', { value: origClip, configurable: true }); } catch (_e) {}
-        btn.remove();
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (r.skip) return;
-    expect(r.ok).toBe(true);
+  // ── The deleted "Add Team Member" modal took its helpers with it ─────────
+  // (Earl audit 2026-09-27: one crew form, _openEmpModal). §7.1.
+  test('_togglePermInfo and _copyInviteLink are gone with the old invite modal', async () => {
+    const r = await page.evaluate(() => ({ info: typeof _togglePermInfo, copy: typeof _copyInviteLink, modal: typeof openInviteEmployeeModal }));
+    expect(r).toEqual({ info: 'undefined', copy: 'undefined', modal: 'undefined' });
   });
 
   // ── _cacheUserLayoutLocal, per-uid layout cache to localStorage ──────────

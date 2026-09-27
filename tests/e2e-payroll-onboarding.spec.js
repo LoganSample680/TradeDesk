@@ -645,6 +645,7 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
   test('adding the first-ever non-owner employee opens the prompt with first-hire framing (isFirst=true)', async () => {
     const result = await page.evaluate(async () => {
       S.employees = [{ name: 'Owner', role: 'owner' }];
+      S.payrollPromptSeen = false;
       let called = false, gotId = null, gotFirst = null;
       const orig = window._showPayrollSetupPrompt;
       window._showPayrollSetupPrompt = (id, first) => { called = true; gotId = id; gotFirst = first; };
@@ -661,13 +662,14 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
     expect(result.idMatches).toBe(true);
   });
 
-  // Intentional behavior change (owner request 2026-07-12): the prompt now
-  // fires on EVERY new W-2 hire, W-4/I-9/new-hire reporting restart from
-  // zero per person, so "first hire only" silently skipped the paperwork
-  // reminder for everyone after employee #1.
-  test('adding a SECOND non-owner employee re-opens the prompt with new-hire framing (isFirst=false)', async () => {
+  // Intentional behavior change (Earl audit 2026-09-27, reversing the
+  // 2026-07-12 every-hire prompt): three hires was three full-screen popups.
+  // The checklist opens once per business; later hires get a pointer to the
+  // Team page, where the per-hire paperwork always lives.
+  test('adding a SECOND non-owner employee does NOT re-open the prompt once it has been seen', async () => {
     const result = await page.evaluate(async () => {
       S.employees = [{ name: 'Owner', role: 'owner' }, { id: 1, name: 'Existing Hire', role: 'tech' }];
+      S.payrollPromptSeen = true;
       let called = false, gotFirst = null;
       const orig = window._showPayrollSetupPrompt;
       window._showPayrollSetupPrompt = (id, first) => { called = true; gotFirst = first; };
@@ -678,8 +680,23 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
       window._showPayrollSetupPrompt = orig;
       return { called, gotFirst };
     });
-    expect(result.called).toBe(true);
-    expect(result.gotFirst).toBe(false);
+    expect(result.called).toBe(false);
+  });
+
+  test('a business that has never seen it gets it on its next hire, with new-hire framing when crew exists', async () => {
+    const result = await page.evaluate(async () => {
+      S.employees = [{ name: 'Owner', role: 'owner' }, { id: 1, name: 'Existing Hire', role: 'tech' }];
+      S.payrollPromptSeen = false;
+      let called = false, gotFirst = null;
+      const orig = window._showPayrollSetupPrompt;
+      window._showPayrollSetupPrompt = (id, first) => { called = true; gotFirst = first; };
+      openAddEmployeeModal();
+      document.getElementById('emp-name').value = 'Third Hire';
+      await _saveEmployee(null);
+      window._showPayrollSetupPrompt = orig;
+      return { called, gotFirst, seen: S.payrollPromptSeen };
+    });
+    expect(result).toEqual({ called: true, gotFirst: false, seen: true });
   });
 
   test('editing an existing employee (not adding new) does not open the prompt', async () => {
@@ -699,7 +716,7 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
 
   test('adding a new employee with role=owner does not open the prompt', async () => {
     const opened = await page.evaluate(async () => {
-      S.employees = [];
+      S.employees = []; S.payrollPromptSeen = false;
       let called = false;
       const orig = window._showPayrollSetupPrompt;
       window._showPayrollSetupPrompt = () => { called = true; };

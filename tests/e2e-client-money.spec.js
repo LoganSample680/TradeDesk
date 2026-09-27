@@ -1104,7 +1104,8 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
         const start = addDays(todayKey(), 45); // a day unlikely to already be booked
         // allowWeekend:true keeps this deterministic regardless of what day of
         // the week `start` lands on (getJobWorkDays skips weekends otherwise).
-        jobs.push({ id: 990001, name: 'Crew A Job', start, days: 1, eventType: 'job', status: 'upcoming', allowWeekend: true, assignedTo: 'crew-conf-a', client_id: null });
+        // days: 2, a project: a one-day service call never holds the day now (Earl audit 2026-09-27).
+        jobs.push({ id: 990001, name: 'Crew A Job', start, days: 2, eventType: 'job', status: 'upcoming', allowWeekend: true, assignedTo: 'crew-conf-a', client_id: null });
         const crewBFree = !getBookedDaysForCrew('crew-conf-b').booked.has(start);
         const crewABooked = getBookedDaysForCrew('crew-conf-a').booked.has(start);
         return { skip: false, crewBFree, crewABooked };
