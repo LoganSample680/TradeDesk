@@ -1096,9 +1096,10 @@ function renderDash(){
   const showTrends=dashPeriod==='year';
   const net=tInc-tExp-(tMi*IRS(yr));
 
-  const mileDed=Math.round(tMi*IRS(yr));
-  const netBeforeTax=Math.max(0,tInc-tExp-mileDed);
-  const ytdTaxEst=estimateTax(netBeforeTax);
+  // The same set-aside the Taxes screen and the payment banner use (taxSetAside,
+  // js/tax.js): this period's money in times the year's rate, so a full year
+  // reads exactly the Taxes screen's year to date reserve.
+  const ytdTaxEst=taxSetAside(tInc,yr);
   const ytdTrueProfit=Math.round(tInc-tExp-ytdTaxEst);
 
   const wonBidsAll=bids.filter(b=>b.status==='Closed Won').length;
@@ -1212,7 +1213,7 @@ function renderDash(){
     }
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
-    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;
+    const prevTax=showTrends?taxSetAside(prevInc,yr-1):0;
     const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" data-kpi="revenue" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+

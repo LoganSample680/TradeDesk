@@ -259,23 +259,16 @@ test.describe('Tax page, calcTax and tab rendering', () => {
     assertNoErrors(page, 'calcTax render');
   });
 
-  test('estimateTax: returns a positive number for positive net income', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(50000, new Date().getFullYear()); } catch(e) { return null; }
+  // estimateTax was a second copy of the tax math (2026-09-27); every caller
+  // reads taxYearSnapshot now, so a positive year must give a positive bill.
+  test('taxYearSnapshot: positive income gives a positive tax, estimateTax is gone', async () => {
+    const r = await page.evaluate(() => {
+      const sv = income; income = [{ date: '2025-05-01', amount: 50000 }];
+      try { return { tax: taxYearSnapshot('2025').totalOwed, old: typeof estimateTax }; }
+      finally { income = sv; }
     });
-    if (result !== null) {
-      expect(typeof result).toBe('number');
-      expect(result).toBeGreaterThan(0);
-    }
-  });
-
-  test('estimateTax: zero net income returns zero tax', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(0, new Date().getFullYear()); } catch(e) { return null; }
-    });
-    if (result !== null) expect(result).toBe(0);
+    expect(r.tax).toBeGreaterThan(0);
+    expect(r.old).toBe('undefined');
   });
 
   test('setTaxTab: switches between summary and payments tabs', async () => {

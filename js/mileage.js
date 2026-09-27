@@ -1391,7 +1391,7 @@ function _supplyRunScan(k){
   if(v&&!v.value&&store)v.value=store;
   const dd=m.querySelector('#em-date');
   const dm=day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(dd&&dm)dd.value=dm[2]+'/'+dm[3]+'/'+dm[1];
+  if(dd&&dm)dd.value=day; // native date input: ISO
   const c=m.querySelector('#em-cat');
   if(c)c.value='materials';
   // Straight into the camera, still inside the tap's user gesture. If the

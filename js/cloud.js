@@ -1002,7 +1002,7 @@ function _opOwner(){
   try{if(_mergeOnSignIn&&_loadedDataOwner)return _loadedDataOwner;}catch(_e){}
   return null;
 }
-function _opRebaseline(){
+function _opRebaseline(knownIds){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
@@ -1014,10 +1014,32 @@ function _opRebaseline(){
     _opPrevPayload={};
     for(const tdef of _TD_TABLES){
       const m=new Map();
-      for(const r of _opCanonicalRows(tdef))m.set(String(r.id),_opClone(r));
+      const _known=knownIds?(knownIds[tdef.t]||new Set()):null;
+      for(const r of _opCanonicalRows(tdef)){if(_known&&!_known.has(String(r.id)))continue;m.set(String(r.id),_opClone(r));}
       _opPrevPayload[tdef.t]=m;
     }
   }catch(_e){}
+}
+// The rows this device had already PERSISTED for this login, per table, read from
+// zp3_cloud_cache. The first derive of a session baselines against these instead of
+// against live memory. Live memory can already hold an edit made in the seconds
+// before the first cloud load lands (a payment, an income row); baselining it as
+// "already known" meant no CREATE op, so the load's array replace, which only
+// re-appends rows with a pending create, dropped it for good. No cache at all means
+// nothing in memory came from the server. Another login's cache means we cannot
+// tell, so the caller keeps the old whole-memory baseline.
+function _opKnownIdsFromCache(owner){
+  try{
+    const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
+    if(!cc)return {};
+    if(cc._owner&&owner&&cc._owner!==owner)return null;
+    const out={};
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      out[t]=new Set((Array.isArray(cc[key])?cc[key]:[]).filter(r=>r&&r.id!=null).map(r=>String(r.id)));
+    }
+    return out;
+  }catch(_e){return null;}
 }
 // SHADOW derive, called at the save choke-point. Emits the create/update ops the diff
 // implies (vs the baseline) and COUNTS would-be absence-deletes without acting on them.
@@ -1027,7 +1049,10 @@ function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
-    if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
+    // Account switched → fresh baseline, no bleed. The FIRST derive of a session
+    // (no previous owner) baselines only what this device had persisted, so an edit
+    // made before the first cloud load finished is still a create (_opKnownIdsFromCache).
+    if(owner!==_opPrevOwner){_opRebaseline(_opPrevOwner===null?(_opKnownIdsFromCache(owner)||undefined):undefined);}
     // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
     // uses). supaSaveToCloud's _saveSkip correctly stops the redacted zero from reaching
