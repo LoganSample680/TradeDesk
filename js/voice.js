@@ -50,7 +50,7 @@ async function _voiceStart(el,onText){
   if(!(await _voiceReady()))return false;
   _voiceTargetEl=el;
   _voiceBaseText=String(el.value||'');
-  _voiceSeg='';
+  _voiceSeg='';_voiceSegAt=0;
   _voiceOnText=onText;
   try{
     if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();
@@ -85,21 +85,27 @@ async function _voiceStart(el,onText){
 // in silence costs nothing; words only stream while he is talking, so four
 // quiet seconds means either he is thinking or the phone gave up, and a fresh
 // session is right for both.
+const _VOICE_QUIET_MS=1500;
 let _voiceActive=false,_voiceLastHeard=0,_voiceLastStart=0,_voiceWatchTimer=null,_voiceOnText=null,_voiceResuming=false;
 function _voiceWatch(){
   if(_voiceWatchTimer)clearInterval(_voiceWatchTimer);
   _voiceWatchTimer=setInterval(()=>{
     if(!_voiceActive){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;return;}
     const now=Date.now();
-    if(now-_voiceLastHeard>4000&&now-_voiceLastStart>4000)_voiceResume();
-  },1000);
+    // 1.5 seconds, not 4 (owner 2026-09-27: "still cut themselves off like a
+    // second after I pause"). The phone often ends the session on a pause
+    // WITHOUT a final result, so this silence is the only sign it has gone;
+    // at 4 seconds, everything said in that window was never heard. Restarting
+    // during a pause costs nothing: every word so far is already in the field.
+    if(now-_voiceLastHeard>_VOICE_QUIET_MS&&now-_voiceLastStart>_VOICE_QUIET_MS)_voiceResume();
+  },250);
 }
 async function _voiceResume(){
   const P=_voicePlugin();
   if(!P||!_voiceActive||_voiceResuming||!_voiceTargetEl)return;
   _voiceResuming=true;
   try{
-    _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';
+    _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';_voiceSegAt=0;
     _voiceLastStart=Date.now();
     await P.start();
     // Stopped while this restart was on its way: turn the mic back off, or
@@ -126,7 +132,7 @@ async function _voiceStop(){
     try{_voiceTargetEl.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
     try{_voiceTargetEl.dispatchEvent(new Event('change',{bubbles:true}));}catch(_e){}
   }
-  _voiceTargetEl=null;_voiceBaseText='';_voiceSeg='';
+  _voiceTargetEl=null;_voiceBaseText='';_voiceSeg='';_voiceSegAt=0;
   if(typeof _tdHaptic==='function')_tdHaptic(joined?'win':'warn');
   return joined;
 }
@@ -144,18 +150,31 @@ async function _voiceStop(){
 // than what was there, is a new stretch: what was there is kept for good and
 // the new words go after it. An empty result, or one that is only the start
 // of what is already shown, changes nothing.
-let _voiceSeg='';
+//
+// A NEW STRETCH CAN START WITH THE SAME WORD (owner 2026-09-27: "I lose the
+// first half of what I said"). "I pulled the heater" then, after a pause, "I
+// set the tankless": both start with "I", so the old rule read the second as
+// the recogniser refining the first and wrote it over the top. Now a shorter
+// result that does not carry all of what is shown is a new stretch when it
+// shares nothing at the start OR when it arrives after a pause (the stretch on
+// screen has not grown for a moment). A refinement mid-sentence comes in the
+// same breath, so it still replaces.
+let _voiceSeg='',_voiceSegAt=0;
+const _VOICE_STRETCH_GAP_MS=700;
 function _voiceWords(t){return String(t||'').toLowerCase().replace(/[^a-z0-9' ]+/g,' ').split(/\s+/).filter(Boolean);}
 function _voiceAccept(heard){
   const h=String(heard||'').trim();
   if(!h)return _voiceJoin(_voiceBaseText,_voiceSeg);
+  const now=Date.now();
   if(_voiceSeg){
     const a=_voiceWords(_voiceSeg),b=_voiceWords(h);
     let k=0;while(k<a.length&&k<b.length&&a[k]===b[k])k++;
+    // Only the start of what is already shown: nothing new yet.
     if(k===b.length&&b.length<a.length)return _voiceJoin(_voiceBaseText,_voiceSeg);
-    if(k===0&&b.length<a.length)_voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);
+    const paused=_voiceSegAt&&(now-_voiceSegAt)>=_VOICE_STRETCH_GAP_MS;
+    if(b.length<a.length&&k<a.length&&(k===0||paused))_voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);
   }
-  _voiceSeg=h;
+  _voiceSeg=h;_voiceSegAt=now;
   return _voiceJoin(_voiceBaseText,h);
 }
 
