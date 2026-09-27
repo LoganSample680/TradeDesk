@@ -1191,7 +1191,14 @@ function openNewClient(){
   if(_cfw&&!_cfw._cfDraftWired){_cfw._cfDraftWired=true;_cfw.addEventListener('input',_cfDraftSave);_cfw.addEventListener('change',_cfDraftSave);}
   if(_cfDraftRestore()&&typeof showToast==='function')showToast('Picked up the lead you started','📝');
   window.scrollTo(0,0);
-  setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
+  // Start him on Name, unless he has already tapped into another field by the
+  // time this runs: taking the cursor back put what he typed next into Name
+  // (a quick tap to Notes on a slow phone wrote "Dale PruittLeaking tank...").
+  setTimeout(()=>{
+    const n=document.getElementById('cf-name');
+    const a=document.activeElement;
+    if(n&&!(a&&a!==n&&_cfw&&_cfw.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))n.focus();
+  },100);
 }
 function checkYearBuilt(){
   const yr=parseInt(document.getElementById('cf-year-built')?.value||'');
