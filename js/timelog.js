@@ -2752,14 +2752,17 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
       floorMin:_TL_MONTH_FLOOR,level:'month',tip:'Tap a week to open it'});
 }
-// "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
-// the dash so a six-column month still fits a 320px phone.
+// "23–29" inside one month, "8/30–9/5" across a boundary. No spaces round
+// the dash so a six-column month still fits a 320px phone. The boundary week
+// said "Aug 30–Sep 5" until the bigger text (#98) wrapped it to two lines on a
+// phone and knocked its hours out of line with every other week (owner
+// 2026-09-27); the numbers still name both months, in the width of one line.
 function _tlWeekRangeLabel(wk){
   const s=new Date(String(wk||'')+'T00:00:00');
   if(isNaN(s.getTime()))return String(wk||'');
   const e=new Date(s);e.setDate(e.getDate()+6);
   if(s.getMonth()===e.getMonth())return s.getDate()+'\u2013'+e.getDate();
-  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const f=d=>(d.getMonth()+1)+'/'+d.getDate();
   return f(s)+'\u2013'+f(e);
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,

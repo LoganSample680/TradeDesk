@@ -397,7 +397,10 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
    baseline. */
 .tl-wbar-dow{font-size:14px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.18;
   text-wrap:balance;min-height:17px}
-.tl-wbar-month .tl-wbar-dow{min-height:26px}
+/* Two full lines (2 x 14px x 1.18), not the 26px that only fit 1.5 once the
+   text grew (#98): a label that does wrap must not push its own hours below
+   everyone else's. */
+.tl-wbar-month .tl-wbar-dow{min-height:34px}
 .tl-wbar-col.tl-wbar-none .tl-wbar-dow{color:var(--text3)}
 /* The height comparison, restated in words: a chart that only encodes hours as
    a height is unreadable to anyone who cannot judge one, and a short day must
