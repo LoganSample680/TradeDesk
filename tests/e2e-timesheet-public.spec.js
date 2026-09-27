@@ -39,7 +39,7 @@ async function openPage(page, data, opts) {
   }, { data, decideFail: !!(opts && opts.decideFail), noStorage: !!(opts && opts.noStorage) });
   // Registered AFTER mockAllExternal so it wins: the SDK becomes a shim whose
   // rpc answers from window.__tsp.
-  await page.route('**/supabase-js@2*', (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
+  await page.route(/supabase-js@2[^/]*\//, (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
     window.supabase = { createClient: function(){ return { rpc: async function(fn, args){
       window.__tsp.calls.push([fn, args]);
       if (fn === 'timesheet_public') return { data: window.__tsp.data, error: null };

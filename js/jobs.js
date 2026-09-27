@@ -906,7 +906,7 @@ function _deleteTimeEntryFromModal(entryId){
     : '';
   const much=(e.minutes&&typeof _fmtMin==='function')?_fmtMin(e.minutes):'';
   const what=[when,much].filter(Boolean).join(' · ');
-  zConfirm('This removes '+(what?escHtml(what):'this entry')+' from the time log for good. It cannot be undone.',()=>{
+  zConfirm('This removes '+(what?(what):'this entry')+' from the time log for good. It cannot be undone.',()=>{
     deleteTimeEntry(entryId);
     document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
     if(typeof showToast==='function')showToast('Entry deleted','🗑');
@@ -3008,7 +3008,7 @@ function saveDebriefAndComplete(jobId,btn){
 }
 function showReviewRequestPrompt(clientId){
   const c=getClientById(clientId);if(!c)return;
-  const firstName=c.name.split(' ')[0];
+  const firstName=String(c.name||'there').split(' ')[0];
   const reviewUrl=S.reviewUrl||'';
   const msg='Hi '+firstName+', thank you so much for choosing '+((S.bname||'us'))+', it was a pleasure working with you! If you have a moment, we\'d really appreciate a quick Google review: '+reviewUrl;
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
@@ -3016,11 +3016,11 @@ function showReviewRequestPrompt(clientId){
   box.innerHTML=
     '<div style="text-align:center;font-size:22px;margin-bottom:8px">'+svgIcon('⭐',{size:22})+'</div>'+
     '<div class="zmodal-title" style="text-align:center">Request a review?</div>'+
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Send '+firstName+' a text asking for a Google review while the job is fresh.</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Send '+escHtml(firstName)+' a text asking for a Google review while the job is fresh.</div>'+
     '<textarea id="review-msg-text" style="width:100%;min-height:90px;font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box">'+escHtml(msg)+'</textarea>'+
     '<div class="zmodal-btns" style="gap:8px;margin-top:12px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex:1">Skip</button>'+
-      '<button onclick="_sendReviewRequest(\''+c.phone+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">'+svgIcon('⭐')+' Send text</button>'+
+      '<button onclick="_sendReviewRequest('+_jsArg(c.phone)+');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">'+svgIcon('⭐')+' Send text</button>'+
     '</div>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);

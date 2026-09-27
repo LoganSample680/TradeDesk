@@ -1260,7 +1260,7 @@ function showCancellationRefund(bidId){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Cancellation refund</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">'+(bid.client_name||'Client')+' · Deposit collected: <strong>'+fmt(totalPaid)+'</strong></div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">'+escHtml(bid.client_name||'Client')+' · Deposit collected: <strong>'+fmt(totalPaid)+'</strong></div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label>Materials purchased for this job ($)</label>'+
       '<input type="number" id="_cr-mat" data-paid="'+totalPaid+'" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+

@@ -23,7 +23,7 @@
      cascade settles, and a post-load backstop covers pages that never ask. -->
 <script>
 window._loadVendor=function(){if(window._vendorKick)return;window._vendorKick=1;
-  ['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2','https://js.stripe.com/v3/'].forEach(function(u){var s=document.createElement('script');s.src=u;document.head.appendChild(s);});};
+  ['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js','https://js.stripe.com/v3/'].forEach(function(u){var s=document.createElement('script');s.src=u;document.head.appendChild(s);});};
 addEventListener('load',function(){setTimeout(window._loadVendor,2000);});
 </script>
 <script src="js/icons.js"></script>

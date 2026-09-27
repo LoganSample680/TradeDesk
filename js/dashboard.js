@@ -2243,7 +2243,7 @@ function _assignCrewToJob(jobId,empId){
     if(!Array.isArray(j.crewHistory))j.crewHistory=[];
     if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
     const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
-    showToast(escHtml(emp?.name||'Crew member')+' assigned','👤');
+    showToast((emp?.name||'Crew member')+' assigned','👤');
   }else{
     j.assignedTo=null;j.assignedDate=null;
     showToast('Assignment removed','');

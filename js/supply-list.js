@@ -226,7 +226,7 @@ function _supEditCost(i){
     _supSync();
   };
   if(typeof zPrompt==='function'){
-    zPrompt(escHtml(it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',value:Number(it.cost)>0?String(it.cost):''});
+    zPrompt((it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',value:Number(it.cost)>0?String(it.cost):''});
   }
 }
 let _supMarkupTimer=null;

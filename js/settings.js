@@ -118,7 +118,7 @@ function _pbRemove(i){
     if(at>=0)arr.splice(at,1);
     _settingsChanged();renderPriceBookSettings();
   };
-  if(typeof zConfirm==='function')zConfirm('Remove "'+escHtml(r.desc)+'" from your price book? It will come back if you use it twice again.',go,{title:'Remove',yes:'Remove',danger:true});
+  if(typeof zConfirm==='function')zConfirm('Remove "'+(r.desc)+'" from your price book? It will come back if you use it twice again.',go,{title:'Remove',yes:'Remove',danger:true});
   else go();
 }
 
@@ -1369,7 +1369,7 @@ function resetLocationPermission(){
   updateLocationBtn();
   requestLocationPermission(()=>{
     updateLocationBtn();
-    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:svgIcon('✓')+' Location enabled'});
+    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:svgIcon('✓')+' Location enabled',html:true});
   },()=>{
     updateLocationBtn();
     zAlert('Location not allowed. You can try again any time from Settings.',{title:'Location blocked'});

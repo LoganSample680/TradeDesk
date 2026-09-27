@@ -1351,7 +1351,7 @@ function _supplyRunPersonal(k){
            'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
     ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
     {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',
-     danger:true,safeRight:true});
+     danger:true,safeRight:true,html:true});
 }
 function _supplyRunNoReceipt(k){
   // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
@@ -1930,10 +1930,10 @@ function _addrSugSearch(val,suggId,streetId,cityId,stateId,zipId){
       if(gen!==_addrSugGen)return;
       if(!results.length){box.style.display='none';return;}
       box.innerHTML=results.map(res=>{
-        const s1=res.street.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s2=res.city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s3=res.state.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s4=res.zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const s1=escHtml(res.street.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s2=escHtml(res.city.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s3=escHtml(res.state.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s4=escHtml(res.zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>'+
@@ -2024,7 +2024,7 @@ function _showRecentFromAddresses(){
   const recents=_getRecentFromAddresses();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=escHtml(r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));const sp=escHtml((r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
@@ -2061,7 +2061,7 @@ function _showRecentDestinations(){
   const recents=_getRecentDestinations();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=escHtml(r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));const sp=escHtml((r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
@@ -2123,9 +2123,9 @@ function _tripDestSearch(val){
       // Bias may cut off distant locations (e.g. MT address when starting from KS), retry unbiased
       if(!results.length&&_fromBias)results=await _geocodeAddress(val,5);
       results.forEach(res=>{
-        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL1=escHtml(res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeL2=escHtml(res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeName=escHtml((res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
@@ -2184,9 +2184,9 @@ function tripPlaceSearch(fieldId,suggId,val){
       const results=await _geocodeAddress(val,6,_searchBias?.lat||null,_searchBias?.lng||null);
       if(!results.length){box.style.display='none';return;}
       box.innerHTML=results.map(res=>{
-        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL1=escHtml(res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeL2=escHtml(res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeName=escHtml((res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
@@ -2260,8 +2260,8 @@ function openLogTripModal(opts){
         '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
           suggList.map(s=>{
             const safeLabel=(s.label||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const safeAddr=(s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const safePurpose=(s.purpose||'').replace(/'/g,"\\'");
+            const safeAddr=escHtml((s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+            const safePurpose=escHtml((s.purpose||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
             return '<button type="button" onclick="fillTripSuggestion('+s.clientId+',\''+safeAddr+'\',\''+safePurpose+'\')" style="display:flex;align-items:center;gap:5px;padding:7px 10px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;color:var(--text)">'+
               svgIcon(s.icon||'📍',{size:12})+' <span>'+safeLabel+'</span>'+
             '</button>';

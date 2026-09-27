@@ -477,7 +477,7 @@ function _vehWinnerAlert(yr){
       return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?', you\'re already on the winning method '+svgIcon('✓',{size:13}):switchNote);
     });
     if(!parts.length)return;
-    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won'});
+    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won',html:true});
   }catch(_e){}
 }
 

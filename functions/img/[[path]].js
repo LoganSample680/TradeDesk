@@ -15,6 +15,27 @@
 
 const SUPABASE = 'https://mwtsmctajhrrybblgorf.supabase.co';
 
+// This route answers on the APP'S OWN ORIGIN, so whatever it serves runs with
+// the app's cookies and storage if a browser renders it as a page. The gallery
+// bucket takes uploads, so a file uploaded as text/html (or anything else a
+// browser will execute) would have been same-origin script on tradedeskpro.app,
+// cached "immutable" for a year. Three rules close that:
+//   1. Only image/* is ever served. Anything else is a 415 and never cached.
+//   2. Every response says nosniff, so a browser cannot decide an image is HTML.
+//   3. A locked-down CSP with sandbox, so even an SVG opened directly cannot
+//      run script or reach the app.
+const IMG_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+  'Content-Disposition': 'inline',
+};
+// Bumped with the rules above so an entry cached under the old pass-through
+// (possibly not an image) can never be served again: it is simply not found.
+const CACHE_VERSION = 'v2';
+function isImageType(ct) {
+  return /^image\/[\w.+-]+$/i.test(String(ct || '').split(';')[0].trim());
+}
+
 export async function onRequest(context) {
   const { request, waitUntil } = context;
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -40,19 +61,27 @@ export async function onRequest(context) {
 
   // Edge cache first, a hit costs Supabase nothing.
   const cache = caches.default;
-  const cacheKey = new Request(url.origin + url.pathname, { method: 'GET' });
+  const cacheKey = new Request(url.origin + url.pathname + '?cv=' + CACHE_VERSION, { method: 'GET' });
   const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  if (cached && isImageType(cached.headers.get('Content-Type'))) return cached;
 
   const upstream = await fetch(SUPABASE + '/storage/v1/object/public/' + objectPath, {
     cf: { cacheTtl: 2592000, cacheEverything: true },
   });
-  if (!upstream.ok) return new Response('Not found', { status: upstream.status });
+  if (!upstream.ok) return new Response('Not found', { status: upstream.status, headers: { 'X-Content-Type-Options': 'nosniff' } });
+  const upstreamType = upstream.headers.get('Content-Type') || '';
+  if (!isImageType(upstreamType)) {
+    return new Response('Unsupported media type', {
+      status: 415,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' },
+    });
+  }
 
   const res = new Response(upstream.body, {
     status: 200,
     headers: {
-      'Content-Type': upstream.headers.get('Content-Type') || 'image/jpeg',
+      ...IMG_SECURITY_HEADERS,
+      'Content-Type': upstreamType,
       // Objects are immutable (timestamp/hash paths), cache aggressively
       // everywhere: browser, Cloudflare edge, any intermediary.
       'Cache-Control': 'public, max-age=31536000, immutable',
