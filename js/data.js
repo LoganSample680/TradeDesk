@@ -481,6 +481,39 @@ function clientAddresses(client){
   (client.extraAddresses||[]).forEach((a,i)=>push(a.label||('Property '+(i+2)),a.addr));
   return out;
 }
+// ── ONE customer search (owner 2026-09-27) ─────────────────────────────────
+// "The quick invoice search sheet is only bringing up the primary address not
+// the multiple options like what we have in TrueShot, should we make that
+// search shared code?" Five pickers each had their own copy of "does this
+// customer match what he typed", and every copy read the primary address only,
+// so a landlord's second house was unfindable by its street. Every customer
+// search reads these three and nothing else:
+//   clientMatches(c,q)   name, any of their addresses, or 3+ digits of phone
+//   clientSearchText(c)  the same fields as one string, for lists that filter
+//                        rows in place (showQuickPicker's data-q)
+//   clientAddrSub(c,q)   the line under the name: the house that matched, else
+//                        the street, else "2 addresses"
+function clientMatches(c,q){
+  if(!c)return false;
+  const ql=String(q||'').trim().toLowerCase();
+  if(!ql)return true;
+  if(String(c.name||'').toLowerCase().includes(ql))return true;
+  if(clientAddresses(c).some(a=>String(a.addr||'').toLowerCase().includes(ql)))return true;
+  const d=ql.replace(/\D/g,'');
+  return d.length>=3&&String(c.phone||'').replace(/\D/g,'').includes(d);
+}
+function clientSearchText(c){
+  if(!c)return '';
+  return [c.name,c.phone].concat(clientAddresses(c).map(a=>a.addr)).filter(Boolean).join(' ').toLowerCase();
+}
+function clientAddrSub(c,q){
+  const all=clientAddresses(c);
+  const ql=String(q||'').trim().toLowerCase();
+  const hit=ql&&all.find(a=>a.label!=='Primary'&&String(a.addr||'').toLowerCase().includes(ql));
+  if(hit)return String(hit.addr).split(',')[0]+' · '+hit.label;
+  if(all.length>1)return all.length+' addresses';
+  return String((c&&c.addr)||'').split(',')[0]||'No address';
+}
 // Does this account TYPE own the sites under it? Homeowner/business do; a GC,
 // builder, or property manager is a payer who doesn't own the property.
 function accountOwnsSites(client){return !/^(gc|builder|pm)$/i.test((client&&client.partyType)||'')&&!(client&&client.isGC);}

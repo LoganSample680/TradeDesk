@@ -2222,9 +2222,8 @@ function _pcAttPaint(step,q){
     const owners=_pcOwnerMatches().filter(m=>!nearIds.has(m.c.id));
     const dayJobs=near.length?[]:_pcDayMatches(_pcAtt.ids);
     const term=String(q||'').trim().toLowerCase();
-    const list=clients.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.addr||'').toLowerCase().includes(term))
+    const list=clients.filter(c=>clientMatches(c,term))
       .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,50);
-    const props=c=>(typeof clientAddresses==='function')?clientAddresses(c).length:1;
     ov.innerHTML='<div class="zmodal pc-att-sheet">'+
       head('Whose '+(n===1?'photo':n+' photos')+'?')+
       '<label class="pc-att-search">'+_pcIcon('search')+
@@ -2250,9 +2249,8 @@ function _pcAttPaint(step,q){
       '<div class="pc-att-lbl">'+(term?'Results':'All customers')+'</div>'+
       '<div class="pc-att-group pc-file-list">'+
         _pcAttNewRow(q)+
-        (list.length?list.map(c=>{const k=props(c);
-          return row('tdAttachPick('+c.id+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
-            k>1?k+' addresses':escHtml(String(c.addr||'').split(',')[0]),'');}).join('')
+        (list.length?list.map(c=>row('tdAttachPick('+c.id+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
+            escHtml(clientAddrSub(c,term)),'')).join('')
           :'<div class="pc-att-none">No customers match.</div>')+
       '</div></div>';
     const box=document.getElementById('pc-att-q');

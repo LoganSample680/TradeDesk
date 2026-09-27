@@ -364,14 +364,9 @@ let _newcGateOpenId=null;
 function _newcGateMatches(q){
   const ql=(q||'').trim().toLowerCase();
   if(!ql)return (clients||[]).slice(-5).reverse();
-  const digits=ql.replace(/\D/g,'');
-  // Same predicate the Clients page search uses (onClientSearch), so "who do I
-  // have" means one thing in this app.
-  return (clients||[]).filter(c=>
-    (c.name||'').toLowerCase().includes(ql)||
-    (c.addr||'').toLowerCase().includes(ql)||
-    (digits&&(c.phone||'').replace(/\D/g,'').includes(digits))
-  ).slice(0,6);
+  // The one customer search (clientMatches, js/data.js), so "who do I have"
+  // means one thing in this app.
+  return (clients||[]).filter(c=>clientMatches(c,ql)).slice(0,6);
 }
 // Every property this customer has, in the shape the maps picker already uses.
 function _newcGateProps(c){
@@ -934,12 +929,9 @@ function onClientSearch(inp){
     const el=document.getElementById('client-list');
     const tk=todayKey();
     const ql=q.toLowerCase();
-    const matched=clients.filter(c=>
-      (c.name||'').toLowerCase().includes(ql)||
-      (c.addr||'').toLowerCase().includes(ql)||
-      (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||
-      (c.source||'').toLowerCase().includes(ql)
-    );
+    // The one customer search (clientMatches, js/data.js), plus lead source,
+    // which only this page's search has ever offered.
+    const matched=clients.filter(c=>clientMatches(c,q)||(c.source||'').toLowerCase().includes(ql));
     if(!matched.length){el.innerHTML='<div class="empty">No clients match "'+escHtml(q)+'".</div>';return;}
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);

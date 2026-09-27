@@ -48,8 +48,8 @@ function _qiPickList(){
     const st=_qiStatus(c.id);
     return {c,st,r:st?rank[st.k]:3,t:_qiLastTouch(c)};
   }).sort((a,b)=>(a.r-b.r)||(b.t-a.t)||String(a.c.name).localeCompare(String(b.c.name)))
-    .map(({c,st})=>({label:c.name,sub:((c.addr||'').split(',')[0]||'No address')+(st?' · '+st.label:''),clientId:c.id,icon:'📍',
-      find:[c.name,c.addr,c.phone].filter(Boolean).join(' ')}));
+    .map(({c,st})=>({label:c.name,sub:clientAddrSub(c)+(st?' · '+st.label:''),subTail:st?' · '+st.label:'',clientId:c.id,icon:'📍',
+      find:clientSearchText(c)}));
 }
 // Is the work at this customer going on, finished, or still to come? One
 // word, next to their name, so nobody bills a job that is still running
@@ -84,10 +84,14 @@ function openQuickInvoicePicker(){
 }
 
 // Everything this customer has been billed for on a quick invoice already.
-function _qiBilled(cid){
+// A property's invoice covers that house; an invoice from before invoices had
+// a property (no qiAddr) covered every house, so it counts for all of them.
+function _qiSameAddr(a,b){return !a||!b||_addrKey(a)===_addrKey(b);}
+function _qiBilled(cid,addr){
   let through=0;const exp=new Set();
   (bids||[]).forEach(b=>{
     if(!b||b.kind!=='quick_invoice'||String(b.client_id)!==String(cid))return;
+    if(!_qiSameAddr(b.qiAddr,addr))return;
     const t=Date.parse(b.qiTimeThrough||'');if(t>through)through=t;
     (b.qiExpenseIds||[]).forEach(id=>exp.add(String(id)));
   });
@@ -136,19 +140,26 @@ function _qiPropJobs(cid){
 // his fences carry (the same _geoFenceName the deriver writes) and by his
 // jobs' ids. Drives, supply stops, the office and dismissed rows are not time
 // at a customer and never count.
-function _qiPlaceNames(c){
+// addr: one property (a landlord's rental is its own bill). None: every house.
+function _qiPlaceNames(c,addr){
   const nm=(n,w)=>typeof _geoFenceName==='function'?_geoFenceName(n,w):(w?(String(n).trim()+' ('+w+')'):String(n).trim());
   const st=a=>String(a||'').split(',')[0].trim();
   const out=new Set();
   if(!c||!c.name)return out;
-  out.add(nm(c.name,st(c.addr)));
+  if(_qiSameAddr(c.addr,addr))out.add(nm(c.name,st(c.addr)));
   (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
-    if(!a||!a.addr)return;
+    if(!a||!a.addr||!_qiSameAddr(a.addr,addr))return;
     out.add(nm(c.name,(a.label&&String(a.label).trim())||st(a.addr)));
     out.add(nm(c.name,st(a.addr)));
   });
-  (jobs||[]).forEach(j=>{if(j&&String(j.client_id)===String(c.id))out.add(nm(c.name,st(j.addr||j.address)));});
+  _qiJobsAt(c.id,addr).forEach(j=>out.add(nm(c.name,st(j.addr||j.address))));
   return out;
+}
+// This customer's jobs at this property (a job with no address of its own is
+// at their primary).
+function _qiJobsAt(cid,addr){
+  const c=getClientById(cid)||{};
+  return (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)&&_qiSameAddr(j.addr||j.address||c.addr,addr));
 }
 const _QI_NOT_A_VISIT=/^(drive|dismissed|place|unsaved|personal|shop)/;
 // WHAT A CUSTOMER IS BILLED FOR (owner 2026-09-27): "drive time should have a
@@ -161,11 +172,11 @@ const _QI_NOT_A_VISIT=/^(drive|dismissed|place|unsaved|personal|shop)/;
 //     another customer is split in half, so nobody is billed for it twice.
 //     Held legs (an open question on the Time Log) are not billed until answered.
 const _QI_DRIVE=/^drive(?!-held)/;
-function _qiVisitsFor(c,entries,names){
+function _qiVisitsFor(c,entries,names,addr){
   const cid=String(c.id);
-  const mine=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid&&!_qiPropBid(j)).map(j=>String(j.id)));
+  const mine=new Set(_qiJobsAt(cid,addr).filter(j=>!_qiPropBid(j)).map(j=>String(j.id)));
   const theirs=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid).map(j=>String(j.id)));
-  const places=_qiPlaceNames(c);
+  const places=_qiPlaceNames(c,addr);
   const who=uid=>(names&&names[uid])||(String(uid)===String(_qiBizUid())?_qiOwnerName():null);
   const isSite=e=>{
     if(e.job_id!=null&&e.job_id!=='')return mine.has(String(e.job_id));   // a proposal job's time stays on that job
@@ -195,7 +206,7 @@ function _qiSetBillDrive(on){
   S.qiBillDrive=!!on;
   if(typeof _settingsChanged==='function')_settingsChanged();
   if(!_qi)return;
-  const u=_qiUnbilled(_qi.cid,_qi.visits);
+  const u=_qiUnbilled(_qi.cid,_qi.visits,_qi.addr);
   _qiKeepRates(u.lines);
   _qi.tracked=u.lines;_qi.through=u.through;
   renderQuickInvoice();
@@ -208,26 +219,26 @@ function _qiKeepRates(lines){
 }
 function _qiBizUid(){return (typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';}
 function _qiOwnerName(){return (typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'You';}
-async function _qiLoadVisits(cid){
+async function _qiLoadVisits(cid,addr){
   const c=getClientById(cid);if(!c||typeof _fetchCrewLabor!=='function')return null;
   // Offline or signed out: no answer, so the screen keeps what it has.
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return null;
-  const {through}=_qiBilled(cid);
+  const {through}=_qiBilled(cid,addr);
   const since=new Date(Math.max(through||0,Date.now()-180*86400000)).toISOString();
   const lab=await _fetchCrewLabor(since);
-  return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name);
+  return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name,addr);
 }
 
 // The unbilled work: one line per person (their minutes at this customer's
 // jobs since the last quick invoice), then one line per unbilled receipt.
-function _qiUnbilled(cid,visits){
-  const {through,exp}=_qiBilled(cid);
+function _qiUnbilled(cid,visits,addr){
+  const {through,exp}=_qiBilled(cid,addr);
   const byPerson={};let last=through;
   // What the job cache holds, plus the loaded visits, each visit once (the
   // two overlap on job_id rows): same person, same arrival.
   const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
   let src=[];
-  (jobs||[]).filter(j=>j&&String(j.client_id)===String(cid)&&!_qiPropBid(j)).forEach(j=>{src=src.concat(byJob[j.id]||[]);});
+  _qiJobsAt(cid,addr).filter(j=>!_qiPropBid(j)).forEach(j=>{src=src.concat(byJob[j.id]||[]);});
   if(Array.isArray(visits))src=src.concat(visits);
   const seen=new Set();
   src=src.filter(e=>{
@@ -259,23 +270,33 @@ function _qiUnbilled(cid,visits){
   return {lines,through:last>through?new Date(last).toISOString():null};
 }
 
-function openQuickInvoice(cid){
+// WHICH HOUSE (owner 2026-09-27, "the multiple options like what we have in
+// TrueShot"). A customer with more than one property is asked which one, with
+// the same shared picker TrueShot and the estimate use (pickClientAddress),
+// and the invoice bills that house: its visits, its jobs, its drives. One
+// property: no question, zero extra taps.
+function openQuickInvoice(cid,addr){
   const c=getClientById(cid);if(!c)return;
-  const un=_qiUnbilled(cid);
+  if(addr===undefined&&clientAddresses(c).length>1&&typeof pickClientAddress==='function'){
+    pickClientAddress(cid,a=>openQuickInvoice(cid,a||c.addr||''));
+    return;
+  }
+  addr=addr||'';
+  const un=_qiUnbilled(cid,null,addr);
   const hasWork=un.lines.length>0;
   const mode=c.qiMode||(hasWork?'hourly':'set');
-  _qi={cid,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode};
+  _qi={cid,addr,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode};
   goPg('pg-qi');
   renderQuickInvoice();
   // The visits load once, then the screen paints once more (the shimmer in
   // the tracked rows until then, never a "Loading" line: CLAUDE.md 8.4).
   const me=_qi;
-  Promise.resolve(_qiLoadVisits(cid)).catch(()=>null).then(v=>{
+  Promise.resolve(_qiLoadVisits(cid,addr)).catch(()=>null).then(v=>{
     if(_qi!==me)return;                         // he left, or opened someone else
     me.loading=false;
     if(Array.isArray(v)){
       me.visits=v;
-      const u=_qiUnbilled(cid,v);
+      const u=_qiUnbilled(cid,v,addr);
       me.tracked=_qiKeepRates(u.lines);
       me.through=u.through;
       if(!me.modeSet&&me.tracked.some(l=>l.kind==='time'))me.mode='hourly';
@@ -317,7 +338,7 @@ function renderQuickInvoice(){
     '<div class="ios-nav"><button type="button" class="ios-navbtn" onclick="qiCancel()">Cancel</button>'+
       '<button type="button" class="ios-navbtn bold" onclick="qiSeeIt()">Preview</button></div>'+
     '<div class="ios-large"><h1 class="ios-title" style="cursor:default">Invoice</h1>'+
-      '<div class="ios-sub">'+escHtml(c.name||'')+((c.addr||'')?' · '+escHtml(String(c.addr).split(',')[0]):'')+'</div>'+
+      '<div class="ios-sub">'+escHtml(c.name||'')+((_qi.addr||c.addr)?' · '+escHtml(String(_qi.addr||c.addr).split(',')[0]):'')+'</div>'+
       _qiStatusPill(_qi.cid)+'</div>'+
     '<div class="qi-body">'+
       '<div class="ios-seg qi-seg" role="tablist">'+
@@ -436,7 +457,7 @@ function _qiDocHtml(num){
     `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr></tfoot></table></div>`;
   return _propDoc(
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
-      label:'Invoice',num:num||'Draft',date:todayKey(),name:escHtml(c.name||''),addr:escHtml(c.addr||''),phone:escHtml(c.phone||''),
+      label:'Invoice',num:num||'Draft',date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(c.phone||''),
       project:escHtml(_qiMoney(total))+' due',until:null,forLabel:'Billed to'})+
     _propSection('Work performed','',_qiWorkListHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     _propSignoff(bname,'Thank you for choosing'));
@@ -460,7 +481,8 @@ function _qiSave(){
   const total=_qiTotal();
   if(!lines.length||!(total>0)){showToast('Add a line with a price first','✏️');return null;}
   const hourly=_qi.mode==='hourly';
-  const bid={id:_newBidId(),client_id:c.id,client_name:c.name||'',name:c.name||'',phone:c.phone||'',addr:c.addr||'',
+  const bid={id:_newBidId(),client_id:c.id,client_name:c.name||'',name:c.name||'',phone:c.phone||'',addr:_qi.addr||c.addr||'',
+    qiAddr:_qi.addr||c.addr||'',
     type:'Invoice',kind:'quick_invoice',status:'Closed Won',draft:false,
     bid_date:todayKey(),completion_date:todayKey(),amount:total,deposit:0,
     desc:(hourly?_qi.work:[]).concat(lines.map(l=>l.desc)).join('\n'),lineItems:lines.map(l=>({desc:l.desc,amount:l.amount})),

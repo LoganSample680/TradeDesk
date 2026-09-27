@@ -1303,11 +1303,11 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
         escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
-        '<button data-idx="'+i+'" data-action="'+actionType+'" data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
+        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
+            '<div class="qp-sub" style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
         '</button>'
@@ -1365,6 +1365,10 @@ function onQPSearch(el){
       const on=!q||b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd));
       // 'flex', not '': the row's own inline style is what makes it a row.
       b.style.display=on?'flex':'none';if(on)shown++;
+      // A customer with more than one house: name the house that matched.
+      const c=b.dataset.cid!=null&&typeof getClientById==='function'?getClientById(b.dataset.cid)||getClientById(Number(b.dataset.cid)):null;
+      const sub=b.querySelector('.qp-sub');
+      if(on&&c&&sub&&clientAddresses(c).length>1)sub.textContent=clientAddrSub(c,q)+(b.dataset.subtail||'');
     });
     if(!shown&&q)res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
     if(newWrap)newWrap.style.display=(q&&!shown)?'block':'none';
@@ -1375,11 +1379,7 @@ function onQPSearch(el){
     if(newWrap)newWrap.style.display='none';
     return;
   }
-  const matches=clients.filter(c=>
-    c.name.toLowerCase().includes(q)||
-    (c.phone||'').includes(q)||
-    (c.addr||'').toLowerCase().includes(q)
-  ).slice(0,6);
+  const matches=clients.filter(c=>clientMatches(c,q)).slice(0,6);
   if(!matches.length){
     res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
     if(newWrap)newWrap.style.display='block';
@@ -1391,7 +1391,7 @@ function onQPSearch(el){
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue-lt);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--blue-dk);flex-shrink:0">'+initials(c.name)+'</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+escHtml((c.addr||'').split(',')[0]||'No address')+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml(clientAddrSub(c,q))+
           ((actionType==='invoice'&&typeof _qiStatus==='function'&&_qiStatus(c.id))?' · '+escHtml(_qiStatus(c.id).label):'')+'</div>'+
       '</div>'+
     '</button>'
