@@ -316,15 +316,15 @@ function geoIfGranted(cb, errCb, opts){
 }
 
 // ── Auto-capitalize EVERY free-text field ───────────────────────────────────
-// Two modes, picked per field:
-//   WORDS for a proper noun (a person, a business, a street, a city): "john
-//   smith" becomes "John Smith". Only the word-initial letter is forced, so
-//   acronyms ("ABC Painting") and camelCase ("McDowell") survive.
-//   SENTENCES for everything else (a line title, a description, a note):
-//   only the first letter of each sentence. Title Casing every word of free
-//   text is what turned a plumber's line into "Replce 50 Gal Water Heter" on
-//   the customer's proposal (Earl audit 2026-09-27): it reads like a typo'd
-//   headline, and the capitals hid the misspellings from his own eye.
+// Title-cases the first letter of every space-separated word so anything typed
+// can never be saved as "master bedroom" or "Master bedroom", it always
+// normalizes to "Master Bedroom" (owner rule). App-wide by default, so no
+// per-field wiring is needed. The rest of each word is left as typed, so
+// acronyms ("ABC Painting") and camelCase ("McDowell") survive. A field that
+// sets autocapitalize="sentences" itself gets sentence case instead.
+// The Earl audit (2026-09-27) saw "Replce 50 Gal Water Heter" on a proposal.
+// The capitals were the owner's rule; the typos were the bug, so the common
+// trade misspellings below are fixed as he types and when a line is saved.
 function _autoCapWords(s){
   return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
 }
@@ -376,16 +376,11 @@ function _autoCapEligible(el){
   if (im === 'email' || im === 'url' || im === 'numeric' || im === 'decimal' || im === 'tel' || im === 'search') return false;
   return true;
 }
-// WORDS for a proper-noun field, SENTENCES for the rest. A field that set its
-// own autocapitalize="words"/"sentences" keeps it.
-var _AUTOCAP_NAMEY=/(^|[-_])(name|fname|lname|client|bname|business|company|org|street|city|addr|owner|vendor|payee|signer)([-_]|$)/i;
-var _AUTOCAP_NAMEY_AC=/^(name|given-name|family-name|additional-name|organization|street-address|address-line[123]|address-level[1-4])$/i;
+// Words everywhere (owner rule); a field that set its own
+// autocapitalize="sentences" keeps it.
 function _autoCapMode(el){
   var ac = (el.getAttribute('autocapitalize') || '').toLowerCase();
-  if (ac === 'words' || ac === 'sentences') return ac;
-  if (el.tagName === 'TEXTAREA') return 'sentences';
-  if (_AUTOCAP_NAMEY_AC.test(el.getAttribute('autocomplete') || '') || _AUTOCAP_NAMEY.test(el.id || '')) return 'words';
-  return 'sentences';
+  return ac === 'sentences' ? 'sentences' : 'words';
 }
 // TWO mechanisms, both triggered by the SPACEBAR, and neither mutates a field
 // during a programmatic value-set:
@@ -393,7 +388,7 @@ function _autoCapMode(el){
 //      eligible field, so the device keyboard capitalizes natively as it's
 //      typed, with zero value rewriting.
 //   2. DESKTOP (fallback): on a real spacebar keydown, apply the mode (and the
-//      trade typo fixes, on a sentence field) to the value. A
+//      trade typo fixes) to the value. A
 //      keydown only fires from genuine typing, Playwright's page.fill() sets the
 //      value WITHOUT a keydown, so the offline suite is never affected.
 function _applyAutoCapAttrs(root){
@@ -424,7 +419,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     if (!_autoCapEligible(el)) return;
     // Let the space land first, then normalize the words typed so far.
     setTimeout(function(){
-      var v = el.value, capped = _autoCapMode(el) === 'words' ? _autoCapWords(v) : _autoCapSentences(_tradeSpellFix(v));
+      var v = el.value, fixed = _tradeSpellFix(v), capped = _autoCapMode(el) === 'words' ? _autoCapWords(fixed) : _autoCapSentences(fixed);
       if (capped !== v) {
         var pos = el.selectionStart;
         el.value = capped;

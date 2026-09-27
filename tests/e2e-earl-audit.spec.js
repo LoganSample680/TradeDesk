@@ -13,7 +13,7 @@
  *   - a proposal is not "Pending" until he actually sends it
  *   - the new-lead form: Save stays reachable, a half-typed lead survives
  *   - plumber words, not painter words and not jargon
- *   - free text is sentence case, common trade typos are fixed
+ *   - common trade typos are fixed (every word stays capitalized: owner rule)
  *   - Build Your Own opens on its page, no extra Next screen
  *   - 44px tap areas on the small controls
  *   - sign.html's payment screen fits a 375 screen, Back is a link
@@ -141,8 +141,11 @@ test.describe('Earl in the app: lead to proposal', () => {
     expect(html).toContain('TrueBid');
   });
 
-  // ── 11. SENTENCE CASE + TYPOS ───────────────────────────────────────────
-  test('free text is sentence case; names stay word case; common trade typos are fixed', async () => {
+  // ── 11. TYPOS ────────────────────────────────────────────────────────────
+  // The owner's rule is that every typed word is capitalized ("Master
+  // Bedroom"); the Earl audit's complaint was the misspellings, not the
+  // capitals, so only the typos are fixed and every field keeps "words".
+  test('every field keeps word case (owner rule); common trade typos are fixed', async () => {
     const r = await page.evaluate(() => {
       const host = document.createElement('div'); document.body.appendChild(host);
       host.innerHTML = '<input type="text" id="_ea_line"><input type="text" id="cf-name-x" autocomplete="name"><input type="text" id="_ea_street" autocomplete="address-line1">';
@@ -160,7 +163,7 @@ test.describe('Earl in the app: lead to proposal', () => {
       host.remove();
       return out;
     });
-    expect(r.line).toBe('sentences');
+    expect(r.line).toBe('words');
     expect(r.name).toBe('words');
     expect(r.street).toBe('words');
     expect(r.sent).toBe('Replce 50 gal water heter. Then haul it off');
@@ -170,7 +173,7 @@ test.describe('Earl in the app: lead to proposal', () => {
     expect(r.nul).toBe('');
   });
 
-  test('a real spacebar on a line title sentence-cases and fixes the typo, never Title Cases', async () => {
+  test('a real spacebar on a line title fixes the typo and keeps word case', async () => {
     const v = await page.evaluate(async () => {
       const i = document.createElement('input'); i.type = 'text'; document.body.appendChild(i); i.focus();
       i.value = 'replce 50 gal water heter';
@@ -178,7 +181,7 @@ test.describe('Earl in the app: lead to proposal', () => {
       await new Promise(r => setTimeout(r, 20));
       const out = i.value; i.remove(); return out;
     });
-    expect(v).toBe('Replace 50 gal water heater');
+    expect(v).toBe('Replace 50 Gal Water Heater');
   });
 
   test('a line Tim writes gets the typo fix too', async () => {
