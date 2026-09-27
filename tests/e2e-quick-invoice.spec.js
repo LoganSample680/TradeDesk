@@ -159,7 +159,7 @@ test.describe('Quick invoice', () => {
         row({ dest_place: 'Mary Smith (77 Lakeview Dr)', minutes: 500 }),
       ] }; };
       S.ownerName = 'Mike Sample';
-      openQuickInvoice(901);
+      openQuickInvoice(901, '1418 Maple Ave, Springfield, IL');
       const shimmer = !!document.querySelector('#qi-page .td-skel');
       resolve();
       await new Promise(r => setTimeout(r, 50));
@@ -170,7 +170,8 @@ test.describe('Quick invoice', () => {
       return { shimmer, lines, mode, nav, text };
     });
     expect(r.shimmer, 'a shimmer while the visits load, not "Nothing tracked"').toBe(true);
-    expect(r.lines).toEqual([{ who: 'Jack Sample', mins: 120 }, { who: 'Mike Sample', mins: 300 }]);
+    // The Rental's hour is its own invoice now (owner 2026-09-27: one bill per house).
+    expect(r.lines).toEqual([{ who: 'Jack Sample', mins: 120 }, { who: 'Mike Sample', mins: 240 }]);
     expect(r.mode).toBe('hourly');
     expect(r.text).not.toContain('Nothing tracked');
     expect(r.nav).toBe('Preview');
@@ -224,6 +225,77 @@ test.describe('Quick invoice', () => {
     expect(r.setting).toBe(true);
     expect(r.back).toEqual([240]);
     expect(r.saves, 'the switch is his setting, saved each time').toBe(2);
+  });
+
+  // Owner 2026-09-27: "the quick invoice search sheet is only bringing up the
+  // primary address not the multiple options like what we have in TrueShot,
+  // should we make that search shared code?"
+  test('one shared customer search: a second house is found by its street in every picker, and nobody matches by phone on a word', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
+      const byStreet = clients.filter(c => clientMatches(c, '9 lake')).map(c => c.name);
+      const byWord = clients.filter(c => clientMatches(c, 'smith')).map(c => c.name);
+      const byPhone = clients.filter(c => clientMatches(c, '555-0101')).map(c => c.name);
+      const sub = clientAddrSub(clients.find(c => c.id === 901));
+      const subHit = clientAddrSub(clients.find(c => c.id === 901), '9 lake');
+      // The invoice picker narrows in place on the same text.
+      openQuickInvoicePicker();
+      const inp = document.getElementById('qp-search'); inp.value = '9 lake'; onQPSearch(inp);
+      const shown = [...document.querySelectorAll('#qp-sugs [data-action="invoice"]')].filter(b => b.style.display !== 'none').map(b => b.textContent);
+      closeTopModal && closeTopModal();
+      // The Clients page and the new-customer check read it too.
+      const gate = _newcGateMatches('9 lake').map(c => c.name);
+      return { byStreet, byWord, byPhone, sub, subHit, shown, gate };
+    });
+    expect(r.byStreet).toEqual(['John Doe']);
+    expect(r.byWord.sort()).toEqual(['Karen Smith', 'Mary Smith']);
+    expect(r.byPhone).toEqual(['John Doe']);
+    expect(r.sub).toBe('2 addresses');
+    expect(r.subHit).toBe('9 Lake Rd · Rental');
+    expect(r.shown.length).toBe(1);
+    expect(r.shown[0]).toContain('John Doe');
+    expect(r.shown[0], 'the row names the house that matched').toContain('9 Lake Rd · Rental');
+    expect(r.gate).toEqual(['John Doe']);
+  });
+
+  test('a customer with two houses is asked which one; that invoice bills that house only, and billing it leaves the other house unbilled', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      window._jobTimeEntriesByJob = {};
+      clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
+      const H = 3600e3, t = Date.parse('2026-09-22T13:00:00Z');
+      const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 4 * H).toISOString(), minutes: 240 }, o);
+      const saved = { f: window._fetchCrewLabor, se: window.supaEnabled, su: window._supaUser, sp: window._supa };
+      window._supaUser = { id: 'boss-uid' }; window.supaEnabled = () => true; window._supa = window._supa || {};
+      window._fetchCrewLabor = async () => ({ name: {}, entries: [
+        row({ dest_place: 'John Doe (1418 Maple Ave)' }),
+        row({ dest_place: 'John Doe (Rental)', arrived_at: new Date(t + 24 * H).toISOString(), departed_at: new Date(t + 25 * H).toISOString(), minutes: 60 }),
+      ] });
+      openQuickInvoice(901);
+      const asked = !!document.getElementById('_addrpick-ov');
+      const choices = [...document.querySelectorAll('#_addrpick-sheet [onclick^="_addrPickChoose"]')].map(e => e.textContent);
+      _addrPickChoose(1);
+      await new Promise(res => setTimeout(res, 50));
+      const rental = { head: document.querySelector('#qi-page .ios-sub').textContent, mins: _qi.tracked.filter(l => l.kind === 'time').map(l => l.mins) };
+      const bid = _qiSave();
+      openQuickInvoice(901, '1418 Maple Ave, Springfield, IL');
+      await new Promise(res => setTimeout(res, 50));
+      const primary = _qi.tracked.filter(l => l.kind === 'time').map(l => l.mins);
+      openQuickInvoice(901, '9 Lake Rd, Springfield, IL');
+      await new Promise(res => setTimeout(res, 50));
+      const rentalAgain = _qi.tracked.filter(l => l.kind === 'time').map(l => l.mins);
+      Object.assign(window, { _fetchCrewLabor: saved.f, supaEnabled: saved.se, _supaUser: saved.su, _supa: saved.sp });
+      return { asked, choices, rental, qiAddr: bid && bid.qiAddr, addr: bid && bid.addr, primary, rentalAgain };
+    });
+    expect(r.asked).toBe(true);
+    expect(r.choices.length).toBe(2);
+    expect(r.rental.head).toContain('9 Lake Rd');
+    expect(r.rental.mins).toEqual([60]);
+    expect(r.qiAddr).toBe('9 Lake Rd, Springfield, IL');
+    expect(r.addr).toBe('9 Lake Rd, Springfield, IL');
+    expect(r.primary, 'the other house is still unbilled').toEqual([240]);
+    expect(r.rentalAgain, 'the billed house starts after its invoice').toEqual([]);
   });
 
   test('offline, or the load fails: the screen keeps what it had and says nothing tracked only when that is true', async ({ page }) => {
