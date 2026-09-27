@@ -259,6 +259,35 @@ test.describe('Quick invoice', () => {
     expect(r.gate).toEqual(['John Doe']);
   });
 
+  // Owner 2026-09-27: "can I search my person then in that person pick the
+  // address?" then "whatever is most intuitive". A search that already names
+  // one house goes straight to it; a search by name asks which property.
+  test('searching a street and tapping goes straight to that house; searching the name asks which one', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
+      const pick = (q) => {
+        openQuickInvoicePicker();
+        const inp = document.getElementById('qp-search'); inp.value = q; onQPSearch(inp);
+        [...document.querySelectorAll('#qp-sugs [data-action="invoice"]')].find(b => b.style.display !== 'none' && /John Doe/.test(b.textContent)).click();
+      };
+      pick('9 lake');
+      const street = { asked: !!document.getElementById('_addrpick-ov'), addr: _qi && _qi.addr, pg: document.querySelector('.pg.active').id };
+      _qi = null;
+      pick('maple');
+      const primary = { asked: !!document.getElementById('_addrpick-ov'), addr: _qi && _qi.addr };
+      _qi = null;
+      pick('john');
+      const byName = { asked: !!document.getElementById('_addrpick-ov') };
+      document.getElementById('_addrpick-ov')?.remove();
+      return { street, primary, byName, one: clientMatchedAddr(clients.find(c => c.id === 902), '77') };
+    });
+    expect(r.street).toEqual({ asked: false, addr: '9 Lake Rd, Springfield, IL', pg: 'pg-qi' });
+    expect(r.primary).toEqual({ asked: false, addr: '1418 Maple Ave, Springfield, IL' });
+    expect(r.byName.asked).toBe(true);
+    expect(r.one, 'one house: nothing to choose, nothing to name').toBe(null);
+  });
+
   test('a customer with two houses is asked which one; that invoice bills that house only, and billing it leaves the other house unbilled', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {

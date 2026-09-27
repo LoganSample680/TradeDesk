@@ -2249,8 +2249,10 @@ function _pcAttPaint(step,q){
       '<div class="pc-att-lbl">'+(term?'Results':'All customers')+'</div>'+
       '<div class="pc-att-group pc-file-list">'+
         _pcAttNewRow(q)+
-        (list.length?list.map(c=>row('tdAttachPick('+c.id+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
-            escHtml(clientAddrSub(c,term)),'')).join('')
+        // The search named one of their houses: the row files straight to it
+        // (clientMatchedAddr), the same as the invoice picker.
+        (list.length?list.map(c=>{const hit=clientMatchedAddr(c,term);return row('tdAttachPick('+c.id+(hit?',null,'+JSON.stringify(hit.addr).replace(/"/g,'&quot;'):'')+')',escHtml(_pcInitials(c.name)),escHtml(c.name||'Unnamed'),
+            escHtml(clientAddrSub(c,term)),'');}).join('')
           :'<div class="pc-att-none">No customers match.</div>')+
       '</div></div>';
     const box=document.getElementById('pc-att-q');

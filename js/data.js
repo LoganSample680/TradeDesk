@@ -493,6 +493,9 @@ function clientAddresses(client){
 //                        rows in place (showQuickPicker's data-q)
 //   clientAddrSub(c,q)   the line under the name: the house that matched, else
 //                        the street, else "2 addresses"
+//   clientMatchedAddr(c,q) the one house the search named, so tapping the row
+//                        goes straight to it instead of asking which property
+//                        (owner 2026-09-27: "whatever is most intuitive")
 function clientMatches(c,q){
   if(!c)return false;
   const ql=String(q||'').trim().toLowerCase();
@@ -506,10 +509,16 @@ function clientSearchText(c){
   if(!c)return '';
   return [c.name,c.phone].concat(clientAddresses(c).map(a=>a.addr)).filter(Boolean).join(' ').toLowerCase();
 }
-function clientAddrSub(c,q){
+function clientMatchedAddr(c,q){
   const all=clientAddresses(c);
   const ql=String(q||'').trim().toLowerCase();
-  const hit=ql&&all.find(a=>a.label!=='Primary'&&String(a.addr||'').toLowerCase().includes(ql));
+  if(!ql||all.length<2)return null;
+  const hits=all.filter(a=>String(a.addr||'').toLowerCase().includes(ql));
+  return hits.length===1?hits[0]:null;
+}
+function clientAddrSub(c,q){
+  const all=clientAddresses(c);
+  const hit=clientMatchedAddr(c,q);
   if(hit)return String(hit.addr).split(',')[0]+' · '+hit.label;
   if(all.length>1)return all.length+' addresses';
   return String((c&&c.addr)||'').split(',')[0]||'No address';
