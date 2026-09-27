@@ -35,7 +35,10 @@ const FAKE_SUPA = () => {
       return { data: { token: 'tok_' + args.p_week_start, version: window.__rpcVersion || 1, submitted_at: '2026-09-05T23:42:00Z', status: 'submitted', week_start: args.p_week_start }, error: null };
     },
     from: () => { const q = { select: () => q, eq: () => q, then: (ok) => ok({ data: window.__tsRows, error: null }) }; return q; },
+    // timesheet-notify (20261049, H6): records what the app asked the server to email.
+    functions: { invoke: async (n, o) => { window.__invoked.push([n, o && o.body]); return { data: { ok: true }, error: null }; } },
   };
+  window.__invoked = [];
 };
 
 test.describe('Timesheet', () => {
@@ -193,8 +196,10 @@ test.describe('Timesheet', () => {
         expect(r.text).toMatch(/\nSubmitted by Jack Sample, Sep 5, \d{1,2}:\d{2} (AM|PM)\n/);
         // The link is a request, not a reference: the line above it says what
         // to do (owner 2026-09-05), and the link is the last thing in the
-        // message so a phone makes the whole tail tappable.
-        expect(r.text).toContain('\n\nTap to review and approve:\n');
+        // message so a phone makes the whole tail tappable. Since 20261049 (H6)
+        // the texted link only VIEWS the week: approving is emailed to the owner.
+        expect(r.text).toContain('\n\nTap to review:\n');
+        expect(r.text, 'the texted link never claims it can approve').not.toContain('review and approve');
         expect(r.text.trim().split('\n').pop()).toBe(location_origin_placeholder());
         expect(r.text.indexOf('Tap to review'), 'the call to action sits under the stamp, not over the hours')
           .toBeGreaterThan(r.text.indexOf('Submitted by'));
@@ -217,6 +222,42 @@ test.describe('Timesheet', () => {
           .toBeLessThan(r.indexOf('Tap to review'));
         expect(r.trim().split('\n').pop(), 'and the link is still last')
           .toMatch(/^https?:\/\/.*timesheet\.html\?t=/);
+      } finally { await reblock(); }
+    });
+
+    // H6 (20261049): a crew member's week gets its APPROVE link emailed to the
+    // business owner by timesheet-notify. The text the crew member sends says
+    // so, carries only the view link, and the app never sees the approve token.
+    test('a crew member week asks the server to email the approve link to the owner', async () => {
+      await unblock();
+      try {
+        const r = await page.evaluate(async () => {
+          const was = window._contractorUserId;
+          window._contractorUserId = 'boss-1';
+          try {
+            const text = await _tsSubmit(_tlDrill.wk);
+            return { text, invoked: window.__invoked, cached: _tsByWeek[_tlDrill.wk] };
+          } finally { window._contractorUserId = was; }
+        });
+        expect(r.invoked).toEqual([['timesheet-notify', { weekStart: '2026-08-23' }]]);
+        expect(r.text).toContain('The approve button is in the email TradeDesk sent the business owner.');
+        expect(r.text.indexOf('approve button'), 'said before the link').toBeLessThan(r.text.indexOf('Tap to review:'));
+        expect(r.text.trim().split('\n').pop(), 'the link in the text is the VIEW token the RPC returned')
+          .toMatch(/timesheet\.html\?t=tok_2026-08-23$/);
+      } finally { await reblock(); }
+    });
+
+    test('an owner sending their own week asks for no approve email', async () => {
+      await unblock();
+      try {
+        const r = await page.evaluate(async () => {
+          const was = window._contractorUserId;
+          window._contractorUserId = null;
+          try { const text = await _tsSubmit(_tlDrill.wk); return { text, invoked: window.__invoked }; }
+          finally { window._contractorUserId = was; }
+        });
+        expect(r.invoked).toEqual([]);
+        expect(r.text).not.toContain('approve button');
       } finally { await reblock(); }
     });
 
@@ -294,7 +335,7 @@ test.describe('Timesheet', () => {
       try {
         const r = await page.evaluate(async () => { window.__rpcVersion = 2; return _tsSubmit(_tlDrill.wk); });
         expect(r).toContain('Corrected timesheet. Submitted by');
-        expect(r, 'a corrected one asks for the same thing').toContain('Tap to review and approve:');
+        expect(r, 'a corrected one asks for the same thing').toContain('Tap to review:');
       } finally { await reblock(); }
     });
 

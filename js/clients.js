@@ -30,10 +30,10 @@ function openEstimateForClient(){
   // him to the Clients tab to fill in a form and walk back (see the gate).
   if(!c){_newClientQuickGate();return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked',html:true});return;}
   if(r==='high_risk'){
     zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with proposal?',
-      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
+      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true,html:true});
     return;
   }
   _rrpGateThenEstimate(c);
@@ -225,7 +225,7 @@ function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
     zConfirm("You don't have permission to create proposals yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:svgIcon('🔒')+' Proposal access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Proposal access',yes:'Request access',html:true});
   }else if(typeof zAlert==='function'){
     zAlert('You do not have permission to create proposals. Ask your manager for access.',{title:'Permission needed'});
   }
@@ -852,8 +852,8 @@ function renderClientHubPage(){
     const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >'+svgIcon('👁')+' Preview</button>'+
-      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">'+svgIcon('📋')+' Copy</button>'+
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub('+_jsArg(url)+','+_jsArg(c.name||'')+','+(Number(c.id)||0)+')" >'+svgIcon('👁')+' Preview</button>'+
+      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy('+_jsArg(url)+',this)">'+svgIcon('📋')+' Copy</button>'+
       (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">'+svgIcon('📱')+' Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
@@ -1191,7 +1191,14 @@ function openNewClient(){
   if(_cfw&&!_cfw._cfDraftWired){_cfw._cfDraftWired=true;_cfw.addEventListener('input',_cfDraftSave);_cfw.addEventListener('change',_cfDraftSave);}
   if(_cfDraftRestore()&&typeof showToast==='function')showToast('Picked up the lead you started','📝');
   window.scrollTo(0,0);
-  setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
+  // Start him on Name, unless he has already tapped into another field by the
+  // time this runs: taking the cursor back put what he typed next into Name
+  // (a quick tap to Notes on a slow phone wrote "Dale PruittLeaking tank...").
+  setTimeout(()=>{
+    const n=document.getElementById('cf-name');
+    const a=document.activeElement;
+    if(n&&!(a&&a!==n&&_cfw&&_cfw.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))n.focus();
+  },100);
 }
 function checkYearBuilt(){
   const yr=parseInt(document.getElementById('cf-year-built')?.value||'');
@@ -3089,7 +3096,7 @@ function openMapsDir(){
   if(extras.length===0){window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');return;}
   _mapsPickerAddrs=[{label:'Primary',addr:c.addr},...extras];
   const btns=_mapsPickerAddrs.map((a,i)=>'<button onclick="_mapsPickAddr('+i+')" style="display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);font-size:13px;cursor:pointer;font-family:inherit;color:var(--text);margin-bottom:6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:2px">'+escHtml(a.label)+'</span>'+escHtml(a.addr)+'</button>').join('');
-  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...'});
+  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...',html:true});
 }
 function _mapsPickAddr(idx){
   const a=_mapsPickerAddrs[idx];

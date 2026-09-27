@@ -1,3 +1,27 @@
+# Security headers on every static page and asset (2026-09-27 lockdown).
+#   frame-ancestors 'self' + X-Frame-Options: no other site can put the app,
+#     the signing page or the client hub inside a frame and trick a tap
+#     (clickjacking). The app's own previews frame its own pages, so 'self'.
+#   object-src 'none', base-uri 'self', form-action 'self': no plugins, no
+#     <base> hijack of every relative URL, no form posting data off-site.
+#   nosniff: a browser never guesses a file is HTML or script.
+#   Referrer-Policy: a client hub or signing link's token never leaves in the
+#     Referer header to a third party (fonts, maps, Stripe).
+# NOT script-src, on purpose, for now: the app renders thousands of inline
+# onclick handlers, and a script-src that permits them needs 'unsafe-inline',
+# which is no protection at all. Tightening it means moving those handlers to
+# listeners first. connect-src and img-src are also left open until every
+# origin the app talks to (Supabase direct and /api, Stripe, MapKit, weather,
+# county parcel services, Google Fonts, blob: and data: images) is enumerated
+# and tested, since a wrong list would silently break sign-in or maps.
+# Pages Functions (/api, /img, /q, /) set their own headers; /img has its own
+# locked-down policy in functions/img/[[path]].js.
+/*
+  Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
 /*.html
   Cache-Control: no-store, must-revalidate
 

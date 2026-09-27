@@ -200,6 +200,16 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-supersede.sql
 
+      # 20261049 closed doors a stranger could walk through: moving a login
+      # onto another business, writing where payouts land, reading every
+      # signed proposal, approving your own timesheet. Creating a guard proves
+      # nothing about whether it refuses anything, so this tries each door as
+      # a browser role would and fails the job if one opens again.
+      - name: The security lockdown holds
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/security-lockdown.sql
+
   # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
   # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
   # feature/change that touches a real user flow, but until now that rule

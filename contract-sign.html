@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Review &amp; Sign Contract</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="js/icons.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -220,8 +220,11 @@ async function submitSignature(){
   const ts=new Date().toISOString();
   const updated={..._doc,status:'signed',signedAt:ts,signerName:name,sigData:_sigData};
   try{
-    const{error}=await _supa.storage.from('proposals').upload(_key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    // proposal-sign writes the signed agreement after checking this link
+    // (20261049): the proposals bucket no longer takes anonymous writes.
+    const{data,error}=await _supa.functions.invoke('proposal-sign',{body:{action:'agreement',key:_key,signerName:name,signatureData:_sigData}});
     if(error)throw error;
+    if(data&&data.error)throw new Error(data.error);
     _doc=updated;
     show('pg-done');_showInviteLink();
     window.scrollTo(0,0);

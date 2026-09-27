@@ -105,7 +105,10 @@ test.describe('the hub closes', () => {
     await boot(page, base({ bids: [painting] }));
     const r = await page.evaluate(async () => {
       const real = window._supa;
-      window._supa = { from: () => ({ select: () => ({ eq: () => ({ in: async () => ({ data: [{ bid_id: '880002', payment_status: 'declined', signed_at: new Date().toISOString() }] }) }) }) }) };
+      // The hub reads signing state through hub_signed_proposals (20261049).
+      window._supa = { rpc: async (fn) => fn === 'hub_signed_proposals'
+        ? { data: [{ bid_id: '880002', payment_status: 'declined', signed_at: new Date().toISOString() }], error: null }
+        : { data: null, error: { message: 'unexpected ' + fn } } };
       try { await _recheckSigned(); } finally { window._supa = real; }
       return _hub.bids.find(x => x.id === 880002).status;
     });
