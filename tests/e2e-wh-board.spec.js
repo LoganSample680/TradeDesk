@@ -359,8 +359,11 @@ test.describe('Water heater flush board', () => {
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'landscaping,painting' });
         _renderWhBoard();
         const landscaper = document.getElementById('dash-wh-board').style.display;
-        window.getActiveTrade = () => 'painting';
-        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'painting,electrical' });
+        // Every trade TradeDesk sets up now has a recurring service (painting
+        // has deck stain, electrical has generators), so only a trade outside
+        // them all keeps the board hidden.
+        window.getActiveTrade = () => 'pest control';
+        _config = Object.assign({}, keep.cfg || {}, { trade_lines: 'pest control' });
         _renderWhBoard();
         const without = document.getElementById('dash-wh-board').style.display;
         _config = Object.assign({}, keep.cfg || {}, { trade_lines: ['landscaping', 'plumbing'] });

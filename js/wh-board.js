@@ -48,18 +48,60 @@ const _SVC_WH='wh-flush';
 // 11-month cycle), so a heater logged before this change lands on the board
 // on exactly the same day it did before. Every other service shows when due.
 const _SVC_BUILTIN=[
-  {key:_SVC_WH,name:'Water heater flush',short:'Water heater',months:12,lead:1,kind:_WH_KIND,icon:'💧',trades:['plumbing'],
+  {key:_SVC_WH,name:'Water heater flush',short:'Water heater',months:12,lead:1,kind:_WH_KIND,icon:'💧',trades:['plumbing','general'],
     start:'Installed',done:'Flushed',sched:'Flush scheduled',diy:'Flushed by customer',dateLbl:'Install date',
     noun:'water heater',
     msg:'Hi {name}, it\'s been about a year since we put in your water heater. Time for its flush. Want us to schedule it, or doing it yourself this year?'},
   {key:'water-filter',name:'Water filter change',short:'Water filter',months:6,icon:'🚿',trades:['plumbing'],
     msg:'Hi {name}, your water filter is due for a change. Want us to swap it, or doing it yourself this time?'},
-  {key:'gutter',name:'Gutter cleaning',short:'Gutters',months:6,icon:'🍂',trades:['landscaping','roofing'],
+  {key:'gutter',name:'Gutter cleaning',short:'Gutters',months:6,icon:'🍂',trades:['landscaping','roofing','general'],
     msg:'Hi {name}, it\'s time to clean out your gutters again. Want us to get you on the schedule?'},
   {key:'irrigation',name:'Irrigation drain-down',short:'Irrigation',months:12,icon:'🌱',trades:['landscaping','plumbing'],
     msg:'Hi {name}, it\'s about time to drain down and winterize your irrigation. Want us to get you on the schedule?'},
   {key:'furnace',name:'Heater / furnace service',short:'Furnace',months:12,kind:'Furnace',icon:'🔥',trades:['hvac'],
     msg:'Hi {name}, your heater is due for its service. Want us to get you on the schedule, or doing it yourself this year?'},
+  // The rest of the recurring work each trade books (owner 2026-09-27: "for
+  // hvac it's a condenser clean and shit maybe even a coil clean"). Same shape
+  // as the five above; a trade sees its own first and the rest under More. A
+  // general contractor or handyman gets the house-care jobs they commonly book.
+  {key:'ac-tuneup',name:'AC tune-up',short:'AC tune-up',months:12,icon:'❄️',trades:['hvac'],
+    msg:'Hi {name}, your AC is due for its tune-up before the heat hits. Want us to get you on the schedule?'},
+  {key:'condenser',name:'Condenser coil cleaning',short:'Condenser',months:12,icon:'🌀',trades:['hvac'],
+    msg:'Hi {name}, your outdoor condenser is due for a cleaning. A clean coil runs cheaper all summer. Want us to get you on the schedule?'},
+  {key:'evap-coil',name:'Evaporator coil cleaning',short:'Coil clean',months:12,icon:'🧊',trades:['hvac'],
+    msg:'Hi {name}, your indoor coil is due for a cleaning. Want us to get you on the schedule?'},
+  {key:'hvac-filter',name:'Furnace filter change',short:'Air filter',months:3,icon:'🌬️',trades:['hvac','general'],
+    msg:'Hi {name}, your furnace filter is due for a change. Want us to swap it, or doing it yourself this time?'},
+  {key:'backflow',name:'Backflow test',short:'Backflow',months:12,icon:'🧪',trades:['plumbing'],
+    msg:'Hi {name}, your backflow preventer is due for its yearly test. Want us to get you on the schedule?'},
+  {key:'tankless',name:'Tankless water heater descale',short:'Tankless',months:12,icon:'♨️',trades:['plumbing'],
+    msg:'Hi {name}, your tankless water heater is due for its descale. Want us to get you on the schedule, or doing it yourself this year?'},
+  {key:'softener',name:'Water softener service',short:'Softener',months:12,icon:'🧂',trades:['plumbing'],
+    msg:'Hi {name}, your water softener is due for its service. Want us to get you on the schedule?'},
+  {key:'sump',name:'Sump pump check',short:'Sump pump',months:12,icon:'🌧️',trades:['plumbing'],
+    msg:'Hi {name}, your sump pump is due for its check before the wet season. Want us to get you on the schedule?'},
+  {key:'drain',name:'Drain cleaning',short:'Drains',months:12,icon:'🚰',trades:['plumbing'],
+    msg:'Hi {name}, it\'s been about a year since we cleaned your drains. Want us to get you on the schedule?'},
+  {key:'generator',name:'Generator service',short:'Generator',months:12,icon:'⚡',trades:['electrical'],
+    msg:'Hi {name}, your generator is due for its service so it starts when you need it. Want us to get you on the schedule?'},
+  {key:'smoke-co',name:'Smoke & CO detector check',short:'Detectors',months:12,icon:'🚨',trades:['electrical','general'],
+    msg:'Hi {name}, your smoke and CO detectors are due for their check. Want us to get you on the schedule?'},
+  {key:'roof-inspect',name:'Roof inspection',short:'Roof check',months:12,icon:'🏠',trades:['roofing'],
+    msg:'Hi {name}, your roof is due for its yearly inspection. Want us to get you on the schedule?'},
+  {key:'sprinkler-start',name:'Sprinkler spring start-up',short:'Sprinkler start-up',months:12,icon:'💦',trades:['landscaping'],
+    msg:'Hi {name}, it\'s about time to turn your sprinklers back on for the season. Want us to get you on the schedule?'},
+  {key:'aeration',name:'Lawn aeration',short:'Aeration',months:12,icon:'🌾',trades:['landscaping'],
+    msg:'Hi {name}, your lawn is due for aeration. Want us to get you on the schedule?'},
+  {key:'fertilize',name:'Lawn fertilizing',short:'Fertilizing',months:2,icon:'🌿',trades:['landscaping'],
+    msg:'Hi {name}, your lawn is due for its next fertilizing. Want us to get you on the schedule?'},
+  {key:'mulch',name:'Mulch refresh',short:'Mulch',months:12,icon:'🪵',trades:['landscaping'],
+    msg:'Hi {name}, your beds are due for fresh mulch. Want us to get you on the schedule?'},
+  {key:'deck-stain',name:'Deck stain & seal',short:'Deck stain',months:24,icon:'🪚',trades:['painting','general'],
+    msg:'Hi {name}, your deck is due for a fresh stain and seal. Want us to get you on the schedule?'},
+  {key:'ext-touchup',name:'Exterior paint touch-up',short:'Touch-up',months:24,icon:'🖌️',trades:['painting'],
+    msg:'Hi {name}, your exterior is due for a touch-up to keep the paint holding up. Want us to take a look?'},
+  {key:'caulk',name:'Caulk & seal check',short:'Caulk & seal',months:12,icon:'🛠️',trades:['general'],
+    msg:'Hi {name}, your windows, doors and tubs are due for a caulk and seal check. Want us to get you on the schedule?'},
 ];
 const _SVC_WORDS={start:'Last done',done:'Serviced',sched:'Service scheduled',diy:'Done by customer',dateLbl:'Last done'};
 
@@ -146,6 +188,16 @@ function _svcTypesOrdered(){
     return best;
   };
   return _svcTypes().map((t,i)=>({t,i,r:t.custom?200:rank(t)})).sort((a,b)=>a.r-b.r||a.i-b.i).map(x=>x.t);
+}
+// What a sheet shows before More is tapped: the services his trades book, any
+// service he already has on the board, his own services, and whatever is picked
+// right now. A trade nothing fits sees them all.
+function _svcTypesShown(pick){
+  const all=_svcTypesOrdered();
+  const tr=_svcTrades();
+  const used=new Set(_whUnits().map(e=>_svcKindOf(e)));
+  const shown=all.filter(t=>t.custom||t.key===pick||used.has(t.key)||(t.trades||[]).some(x=>tr.indexOf(x)>=0));
+  return {shown:shown.length?shown:all,more:shown.length?all.length-shown.length:0,all};
 }
 function _svcTradeFits(){
   const tr=_svcTrades();
@@ -638,12 +690,13 @@ function svcAddCustomType(name,months){
   if(typeof _settingsChanged==='function')_settingsChanged();else S.settingsTs=Date.now();
   return _svcType(key);
 }
-function openSvcTypes(){
+function openSvcTypes(all){
   document.getElementById('_svc-types-ov')?.remove();
   const ov=document.createElement('div');ov.id='_svc-types-ov';ov.className='zmodal-overlay';
   ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
   const m=document.createElement('div');m.className='zmodal td-wh-form';m.style.maxWidth='440px';
-  const types=_svcTypesOrdered();
+  const vis=_svcTypesShown();
+  const types=all?vis.all:vis.shown;
   m.innerHTML=
     '<div class="zmodal-title">How often</div>'+
     '<div class="td-wh-form-sub">The default for each service. You can still change it for one customer.</div>'+
@@ -653,16 +706,19 @@ function openSvcTypes(){
         '<div class="td-svc-own"><input id="_svc-own-name" autocapitalize="sentences" placeholder="Dryer vent cleaning"><button type="button" id="_svc-own-add" class="td-svc-chip">Add</button></div>'+
       '</div></div>'+
     '</div></div>'+
+    (!all&&vis.more?'<button type="button" id="_svc-types-all" class="sf-clear" style="margin-top:0">Show every service ('+vis.more+' more)</button>':'')+
     '<div id="_svc-types-err" style="display:none;color:var(--c-red);font-size:12.5px;font-weight:600;margin:-2px 2px 8px"></div>'+
     '<button id="_svc-types-save" class="btn btn-g sf-cta">Save</button>';
   ov.appendChild(m);document.body.appendChild(ov);
   _svcWireEvery(m);
+  const allBtn=document.getElementById('_svc-types-all');
+  if(allBtn)allBtn.onclick=()=>openSvcTypes(true);
   const err=t=>{const x=document.getElementById('_svc-types-err');x.textContent=t;x.style.display='block';};
   document.getElementById('_svc-own-add').onclick=()=>{
     const nm=document.getElementById('_svc-own-name').value.trim();
     if(!nm){document.getElementById('_svc-own-name').focus();return;}
     svcAddCustomType(nm,12);
-    openSvcTypes();
+    openSvcTypes(all);
     _whRefresh();
   };
   document.getElementById('_svc-types-save').onclick=()=>{
@@ -908,12 +964,15 @@ function whSkipProposals(){
 // after each save, on the same service, so a stack of old invoices goes in one
 // after another without reopening anything.
 let _svcAddKind=null;
+let _svcAddAll=false;
 const _SVC_CUSTOM='__custom';
+const _SVC_MORE='__more';
 function svcAddPick(key){
   const ov=document.getElementById('_wh-add-ov');
   const val=id=>{const x=document.getElementById(id);return x?x.value:'';};
   const keep=ov?{name:val('_wh-name'),phone:val('_wh-phone'),addr:val('_wh-addr'),client:val('_wh-client'),date:val('_wh-date'),custom:val('_svc-custom-name')}:{};
-  _svcAddKind=String(key||'');
+  if(key===_SVC_MORE)_svcAddAll=true;else _svcAddKind=String(key||'');
+  keep.all=_svcAddAll;
   openWhAdd(ov&&ov.dataset.md==='client'?'client':'new',keep);
 }
 function _svcAddSub(t,months){
@@ -923,6 +982,7 @@ function _svcAddSub(t,months){
 function openWhAdd(mode,keep){
   const md=mode==='client'?'client':'new';
   const k=keep||{};
+  _svcAddAll=!!k.all;
   document.getElementById('_wh-add-ov')?.remove();
   const ov=document.createElement('div');ov.id='_wh-add-ov';ov.className='zmodal-overlay';ov.dataset.md=md;
   ov.onclick=ev=>{if(ev.target===ov){ov.remove();_whRefresh();}};
@@ -930,6 +990,7 @@ function openWhAdd(mode,keep){
   const types=_svcTypesOrdered();
   const kind=_svcAddKind===_SVC_CUSTOM||types.some(t=>t.key===_svcAddKind)?_svcAddKind:types[0].key;
   const t=kind===_SVC_CUSTOM?null:_svcType(kind);
+  const vis=_svcTypesShown(kind);
   const months=_svcValidMonths(k.months)||(t?t.months:12);
   const have=new Set(_whUnits().filter(e=>_svcKindOf(e)===kind).map(e=>String(e.clientId)));
   const opts=(typeof clients!=='undefined'?clients:[]).filter(c=>c&&c.name)
@@ -949,7 +1010,9 @@ function openWhAdd(mode,keep){
     '<div class="zmodal-title">Add a service customer</div>'+
     '<div class="td-wh-form-sub" id="_svc-add-sub">'+_svcAddSub(t,months)+'</div>'+
     '<div class="td-svc-chips" role="group" aria-label="Service">'+
-      types.map(x=>chip(x.key,x.short||x.name)).join('')+chip(_SVC_CUSTOM,'Custom')+
+      (_svcAddAll?vis.all:vis.shown).map(x=>chip(x.key,x.short||x.name)).join('')+
+      (!_svcAddAll&&vis.more?chip(_SVC_MORE,'More ('+vis.more+')'):'')+
+      chip(_SVC_CUSTOM,'Custom')+
     '</div>'+
     '<div class="sf-seg" style="margin-top:12px">'+
       '<button type="button" class="sf-seg-btn'+(md==='new'?' active':'')+'" onclick="openWhAdd(\'new\')">New customer</button>'+
