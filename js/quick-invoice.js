@@ -151,19 +151,17 @@ function _qiPlaceNames(c){
   return out;
 }
 const _QI_NOT_A_VISIT=/^(drive|dismissed|place|unsaved|personal|shop)/;
-// DRIVE AND SHOP ARE PART OF THE JOB (owner 2026-09-27: "drive time should have
-// a toggle that's set by user level if they want to include it and also shop
-// time needs included"). A visit is only the on-site stretch; the day around it
-// is the shop in the morning and the drive out. So:
+// WHAT A CUSTOMER IS BILLED FOR (owner 2026-09-27): "drive time should have a
+// toggle that's set by user level if they want to include it", then "shop time
+// is time spent between jobs though, really the only billable time in time and
+// materials is drive time and job site time". So job site time, plus drive
+// time when S.qiBillDrive is on (the switch on this screen). Shop time is paid
+// on the timesheet and never billed to a customer.
 //   A drive leg that starts or ends at his place is his. A leg between him and
 //     another customer is split in half, so nobody is billed for it twice.
 //     Held legs (an open question on the Time Log) are not billed until answered.
-//   Shop time on a day with a visit to him is his, in proportion to his share
-//     of that person's customer time that day. One customer that day: all of it.
-// Drive is billed only when S.qiBillDrive is on (the switch on this screen).
 const _QI_DRIVE=/^drive(?!-held)/;
-function _qiDayKey(iso){const d=new Date(iso);return isFinite(d)?d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate():'';}
-function _qiVisitsFor(c,entries,names,shopEntries){
+function _qiVisitsFor(c,entries,names){
   const cid=String(c.id);
   const mine=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid&&!_qiPropBid(j)).map(j=>String(j.id)));
   const theirs=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid).map(j=>String(j.id)));
@@ -189,23 +187,6 @@ function _qiVisitsFor(c,entries,names,shopEntries){
     const a=Date.parse(e.arrived_at||''),z=Date.parse(e.departed_at||'');
     const m=Number(e.minutes)>0?Number(e.minutes):(z>a?Math.round((z-a)/60000):0);
     out.push({kind:'drive',arrivedAt:e.arrived_at,departedAt:e.departed_at,minutes:shared?m/2:m,employeeName:who(e.employee_user_id)});
-  });
-  // Customer minutes per person per day: his, and everyone's.
-  const dayHis={},dayAll={};
-  list.forEach(e=>{
-    const k=String(e.employee_user_id)+'|'+_qiDayKey(e.arrived_at);
-    const m=Number(e.minutes)||0;
-    if(isSite(e)){dayHis[k]=(dayHis[k]||0)+m;dayAll[k]=(dayAll[k]||0)+m;}
-    else if(!_QI_NOT_A_VISIT.test(String(e.source||''))&&(e.job_id!=null||e.dest_place))dayAll[k]=(dayAll[k]||0)+m;
-  });
-  (shopEntries||[]).forEach(s=>{
-    if(!s)return;
-    const k=String(s.employee_user_id)+'|'+_qiDayKey(s.arrived_at);
-    if(!(dayHis[k]>0))return;
-    const a=Date.parse(s.arrived_at||''),z=Date.parse(s.departed_at||'');
-    const m=Number(s.minutes)>0?Number(s.minutes):(z>a?Math.round((z-a)/60000):0);
-    if(!(m>0))return;
-    out.push({kind:'shop',arrivedAt:s.arrived_at,departedAt:s.departed_at,minutes:m*dayHis[k]/dayAll[k],employeeName:who(s.employee_user_id)});
   });
   return out;
 }
@@ -234,7 +215,7 @@ async function _qiLoadVisits(cid){
   const {through}=_qiBilled(cid);
   const since=new Date(Math.max(through||0,Date.now()-180*86400000)).toISOString();
   const lab=await _fetchCrewLabor(since);
-  return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name,lab&&lab.shopEntries);
+  return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name);
 }
 
 // The unbilled work: one line per person (their minutes at this customer's
@@ -262,15 +243,15 @@ function _qiUnbilled(cid,visits){
     if(!(a>through)||!(d>a))return;              // billed already, or still open
     const mins=Number(e.minutes)>0?Number(e.minutes):Math.round((d-a)/60000);
     const who=e.employeeName||(typeof S!=='undefined'&&S.ownerName)||'You';
-    const p=byPerson[who]||(byPerson[who]={site:0,shop:0,drive:0});
+    const p=byPerson[who]||(byPerson[who]={site:0,drive:0});
     p[kind]=(p[kind]||0)+mins;
     if(d>last)last=d;
   });
   const lines=Object.keys(byPerson).sort().map(who=>{
     const p=byPerson[who];
-    const mins=Math.round(p.site+p.shop+p.drive);
+    const mins=Math.round(p.site+p.drive);
     const rate=_qiRateFor(who);
-    const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.shop>=1&&_qiMins(Math.round(p.shop))+' shop',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
+    const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
     return {kind:'time',who,mins,rate,detail,desc:who+': '+detail,amount:Math.round(mins/60*rate*100)/100};
   }).filter(l=>l.mins>0);
   ((typeof expenses!=='undefined'&&expenses)||[]).filter(e=>e&&String(e.client_id)===String(cid)&&!exp.has(String(e.id))&&Number(e.amount)>0)
@@ -353,7 +334,7 @@ function renderQuickInvoice(){
         ((tracked+(_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':''))||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
         '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
           '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label>'+
-      '</div><div class="ios-foot">Shop time on the days you were here is included.</div></div>':'')+
+      '</div></div>':'')+
       '<div class="ios-sec"><div class="ios-h"><span>'+(hourly?'Add a line':'What you did')+'</span></div><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a line</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
