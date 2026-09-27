@@ -6,8 +6,8 @@ function goPg(id){
   // leaving the signature screen takes the owner's face. Returns false and
   // re-runs this navigation itself once unlocked.
   if(typeof _handoffGuardNav==='function'&&!_handoffGuardNav(id))return;
-  // Redirect employees away from restricted pages
-  if(_isEmployee){
+  // Redirect employees away from restricted pages (a co-owner is not one)
+  if(!_ownerUI()){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
       'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money','pg-wh-list','pg-qi'];
     if(_empBlocked.includes(id))id='pg-dash';
@@ -184,29 +184,30 @@ function _applyEmployeeNavGating(){
    'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
    'mmi-tim',
   ];
-  const _show=!_isEmployee;
+  const _show=_ownerUI();
   _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_show?'':'none';});
   // Leads nav: hidden only for employees without the leads permission; always shown otherwise.
-  const _leadsOk=!_isEmployee||!!_employeeRecord?.permissions?.leads;
+  const _leadsOk=_ownerUI()||!!_employeeRecord?.permissions?.leads;
   ['nb-leads','mtb-leads','mmi-leads'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_leadsOk?'':'none';});
   // Dispatch button inside the Jobs page header, employee-only hide, always restored otherwise.
-  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_isEmployee?'none':'';
+  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_ownerUI()?'':'none';
   // Grey (don't hide) the dashboard Estimate quick action for employees without
   // the estimate permission, the click still fires openEstimateForClient, which
   // shows the request-access popup. Full opacity for owners/co-owners always.
   const _qaEst=document.getElementById('qa-estimate-btn');
-  if(_qaEst){const _ok=!_isEmployee||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
+  if(_qaEst){const _ok=_ownerUI()||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
   // nav-user avatar: employees can't reach the Settings page (goPg blocks it), but they
   // still need a way to sign out, route their click to a small sign-out menu instead of
   // nulling the click entirely. Owners/co-owners go to Settings as always.
   const nu=document.getElementById('nav-user');
-  if(nu){nu.style.cursor='pointer';nu.onclick=_isEmployee?()=>_employeeSignOutMenu():()=>goPg('pg-settings');}
+  if(nu){nu.style.cursor='pointer';nu.onclick=_ownerUI()?()=>goPg('pg-settings'):()=>_employeeSignOutMenu();}
   // Mobile "more" menu: same reasoning, a dedicated Sign out entry only for employees
   // (owners already have Sign out inside Settings; don't add a redundant one for them).
   const _mmiSignout=document.getElementById('mmi-signout');
-  if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
+  if(_mmiSignout)_mmiSignout.style.display=_ownerUI()?'none':'';
   const nr=document.getElementById('nav-user-role');
-  if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+  if(nr&&_coOwner)nr.textContent='Co-owner';
+  else if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
   // Dual-hat switcher entry (§9.10 slice 1): an owner who is ALSO on someone's
   // crew gets a switch button in the Settings header. The crew hat's entry lives
   // in _employeeSignOutMenu below (employees can't reach Settings at all).

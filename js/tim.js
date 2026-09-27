@@ -1077,7 +1077,9 @@ function _timSheet(id,inner){
 // real boundary, because it is where the figures are computed: anything that
 // reaches it by any route gets nothing.
 function _timCrew(){
-  try{return (typeof _isEmployee!=='undefined')&&!!_isEmployee;}catch(_e){return false;}
+  // A co-owner is an owner here: Tim reads the business's own records, which a
+  // co-owner holds unredacted, so his answers are the business's.
+  try{return (typeof _ownerUI==='function')?!_ownerUI():((typeof _isEmployee!=='undefined')&&!!_isEmployee);}catch(_e){return false;}
 }
 
 // Is there a job on screen at all. Three separate pieces of copy assumed there

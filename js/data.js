@@ -140,6 +140,15 @@ let _vehicles=[];    // vehicles rows
 let _isEmployee=false;        // true when logged-in user belongs to another contractor
 let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
 let _employeeRecord=null;     // team_members row for this employee
+// CO-OWNER (owner 2026-09-26): a second owner on a business that already
+// exists, joined through the crew link so every DATA path (whose rows, sync,
+// redaction, cursor) behaves exactly as crew, while every SCREEN is the
+// owner's. _isEmployee keeps meaning "my rows live on another account";
+// _ownerUI() is the question the screens ask. The server decides who is one
+// (is_co_owner, migration 20261048): this flag only picks the screens.
+let _coOwner=false;
+Object.defineProperty(window,'_coOwner',{get:()=>_coOwner,set:v=>{_coOwner=!!v;},configurable:true});
+function _ownerUI(){return !_isEmployee||_coOwner;}
 Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},configurable:true});
 Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
 // Bridge the rest of the employee-context trio so window assignment reaches the real
@@ -181,7 +190,7 @@ function _effectiveUid(){
 
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}
-function isOwner(){return !_isEmployee&&(getRole()==='owner'||getRole()==='co-owner');}
+function isOwner(){return _coOwner||(!_isEmployee&&(getRole()==='owner'||getRole()==='co-owner'));}
 function isEmployee(){return _isEmployee;}
 function canSeeTaxes(){return isOwner();}
 function isLifetimeAccount(){return !!_account?.is_lifetime;}
