@@ -252,13 +252,23 @@ test.describe('brand-look: the look a logo gives the screen', () => {
 test.describe('app boot screen', () => {
   test('the old glow, bar and status copy are gone; the new screen is up', async ({ page }) => {
     await mockAllExternal(page);
+    // Watch the page from its first node rather than sampling it once at
+    // domcontentloaded: on a loaded WebKit runner the scripts alone can run
+    // past the 2.15s beat, and the screen has already lifted by the time a
+    // single sample looks (2026-09-27, twice on shard 1). The watcher records
+    // the most stages ever up at once and whether any old piece ever appeared.
+    await page.addInitScript(() => {
+      const seen = window.__bootSeen = { glow: 0, bar: 0, hint: 0, stage: 0 };
+      const look = () => {
+        seen.glow = Math.max(seen.glow, document.querySelectorAll('.sbo-glow,#_sbo_glow').length);
+        seen.bar = Math.max(seen.bar, document.querySelectorAll('.sbo-bar,#_sbo_bar,.sbo-track').length);
+        seen.hint = Math.max(seen.hint, document.querySelectorAll('#_sbo_hint,.sbo-hint').length);
+        seen.stage = Math.max(seen.stage, document.querySelectorAll('#supa-boot-overlay .bt-stage').length);
+      };
+      new MutationObserver(look).observe(document, { childList: true, subtree: true });
+    });
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const r = await page.evaluate(() => ({
-      glow: document.querySelectorAll('.sbo-glow,#_sbo_glow').length,
-      bar: document.querySelectorAll('.sbo-bar,#_sbo_bar,.sbo-track').length,
-      hint: document.querySelectorAll('#_sbo_hint,.sbo-hint').length,
-      stage: document.querySelectorAll('#supa-boot-overlay .bt-stage').length,
-    }));
+    const r = await page.evaluate(() => window.__bootSeen);
     expect(r.glow).toBe(0);
     expect(r.bar).toBe(0);
     expect(r.hint).toBe(0);
