@@ -1118,7 +1118,7 @@ function renderDash(){
   if(_subEl)_subEl.textContent='';
 
   const kpiEl=document.getElementById('dash-kpi');
-  if(kpiEl&&_isEmployee){
+  if(kpiEl&&!_ownerUI()){
     // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
     const empId=_employeeRecord?.id;
     const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk))
@@ -1249,7 +1249,7 @@ function renderDash(){
 
   // Hobby loss check, 3 of last 5 years negative profit
   const _hobbyEl=document.getElementById('dash-hobby-warn');
-  if(_hobbyEl&&!_isEmployee){
+  if(_hobbyEl&&_ownerUI()){
     const _cy=new Date().getFullYear();
     let _lossYears=0;
     for(let _yi=0;_yi<5;_yi++){
@@ -1271,8 +1271,8 @@ function renderDash(){
   if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();
 
   const closeTip=document.getElementById('dash-close-tip');
-  if(_isEmployee){if(closeTip)closeTip.style.display='none';}
-  if(!_isEmployee&&closeTip){
+  if(!_ownerUI()){if(closeTip)closeTip.style.display='none';}
+  if(_ownerUI()&&closeTip){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
@@ -1297,7 +1297,7 @@ function renderDash(){
   const csub=document.getElementById('dash-collect-sub');
   if(csub){csub.innerHTML=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
-  if(!_isEmployee)renderPipeline();
+  if(_ownerUI())renderPipeline();
   else{const pe=document.getElementById('dash-pipeline');if(pe)pe.innerHTML='';}
   // Section shared styles
   const _rowStyle='display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px';
@@ -2148,7 +2148,7 @@ function renderDashToday(){
       ?'<span style="margin-left:8px;padding:4px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);font-size:11px;font-weight:700;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid sent</span>'
       :'<button onclick="event.stopPropagation();typeof _openBidBuilder===\'function\'&&_openBidBuilder('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--blue);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid this job</button>'):'';
     // Quick crew assignment row (owner only, non-estimate jobs)
-    const _crewRow=(!_isEmployee&&!isEst)?(()=>{
+    const _crewRow=(_ownerUI()&&!isEst)?(()=>{
       if(_crewEmps.length>0){
         const _aId=j.assignedTo||null; // persists for the job's whole span, not just today
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;

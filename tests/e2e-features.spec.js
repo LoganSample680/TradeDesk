@@ -4063,7 +4063,11 @@ test.describe('Workforce time intelligence', () => {
       }
       const EMP = 'emp-shopoverlap-1';
       // Shop dwell: 2 real hours, T0 to T0+120m.
-      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
+      // departed_at added 2026-09-27: Crew Cost's hours now come off the Time
+      // Log rows (the one pay function), and there a stored row with no
+      // departure is someone's OPEN dwell running to now (owner 2026-09-21),
+      // which is not the closed 2h dwell this fixture always meant.
+      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString(), departed_at: new Date(T0 + 120 * 60000).toISOString() };
       // A manual job clock-in fully INSIDE that dwell: T0+30m to T0+90m (1h),
       // the crew member prefabbing for a specific job while physically there.
       timeEntries = timeEntries.filter(e => e.id !== 8970099);
@@ -4172,14 +4176,14 @@ test.describe('Workforce time intelligence', () => {
   });
 
   // ── Overtime detection logic ─────────────────────────────────────────────
-  test('otDays computed correctly for a day over 8 hours', async () => {
-    const r = await page.evaluate(() => {
-      // Simulate per-day minute accumulation > 480
-      const dayMins = { '2026-06-17': 540, '2026-06-16': 420 };
-      const otDays = Object.values(dayMins).filter(m => m > 480).length;
-      return otDays;
-    });
-    expect(r).toBe(1);
+  // AMENDED 2026-09-27 (§10.4): this used to re-implement Crew Cost's per-day
+  // "OT Nd" count (any day over 8h) inside the test and assert its own
+  // arithmetic. That flag was wrong: federal overtime is weekly over 40h, and
+  // it priced nothing. Crew Cost now takes pay from _payPersonPeriod (weekly,
+  // 1.5x), covered in e2e-pay-week.spec.js; here, the per-day count is gone.
+  test('Crew Cost no longer counts per-day OT days', async () => {
+    const r = await page.evaluate(() => String(_crewCostRender).includes('otDays'));
+    expect(r).toBe(false);
   });
 
   // ── Crew Cost: month/quarter/ytd tabs exist ──────────────────────────────

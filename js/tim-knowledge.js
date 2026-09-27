@@ -216,6 +216,8 @@ const _TIMK_VERBS=new Set([
   'deliver','start','change','swap','add','drop','open','close','trim','apply','adjust','verify',
   // "getting rid of the copper" is how it gets said, and 'get' was missing.
   'get','rid','hook','drain','swap','finish','hang','route','feed','mount','strap','secure',
+  // A plumber's day, said out loud (the Earl audit, 2026-09-27).
+  'snake','clear','flush','light','jet','rod','auger','rebuild','camera',
 ]);
 
 // What a man says before he gets to the work, which is not the work. "Okay so
@@ -224,7 +226,8 @@ const _TIMK_VERBS=new Set([
 const _TIMK_FILLER=/^(?:ok(?:ay)?|so|well|um+|uh+|right|alright|and|but|first(?:ly)?|then|next|after\s+that|afterwards?|finally|lastly|also|plus|basically|obviously)\b[\s,]*/i;
 const _TIMK_SUBJECT=/^(?:(?:i|we|they|you)(?:\s*(?:'|’)?(?:re|m|ll|ve|d))?|im|ive|were|weve|well)\s+(?:are\s+|is\s+|am\s+)?(?:gonna|going\s+to|gotta|got\s+to|have\s+to|need\s+to|want\s+to|will|shall|just|then|also)?\s*/i;
 // The words that always start a new step when they join two clauses.
-const _TIMK_JOIN=/\s+(?:and\s+then|then|after\s+that|afterwards?|next(?:\s+up)?|followed\s+by|before\s+that)\s+/i;
+// "Next to the heater" is a place, not the next step.
+const _TIMK_JOIN=/\s+(?:and\s+then|then|after\s+that|afterwards?|next(?:\s+up)?(?!\s+to\b)|followed\s+by|before\s+that)\s+/i;
 
 // Words that ride along with a verb and say nothing about whether a new action
 // started: conjunctions, particles and bare pronouns.
@@ -288,8 +291,11 @@ function _timkNewAction(frag){
 // Strict on the right: a bare gerund after "and" is usually a noun in this
 // trade ("replace the trim and siding"), so it only starts a step when it has
 // an object of its own too.
+const _TIMK_NOUN_START=/^\s*(?:pressure\s+(?:relief|reducing|tank|valve|switch|gauge)|check\s+valves?|drain\s+(?:line|pan|valve|and)|vent\s+(?:pipe|stack|cap)|test\s+(?:port|plug|cap))\b/i;
 function _timkAndSplits(left,right){
   if(!_timkHasObject(left))return false;
+  // "the temperature and pressure relief valve" is one thing.
+  if(_TIMK_NOUN_START.test(right))return false;
   const words=String(right||'').trim().toLowerCase().split(/\s+/).filter(Boolean);
   if(!words.length)return false;
   const w=words[0].replace(/[^a-z]/g,'');
@@ -321,9 +327,14 @@ function _timkVerbSplit(frag){
     const w=words[i].toLowerCase().replace(/[^a-z]/g,'');
     const prev=words[i-1].toLowerCase().replace(/[^a-z]/g,'');
     const next=words[i+1].toLowerCase().replace(/[^a-z0-9]/g,'');
-    if(!_timkVerbLike(w)||_TIMK_NOT_BEFORE.test(prev))continue;
+    if(!_timkVerbLike(w))continue;
+    // "pressure test", "power wash": one verb in two words.
+    if(/^(?:pressure|leak|power|flow|smoke)$/.test(prev)&&/^(?:test|tested|testing|wash|washed|washing|check)$/.test(w))continue;
     const stem=w.replace(/ing$/,'');
     const strong=_TIMK_STRONG.has(w)||_TIMK_STRONG.has(stem)||_TIMK_STRONG.has(stem+'e');
+    // "fifteen years old haul the heater": "old" before a strong verb that
+    // opens an object is the end of the last clause, not an adjective.
+    if(_TIMK_NOT_BEFORE.test(prev)&&!(strong&&/^(?:old|new)$/.test(prev)&&_TIMK_STARTER.test(next)))continue;
     if(!strong&&!_TIMK_STARTER.test(next))continue;
     const left=words.slice(start,i).join(' ');
     if(i-start<2||!_timkHasObject(left))continue;
@@ -331,6 +342,202 @@ function _timkVerbSplit(frag){
   }
   out.push(words.slice(start).join(' '));
   return out;
+}
+
+// ── WHAT A SLOW TALKER ACTUALLY SAYS (the Earl audit, 2026-09-27) ─────────
+//
+// Earl is 58 and dictates a fifteen minute job with rests in it. What comes
+// back from the phone is his words, exactly, and that includes the "uh", the
+// "no wait, make that three", the "scratch that", and every number spelled out.
+// Written straight onto a contract those are wrong in a way a homeowner reads.
+// So before anything is split into steps, four passes, in this order:
+//   1. the ums come out (whole words only: "umbrella" and "plumbing" stay)
+//   2. spoken numbers become digits, and "dollars" becomes a dollar sign
+//   3. his corrections are applied: the number he fixed is replaced, and the
+//      clause he scratched is gone
+// Each is narrow on purpose. A wrong rewrite of his words is worse than none.
+const _TIMK_UM=/^(?:u+h+|u+m+|uhm+|e+r+m+|h+m+|mm+)$/;
+const _TIMK_NOT_YOUKNOW=/^(?:let|lets|to|if|what|how|where|when|why|who|whether|that|did|do|does|dont|didnt|would|will|should)$/;
+function _timkTok(t){return String(t||'').split(/\s+/).filter(Boolean).map(w=>{
+  const m=w.match(/^(.*?)([,.;:!?]*)$/);
+  return {w:m[1],p:m[2],c:m[1].toLowerCase().replace(/[\u2018\u2019]/g,"'").replace(/[^a-z0-9'$.\-]/g,'')};
+});}
+function _timkUntok(toks){return toks.map(x=>x.w+x.p).join(' ');}
+// Drop tokens i..j (inclusive), handing a sentence end to the word before so
+// "we set it uh." still ends its sentence.
+function _timkDropToks(toks,i,j){
+  const tail=toks[j].p;
+  toks.splice(i,j-i+1);
+  if(/[.!?;]/.test(tail)&&i>0&&!/[.!?;]/.test(toks[i-1].p))toks[i-1].p=tail.replace(/,/g,'');
+}
+function _timkUnfill(text){
+  const toks=_timkTok(text);
+  for(let i=0;i<toks.length;i++){
+    const c=toks[i].c.replace(/'/g,'');
+    if(_TIMK_UM.test(c)){_timkDropToks(toks,i,i);i--;continue;}
+    const c1=toks[i+1]?toks[i+1].c.replace(/'/g,''):'',c2=toks[i+2]?toks[i+2].c:'';
+    if(c==='like'&&c1==='i'&&c2==='said'&&!toks[i].p&&!toks[i+1].p){_timkDropToks(toks,i,i+2);i--;continue;}
+    if(c==='you'&&c1==='know'&&!toks[i].p){
+      const prev=i>0?toks[i-1].c.replace(/'/g,''):'';
+      const next=toks[i+2]?toks[i+2].c.replace(/'/g,''):'';
+      const prevOpen=i===0||!!toks[i-1].p;
+      if(prevOpen||!_TIMK_NOT_YOUKNOW.test(prev)){
+        if(!(!toks[i+1].p&&_TIMK_NOT_YOUKNOW.test(next))){_timkDropToks(toks,i,i+1);i--;continue;}
+      }
+    }
+  }
+  return _timkUntok(toks);
+}
+
+// Number words to digits, for the scope. timDigits is the materials reader's
+// and turns "a roll" into "1 roll" and "a couple" into 2, which is right on a
+// supply list and wrong in a sentence; this one only converts what is plainly
+// a number. A lone "one" stays a word ("haul the old one away"), and a bare
+// "half" or "quarter" stays a word ("half the wall", "quarter round").
+function _timkNumbers(text){
+  const toks=_timkTok(text);
+  const kind=c=>{const k=_timNumKind(c);return k==='pack'?null:k;};
+  const out=[];
+  let i=0;
+  while(i<toks.length){
+    const k0=kind(toks[i].c);
+    const aScale=(toks[i].c==='a'||toks[i].c==='an')&&!toks[i].p&&toks[i+1]&&(kind(toks[i+1].c)==='scale');
+    if(!k0&&!aScale){out.push(toks[i]);i++;continue;}
+    const run=[toks[i]],kinds=[aScale?'join':k0];
+    let j=i+1;
+    while(j<toks.length&&!run[run.length-1].p){
+      const c=toks[j].c,k=kind(c),last=kinds[kinds.length-1];
+      if(!k){
+        const nx=toks[j+1]?toks[j+1].c:'',nx2=toks[j+2]?toks[j+2].c:'';
+        if(c==='and'&&!toks[j].p&&(kind(nx)==='frac'||((nx==='a'||nx==='an')&&kind(nx2)==='frac'))){run.push(toks[j]);kinds.push('join');j++;continue;}
+        // "two hundred and fifty"
+        if(c==='and'&&!toks[j].p&&last==='scale'&&(kind(nx)==='one'||kind(nx)==='ten')){run.push(toks[j]);kinds.push('join');j++;continue;}
+        if((c==='a'||c==='an')&&last==='join'){run.push(toks[j]);kinds.push('join');j++;continue;}
+        break;
+      }
+      if(k==='digit'||(last==='one'&&(k==='ten'||k==='one'))||(last==='frac'&&k!=='frac')||(last==='ten'&&k==='ten'))break;
+      run.push(toks[j]);kinds.push(k);j++;
+    }
+    // A trailing "and" or "a" that never reached a half is not part of it.
+    while(run.length&&kinds[kinds.length-1]==='join'){run.pop();kinds.pop();j--;}
+    const real=kinds.filter(k=>k&&k!=='join');
+    const lone=real.length===1&&(real[0]==='one'&&/^ones?$/.test(run[0].c)||real[0]==='frac'||real[0]==='digit');
+    // "three quarter pex" is a pipe size, not a number to add up.
+    const quarter=run.some(x=>/^quarters?$/.test(x.c));
+    const n=(!run.length||lone||quarter||real.every(k=>k==='frac'))?null:timSpokenNumber(run.map(x=>x.c));
+    if(n==null){out.push(toks[i]);i++;continue;}
+    out.push({w:String(n),p:run[run.length-1].p,c:String(n)});
+    i=j;
+  }
+  // "two fifty dollars", "eighteen fifty": how a price is said, hundreds
+  // first. Only when the money word follows, so "2 50 foot rolls" is left.
+  for(let k=0;k<out.length-2;k++){
+    const a=out[k].c,b=out[k+1].c;
+    if(/^\d+$/.test(a)&&/^\d+$/.test(b)&&!out[k].p&&!out[k+1].p&&+a>0&&+a<100&&+b>=10&&+b<100&&/^(?:dollars?|bucks)$/.test(out[k+2].c)){
+      const n=String(+a*100+(+b));out[k]={w:n,p:'',c:n};out.splice(k+1,1);
+    }
+  }
+  // "2500 dollars", "250 bucks": a price, written as one.
+  for(let k=0;k<out.length-1;k++){
+    if(/^\d+(?:\.\d+)?$/.test(out[k].c)&&!out[k].p&&/^(?:dollars?|bucks)$/.test(out[k+1].c)){
+      out[k]={w:'$'+out[k].w,p:out[k+1].p,c:'$'+out[k].c};out.splice(k+1,1);
+    }
+  }
+  return _timkUntok(out);
+}
+
+// "No wait, make that three." "Actually make it two." "Scratch that." A man
+// correcting himself out loud. The number he fixed is replaced where he said
+// it first; the clause he scratched is dropped. Only ever the one just before:
+// a correction reaches back one clause, never across the job.
+const _TIMK_FIXNUM=/(?:^|[\s,.;!?]+)(?:(?:(?:no|nope|wait|actually|sorry|oh|oops)[,.!]?\s+)+(?:make\s+(?:that|it)|i\s+mean|change\s+(?:that|it)\s+to)|make\s+that)\s+(\$?\d+(?:\.\d+)?)([,.;!?]*)/i;
+const _TIMK_SCRATCH=/(?:^|[\s,.;!?]+)(?:no[,.]?\s+)?(?:scratch|strike|forget|cancel|delete|erase)\s+that\b[,.;!?]*|(?:^|[\s,.;!?]+)never\s?mind\b[,.;!?]*/i;
+const _TIMK_CLAUSE_END=/[.!?;,\n]\s*|\s(?:and then|then|after that|next|also)\s/gi;
+function _timkCorrect(text){
+  let v=String(text||'');
+  for(let guard=0;guard<30;guard++){
+    const m=v.match(_TIMK_FIXNUM);
+    if(!m)break;
+    const at=m.index,before=v.slice(0,at),after=v.slice(at+m[0].length);
+    // The number he is fixing: the last one before this, no more than one
+    // sentence back ("Put in 2 valves. No wait, make that 3.").
+    const nums=[...before.matchAll(/\$?\d+(?:\.\d+)?/g)];
+    const last=nums[nums.length-1];
+    const between=last?before.slice(last.index+last[0].length):'';
+    if(!last||(between.match(/[.!?]/g)||[]).length>1){
+      // Nothing to fix: leave his words alone, but never loop on them.
+      v=before+m[0].replace(/make/i,'make\u200b')+after;continue;
+    }
+    let nu=m[1];
+    if(/^\$/.test(last[0])&&!/^\$/.test(nu))nu='$'+nu;
+    const head=before.slice(0,last.index)+nu+between.replace(/[\s,.;!?]+$/,'');
+    v=head+(m[2]&&/[.!?;]/.test(m[2])?m[2].replace(/,/g,''):'')+(after?' '+after.replace(/^\s+/,''):'');
+  }
+  v=v.replace(/\u200b/g,'');
+  for(let guard=0;guard<30;guard++){
+    const m=v.match(_TIMK_SCRATCH);
+    if(!m)break;
+    // "Actually scratch that": the "actually" is his, the clause before it is
+    // the one going.
+    const before=v.slice(0,m.index).replace(/(?:[\s,.;!?]+(?:actually|no|nope|oh|oops|wait|okay|ok|sorry|so))+$/i,'').replace(/[\s,.;!?]+$/,'');
+    const after=v.slice(m.index+m[0].length);
+    let cut=0,c;
+    const re=new RegExp(_TIMK_CLAUSE_END.source,'gi');
+    while((c=re.exec(before)))cut=c.index+c[0].length;
+    // With no punctuation (an old build) the "clause" could be half the job.
+    // Only the last step in it goes: the same seams the steps are split on.
+    const region=before.slice(cut);
+    const pieces=_timkSoftSplit(region).reduce((a,p)=>a.concat(_timkVerbSplit(p)),[]);
+    const kept=pieces.length>1?pieces.slice(0,-1).join(' ').trim():'';
+    const keep=(before.slice(0,cut).replace(/\s(?:and then|then|after that|next|also)\s*$/i,' ')+(kept?kept+'.':'')).replace(/\s+$/,'');
+    v=(keep?keep+(/[.!?;,]$/.test(keep)?'':'.'):'')+(after.trim()?' '+after.replace(/^\s+/,''):'');
+  }
+  return v.replace(/\s+/g,' ').trim();
+}
+// Line by line: a list he typed keeps its lines, and a correction on one line
+// never reaches into the line above it.
+function _timkClean(text){
+  return String(text||'').split(/(\r?\n+)/).map((seg,i)=>(i%2)?seg:_timkCorrect(_timkNumbers(_timkUnfill(seg)))).join('');
+}
+
+// ── RUN-ON TALK, NO PUNCTUATION (2026-09-27) ──────────────────────────────
+//
+// An app build from before the phone added punctuation hands back fifteen
+// minutes of talk as one sentence. The hard joiners ("and then", "after that")
+// always split, above. These softer ones split only where a new action plainly
+// starts on the right and the left already names something: "set the heater
+// also run the pex" is two steps, "paint the walls and also the ceiling" is one.
+// "I" and "we" starting a new clause are a seam the same way.
+const _TIMK_SOFT=/\s+(?:and\s+also|and\s+so|and\s+now|also|so|now|okay|ok|alright|plus)\s+|\s+(?=(?:i|we|i'll|we'll|we're|i'm|we've|i've|then\s+we|then\s+i)\s)/gi;
+function _timkSoftSplit(s){
+  const str=String(s||'');
+  const bits=[];let last=0,m;
+  const re=new RegExp(_TIMK_SOFT.source,'gi');
+  while((m=re.exec(str))){
+    if(m[0]===''){re.lastIndex++;continue;}
+    const left=str.slice(last,m.index),rightRaw=str.slice(m.index+m[0].length);
+    const right=_timkTidy(rightRaw);
+    const w0=(right.split(/\s+/)[0]||'');
+    if(_timkHasObject(_timkTidy(left))&&_timkVerbLike(w0)&&_timkHasObject(right)){bits.push(left);last=m.index+m[0].length;}
+  }
+  bits.push(str.slice(last));
+  return bits.filter(b=>b&&b.trim());
+}
+
+// A price he said on a line: "replace the shutoff for $250". Taken off the
+// words (the line reads as the work) and handed back as the price, so the
+// builders that take a price put HIS number on the line. One price per line;
+// a line with two is left alone, because which is which is his call.
+const _TIMK_PRICE=/(?:[,\s]+(?:for|at|is|thats|that's|its|it's|runs?|costs?|charge|charging|priced\s+at|price\s+is|about|around|call\s+it))*[,\s]*\$(\d[\d,]*(?:\.\d{1,2})?)(?:\s+(?:each|ea|apiece|a\s+piece|total|flat))?[\s,;:.!?]*$/i;
+function timStepPrice(text){
+  const t=String(text||'');
+  if((t.match(/\$\d/g)||[]).length!==1)return {text:t,price:0};
+  const m=t.match(_TIMK_PRICE);
+  if(!m)return {text:t,price:0};
+  const price=parseFloat(m[1].replace(/,/g,''));
+  let rest=(t.slice(0,m.index)+' '+t.slice(m.index+m[0].length)).replace(/\s+/g,' ').trim().replace(/[\s,;:.]+$/,'');
+  if(rest.replace(/[^a-z]/gi,'').length<3)return {text:t,price:0};
+  return {text:rest.charAt(0).toUpperCase()+rest.slice(1),price:isNaN(price)?0:price};
 }
 
 function _timkTidy(t){
@@ -359,7 +566,7 @@ function _timkTidy(t){
 // dictated his day out of order should see his own list first and then be
 // offered the sort.
 function timScopeFrom(text){
-  const raw=String(text||'');
+  const raw=_timkClean(String(text||''));
   if(!raw.trim())return [];
   const out=[];
   const seen=new Set();
@@ -371,7 +578,10 @@ function timScopeFrom(text){
     const key=v.toLowerCase();
     if(seen.has(key))return;
     seen.add(key);
-    if(out.length<40)out.push(v);
+    // NO CAP (2026-09-27). This stopped at forty and dropped the rest without
+    // a word, which is the end of a fifteen minute job walk. Every step he said
+    // is kept; a long list is his to trim, not Tim's to lose.
+    out.push(v);
   });
   // Hard breaks first: a line he typed on its own is a step he meant on its
   // own, whatever punctuation is in it.
@@ -380,7 +590,7 @@ function timScopeFrom(text){
     // Sentence enders, then the joining words, both of which always split.
     line.split(/(?<=[.;!?])\s+|\s*;\s*/).forEach(sent=>{
       if(!sent||!sent.trim())return;
-      sent.split(_TIMK_JOIN).forEach(part0=>{
+      sent.split(_TIMK_JOIN).reduce((a,p)=>a.concat(_timkSoftSplit(p)),[]).forEach(part0=>{
         if(!part0||!part0.trim())return;
         // Bare "and", before the commas, because a dictated sentence often has
         // no commas in it at all and "and" is the only seam there is.
@@ -427,13 +637,15 @@ function timScopeFrom(text){
 // than something that happens to his words while he watches.
 function timScopeBuild(text,opts){
   const said=String(text||'');
-  const steps=timScopeFrom(said);
+  const priced=timScopeFrom(said).map(timStepPrice);
+  const steps=priced.map(p=>p.text);
   const staged=timOrderScope(steps);
   const byText={};
   staged.forEach(r=>{if(byText[r.text]===undefined)byText[r.text]=r;});
   const mine=steps.map((t,i)=>{
     const r=byText[t]||{};
-    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i};
+    // price: what he said the line costs, 0 when he did not say.
+    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0};
   });
   let implied=[];
   try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
@@ -555,6 +767,9 @@ function timSiteFacts(text){
 // `when` gets the whole sentence and the steps already on the job, and answers
 // yes or no. `say` is the correction in his words, and `because` is the reason,
 // which is always a thing he said or a thing on the job, never a rationale.
+// Declared here, ahead of the table that uses them (see _timkTradeFits).
+const _TIMK_KNOWN_TRADES=new Set(['painting','plumbing','electrical','hvac','roofing','landscaping','general','other']);
+const _TIMK_PAINT_TRADES=['painting','general','other'];
 const TIM_IMPLIED=[
   // First of everything: the paper comes before the first tool (2026-09-23).
   {
@@ -640,7 +855,8 @@ const TIM_IMPLIED=[
     // wall is standing on it right up until it goes.
     pairs:{stage:'restore',step:'Strike scaffold',last:true},
     claims:/\b(scaffold|staging|second (floor|storey|story)|two (storey|story)|upstairs)\b/,
-    when:(t,steps)=>_timSaysHigh(t)&&!_timAnyStep(steps,['scaffold','staging','lift','swing stage']),
+    trades:['painting','roofing','general','other'],
+    when:(t,steps)=>_timNeedsStaging(t)&&!_timAnyStep(steps,['scaffold','staging','lift','swing stage']),
   },
   {
     id:'protect-gutters',
@@ -664,6 +880,7 @@ const TIM_IMPLIED=[
     say:'Primer, masking, sandpaper',
     because:'You did not mention these. This work always needs them.',
     supply:{id:'prep-kit',section:'prep',label:'Primer, masking, sandpaper',unit:'items',qty:5},
+    trades:_TIMK_PAINT_TRADES,
     // The work triggers this, not the sentence. He never says "and primer", he
     // says "strip and repaint the west elevation", and the primer is in that.
     when:(t,steps)=>{
@@ -875,6 +1092,7 @@ const TIM_IMPLIED=[
     source:'trade',
     stage:'protect',
     step:'Cover the floors and furniture, and mask off what is not being painted',
+    trades:_TIMK_PAINT_TRADES,
     say:'Cover and mask',
     because:'Paint on the floor is the one thing they notice before the walls.',
     when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_PAINTS.test(n)&&_TIMK_INSIDE.test(n)&&!_TIMK_COVERED.test(n);},
@@ -884,6 +1102,7 @@ const TIM_IMPLIED=[
     source:'trade',
     stage:'protect',
     step:'Cover the plants, walks and windows, and mask off what is not being painted',
+    trades:_TIMK_PAINT_TRADES,
     say:'Cover and mask',
     because:'Overspray on a car or a window is a bill, not a touch-up.',
     when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_PAINTS.test(n)&&_TIMK_OUTSIDE.test(n)&&!_TIMK_INSIDE.test(n)&&!_TIMK_COVERED.test(n);},
@@ -951,6 +1170,7 @@ const TIM_IMPLIED=[
     source:'trade',
     stage:'finish',
     step:'Prime the new drywall',
+    trades:_TIMK_PAINT_TRADES,
     say:'Prime it',
     because:'New board is not done until it is primed. Swipe it away if paint is somebody else.',
     when:(t,steps)=>{const n=_timkAll(t,steps);return _TIMK_DRYWALL.test(n)&&!/\b(prime|primer|primed|paint)/.test(n);},
@@ -966,7 +1186,8 @@ const TIM_IMPLIED=[
 // will say anything about gas.
 const _TIMK_WET=/\b(water heater|tankless|water softener|softener|pex|copper|supply lines?|water lines?|water main|shut ?off valve|angle stop|faucet|toilet|tub|shower valve|sink|p-?trap|manifold|hose ?bib|water service|re-?pipe|boiler|water tank)\b/;
 const _TIMK_WATER_OFF=/\b(shut ?off|shut the water|water off|turn the water|isolate|drain(ed)? (it|the|down)|drain down)\b/;
-const _TIMK_HOT=/\b(panel|sub ?panel|breakers?|circuits?|romex|wiring|rewire|receptacles?|outlets?|switch leg|service (change|upgrade)|disconnect|conduit|whip)\b/;
+// "The access panel behind the tub" is a plumber's hatch, not a breaker panel.
+const _TIMK_HOT=/\b(?<!access )(panel|sub ?panel|breakers?|circuits?|romex|wiring|rewire|receptacles?|outlets?|switch leg|service (change|upgrade)|disconnect|conduit|whip)\b/;
 const _TIMK_POWER_OFF=/\b(kill the power|killed the power|power off|shut the power|breakers? off|lock ?out|tag ?out|de-?energi[sz])\b/;
 const _TIMK_GAS=/\b(gas|propane|lp|csst|black iron)\b/;
 const _TIMK_GAS_OFF=/\b(gas off|shut the gas|close the valve|close the gas|isolate the gas|lock ?out)\b/;
@@ -977,7 +1198,7 @@ const _TIMK_TESTED=/\b(test|tested|testing|pressure|pressured|leak ?check|leak ?
 // For the trade rules: what he said and the steps it became, as one string.
 function _timkAll(t,steps){return _timkNorm(t)+' '+(steps||[]).map(x=>_timkNorm(x&&typeof x==='object'?(x.text||''):x)).join(' ');}
 // The systems each trade rule listens for. Narrow, like the ones above.
-const _TIMK_PERMIT=/\b(panel|sub ?panel|service (change|upgrade)|(100|150|200|400) ?amp|new circuit|water heater|tankless|furnace|heat pump|air handler|condenser|boiler|mini ?split|gas line|re-?roof|new roof|tear ?off)\b/;
+const _TIMK_PERMIT=/\b(?<!access )(panel|sub ?panel|service (change|upgrade)|(100|150|200|400) ?amp|new circuit|water heater|tankless|furnace|heat pump|air handler|condenser|boiler|mini ?split|gas line|re-?roof|new roof|tear ?off)\b/;
 const _TIMK_TANKLESS=/\b(tankless|on ?demand water heater)\b/;
 const _TIMK_ELECTRIC_TL=/\belectric (tankless|on ?demand)\b/;
 const _TIMK_GASLINE=/\b(gas lines?|gas pipe|gas piping|upsize|black iron|csst)\b/;
@@ -985,7 +1206,7 @@ const _TIMK_VENT_KIND=/\b(tankless|high efficiency|condensing|furnace|boiler)\b/
 const _TIMK_VENTED=/\b(vent|venting|vents|vented|flue|exhaust|chimney|concentric|intake pipe)\b/;
 const _TIMK_CONDENSING=/\b(tankless|high efficiency|condensing|furnace|air handler)\b/;
 const _TIMK_CONDENSATE=/\b(condensate|neutralizer|drain line)\b/;
-const _TIMK_EQUIP=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/;
+const _TIMK_EQUIP=/\b(?<!access )(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/;
 // A named unit: a maker he would say, or a model number (letters then digits,
 // the way they are printed on the plate). Read from what he typed, case and all.
 const _TIMK_BRANDS=/\b(navien|rinnai|rheem|ruud|noritz|takagi|bosch|a\.? ?o\.? smith|bradford white|carrier|bryant|trane|american standard|lennox|goodman|amana|daikin|mitsubishi|fujitsu|york|payne|heil|tempstar|square d|eaton|siemens|cutler hammer|leviton|kinetico|culligan|fleck|weil mclain|burnham|viessmann)\b/i;
@@ -1009,6 +1230,20 @@ const _TIMK_DRYWALL=/\b(drywall|sheetrock|gypsum|hang (new )?board|tape and mud|
 function _timSaysHigh(t){
   const n=_timkNorm(t);
   return /\b(second (floor|storey|story)|two (storey|story)|2nd (floor|storey|story)|upstairs|second level|gable|steep|high side|eave)\b/.test(n);
+}
+// HIGH AND OUTSIDE. Scaffold is for the outside of a tall house. "The upstairs
+// bathroom" is high and indoors, and the audit's plumber was offered scaffold
+// for a toilet (2026-09-27). The work has to be on the outside of the house
+// for the height to mean staging.
+const _TIMK_EXTERIOR=/\b(paint|painting|repaint|strip|stain|siding|soffits?|fascia|gutters?|eaves?|gable|roof|roofing|shingles?|elevation|exterior|outside|brick|stucco|scaffold|staging|shutters)\b/;
+function _timNeedsStaging(t){return _timSaysHigh(t)&&_TIMK_EXTERIOR.test(_timkNorm(t));}
+// Which trades a rule speaks to. A rule with no list speaks to every trade; a
+// rule with one says nothing on a job of another known trade. An unknown or
+// missing trade filters nothing, so a new trade is never silenced by accident.
+function _timkTradeFits(rule,trade){
+  const t=String(trade||'').toLowerCase();
+  if(!t||!_TIMK_KNOWN_TRADES.has(t)||!Array.isArray(rule.trades))return true;
+  return rule.trades.indexOf(t)>=0;
 }
 function _timAnyStep(steps,words){
   const all=(Array.isArray(steps)?steps:[]).map(s=>_timkNorm((s&&typeof s==='object')?(s.text||s.label||s.desc||''):s)).join(' ');
@@ -1062,6 +1297,8 @@ function timImplied(said,steps,opts){
   const out=[];
   TIM_IMPLIED.forEach(r=>{
     if(no.has(r.id))return;
+    // A plumbing job is not offered primer and scaffold (the audit, 2026-09-27).
+    if(!_timkTradeFits(r,o.trade))return;
     let hit=false;
     try{hit=!!r.when(said,steps||[]);}catch(_e){hit=false;}
     if(!hit)return;
@@ -1612,7 +1849,7 @@ function timReadJob(said,opts){
   // difference the scaffold line turns on: he can say "second floor, so
   // scaffold" in passing and still have no scaffold step on the contract, and
   // that gap is the whole correction.
-  const implied=timImplied(said,steps,{rejected:o.rejected})
+  const implied=timImplied(said,steps,{rejected:o.rejected,trade:o.trade})
     .filter(r=>!timDropped('implied',r.id));
 
   // Anything left in his sentence that describes work and no rule and no book

@@ -1284,7 +1284,11 @@ function markJobCompleteFromDash(jobId,triggerBtn){
   markJobDone(jobId);
 }
 
-function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel){
+// opts.searchFirst: the search box above the list, and typing narrows the
+// list in place instead of stacking a second one under it. For a picker whose
+// list is every customer (the quick invoice), not a handful of suggestions.
+function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel,opts){
+  opts=opts||{};
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   const box=document.createElement('div');
@@ -1294,16 +1298,16 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
 
   let suggestHtml='';
   if(suggestions.length){
-    suggestHtml='<div style="margin-bottom:12px">'+
+    suggestHtml='<div id="qp-sugs" style="margin-bottom:12px">'+
       '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">'+
         escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
-        '<button data-idx="'+i+'" data-action="'+actionType+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
+        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
+            '<div class="qp-sub" style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
         '</button>'
@@ -1317,12 +1321,13 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
       '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+subtitle+'</div>'+
-    suggestHtml+
-    '<div style="position:relative;margin-bottom:8px">'+
-      '<input id="qp-search" data-qpaction="'+actionType+'" placeholder="Search by name, phone, or address..." oninput="onQPSearch(this)"'+
-        ' style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;color:var(--text);font-family:inherit">'+
-    '</div>'+
-    '<div id="qp-results"></div>'+
+    (()=>{
+      const search='<div style="position:relative;margin-bottom:'+(opts.searchFirst?'12px':'8px')+'">'+
+        '<input id="qp-search" data-qpaction="'+actionType+'"'+(opts.searchFirst?' data-inplace="1"':'')+' placeholder="Search by name, phone, or address..." oninput="onQPSearch(this)"'+
+          ' style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;color:var(--text);font-family:inherit">'+
+      '</div>';
+      return opts.searchFirst?search+suggestHtml+'<div id="qp-results"></div>':suggestHtml+search+'<div id="qp-results"></div>';
+    })()+
     (allowNew?
       '<div id="qp-new-wrap" style="display:none;margin-top:6px">'+
         '<button data-qpaction="'+actionType+'" onclick="quickCreateClient(this.dataset.qpaction)" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:transparent;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+
@@ -1349,16 +1354,35 @@ function onQPSearch(el){
   const res=document.getElementById('qp-results');
   const newWrap=document.getElementById('qp-new-wrap');
   if(!res)return;
+  // The whole-list picker narrows its own list: hide the rows that do not
+  // match, and only offer New client when nothing does.
+  if(el.dataset.inplace){
+    res.innerHTML='';
+    const rows=[...document.querySelectorAll('#qp-sugs button[data-q]')];
+    let shown=0;
+    const qd=q.replace(/\D/g,'');
+    rows.forEach(b=>{
+      const on=!q||b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd));
+      // 'flex', not '': the row's own inline style is what makes it a row.
+      b.style.display=on?'flex':'none';if(on)shown++;
+      // A customer with more than one house: name the house that matched.
+      const c=b.dataset.cid!=null&&typeof getClientById==='function'?getClientById(b.dataset.cid)||getClientById(Number(b.dataset.cid)):null;
+      const sub=b.querySelector('.qp-sub');
+      if(on&&c&&sub&&clientAddresses(c).length>1)sub.textContent=clientAddrSub(c,q)+(b.dataset.subtail||'');
+      // The search named one of their houses: tapping goes straight to it.
+      const hit=on&&c?clientMatchedAddr(c,q):null;
+      if(hit)b.dataset.addr=hit.addr;else delete b.dataset.addr;
+    });
+    if(!shown&&q)res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
+    if(newWrap)newWrap.style.display=(q&&!shown)?'block':'none';
+    return;
+  }
   if(!q){
     res.innerHTML='';
     if(newWrap)newWrap.style.display='none';
     return;
   }
-  const matches=clients.filter(c=>
-    c.name.toLowerCase().includes(q)||
-    (c.phone||'').includes(q)||
-    (c.addr||'').toLowerCase().includes(q)
-  ).slice(0,6);
+  const matches=clients.filter(c=>clientMatches(c,q)).slice(0,6);
   if(!matches.length){
     res.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px 0">No match found.</div>';
     if(newWrap)newWrap.style.display='block';
@@ -1370,7 +1394,7 @@ function onQPSearch(el){
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue-lt);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--blue-dk);flex-shrink:0">'+initials(c.name)+'</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+escHtml((c.addr||'').split(',')[0]||'No address')+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml(clientAddrSub(c,q))+
           ((actionType==='invoice'&&typeof _qiStatus==='function'&&_qiStatus(c.id))?' · '+escHtml(_qiStatus(c.id).label):'')+'</div>'+
       '</div>'+
     '</button>'
@@ -1385,7 +1409,7 @@ function pickQuickClient(btn,actionType){
   const s=suggestions[idx];
   if(!s)return;
   overlay.remove();
-  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null);
+  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||undefined);
 }
 
 function pickQPClient(cid,actionType){
@@ -1395,7 +1419,8 @@ function pickQPClient(cid,actionType){
   executeQuickAction(actionType,cid,wonBid?wonBid.id:null,null);
 }
 
-function executeQuickAction(actionType,clientId,bidId,jobId){
+// addr: the house the search already named (clientMatchedAddr), when there is one.
+function executeQuickAction(actionType,clientId,bidId,jobId,addr){
   window._fromDash=true;
   currentClientId=clientId;
   if(actionType==='drive'){
@@ -1407,7 +1432,7 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     const purpose=hasWon?'Job site':hasEst?'Proposal':'Proposal';
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='invoice'){
-    if(typeof openQuickInvoice==='function')openQuickInvoice(clientId);
+    if(typeof openQuickInvoice==='function')openQuickInvoice(clientId,addr);
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){
@@ -3109,7 +3134,10 @@ function _bizHM(d){
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
-  const out={loaded:{},wage:{},name:{},entries:[],shopEntries:[]};
+  // comp: the raw team_members pay row per uid, so Crew Cost can hand it to
+  // the one pay function (_payPersonPeriod) instead of an hourly figure.
+  // Additive, every other consumer ignores it.
+  const out={loaded:{},wage:{},comp:{},name:{},entries:[],shopEntries:[]};
   if(!supaEnabled()||!_supaUser)return out;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
   try{
@@ -3117,11 +3145,13 @@ async function _fetchCrewLabor(sinceISO){
     (tm||[]).forEach(r=>{
       if(!r.employee_user_id)return;
       const comp={pay_type:r.pay_type,pay_rate:r.pay_rate};
+      out.comp[r.employee_user_id]=comp;
       out.loaded[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(comp):0;
       out.wage[r.employee_user_id]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
       out.name[r.employee_user_id]=r.name||r.email||'Crew';
     });
     const _oc={pay_type:S.ownerPayType,pay_rate:S.ownerPayRate};
+    out.comp[cid]=_oc;
     out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
     out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
     out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
@@ -3196,13 +3226,23 @@ async function _crewCostRender(range){
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;
   if(range==='today'){sinceStr=todayStr;label='today';}
-  else if(range==='week'){sinceStr=_bizDateStr(new Date(Date.now()-6*86400000));label='this week';}
+  // A payroll week, Sunday to Saturday, the same week Payroll and the Time
+  // Log use (_tlWeekKey). It was "the last seven days", which never lined up
+  // with any paycheck (owner 2026-09-27).
+  else if(range==='week'){sinceStr=_tlWeekKey(todayStr)||todayStr;label='this week';}
   else if(range==='month'){sinceStr=yr+'-'+String(mo).padStart(2,'0')+'-01';label='this month';}
   else if(range==='quarter'){const qm=Math.floor((mo-1)/3)*3+1;sinceStr=yr+'-'+String(qm).padStart(2,'0')+'-01';label='this quarter';}
   else{sinceStr=yr+'-01-01';label='this year';}
   // Fetch with 1-day UTC buffer before period start; CT-date comparison is the authoritative filter
   const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
-  const data=await _fetchCrewLabor(sinceISO);
+  // PAY comes off the Time Log's own rows, through the one pay function
+  // Payroll uses (_payPersonPeriod, js/payroll-summary.js): paid minutes only,
+  // weekly overtime over 40h at 1.5x. _timeLogRows fetches the crew payload
+  // itself and parks it in _tlCrewCache, so the breakdown below reuses it
+  // rather than asking the server twice.
+  const tlRows=(typeof _timeLogRows==='function')?await _timeLogRows(sinceISO):[];
+  const data=(typeof _tlCrewCache!=='undefined'&&_tlCrewCache&&_tlCrewCache.since===sinceISO&&_tlCrewCache.payload&&_tlCrewCache.payload.comp)
+    ?_tlCrewCache.payload:await _fetchCrewLabor(sinceISO);
   // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) alongside
   // GPS-tracked entries, mapped into the same {employee_user_id,job_id,minutes,
   // arrived_at,source} shape so the aggregation below treats both identically.
@@ -3213,7 +3253,8 @@ async function _crewCostRender(range){
     .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
   const ents=data.entries.filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr);
-  if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
+  const _ccAnyPaid=tlRows.some(r=>r&&!r.unpaid&&(r.minutes||0)>0&&r.date>=sinceStr&&r.date<=todayStr);
+  if(!ents.length&&!shopEnts.length&&!_ccAnyPaid){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Nominal work day for the unaccounted-time estimate. This used to derive from
   // the configurable tracking window; that window is gone (tracking no longer
   // has a time lock at all), so this is simply a display baseline, 11 hours.
@@ -3252,8 +3293,9 @@ async function _crewCostRender(range){
     const uid=en.employee_user_id;if(!uid)return;
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
-    // e.min, which drives loaded cost and wage, and out of dayMins, which drives
-    // the overtime flag. Counting a lunch break as either is a payroll error.
+    // e.min and dayMins, which drive the on-site breakdown and the unaccounted
+    // estimate. (Pay itself comes from _payPersonPeriod below, which skips
+    // unpaid rows by the Time Log's own rule.)
     // NOTHING VOUCHED FOR THIS ROW, so it is shown and never paid: rules 13,
     // 15 and 18 (js/geo-derive.js). It sat in the wrong place until now,
     // falling past the drive and place arms into the on-site bucket, so a
@@ -3301,21 +3343,41 @@ async function _crewCostRender(range){
     e.min+=m;e.shopMin+=m;
     e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // Revenue attribution + overtime per employee
+  // Pay per person, from the Time Log rows in range, through the one pay
+  // function. The old per-day "OT 5d" flag (any day over 8h) is gone: federal
+  // overtime is weekly over 40h, and it is money, so it is priced here.
+  const _ccUid=r=>String((r&&r.personUid)||cid);
+  const _ccRows={};
+  tlRows.forEach(r=>{if(r&&r.date>=sinceStr&&r.date<=todayStr)(_ccRows[_ccUid(r)]||(_ccRows[_ccUid(r)]=[])).push(r);});
+  const _ccEmp=uid=>(S.employees||[]).find(x=>x&&String(x.employee_user_id||'')===String(uid))||null;
+  const pay={};
+  Object.keys(_ccRows).forEach(uid=>{
+    const kind=String(uid)===String(cid)?'owner':_payWorkerKind(_ccEmp(uid));
+    pay[uid]=_payPersonPeriod(_ccRows[uid],data.comp[uid]||{pay_type:'hourly',pay_rate:0},
+      {kind,periodsPerYear:range==='week'?52:0});
+    if(pay[uid].paidMin>0)_emp(uid);
+  });
+  // Revenue attribution per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));
     byEmp[uid].revenue=[...bidsSeen].reduce((s,bidId)=>{const b=bids.find(x=>String(x.id)===String(bidId));return s+(b?b.amount||0:0);},0);
-    byEmp[uid].otDays=Object.values(byEmp[uid].dayMins).filter(m=>m>480).length;
   });
+  const burden=Number(S.laborBurden)||1.3;
   const _jobName=bidId=>{
     const b=bids.find(x=>String(x.id)===String(bidId));if(b)return b.client_name||b.name||'Job';
     const j=jobs.find(x=>String(x.id)===String(bidId));return j?(j.clientName||j.name||'Job'):'Other';
   };
-  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  const _paidOf=uid=>pay[uid]?pay[uid].paidMin:byEmp[uid].min;
+  const uids=Object.keys(byEmp).sort((a,b)=>_paidOf(b)-_paidOf(a));
   let grand=0;
   const rowsHtml=uids.map(uid=>{
     const e=byEmp[uid];
-    const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
+    const p=pay[uid]||null;
+    const hrs=_paidOf(uid)/60;
+    const wage=p?p.wages:hrs*(data.wage[uid]||0);
+    // Loaded = what they are paid (overtime included) times the burden
+    // multiplier, the same multiplier _empLoadedHourly applies.
+    const loaded=Math.round(wage*burden*100)/100;
     grand+=loaded;
     const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60,offHrs=e.offMin/60,plHrs=e.placeMin/60;
     // Use actual days worked (days with any entry), not the full range length,
@@ -3323,10 +3385,12 @@ async function _crewCostRender(range){
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
     const hasBreakdown=e.driveMin>0||e.shopMin>0||e.offMin>0||e.placeMin>0;
-    const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⚠',{size:12})+' OT '+e.otDays+'d</span>':'';
+    const otTag=(p&&p.otMin>0)?'<span class="cc-ot" style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⏱',{size:12})+' '+(p.otMin/60).toFixed(1)+'h overtime</span>':'';
     const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
     const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
       const jh=e.jobs[bid]/60;
+      // Per-job lines stay at the straight loaded rate: overtime is a fact
+      // about the WEEK, not about whichever job happened to push past 40h.
       return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);padding:1px 0 1px 10px"><span>'+escHtml(_jobName(bid))+'</span><span>'+jh.toFixed(1)+'h · '+fmt(jh*(data.loaded[uid]||0))+'</span></div>';
     }).join('');
     const breakdownHtml=hasBreakdown?
@@ -3345,7 +3409,7 @@ async function _crewCostRender(range){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:2px 0 2px">'+
         '<span>'+hrs.toFixed(1)+'h'+otTag+rlTag+'</span>'+
-        '<span>wage '+fmt(wage)+' + burden</span>'+
+        '<span>pay <span class="cc-pay">'+fmt(wage)+'</span> + burden</span>'+
       '</div>'+
       breakdownHtml+jobLines+
     '</div>';

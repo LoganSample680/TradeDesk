@@ -1452,7 +1452,7 @@ function crewMilesOwed(yr){
   // the whole crew was owed, which is money data they have no business seeing.
   // The rest of this page has always narrowed to the viewer's own rows for
   // exactly that reason, and this line was reading straight past it.
-  const src=(typeof _isEmployee!=='undefined'&&_isEmployee)
+  const src=!_ownerUI()
     ? mileage.filter(m=>m.logged_by_id&&m.logged_by_id===(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id))
     : mileage;
   const rows=reimbursableTrips(src).filter(m=>m.date&&String(m.date).startsWith(y));
@@ -2601,7 +2601,7 @@ function saveLoggedTrip(){
 }
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
-  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const _mileSrc=!_ownerUI()?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
   // The LIST is every trip the viewer is allowed to see. The DEDUCTION is only
   // the deductible ones. Filtering the list itself hid an employee's own-car
   // trips from the employee who drove them, and hid the crew's trips from the
@@ -2618,7 +2618,7 @@ function renderAllMileage(){
   // was a function no screen could reach and "answer it later" was a promise
   // with no later: the row sat outside both money totals forever. Owner side
   // only; crew have no mileage screen at all (owner call, 2026-08-03).
-  const _unattrib=(typeof _isEmployee!=='undefined'&&_isEmployee)?[]:unattributedTrips(filtered);
+  const _unattrib=!_ownerUI()?[]:unattributedTrips(filtered);
   let _uw=document.getElementById('mil-unattrib-wrap');
   const _tblEl=document.getElementById('mil-table');
   if(!_unattrib.length){if(_uw)_uw.remove();}
@@ -2690,7 +2690,7 @@ function renderAllMileage(){
           // one exists. Hidden entirely when nobody is owed anything.
           (()=>{const o=(typeof crewMilesOwed==='function')?crewMilesOwed(yr):null;
             return (o&&o.miles>0)?'<div class="mil-meta" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14)">'+
-              '<span>'+(_isEmployee?'Your personal vehicle':'Crew personal vehicles')+' <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
+              '<span>'+(!_ownerUI()?'Your personal vehicle':'Crew personal vehicles')+' <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
               '<span>·</span>'+
               '<span>'+fmt(o.owed)+' at the IRS rate, estimate only</span>'+
               '<span>·</span>'+
@@ -2765,7 +2765,7 @@ function setMilFilter(f){
     if(el)el.className='fb'+(f===id?' active':'');
   });
   const yr=String(trackerYear||new Date().getFullYear());
-  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const _mileSrc=!_ownerUI()?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
   // Same rule as the summary above: the list shows everything the viewer may
   // see, and only the totals narrow to what is deductible.
   const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
@@ -2900,7 +2900,7 @@ function _milRenderTripList(shown,yr){
     el.innerHTML='<div class="empty">No trips match this filter.</div>';
     return;
   }
-  const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
+  const _hasMultiDriver=_ownerUI()&&mileage.some(m=>m.logged_by_name);
   const irsRate=IRS(yr);
   const byDay={};
   [...shown].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{

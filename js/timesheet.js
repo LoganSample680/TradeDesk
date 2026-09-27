@@ -99,6 +99,34 @@ function _tsLoad(force){
 }
 function _tsStatus(wk){return (_tsFor===_tsUid()&&_tsByWeek[wk])||null;}
 
+// ── The crew's timesheets for one week, for whoever runs the crew ──────────
+// (owner 2026-09-27). _tsLoad above is "my own weeks" and stays that way: its
+// cache backs the week-chart button, which is always the viewer's. This is
+// the other direction: the owner asking who has sent theirs. RLS already
+// allows it ("Account reads crew timesheets", 20260913_timesheets.sql:
+// contractor_user_id = auth.uid()), so a manager who is not the account
+// holder simply gets nothing back and every row reads "Not sent yet".
+// Returns employee_user_id -> {status, submitted_at, approved_at, version}.
+async function _tsCrewLoad(wk){
+  const out={};
+  const cid=_tsContractor();
+  if(!cid||!wk||typeof _supa==='undefined'||!_supa||typeof _supa.from!=='function')return out;
+  if(typeof _canViewComp==='function'&&!_canViewComp())return out;
+  try{
+    const{data,error}=await _supa.from('td_timesheets')
+      .select('employee_user_id,week_start,status,version,submitted_at,approved_at')
+      .eq('contractor_user_id',cid).eq('week_start',String(wk).slice(0,10));
+    if(!error&&Array.isArray(data)){
+      data.forEach(r=>{
+        if(!r||!r.employee_user_id)return;
+        if(String(r.week_start||'').slice(0,10)!==String(wk).slice(0,10))return;
+        out[String(r.employee_user_id)]=r;
+      });
+    }
+  }catch(_e){}
+  return out;
+}
+
 // The button ON the week chart. Nothing submitted: Send this week. Submitted or
 // approved: the stamp, still a button, because tapping it is how you submit
 // again after fixing a day. Rejected: the note and a way back in.

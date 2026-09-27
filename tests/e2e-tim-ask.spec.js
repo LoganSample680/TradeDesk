@@ -464,10 +464,12 @@ test.describe('tim answering off your own books', () => {
           .forEach(s => { const a = timAsk(s); out[s] = a && a.sub; });
         return out;
       });
-      // Every one carries two real dates. Whatever the window means to him, it
-      // cannot be read wrong once it says which days it used.
+      // Every one carries real dates. Whatever the window means to him, it
+      // cannot be read wrong once it says which days it used. On the first day
+      // of the week "this week" is one day and names that day alone (this
+      // failed every Sunday while it demanded a range, 2026-09-27).
       Object.keys(r).forEach(k => {
-        expect(r[k], k).toMatch(/[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+ to [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+/);
+        expect(r[k], k).toMatch(/[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+( to [A-Z][a-z]{2}, [A-Z][a-z]{2} \d+)?/);
       });
       expect(r['my hours this week']).toContain('this week');
       expect(r['total up my hours last week']).toContain('last week');

@@ -118,8 +118,22 @@ async function loadStripeConnectStatus(){
   if(el)_renderStripeConnectUI(el,data);
 }
 
+// A co-owner sees the business's card payments but never starts, resumes or
+// unlinks them: onboarding and disconnect act on the SIGNED-IN login, so from
+// a co-owner they would open a second Stripe account under the wrong person.
+const _STRIPE_CO_OWNER_NOTE='Card payments are set up from the login that created this business.';
+function _stripeCoOwnerBlocked(){
+  if(typeof _coOwner!=='undefined'&&_coOwner){zAlert(_STRIPE_CO_OWNER_NOTE,{title:'Card payments'});return true;}
+  return false;
+}
 function _renderStripeConnectUI(el,data){
   if(!el)return;
+  if(typeof _coOwner!=='undefined'&&_coOwner){
+    const on=!!(data&&data.connected&&data.charges_enabled);
+    el.innerHTML='<div style="font-size:13px;font-weight:700;color:'+(on?'var(--green-mid)':'var(--text2)')+'">'+(on?'Stripe connected, payments active':'Card payments are not on yet')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5">'+escHtml(_STRIPE_CO_OWNER_NOTE)+'</div>';
+    return;
+  }
   if(!data||!data.connected){
     // A stored account the backend couldn't verify in THIS environment (e.g. a
     // live account viewed from a test-mode preview, or a deleted account). Offer
@@ -169,6 +183,7 @@ function _renderStripeConnectUI(el,data){
 }
 
 async function startStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
   try{
@@ -198,6 +213,7 @@ function openStripeConnect(){
 // (it may be the owner's real account). Replaces the manual Supabase clear we
 // used to run before reconnecting a test account.
 async function disconnectStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   zConfirm(
     'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted, you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
@@ -303,14 +319,45 @@ function _restoreIdentityFromCache(){
     const _ac=_uid?JSON.parse(localStorage.getItem('zp3_acct_'+_uid)||'null'):null;
     if(!_ac||!_ac.user)return false;
     _user=_ac.user;
-    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
     _activeTrade=_ac.activeTrade||'general';
     if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;}
     if(_ac.config)_config=_ac.config;
     _renderNavTradeSwitcher();applyPermissions();
     return true;
   }catch(_e){return false;}
+}
+// The server's answer to "is this login an owner of that business"
+// (is_co_owner, migration 20261048). A no takes the owner screens away and
+// rewrites the offline cache; a network failure changes nothing (the server
+// refuses anything the login may not do whatever the screens show).
+async function _verifyCoOwner(boss){
+  try{
+    if(!_supa||!boss)return;
+    const{data,error}=await _supa.rpc('is_co_owner',{boss});
+    if(error)return;
+    if(data===true){
+      // THE BUSINESS'S OWN ROWS: its name, trade lines (the trade pills up top)
+      // and config. Crew never load these; an owner membership can read them
+      // ("Account members can read" / "Account members read config").
+      if(String(_contractorUserId)!==String(boss))return;
+      const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
+      if(!a||String(_contractorUserId)!==String(boss))return;
+      const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
+      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+      if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
+      applyPermissions();
+      return;
+    }
+    if(data!==false)return;
+    if(String(_contractorUserId)!==String(boss))return;
+    _coOwner=false;
+    try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c){c.coOwner=false;localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+    applyPermissions();
+    if(typeof _ownerUI==='function'&&!_ownerUI()){const a=document.querySelector('.pg.active');if(a&&typeof goPg==='function'&&['pg-taxes','pg-settings','pg-team','pg-money','pg-tracker'].includes(a.id))goPg('pg-dash');}
+  }catch(_e){}
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
@@ -410,7 +457,7 @@ async function loadAccountData(){
       // this tab (switching accounts doesn't reload the page), so without this an owner
       // signing in right after an employee session inherits the employee's nav gating,
       // Settings, Team, Tracker, etc. all vanish even though this account is a full owner.
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user=u;
       const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
       _account=a;
@@ -438,6 +485,12 @@ async function loadAccountData(){
     const _linkAsCrew=(row,welcome)=>{
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
+      // CO-OWNER: Owner / Admin on the Team page. Only the business's owners can
+      // set that role (team_members_guard), so the row is enough to draw the
+      // owner screens now; the server check below confirms it and takes them
+      // away if the membership is gone. Every data path stays crew either way.
+      _coOwner=row.role==='owner';
+      if(_coOwner)_verifyCoOwner(row.contractor_user_id);
       applyPermissions();
       // Owner report 2026-07-17: a returning already-linked crew member landed
       // in a stale test account with zero indication anything had happened,
@@ -446,8 +499,8 @@ async function loadAccountData(){
       // a returning session gets a plain factual toast, so a wrong link is
       // never silent, the signed-in person always has a signal to notice.
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
-      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
-      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+      else if(!_coOwner)showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId,coOwner:_coOwner}));}catch(_e){}
       return true;
     };
     const _pend=(()=>{try{return JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');}catch(_e){return null;}})();
@@ -505,7 +558,7 @@ async function loadAccountData(){
     if(_pi?.cid){
       const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
       if(!_piErr){
-        _isEmployee=true;_contractorUserId=_pi.cid;
+        _isEmployee=true;_contractorUserId=_pi.cid;_coOwner=false;
         _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
         _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
         applyPermissions();
@@ -527,7 +580,7 @@ async function loadAccountData(){
     // No users row, check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user={id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
       applyPermissions();
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:_activeTrade||'general',isEmployee:false}));}catch(_e){}
@@ -543,8 +596,8 @@ async function loadAccountData(){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
         // Explicit both ways, _isEmployee is a shared global that may already be true
         // from a different account earlier in this tab (see _applyEmployeeNavGating).
-        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
         _activeTrade=_ac.activeTrade||'general';
         if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
@@ -712,7 +765,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.14';
+const APP_VERSION='09.27.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2478,7 +2531,7 @@ async function supaInit(){
           // loadAccountData() re-derives this from the incoming account's own row, but reset
           // it here too as the single foundational cross-account boundary (belt-and-suspenders
           // with the per-branch resets in loadAccountData).
-          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
@@ -2985,7 +3038,7 @@ function openInviteEmployeeModal(){
         '<option value="tech">Field Tech</option>'+
         '<option value="office">Office / CSR</option>'+
         '<option value="manager">Manager</option>'+
-        '<option value="owner">Owner / Admin</option>'+
+        '<option value="owner">Owner (sees and runs everything)</option>'+
       '</select></div>'+
     '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
       '<select id="_inv-class" style="font-size:14px;padding:10px">'+
@@ -3988,10 +4041,10 @@ let _pendingPermReqs=[];
 let _permReqsLoaded=false;
 
 async function _loadPendingPermRequests(){
-  if(_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  if(!_ownerUI()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   try{
     const{data,error}=await _supa.from('td_permission_requests').select('*')
-      .eq('contractor_user_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:true});
+      .eq('contractor_user_id',_effectiveUid()).eq('status','pending').order('created_at',{ascending:true});
     if(error){if(_isMissingTableErr(error))return;throw error;}
     _pendingPermReqs=data||[];
     if(typeof renderTeam==='function')renderTeam();
@@ -4019,7 +4072,7 @@ async function _approvePermissionRequest(reqId){
     const emp=(S.employees||[]).find(e=>(e.email||'').toLowerCase()===(req.employee_email||'').toLowerCase());
     if(emp){emp.permissions=emp.permissions||{};emp.permissions.estimate=true;_settingsChanged();}
     await _supa.from('team_members').update({permissions:emp?emp.permissions:{estimate:true}})
-      .eq('contractor_user_id',_supaUser.id).eq('email',req.employee_email);
+      .eq('contractor_user_id',_effectiveUid()).eq('email',req.employee_email);
     await _supa.from('td_permission_requests').update({status:'approved',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
     _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
     if(typeof showToast==='function')showToast('Estimate access granted to '+(req.employee_name||req.employee_email||'employee'),'✅');
@@ -4043,8 +4096,8 @@ function renderTeam(){
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
   // Owner: lazy-load pending estimate-access requests once, then re-render.
-  if(!_isEmployee&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
-  const _reqHtml=(!_isEmployee&&_pendingPermReqs.length)
+  if(_ownerUI()&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
+  const _reqHtml=(_ownerUI()&&_pendingPermReqs.length)
     ?'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Pending access requests</div>'+
       _pendingPermReqs.map(r=>
         '<div style="padding:10px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:var(--r);margin-bottom:8px">'+
@@ -4070,7 +4123,7 @@ function renderTeam(){
   //
   // 20s floor so flipping between the Fleet and Team tabs does not re-query on
   // every tap, while any real trip back to this screen gets fresh rows.
-  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser){
+  if(_ownerUI()&&S.teamTracking&&supaEnabled()&&_supaUser){
     const _age=_teamGeoAt?Date.now()-_teamGeoAt:Infinity;
     if(!_teamGeoLoaded||_age>_TEAM_GEO_MIN_GAP_MS){
       _teamGeoLoaded=true;_teamGeoAt=Date.now();
@@ -4178,7 +4231,7 @@ function renderTeam(){
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
-    if(!_isEmployee&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
+    if(_ownerUI()&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
     else _psCard.style.display='none';
   }
   // Devices
@@ -4298,7 +4351,7 @@ let _teamComp={};
 let _teamCompLoaded=false;
 // Only the account owner or a payroll-permitted manager may see/edit pay.
 function _canViewComp(){
-  if(!_isEmployee)return true;                       // contractor/owner
+  if(_ownerUI())return true;                         // contractor/owner/co-owner
   return !!_employeeRecord?.permissions?.payroll;    // manager with payroll perm
 }
 // Effective hourly rate for job costing: salary ÷ 2080 work-hours, else the rate as-is.
@@ -4346,7 +4399,7 @@ const _GEO_PING_LOOKBACK_MS=30*86400000;
 // (20260828_device_status_manager_read.sql). All three have to agree, or a
 // manager is notified about something they cannot then look at.
 function _teamGeoAllowed(){
-  if(typeof _isEmployee==='undefined'||!_isEmployee)return true;
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
   const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
   return !!(p.payroll||p.team);
 }
@@ -4705,7 +4758,7 @@ function _employeeModalHTML(emp,idx){
           '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
           '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
-          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
+          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner (sees and runs everything)</option>'+
         '</select></div>'+
       '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
@@ -4841,7 +4894,14 @@ async function _saveEmployee(idx){
     // '{}' forever, so every employee perm reads false, locking employees out of
     // everything (a collect tech wouldn't even see payment amounts). This is the
     // authoritative write the owner's permission checkboxes depend on.
-    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
+    // The BUSINESS's roster, not the signed-in login's: a co-owner edits the team too.
+    const tmRow={contractor_user_id:_effectiveUid(),email,name,role:emp.role,permissions:emp.permissions||{}};
+    // ONLY A NEW INVITE STARTS INACTIVE (2026-09-26). This upsert sent
+    // active:false on every save, so editing anybody who had already joined,
+    // down to fixing a phone number, switched them off the business: making
+    // Blake an owner locked him out of it. An existing row keeps its status
+    // and its invite date; joining is what turns a row on.
+    if(isNew){tmRow.active=false;tmRow.invited_at=new Date().toISOString();}
     // Pay is written ONLY when the editor can view comp, otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
@@ -4849,7 +4909,7 @@ async function _saveEmployee(idx){
     if(error){console.warn('team_members upsert failed:',error);return;}
     // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
-      const cid=_supaUser.id;
+      const cid=_effectiveUid();
       const _tok2=await _mintCrewInviteToken(cid,emp.email); // server-verified claim token (null → legacy email-match link)
       const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
@@ -7521,7 +7581,9 @@ async function supaSaveToCloud(){
     // a separate marker, so a peer's reload path has a single event to coalesce (no render storm).
     // Trade-off vs the old settings-first: a force-quit AFTER the tables but BEFORE this write
     // loses only the (tiny) settings delta; the bigger table data has already committed.
-    if(!_isEmployee && _authSettingsLoaded){
+    // A co-owner writes the business's Settings like the owner (zj_data policy
+    // co_owner_manages_settings); uid here is _effectiveUid, the business.
+    if(_ownerUI() && _authSettingsLoaded){
       // Strip only stateRates (anon-readable reference data, never a user setting).
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
       const{stateRates:_sr0,...sForCloud}=S;
@@ -7561,7 +7623,7 @@ async function supaSaveToCloud(){
       }
       // Catch up on the peer change our cursor overwrite just masked (see the pre-read note).
       if(_peerMovedCursor)_scheduleReconcile(800);
-    } else if(!_isEmployee && !_authSettingsLoaded){
+    } else if(_ownerUI() && !_authSettingsLoaded){
       // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
       // blob over the cloud (the boot clobber), defer to the post-load flush.
       _logSave('skip-settings','settings not hydrated, deferring to post-load flush');

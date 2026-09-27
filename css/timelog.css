@@ -31,6 +31,14 @@
 .tl-split-bar span{display:block;height:100%}
 .tl-split-legend{font-size:10px;color:var(--text3)}
 .tl-emp-total{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--text)}
+/* What you owe this week (owner 2026-09-27): the first thing on Team, and a
+   dollar line on each person's card. Owner/payroll only, see _payOweWeekMap. */
+.tl-emp-owe{margin-top:4px;font-size:11.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.tl-owe-btn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;box-sizing:border-box;min-height:48px;
+  margin:0 0 10px;padding:10px 14px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt);
+  color:var(--blue);font-family:inherit;font-size:14px;font-weight:800;cursor:pointer;text-align:left}
+.tl-owe-l{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-owe-r{flex-shrink:0;font-variant-numeric:tabular-nums}
 .tl-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:12px}
 /* ── Time log: the day rail ──
    ONE continuous line. Each row's spine segment is height:100% of its own

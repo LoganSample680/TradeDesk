@@ -1077,7 +1077,9 @@ function _timSheet(id,inner){
 // real boundary, because it is where the figures are computed: anything that
 // reaches it by any route gets nothing.
 function _timCrew(){
-  try{return (typeof _isEmployee!=='undefined')&&!!_isEmployee;}catch(_e){return false;}
+  // A co-owner is an owner here: Tim reads the business's own records, which a
+  // co-owner holds unredacted, so his answers are the business's.
+  try{return (typeof _ownerUI==='function')?!_ownerUI():((typeof _isEmployee!=='undefined')&&!!_isEmployee);}catch(_e){return false;}
 }
 
 // Is there a job on screen at all. Three separate pieces of copy assumed there
@@ -1518,8 +1520,19 @@ function _timFigureDollars(n){
 // The transcription is js/voice.js, which is the on-device recogniser every
 // note field already uses. Nothing is uploaded and nothing is stored: the same
 // promise the rest of Tim makes.
-let _timTalking=false,_timHeard='',_timWaveTimer=null,_timTalkStart=0;
+let _timTalking=false,_timHeard='',_timWaveTimer=null,_timTalkStart=0,_timTalkPaused=false;
 
+// THE BARS ARE HONEST (the Earl audit, 2026-09-27). They used to swing the
+// same whether he was talking, resting, or the mic had quietly died. Now they
+// move only while words are arriving, lie flat after a few quiet seconds, and
+// lie flat and dim when listening is paused. There is no cheap mic level on
+// this side of the bridge, so words arriving is the signal.
+const _TIM_WAVE_QUIET_MS=2500;
+function _timWaveFlatHtml(){
+  let out='';
+  for(let i=0;i<44;i++)out+='<span class="edge" style="height:4px"></span>';
+  return out;
+}
 function _timWaveHtml(t){
   const n=44;
   let out='';
@@ -1537,21 +1550,37 @@ function _timWaveHtml(t){
   return out;
 }
 
+// What Done does, said truthfully for the box the words are going into
+// (2026-09-27: the panel promised "Nothing is added until you approve it" while
+// Done on the estimate made the lines on the spot).
+function _timTalkFoot(){
+  const el=document.getElementById(_timTalkTarget);
+  const done=el&&el.dataset?el.dataset.timDone:'';
+  if(done)return 'Keep going as long as you want. Tim makes the lines when you tap Done. You can change any of them.';
+  if(_timTalkTarget==='_tim-say')return 'Keep going as long as you want. Nothing is added until you approve it.';
+  return 'Keep going as long as you want. Your words go in the box when you tap Done.';
+}
+
 function _timTalkPanel(){
   const secs=Math.max(0,Math.round((Date.now()-_timTalkStart)/1000));
   const clock=Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+  // THE PANEL FITS AN SE (375 by 667) after fifteen minutes of talk. The
+  // transcript is capped to its last few lines and kept scrolled to the
+  // bottom, so the heading, the clock and Done talking never leave the screen.
   return '<div id="_tim-listen" style="background:var(--ink);margin:0 0 -28px;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))">'+
+    '<div id="_tim-listen-top" onclick="_timTalkTap()">'+
     '<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px">'+
       timMark(22)+
-      '<span style="font-size:12px;font-weight:600;color:var(--text-cream)">Tim is listening</span>'+
+      '<span id="_tim-listen-label" style="font-size:12px;font-weight:600;color:var(--text-cream)">Tim is listening</span>'+
       '<span style="flex:1"></span>'+
       '<span id="_tim-clock" style="font-size:11.5px;color:var(--text-cream-2);font-variant-numeric:tabular-nums">'+clock+'</span>'+
     '</div>'+
-    '<div id="_tim-transcript" style="font-size:13.5px;line-height:1.55;color:var(--text-cream);margin-bottom:14px;min-height:42px"></div>'+
+    '<div id="_tim-transcript" style="font-size:13.5px;line-height:1.55;color:var(--text-cream);margin-bottom:14px;min-height:42px;max-height:min(7.75em,22vh);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch"></div>'+
     '<div class="tim-wave" id="_tim-wave">'+_timWaveHtml(0)+'</div>'+
+    '</div>'+
     '<button type="button" onclick="_timTalkToggle()" style="width:100%;height:52px;margin-top:16px;border:0;border-radius:var(--r-md);background:var(--text-cream);color:var(--ink);font-family:inherit;font-size:15.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px">'+
       '<span style="width:13px;height:13px;border-radius:3px;background:var(--c-red)"></span>Done talking</button>'+
-    '<div style="text-align:center;font-size:12px;color:var(--text-cream-2);margin-top:10px">Keep going as long as you want. Nothing is added until you approve it.</div>'+
+    '<div id="_tim-listen-foot" style="text-align:center;font-size:12px;color:var(--text-cream-2);margin-top:10px">'+escHtml(_timTalkFoot())+'</div>'+
   '</div>';
 }
 
@@ -1560,6 +1589,59 @@ function _timTalkPanel(){
 // mic, same waveform, same promise, different destination, so the id comes in
 // rather than being assumed.
 let _timTalkTarget='_tim-say';
+
+// ── THE SAY BOX: one Talk to Tim for every screen (owner 2026-09-27) ────────
+// "Talk to Tim code should be shared as well, don't hand roll another one, it
+// just points at proposals and invoices." The T&M scope, the Build Your Own
+// list and the quick invoice each had their own copy of this box, button and
+// read-the-box code. Now a screen names three things and nothing else: the
+// box's id, what to call when he stops talking (data-tim-done, read by
+// _timTalkStop), and its own words. A new screen that wants Talk to Tim calls
+// timSayBox; it never grows a fourth copy.
+const _TIM_MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>';
+function _timSayVoice(){return typeof _voiceCapable==='function'&&!!_voiceCapable();}
+function timSayField(id,placeholder,done){
+  return '<textarea id="'+escHtml(id)+'" class="ios-say" rows="3" data-tim-done="'+escHtml(done||'')+'" placeholder="'+escHtml(placeholder||'')+'"></textarea>';
+}
+function timMicBtn(id){
+  return _timSayVoice()?'<button type="button" class="ios-btn ios-btn-tint" onclick="_timTalkToggle(\''+escHtml(id)+'\')">'+_TIM_MIC_SVG+'Talk to Tim</button>':'';
+}
+// o: {id, done, placeholder, foot:{voice,typed}, links: html}
+function timSayBox(o){
+  const voice=_timSayVoice();
+  const foot=o.foot?(voice?o.foot.voice:o.foot.typed):'';
+  return '<div class="ios-sec">'+
+    '<div class="ios-group">'+timSayField(o.id,o.placeholder,o.done)+'</div>'+
+    (voice?'<div style="margin-top:12px">'+timMicBtn(o.id)+'</div>':'')+
+    (foot?'<div class="ios-foot">'+escHtml(foot)+'</div>':'')+
+    (o.links?'<div class="ios-links left">'+o.links+'</div>':'')+
+  '</div>';
+}
+// What is in the box, or '' after asking for words where he is looking.
+function timSaid(id,emptyMsg){
+  const el=document.getElementById(id);
+  const said=el?String(el.value||'').trim():'';
+  if(!said){
+    if(el){try{el.focus();}catch(_e){}}
+    if(typeof showToast==='function')showToast(emptyMsg||'Type or say it in the box first','✏️',2600);
+  }
+  return said;
+}
+// The things he said, one per step. Nothing Tim recognised as a step: the
+// sentence itself, cleaned up, is still what he said.
+function timSaySteps(said){
+  return timSayLines(said).map(l=>l.text);
+}
+// The same, with the price he said for each line (0 when he did not say one),
+// for a screen whose lines carry a price.
+function timSayLines(said){
+  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[]}):null;
+  const lines=(built&&Array.isArray(built.steps)?built.steps.map(st=>({text:String(st.text||'').trim(),price:Number(st.price)||0})):[]).filter(l=>l.text);
+  if(lines.length)return lines;
+  const t=String(said||'').trim().replace(/\s+/g,' ');
+  return t?[{text:t.charAt(0).toUpperCase()+t.slice(1),price:0}]:[];
+}
+
 function _timTalkToggle(target){
   if(_timTalking){_timTalkStop();return;}
   _timTalkTarget=target||'_tim-say';
@@ -1586,13 +1668,17 @@ function _timTalkHost(){
 function _timTalkBegin(){
   const el=document.getElementById(_timTalkTarget);
   if(!el)return;
-  _timTalking=true;_timHeard='';_timTalkStart=Date.now();
+  _timTalking=true;_timHeard='';_timTalkStart=Date.now();_timTalkPaused=false;
   _timTalkHost().insertAdjacentHTML('beforeend',_timTalkPanel());
+  let flat=false;
   const tick=()=>{
     if(!_timTalking)return;
     const t=(Date.now()-_timTalkStart)/1000;
     const w=document.getElementById('_tim-wave');
-    if(w)w.innerHTML=_timWaveHtml(t);
+    const heard=(typeof _voiceLastHeard!=='undefined'&&_voiceLastHeard)?_voiceLastHeard:_timTalkStart;
+    const still=_timTalkPaused||(Date.now()-heard)>_TIM_WAVE_QUIET_MS;
+    if(w&&still&&!flat){w.innerHTML=_timWaveFlatHtml();flat=true;}
+    else if(w&&!still){w.innerHTML=_timWaveHtml(t);flat=false;}
     const c=document.getElementById('_tim-clock');
     if(c)c.textContent=Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
   };
@@ -1601,8 +1687,8 @@ function _timTalkBegin(){
     Promise.resolve(_voiceStart(el,(joined,heard)=>{
       _timHeard=joined;
       const tr=document.getElementById('_tim-transcript');
-      if(tr)tr.textContent=joined?('"'+joined+'"'):'';
-    })).then(ok=>{
+      if(tr){tr.textContent=joined?('"'+joined+'"'):'';tr.scrollTop=tr.scrollHeight;}
+    },_timTalkState)).then(ok=>{
       // The mic did not start. The panel said "Tim is listening" anyway and
       // heard nothing (2026-09-26). Say so, where he is looking, and stop.
       if(ok!==false||!_timTalking)return;
@@ -1617,9 +1703,26 @@ function _timTalkBegin(){
   }
 }
 
+// PAUSED, SAID OUT LOUD. The page hid (screen lock, a call) or the mic would
+// not start again: the heading says so and the bars lie flat, and a tap
+// anywhere on the top of the panel starts it again.
+function _timTalkState(st){
+  _timTalkPaused=!!(st&&st.paused);
+  const lab=document.getElementById('_tim-listen-label');
+  if(lab)lab.textContent=_timTalkPaused?'Paused, tap to keep going':'Tim is listening';
+  const top=document.getElementById('_tim-listen-top');
+  if(top){top.style.cursor=_timTalkPaused?'pointer':'';top.setAttribute('aria-label',_timTalkPaused?'Paused, tap to keep going':'Tim is listening');}
+  const w=document.getElementById('_tim-wave');
+  if(w&&_timTalkPaused)w.innerHTML=_timWaveFlatHtml();
+}
+function _timTalkTap(){
+  if(!_timTalking||!_timTalkPaused)return;
+  if(typeof _voiceKeepGoing==='function')_voiceKeepGoing();
+}
+
 function _timTalkStop(silent){
   if(!_timTalking){return Promise.resolve();}
-  _timTalking=false;
+  _timTalking=false;_timTalkPaused=false;
   if(_timWaveTimer){clearInterval(_timWaveTimer);_timWaveTimer=null;}
   document.getElementById('_tim-listen')?.remove();
   document.getElementById('_tim-listen-host')?.remove();
@@ -1635,12 +1738,9 @@ function _timTalkStop(silent){
     // the steps are built the moment the man stops talking, in order, with
     // what he left out (owner, 2026-09-23). Tapping Build after talking was a
     // second thing to do that the button's own name had already promised.
-    if(_timTalkTarget==='byo-say'){if(typeof _byoSayBuild==='function')_byoSayBuild();return;}
-    if(_timTalkTarget==='gei-scope-say'){
-      if(typeof _geiScopeBuild==='function')
-        _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');
-      return;
-    }
+    // The box says what happens next (data-tim-done, set by timSayField).
+    const done=el&&el.dataset?el.dataset.timDone:'';
+    if(done){if(typeof window[done]==='function')window[done]();return;}
     if(_timTalkTarget!=='_tim-say')return;
     _timShowRead(said);
   };

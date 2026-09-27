@@ -131,7 +131,7 @@ function _whPlumbs(){
   return Array.isArray(lines)&&lines.indexOf('plumbing')>=0;
 }
 function _whBoardVisible(){
-  if(typeof _isEmployee!=='undefined'&&_isEmployee)return false;
+  if(typeof _ownerUI==='function'?!_ownerUI():(typeof _isEmployee!=='undefined'&&_isEmployee))return false;
   if(_whUnits().length)return true;
   if(_whPlumbs())return true;
   return _whProposalFinds().length>0;

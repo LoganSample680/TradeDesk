@@ -398,7 +398,9 @@ function timJobSnapshot(){
     const scope=(typeof _geiScopeChips!=='undefined'&&Array.isArray(_geiScopeChips))?_geiScopeChips.join(' '):'';
     const notes=[scope,(document.getElementById('gei-desc')||{}).value||'',
       (typeof _geiSiteAddr==='function'?_geiSiteAddr():'')].join(' ');
-    s.high=(typeof _timSaysHigh==='function')?_timSaysHigh(notes):false;
+    // High AND outside (tim-knowledge.js _timNeedsStaging): "the upstairs
+    // bathroom" is not a scaffold job.
+    s.high=(typeof _timNeedsStaging==='function')?_timNeedsStaging(notes):false;
     s.hasAccess=/scaffold|staging|lift/i.test(notes);
     const acc=_timAccessRate();
     s.accessDays=Math.max(1,Math.ceil(((typeof _estLaborHours==='function'?_estLaborHours():0)||8)/8));

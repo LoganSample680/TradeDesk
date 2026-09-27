@@ -1957,7 +1957,7 @@ function openJobSheet(clientId){
 
   // ── Crew tasks (contractor assigns, employees check off) ─────
   let tasksHtml='';
-  if(latestJob&&!_isEmployee){
+  if(latestJob&&_ownerUI()){
     const _jt=latestJob.tasks||[];
     const _taskRows=_jt.map(t=>{
       const _di=t.done&&t.doneBy?'<div style="font-size:10px;color:var(--green-mid);margin-top:2px">✓ '+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtTaskTime(t.doneAt):'')+'</div>':'';
