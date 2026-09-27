@@ -1310,6 +1310,27 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .td-wh-list-due{font-size:12.5px;font-weight:600;color:var(--text3)}
 .td-wh-chev{color:var(--text3);display:flex}
 .td-wh-list-empty{padding:30px 16px;text-align:center;font-size:14px;color:var(--text3)}
+.td-wh-tbar-b{display:flex;gap:8px;flex-shrink:0}
+.td-svc-filter{display:flex;gap:8px;padding:0 16px 12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.td-svc-filter::-webkit-scrollbar{display:none}
+#wh-list-body .td-svc-filter{padding:0 0 14px}
+.td-svc-fchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--bg-card,#fff);font-family:inherit;font-size:13.5px;font-weight:700;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .15s ease,color .15s ease,border-color .15s ease}
+.td-svc-fchip.on{background:var(--ink);border-color:var(--ink);color:var(--text-cream)}
+.td-svc-fn{font-size:11px;font-weight:800;color:#fff;background:var(--c-amber);border-radius:var(--r-pill);padding:1px 7px}
+.td-svc-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.td-svc-chip{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 13px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--bg-card,#fff);font-family:inherit;font-size:14px;font-weight:700;color:var(--text2);cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease}
+.td-svc-chip.on{background:var(--ink);border-color:var(--ink);color:var(--text-cream)}
+.td-svc-mchips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.td-svc-mchip{padding:0 12px}
+.td-svc-mnum{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--bg-card,#fff);font-size:14px;font-weight:700;color:var(--text2);cursor:text}
+.td-svc-mnum input{width:34px;border:none;background:none;font-family:inherit;font-size:15px;font-weight:700;color:var(--text);text-align:center;outline:none;-moz-appearance:textfield}
+.td-svc-mnum input::-webkit-outer-spin-button,.td-svc-mnum input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.td-svc-own{display:flex;align-items:center;gap:8px;margin-top:6px}
+.td-svc-own input{flex:1;min-width:0}
+.td-wh-svc{display:flex;flex-wrap:wrap;align-items:center;column-gap:6px;min-width:0;font-size:12.5px;font-weight:600;color:var(--text2);margin-top:1px}
+.td-wh-svc-n{min-width:0;overflow-wrap:anywhere}
+.td-svc-every{flex-shrink:0;padding:12px 6px;margin:-12px -6px;border:none;background:none;font-family:inherit;cursor:pointer;min-height:44px}
+.td-svc-every span{display:inline-block;font-size:11px;font-weight:700;color:var(--denim);background:var(--denim-soft);border-radius:var(--r-pill);padding:2px 8px}
 .td-wh-undo{margin-left:10px;background:none;border:none;color:inherit;font-weight:800;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:inherit}
 .td-hold-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em}
 .td-hold-count{margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)}
@@ -4004,9 +4025,12 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar">
     <div class="tbar-l">
       <div class="tbar-eyebrow"><a href="javascript:void(0)" onclick="goPg('pg-dash')" style="color:inherit;text-decoration:none">← Home</a></div>
-      <div class="tbar-title">Annual service</div>
+      <div class="tbar-title">Service due</div>
     </div>
-    <button class="td-wh-add" onclick="openWhAdd()" aria-label="Add a water heater install"><span data-ico="➕" data-ico-size="16"></span></button>
+    <div class="td-wh-tbar-b">
+      <button class="td-wh-add" onclick="openSvcTypes()" aria-label="How often each service comes due"><span data-ico="⚙" data-ico-size="16"></span></button>
+      <button class="td-wh-add" onclick="openWhAdd()" aria-label="Add a service customer"><span data-ico="➕" data-ico-size="16"></span></button>
+    </div>
   </div>
   <div style="padding:0 0 90px" id="wh-list-body"></div>
 </div>
