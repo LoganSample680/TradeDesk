@@ -2031,7 +2031,7 @@ function _geiScopeBuild(containerId){
   }
   if(typeof timScopeBuild!=='function')return;
   const rejected=(typeof timDropped==='function')?[]:[];
-  const built=timScopeBuild(said,{rejected});
+  const built=timScopeBuild(said,{rejected,trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   if(!built.steps.length){
     if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
     return;
@@ -2040,8 +2040,11 @@ function _geiScopeBuild(containerId){
   _tmSayMoreOpen=false;
   // ADDED TO what is there, never replacing it: he may build twice, once from
   // the driveway and once after he has walked the crawlspace.
+  // A price he said stays on the step here: a T&M scope has no line price to
+  // carry it, and dropping a number he said out loud is losing his words.
   built.steps.forEach(st=>{
-    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===st.text.toLowerCase()))_geiScopeChips.push(st.text);
+    const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))_geiScopeChips.push(t);
   });
   // The whole point of the feature, held until he says yes to each one.
   // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
@@ -2915,8 +2918,10 @@ function _byoPriceFor(text){
   if(own&&Number(own.rate)>0)return {rate:Number(own.rate),unit:own.unit||'ea',notes:own.notes||'',from:'book'};
   return {rate:0,unit:'ea',notes:'',from:null};
 }
-function _byoAddLine(text,sec){
-  const p=_byoPriceFor(text);
+// said: a price he said out loud for this line. His number, so it beats the
+// book (PRICES STAY HIS, CLAUDE.md 18.2).
+function _byoAddLine(text,sec,said){
+  const p=Number(said)>0?{rate:Number(said),unit:'ea',notes:'',from:'said'}:_byoPriceFor(text);
   const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
   _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
 }
@@ -2924,10 +2929,10 @@ function _byoSayBuild(){
   const said=timSaid('byo-say','Type or say the job in the box first');
   if(!said)return;
   if(typeof timScopeBuild!=='function')return;
-  const built=timScopeBuild(said,{rejected:[]});
+  const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
-  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text);have.add(st.text.toLowerCase());}});
+  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());}});
   _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();

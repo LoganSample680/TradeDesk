@@ -422,7 +422,8 @@ function _qiSayBuild(){
   if(!_qi)return;
   const said=timSaid('qi-say','Type or say what you did first');
   if(!said)return;
-  const steps=timSaySteps(said);
+  const lines=timSayLines(said);
+  const steps=lines.map(l=>l.text);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));
     steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);have.add(st.toLowerCase());}});
@@ -430,10 +431,12 @@ function _qiSayBuild(){
     const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
     _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
     const have=new Set(_qi.typed.map(l=>String(l.desc).toLowerCase()));
-    steps.forEach(st=>{
+    // A price he said for the line is his, and beats the book.
+    lines.forEach(l=>{
+      const st=l.text;
       if(have.has(st.toLowerCase()))return;have.add(st.toLowerCase());
       const own=(typeof _pbFind==='function')?_pbFind(st,trade):null;
-      _qi.typed.push({desc:st,amount:own&&Number(own.rate)>0?Number(own.rate):''});
+      _qi.typed.push({desc:st,amount:l.price>0?l.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
     });
     if(!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   }

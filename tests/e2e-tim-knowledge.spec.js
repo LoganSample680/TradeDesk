@@ -674,8 +674,9 @@ test.describe('tim knows the trade', () => {
     test('a comma that starts a new action splits, and one that says how does not', async () => {
       expect(await split('tear out the vanity, run the supply lines'))
         .toEqual(['Tear out the vanity', 'Run the supply lines']);
+      // Number words are digits on the paper since 2026-09-27 (the Earl audit, W9).
       expect(await split('paint the kitchen two coats, cut and rolled'))
-        .toEqual(['Paint the kitchen two coats, cut and rolled']);
+        .toEqual(['Paint the kitchen 2 coats, cut and rolled']);
       expect(await split('replace with new copper, tested and pressured up'))
         .toEqual(['Replace with new copper, tested and pressured up']);
     });
@@ -688,7 +689,7 @@ test.describe('tim knows the trade', () => {
       expect(r).toEqual([
         'Strip the failed paint',
         'Replace rotted trim',
-        'Prime and two coats',
+        'Prime and 2 coats',   // digits since 2026-09-27 (W9)
       ]);
     });
 

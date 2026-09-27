@@ -48,6 +48,9 @@ async function _wakeLockRequest(){
 
 async function _wakeLockRelease(){
   if(!_wakeLock)return;
+  // Not while he is talking: a drive ending or a page change must not let the
+  // screen lock in the middle of what he is saying. _voiceStop lets it go.
+  if(typeof _voiceHoldsWake==='function'&&_voiceHoldsWake())return;
   try{await _wakeLock.release();}catch(e){}
   _wakeLock=null;
 }
@@ -58,8 +61,10 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 function _wakeLockShouldHold(){
-  // Hold if a drive is active or an estimate page is open
+  // Hold if a drive is active, Tim is listening (js/voice.js), or an estimate
+  // page is open
   if(typeof gps!=='undefined'&&gps&&gps.active)return true;
+  if(typeof _voiceHoldsWake==='function'&&_voiceHoldsWake())return true;
   const active=document.querySelector('.pg.active');
   if(!active)return false;
   const id=active.id||'';

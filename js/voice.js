@@ -24,11 +24,21 @@ function _voicePlugin(){
 // all? The real permission check happens on first press.
 function _voiceCapable(){return !!_voicePlugin();}
 
+// What this build of the plugin says it can do. A build from 2026-09-27 on
+// reports an "ended" event (available().events), and seeing one arrive proves
+// it too. An older build reports nothing and keeps the quiet restart below,
+// unchanged, so nothing regresses on a phone that has not updated the app.
+let _voiceEndedCap=false;
+function _voiceReadCaps(a){
+  if(a&&Array.isArray(a.events)&&a.events.indexOf('ended')>=0)_voiceEndedCap=true;
+}
+
 async function _voiceReady(){
   const P=_voicePlugin();
   if(!P||typeof P.available!=='function')return false;
   try{
     const a=await P.available();
+    _voiceReadCaps(a);
     if(a&&a.status==='granted')return true;
     if(a&&a.status==='denied')return false;
     if(typeof P.request!=='function')return false;
@@ -37,66 +47,127 @@ async function _voiceReady(){
   }catch(_e){return false;}
 }
 
-let _voiceListener=null;
+let _voiceListener=null,_voiceEndListener=null;
 let _voiceTargetEl=null;
 let _voiceBaseText='';
+// The generation the phone numbered the current session with (0: an old build
+// that does not number them). Words from an older number are a session that
+// was already replaced, and are not his latest words.
+let _voiceGen=0;
+// '' while listening. 'hidden' when the page went away (screen lock, a phone
+// call, another app), 'failed' when the mic would not start again. Either way
+// the mic is OFF and the panel says so, instead of "Tim is listening" over
+// nothing (the Earl audit, 2026-09-27).
+let _voicePaused='';
+let _voiceOnState=null;
 
 // Start dictating into a field. The text already in it is kept: a spoken note
 // appends to what is typed, it never wipes it, because losing a typed note to
 // a mis-tap would end the feature's career immediately.
-async function _voiceStart(el,onText){
+//
+// onState (optional) hears {paused, reason} whenever listening stops or starts
+// again on its own, so a screen can say so.
+async function _voiceStart(el,onText,onState){
   const P=_voicePlugin();
   if(!P||!el)return false;
   if(!(await _voiceReady()))return false;
   _voiceTargetEl=el;
   _voiceBaseText=String(el.value||'');
-  _voiceSeg='';_voiceSegAt=0;
+  _voiceSeg='';_voiceSegAt=0;_voiceGen=0;_voicePaused='';
   _voiceOnText=onText;
+  _voiceOnState=typeof onState==='function'?onState:null;
   try{
-    if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();
-    _voiceListener=await P.addListener('partial',(ev)=>{
-      const heard=(ev&&ev.text)||'';
-      _voiceLastHeard=Date.now();
-      const joined=_voiceAccept(heard);
-      if(_voiceTargetEl)_voiceTargetEl.value=joined;
-      if(typeof _voiceOnText==='function')_voiceOnText(joined,heard);
-      // The phone closed this stretch of speech (a pause). Carry on listening
-      // from where the words are now.
-      if(ev&&ev.final&&_voiceActive)_voiceResume();
-    });
-    await P.start();
+    _voiceDropListeners();
+    // "ended" first, "partial" second. An old build never sends "ended", and a
+    // test double that keeps one callback keeps the last one registered.
+    try{_voiceEndListener=await P.addListener('ended',_voiceOnEnded);}catch(_e){_voiceEndListener=null;}
+    _voiceListener=await P.addListener('partial',_voiceOnPartial);
+    const r=await P.start();
+    _voiceGen=Number(r&&r.gen)||0;
     _voiceActive=true;_voiceLastHeard=Date.now();_voiceLastStart=Date.now();
     _voiceWatch();
+    _voiceWakeOn();
     if(typeof _tdHaptic==='function')_tdHaptic('tap');
     return true;
   }catch(_e){_voiceActive=false;return false;}
 }
 
+function _voiceDropListeners(){
+  try{if(_voiceEndListener&&_voiceEndListener.remove)_voiceEndListener.remove();}catch(_e){}
+  try{if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();}catch(_e){}
+  _voiceEndListener=null;_voiceListener=null;
+}
+
+function _voiceShow(){
+  const joined=_voiceJoin(_voiceBaseText,_voiceSeg);
+  if(_voiceTargetEl)_voiceTargetEl.value=joined;
+  return joined;
+}
+
+function _voiceOnPartial(ev){
+  const g=Number(ev&&ev.gen)||0;
+  if(g&&_voiceGen&&g<_voiceGen)return;
+  if(g>_voiceGen)_voiceGen=g;
+  const heard=(ev&&ev.text)||'';
+  _voiceLastHeard=Date.now();
+  const joined=_voiceAccept(heard);
+  if(_voiceTargetEl)_voiceTargetEl.value=joined;
+  if(typeof _voiceOnText==='function')_voiceOnText(joined,heard);
+  // An old build: the phone closed this stretch of speech (a pause) and will
+  // say nothing more, so carry on listening from where the words are now. A
+  // new build says "ended" right after this, and the restart waits for that.
+  if(ev&&ev.final&&_voiceActive&&!_voiceEndedCap)_voiceResume();
+}
+
+// THE PHONE SAYS THE SESSION IS OVER (2026-09-27). iOS ends a session on a
+// final result, an error, or its one minute limit. Everything it heard is in
+// the event, so it is kept (never shorter than what is on screen), closed off
+// as a finished stretch, and only THEN is the mic opened again. This is the
+// only thing that restarts listening on a build that sends it: the audit saw
+// 332 restarts in 13 minutes from guessing at silence, and each one could
+// swallow the first word said into it.
+function _voiceOnEnded(ev){
+  _voiceEndedCap=true;
+  if(!_voiceTargetEl)return;
+  const g=Number(ev&&ev.gen)||0;
+  if(g&&_voiceGen&&g!==_voiceGen)return;
+  const t=String((ev&&ev.text)||'').trim();
+  if(t){
+    const a=_voiceWords(_voiceSeg),b=_voiceWords(t);
+    let k=0;while(k<a.length&&k<b.length&&a[k]===b[k])k++;
+    // Grown, or the same sentence refined: the session's own last word wins.
+    // Anything else it says is already on screen, so nothing is lost by
+    // keeping what is there.
+    if(!a.length||k===a.length||(k>0&&b.length>=a.length))_voiceSeg=t;
+  }
+  _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';_voiceSegAt=0;
+  const joined=_voiceShow();
+  if(typeof _voiceOnText==='function')_voiceOnText(joined,t);
+  if(_voiceActive&&!_voicePaused)_voiceResume();
+}
+
 // STAYING ON THROUGH A PAUSE (owner, 2026-09-26: "Talk to Tim failed to
 // pickup what I was doing just now"). iOS ends a recognition session on its
 // own: after a few seconds of silence, on an error, or when it decides the
-// sentence is over. The native side then stops the mic and says nothing, so the
-// panel went on saying "Tim is listening" while nothing after the pause was
-// heard. A man working while he talks pauses all the time.
+// sentence is over. An app build from before 2026-09-27 then stops the mic and
+// says nothing, so the panel went on saying "Tim is listening" while nothing
+// after the pause was heard.
 //
-// So while dictation is meant to be on, a session that has gone quiet is
-// started again. The field already holds every word heard so far (the partial
-// handler writes it), so a restart builds on it and loses nothing. Restarting
-// in silence costs nothing; words only stream while he is talking, so four
-// quiet seconds means either he is thinking or the phone gave up, and a fresh
-// session is right for both.
+// ON THOSE BUILDS ONLY, a session that has gone quiet is started again. The
+// field already holds every word heard so far, so a restart builds on it.
+// A build that sends "ended" never restarts on quiet (see _voiceOnEnded):
+// silence there is a man thinking, and the phone is still listening.
 const _VOICE_QUIET_MS=1500;
 let _voiceActive=false,_voiceLastHeard=0,_voiceLastStart=0,_voiceWatchTimer=null,_voiceOnText=null,_voiceResuming=false;
 function _voiceWatch(){
   if(_voiceWatchTimer)clearInterval(_voiceWatchTimer);
   _voiceWatchTimer=setInterval(()=>{
     if(!_voiceActive){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;return;}
+    if(_voiceEndedCap||_voicePaused==='hidden')return;
     const now=Date.now();
     // 1.5 seconds, not 4 (owner 2026-09-27: "still cut themselves off like a
-    // second after I pause"). The phone often ends the session on a pause
-    // WITHOUT a final result, so this silence is the only sign it has gone;
-    // at 4 seconds, everything said in that window was never heard. Restarting
-    // during a pause costs nothing: every word so far is already in the field.
+    // second after I pause"). An old build often ends the session on a pause
+    // WITHOUT a final result, so this silence is the only sign it has gone.
     if(now-_voiceLastHeard>_VOICE_QUIET_MS&&now-_voiceLastStart>_VOICE_QUIET_MS)_voiceResume();
   },250);
 }
@@ -107,23 +178,107 @@ async function _voiceResume(){
   try{
     _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';_voiceSegAt=0;
     _voiceLastStart=Date.now();
-    await P.start();
-    // Stopped while this restart was on its way: turn the mic back off, or
-    // it would stay open with nobody listening to it.
-    if(!_voiceActive){try{await P.stop();}catch(_e){}}
-  }catch(_e){}
+    const r=await P.start();
+    const g=Number(r&&r.gen)||0;
+    if(g)_voiceGen=g;
+    // Stopped, or the page went away, while this restart was on its way: turn
+    // the mic back off, or it would stay open with nobody listening to it.
+    if(!_voiceActive||_voicePaused==='hidden'){try{await P.stop();}catch(_e){}}
+    else if(_voicePaused)_voiceSetPaused('');
+  }catch(_e){
+    // It would not start (the audio session is taken by a call, the
+    // recogniser is busy). Say so on the panel rather than pretend.
+    if(_voiceActive)_voiceSetPaused('failed');
+  }
   finally{_voiceResuming=false;}
+}
+
+function _voiceSetPaused(reason){
+  const r=reason||'';
+  if(r===_voicePaused)return;
+  _voicePaused=r;
+  if(r)_voiceWakeOff();else _voiceWakeOn();
+  if(typeof _voiceOnState==='function'){try{_voiceOnState({paused:!!r,reason:r});}catch(_e){}}
+}
+function _voiceIsPaused(){return !!(_voiceActive&&_voicePaused);}
+
+// Are these words already the end of what is on screen? The phone's stop
+// hands back its last session's text, which after an "ended" is already kept.
+function _voiceHasTail(t){
+  const a=_voiceWords(_voiceJoin(_voiceBaseText,_voiceSeg)),b=_voiceWords(t);
+  if(!b.length)return true;
+  if(b.length>a.length)return false;
+  for(let i=1;i<=b.length;i++)if(a[a.length-i]!==b[b.length-i])return false;
+  return true;
+}
+
+// The page went away: screen locked, a phone call, another app. The mic is
+// turned off (it cannot hear through a lock screen and it should not try
+// through a call), every word so far is kept, and the panel says Paused.
+async function _voicePauseMic(reason){
+  if(!_voiceActive)return;
+  _voiceSetPaused(reason||'hidden');
+  const P=_voicePlugin();
+  if(!P)return;
+  let t='';
+  try{const r=await P.stop();t=(r&&r.text)||'';}catch(_e){}
+  if(t&&!(!_voiceSeg&&_voiceHasTail(t)))_voiceAccept(t);
+  _voiceBaseText=_voiceJoin(_voiceBaseText,_voiceSeg);_voiceSeg='';_voiceSegAt=0;
+  _voiceShow();
+}
+
+// "Paused, tap to keep going".
+async function _voiceKeepGoing(){
+  if(!_voiceActive)return false;
+  _voicePaused='';
+  _voiceLastHeard=Date.now();
+  await _voiceResume();
+  if(!_voicePaused){
+    _voiceWakeOn();
+    if(typeof _voiceOnState==='function'){try{_voiceOnState({paused:false,reason:''});}catch(_e){}}
+  }
+  return !_voicePaused;
+}
+
+function _voiceOnVisibility(){
+  if(!_voiceActive)return;
+  if(document.visibilityState==='hidden')_voicePauseMic('hidden');
+}
+if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('visibilitychange',_voiceOnVisibility);
+
+// THE SCREEN STAYS ON WHILE HE TALKS. A man describing a job with the phone on
+// the counter does not touch it, and a screen that locks at thirty seconds
+// took the mic with it. This is the app's one wake lock (js/pwa.js, the one a
+// drive and the estimate page already hold), not a second one: listening is
+// one more reason to hold it (_wakeLockShouldHold), and stopping or pausing
+// lets it go only when nothing else still wants it. Where the browser has no
+// wake lock, pwa.js does nothing and nothing breaks.
+function _voiceHoldsWake(){return !!(_voiceActive&&!_voicePaused);}
+function _voiceWakeOn(){
+  if(!_voiceHoldsWake()||document.visibilityState==='hidden')return;
+  try{if(typeof _wakeLockRequest==='function')Promise.resolve(_wakeLockRequest()).catch(()=>{});}catch(_e){}
+}
+function _voiceWakeOff(){
+  try{
+    if(typeof _wakeLockRelease!=='function')return;
+    if(typeof _wakeLockShouldHold==='function'&&_wakeLockShouldHold())return;
+    Promise.resolve(_wakeLockRelease()).catch(()=>{});
+  }catch(_e){}
 }
 
 async function _voiceStop(){
   const P=_voicePlugin();
   _voiceActive=false;
+  _voicePaused='';_voiceOnState=null;
   if(_voiceWatchTimer){clearInterval(_voiceWatchTimer);_voiceWatchTimer=null;}
+  _voiceWakeOff();
   if(!P)return '';
   let text='';
   try{const r=await P.stop();text=(r&&r.text)||'';}catch(_e){}
-  try{if(_voiceListener&&_voiceListener.remove)_voiceListener.remove();}catch(_e){}
-  _voiceListener=null;_voiceOnText=null;
+  _voiceDropListeners();
+  _voiceOnText=null;
+  // The phone's last session, already kept by "ended" or a pause: not twice.
+  if(text&&!_voiceSeg&&_voiceHasTail(text))text='';
   const joined=_voiceAccept(text);
   if(_voiceTargetEl){
     _voiceTargetEl.value=joined;
@@ -132,7 +287,7 @@ async function _voiceStop(){
     try{_voiceTargetEl.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
     try{_voiceTargetEl.dispatchEvent(new Event('change',{bubbles:true}));}catch(_e){}
   }
-  _voiceTargetEl=null;_voiceBaseText='';_voiceSeg='';_voiceSegAt=0;
+  _voiceTargetEl=null;_voiceBaseText='';_voiceSeg='';_voiceSegAt=0;_voiceGen=0;
   if(typeof _tdHaptic==='function')_tdHaptic(joined?'win':'warn');
   return joined;
 }
