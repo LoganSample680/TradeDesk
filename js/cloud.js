@@ -728,6 +728,33 @@ const _SUPA_PROXY_URL = location.origin + '/api';
 const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e){return null;}})();
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
+// ONE login, whichever road the requests take (owner report 2026-09-26: Jack on
+// a slow Wi-Fi force-closed over and over and only ever got the login screen).
+// supabase-js names its saved session after the URL's host, sb-<first label>-
+// auth-token, so the direct client kept it under sb-mwtsmctajhrrybblgorf-... and
+// the /api fallback went looking under sb-uat-... (or sb-tradedeskpro-...),
+// found nothing, and signed him out of a session that was perfectly good. The
+// key is pinned to the direct host so both roads read the same login.
+const _SUPA_AUTH_KEY = 'sb-' + new URL(_SUPA_DIRECT_URL).hostname.split('.')[0] + '-auth-token';
+// A login made while a session ran on the fallback was saved under the fallback's
+// own name. Move it onto the pinned key once, so nobody who signed in that way is
+// signed out by this fix.
+function _supaAdoptAuthKey(){
+  try{
+    if(localStorage.getItem(_SUPA_AUTH_KEY))return false;
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k===_SUPA_AUTH_KEY||!/^sb-.+-auth-token$/.test(k))continue;
+      const raw=localStorage.getItem(k);
+      const v=JSON.parse(raw||'null');
+      if(!v||!(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)))continue;
+      localStorage.setItem(_SUPA_AUTH_KEY,raw);
+      localStorage.removeItem(k);
+      return true;
+    }
+  }catch(_e){}
+  return false;
+}
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
 const APP_VERSION='09.27.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
@@ -2303,9 +2330,10 @@ async function supaInit(){
     }catch(_e){_directOk=false;}
     if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
   }
+  _supaAdoptAuthKey();
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage},
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage,storageKey:_SUPA_AUTH_KEY},
       // HARD FETCH TIMEOUT (30s): supabase-js has none, so a single stalled request left a
       // save pending FOREVER, _pendingSavePromise never settled, every reconcile reload
       // deferred behind it, and the device stopped converging until a page reload (observed
