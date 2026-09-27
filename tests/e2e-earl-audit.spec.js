@@ -419,6 +419,25 @@ test.describe('Earl in the app: lead to proposal', () => {
     await page.evaluate(() => closeClientForm());
   });
 
+  test('the new lead form starts on Name but never takes the cursor back from a field he picked', async () => {
+    const r = await page.evaluate(async () => {
+      localStorage.removeItem('zp3_new_lead_draft');
+      goPg('pg-clients'); openNewClient();
+      await new Promise(res => setTimeout(res, 250));
+      const first = document.activeElement && document.activeElement.id;
+      closeClientForm();
+      // Now he taps Notes before the form's own focus has run.
+      goPg('pg-clients'); openNewClient();
+      document.getElementById('cf-notes').focus();
+      await new Promise(res => setTimeout(res, 250));
+      const kept = document.activeElement && document.activeElement.id;
+      closeClientForm(); localStorage.removeItem('zp3_new_lead_draft');
+      return { first, kept };
+    });
+    expect(r.first, 'nothing picked yet: the cursor starts on Name').toBe('cf-name');
+    expect(r.kept, 'Notes keeps the cursor, so his typing lands where he tapped').toBe('cf-notes');
+  });
+
   test('a half-typed new lead survives a reload and is cleared by Cancel', async () => {
     await page.evaluate(() => { localStorage.removeItem('zp3_new_lead_draft'); goPg('pg-clients'); openNewClient(); });
     await page.fill('#cf-name', 'Dale Pruitt');
