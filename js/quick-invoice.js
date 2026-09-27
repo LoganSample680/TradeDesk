@@ -21,31 +21,35 @@
 
 let _qi=null;
 
-// Who to offer first: the customers somebody was at in the last 7 days, newest
-// first, each with the street so two Smiths are told apart. Search covers
-// everyone else.
-function _qiRecentClients(){
-  const out=[];
-  try{
-    const since=Date.now()-7*86400000;
-    const last={};
-    const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
-    Object.keys(byJob).forEach(jid=>{
-      const j=(jobs||[]).find(x=>String(x.id)===String(jid));
-      if(!j||j.client_id==null)return;
-      (byJob[jid]||[]).forEach(e=>{
-        const t=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'');
-        if(t>=since&&(!last[j.client_id]||t>last[j.client_id]))last[j.client_id]=t;
-      });
-    });
-    Object.keys(last).sort((a,b)=>last[b]-last[a]).slice(0,6).forEach(cid=>{
-      const c=getClientById(Number(cid));
-      if(!c)return;
-      const st=_qiStatus(c.id);
-      out.push({label:c.name,sub:((c.addr||'').split(',')[0]||'No address')+(st?' · '+st.label:''),clientId:c.id,icon:'📍'});
-    });
-  }catch(_e){}
-  return out;
+// THE WHOLE LIST (owner 2026-09-26: "where is the huge quick invoice list we
+// talked about? Just see a weak ass search"). It used to offer only customers
+// somebody was tracked at in the last 7 days, so with no tracked visits the
+// picker was a search box and nothing else. Now every customer is on it with
+// their street (two Smiths told apart) and where the work stands: Working now
+// first, then Scheduled, then whoever was touched most recently.
+function _qiLastTouch(c){
+  let t=0;
+  const bump=v=>{const n=typeof v==='number'?v:Date.parse(v||'');if(!isNaN(n)&&n>t)t=n;};
+  const cid=String(c.id);
+  const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
+  (jobs||[]).forEach(j=>{
+    if(!j||String(j.client_id)!==cid)return;
+    bump(j.start);bump(j.completion_date);
+    (byJob[j.id]||[]).forEach(e=>bump(e&&(e.arrivedAt||e.arrived_at)));
+  });
+  (bids||[]).forEach(b=>{if(b&&String(b.client_id)===cid){bump(b.bid_date);bump(b.created_at);}});
+  (expenses||[]).forEach(e=>{if(e&&String(e.client_id)===cid)bump(e.date);});
+  bump(c.last_contact_date);bump(c.created_at);
+  return t;
+}
+function _qiPickList(){
+  const rank={now:0,next:1,done:2};
+  return (clients||[]).filter(c=>c&&c.name&&!c.archived).map(c=>{
+    const st=_qiStatus(c.id);
+    return {c,st,r:st?rank[st.k]:3,t:_qiLastTouch(c)};
+  }).sort((a,b)=>(a.r-b.r)||(b.t-a.t)||String(a.c.name).localeCompare(String(b.c.name)))
+    .map(({c,st})=>({label:c.name,sub:((c.addr||'').split(',')[0]||'No address')+(st?' · '+st.label:''),clientId:c.id,icon:'📍',
+      find:[c.name,c.addr,c.phone].filter(Boolean).join(' ')}));
 }
 // Is the work at this customer going on, finished, or still to come? One
 // word, next to their name, so nobody bills a job that is still running
@@ -76,7 +80,7 @@ function _qiStatusPill(cid){
   return st?'<span class="qi-st qi-st-'+st.k+'">'+escHtml(st.label)+'</span>':'';
 }
 function openQuickInvoicePicker(){
-  showQuickPicker('Quick invoice','Who is it for?',_qiRecentClients(),'invoice',true,'Worked this week');
+  showQuickPicker('Quick invoice','Who is it for?',_qiPickList(),'invoice',true,'Your customers',{searchFirst:true});
 }
 
 // Everything this customer has been billed for on a quick invoice already.
