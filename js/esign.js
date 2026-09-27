@@ -76,7 +76,7 @@ function esignPadHTML(prefix, opts){
       '<div id="' + _esignEsc(phId) + '" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;pointer-events:none;text-align:center;padding:18px 20px 0">' + _esignEsc(phText) + '</div>' +
     '</div>' +
     '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">' +
-      '<button type="button" onclick="esignClear(\'' + prefix + '\')" style="font-size:12px;color:var(--text3,#6b7280);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear drawing</button>' +
+      '<button type="button" onclick="esignClear(\'' + prefix + '\')" style="font-size:12px;color:var(--text3,#6b7280);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline;min-height:44px;padding:0 8px;margin:-14px -8px">Clear drawing</button>' +
     '</div>';
 }
 
@@ -144,7 +144,11 @@ function esignWire(prefix, opts){
   }
   // Teardown when the pad's overlay leaves the DOM, no leaked listeners.
   const obs = new MutationObserver(() => {
-    if (!document.contains(canvas)) { ac.abort(); pad.drawing = false; obs.disconnect(); delete _ESIGN_PADS[prefix]; }
+    // Only forget THIS pad. Opening the pad a second time (Back, then Approve
+    // again) renders a new canvas under the same prefix before this observer
+    // fires, and deleting by prefix alone threw the new pad away too, so the
+    // signature step answered "no-pad" and the customer could not continue.
+    if (!document.contains(canvas)) { ac.abort(); pad.drawing = false; obs.disconnect(); if (_ESIGN_PADS[prefix] === pad) delete _ESIGN_PADS[prefix]; }
   });
   obs.observe(document.body, { childList: true, subtree: true });
   _ESIGN_PADS[prefix] = pad;
