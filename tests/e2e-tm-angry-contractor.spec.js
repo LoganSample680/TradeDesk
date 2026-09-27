@@ -158,7 +158,10 @@ test.describe('Earl, 58, hates technology', () => {
     await say(novel);
     const t = await page.evaluate(() => { const a = performance.now(); _geiScopeBuild('tm-scope-wrap'); return performance.now() - a; });
     expect(t, 'ms').toBeLessThan(1500);
-    expect(await page.evaluate(() => _geiScopeChips.length)).toBeLessThanOrEqual(40);
+    // Changed 2026-09-27 (the Earl audit): this used to cap at forty and drop
+    // the rest without a word, which lost the end of a long job walk. Every
+    // step is kept now; the phone still does not freeze (the time above).
+    expect(await page.evaluate(() => _geiScopeChips.length)).toBe(400);
   });
 
   // Every way a man writes money.
