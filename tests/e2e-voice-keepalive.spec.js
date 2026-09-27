@@ -65,7 +65,10 @@ test.describe('Talk to Tim through a pause', () => {
     expect(r.live, 'mic off').toBe(false);
   });
 
-  test('a session that dies without a word (an error) is restarted after a few quiet seconds', async () => {
+  // Changed 2026-09-27 (owner: "still cut themselves off like a second after
+  // I pause"): 4 quiet seconds before a restart was 4 seconds of words never
+  // heard. It restarts after 1.5.
+  test('a session that dies without a word (an error) is restarted within two quiet seconds', async () => {
     await setup('granted', 99202);
     await page.waitForTimeout(500);
     await page.evaluate(() => _geiScopeTalk());
@@ -73,8 +76,8 @@ test.describe('Talk to Tim through a pause', () => {
     await page.evaluate(() => window.__say('Run new pex to the manifold'));
     // The phone drops the session silently: no final, no more words.
     await page.evaluate(() => { window.__fake.live = false; });
-    await page.waitForTimeout(5600);
-    expect(await page.evaluate(() => window.__fake.starts), 'restarted once it went quiet').toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(2100);
+    expect(await page.evaluate(() => window.__fake.starts), 'restarted within two seconds of going quiet').toBeGreaterThanOrEqual(2);
     await page.evaluate(() => window.__say('then set a tankless'));
     await page.evaluate(() => _timTalkStop(true));
     await page.waitForTimeout(200);
@@ -135,6 +138,37 @@ test.describe('Talk to Tim through a pause', () => {
     await page.evaluate(() => _timTalkStop(true));
     await page.waitForTimeout(200);
     expect(await box(), 'every word is in the box after Done talking').toBe('Pull the old water heater run new pex to the manifold and set a tankless');
+  });
+
+  // "I lose the first half of what I said" (owner 2026-09-27). After a pause
+  // the new stretch started with the same word as the old one, so it was read
+  // as a correction and written over the first half.
+  test('a new stretch after a pause that starts with the same word keeps the first half', async () => {
+    await setup('granted', 99206);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => _geiScopeTalk());
+    await page.waitForTimeout(300);
+    const box = () => page.evaluate(() => document.getElementById('gei-scope-say').value);
+    await page.evaluate(() => window.__say('I pulled the old water heater'));
+    await page.waitForTimeout(900);   // he stops to look at it
+    await page.evaluate(() => window.__say('I'));
+    await page.evaluate(() => window.__say('I set'));
+    await page.evaluate(() => window.__say('I set a tankless'));
+    expect(await box()).toBe('I pulled the old water heater I set a tankless');
+    await page.evaluate(() => _timTalkStop(true));
+    await page.waitForTimeout(200);
+    expect(await box()).toBe('I pulled the old water heater I set a tankless');
+  });
+
+  test('a correction in the same breath still replaces, it does not repeat', async () => {
+    await setup('granted', 99207);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => _geiScopeTalk());
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { window.__say('run new packs to the'); window.__say('run new pex'); window.__say('run new pex to the manifold'); });
+    expect(await page.evaluate(() => document.getElementById('gei-scope-say').value)).toBe('run new pex to the manifold');
+    await page.evaluate(() => _timTalkStop(true));
+    await page.waitForTimeout(200);
   });
 
   test('Done talking builds the steps from everything said, both halves', async () => {
