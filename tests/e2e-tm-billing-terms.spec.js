@@ -233,7 +233,7 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
       document.querySelector('#tm-more-row input.ios-switch[data-layer="mat"]').click();
       const blk = document.getElementById('tm-blk-mat');
       const after = { on: _tmLayers.has('mat'), shown: blk.style.display !== 'none',
-        quote: [...blk.querySelectorAll('button')].some(b => /Load their quote/.test(b.textContent)) };
+        quote: [...blk.querySelectorAll('button')].some(b => /Load a quote/.test(b.textContent)) };
       _tmToggleLayer('mat'); _tmMoreOpen = false; _tmApplyLayers();
       return { before, after };
     });

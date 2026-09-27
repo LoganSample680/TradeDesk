@@ -291,7 +291,9 @@ test.describe('supply list: on a BYO estimate', () => {
     await expect(page.locator('#sup-card')).toBeVisible();
     await expect(page.locator('#sup-markup')).toHaveAttribute('type', 'number');
     await expect(page.locator('#sup-card button', { hasText: 'Send to supply house' })).toBeDisabled();
-    await expect(page.locator('#sup-card button', { hasText: 'Load their quote' })).toBeEnabled();
+    // With no list typed: a quote he already has for the parts loads straight in.
+    await expect(page.locator('#sup-card button', { hasText: 'Load a quote' })).toBeEnabled();
+    await expect(page.locator('#sup-card')).toContainText('Already have a quote for the parts? Load it and the list fills itself.');
   });
 
   test('typing the list adds lines with no prices yet', async () => {
