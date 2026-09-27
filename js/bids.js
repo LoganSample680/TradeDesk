@@ -805,7 +805,7 @@ function printInvoice(bidId){
   <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
   <tbody>
     ${b.kind==='quick_invoice'&&Array.isArray(b.lineItems)&&b.lineItems.length
-      ?b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
+      ?(Array.isArray(b.qiWork)&&b.qiWork.length?`<tr><td colspan="2">Work done: ${b.qiWork.map(w=>escHtml(w)).join('; ')}</td></tr>`:'')+b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
       :`<tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>`}
   </tbody>
 </table>
