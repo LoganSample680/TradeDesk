@@ -914,7 +914,10 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     // migration above already uses.
     if(_geiIsFreeForm){
       let _nid=(_byoItems||[]).reduce((m,x)=>Math.max(m,x.id||0),0)+1;
-      const _seedByo=_geiPendingSeedLines.map(l=>({id:_nid++,section:l._byoSection||'Other',label:l.desc||'',price:(l.qty||1)*(l.rate||0),on:true,required:false,notes:l.notes||''}));
+      // The measured quantity and rate ride along, so "86 ft x $2.50" stays a
+      // count on the line and not one lump; a seed with no rate yet is one line
+      // at its price, the same rule _byoNormItem applies to every row.
+      const _seedByo=_geiPendingSeedLines.map(l=>_byoNormItem({id:_nid++,section:l._byoSection||'Other',label:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,price:(l.qty||1)*(l.rate||0),on:true,required:false,notes:l.notes||''}));
       _byoItems=(_byoItems||[]).concat(_seedByo);
       const _seedBid=bids.find(x=>x.id===_geiEditBidId);
       if(_seedBid){_seedBid.byoItems=(_seedBid.byoItems||[]).concat(JSON.parse(JSON.stringify(_seedByo)));saveAll();}
@@ -948,8 +951,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // A NEW T&M OPENS ON THE PAGE, not on a screen whose only content is two
   // lines he can already see and a Next button. The two facts that screen held
   // (home or business, and which customer at which address) are on the page's
-  // own sub-line now with a Change that goes back to it.
-  goGeiStep((_resumingExisting||_geiIsTM)?2:1);
+  // own sub-line now with a Change that goes back to it. Build Your Own is the
+  // same page shape with the same sub-line and Change, so it opens on its page
+  // too (Earl audit 2026-09-27: BYO had a "Next: Build proposal" screen that
+  // carried nothing T&M did not already skip).
+  goGeiStep((_resumingExisting||_geiIsTM||_geiIsFreeForm)?2:1);
 }
 
 function goGeiStep(n){
@@ -1261,7 +1267,7 @@ function _geiRenderDepositField(prefix,onInputExpr){
       '<span style="display:flex;align-items:center;gap:4px">'+
         '<input type="number" id="'+prefix+'-deposit-pct" value="25" min="0" max="100" step="5"'+
           ' oninput="'+onInputExpr+'"'+
-          ' style="width:68px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
+          ' inputmode="decimal" style="width:68px;min-height:44px;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
         '<span style="font-size:15px;font-weight:700">%</span>'+
       '</span>'+
     '</div>'+
@@ -2921,6 +2927,7 @@ function _byoPriceFor(text){
 // said: a price he said out loud for this line. His number, so it beats the
 // book (PRICES STAY HIS, CLAUDE.md 18.2).
 function _byoAddLine(text,sec,said){
+  text=_tradeSpellFix(text);
   const p=Number(said)>0?{rate:Number(said),unit:'ea',notes:'',from:'said'}:_byoPriceFor(text);
   const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
   _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
@@ -3101,7 +3108,7 @@ function _byoRenderPrice(st){
     // percentage"). One number he types, what the job costs him, and the
     // margin next to it. No materials list to fill out.
     '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
-      '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Math.round(cost).toLocaleString('en-US'):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
+      '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Number(cost).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
     '<div class="ios-row"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+'">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
       '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
@@ -3719,7 +3726,7 @@ function _crewRatesHtml(emps){
         '<input type="text" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
           'aria-label="What '+escHtml(first)+' bills per hour" '+
           'onchange="_onBillRateInput(this,'+escHtml(JSON.stringify(email))+')" '+
-          'style="width:44px;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
+          'style="width:44px;height:44px;margin:-7px 0;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
         '</span>'+
       '</div>';
   });
@@ -4006,12 +4013,21 @@ function _byoUpdateRail(){
   _updateMarginGauge('byo',sub);
   if(typeof _byoRenderSteps==='function'&&document.getElementById('byo-step-1'))_byoRenderSteps();
 }
-// Comma-formats a BYO price field as the contractor types, native type="number"
-// inputs reject commas outright in every browser, so this field is plain text
-// with a digits-only filter + live thousands-grouping instead.
-function _byaFormatPriceInput(el){
-  const raw=(el.value||'').replace(/[^\d]/g,'');
-  el.value=raw?Number(raw).toLocaleString('en-US'):'';
+// A tap outside the item sheet closes it ONLY when nothing was typed. A thumb
+// that misses the keyboard and lands on the dim backdrop used to throw away a
+// title, a price and a description in one go. Dirty means any field differs
+// from what the sheet opened with; then it asks before discarding.
+function _byaSheetSnap(){
+  return ['_bya-label','_bya-qty','_bya-unit','_bya-price','_bya-notes']
+    .map(id=>(document.getElementById(id)||{}).value||'').join('\u0001');
+}
+function _byaBackdropGuard(ov){
+  const start=_byaSheetSnap();
+  ov.addEventListener('click',e=>{
+    if(e.target!==ov)return;
+    if(_byaSheetSnap()===start){ov.remove();return;}
+    zConfirm('What you typed on this line will be lost.',()=>ov.remove(),{title:'Discard changes?',yes:'Discard',no:'Keep editing',safeRight:true});
+  });
 }
 function _byaPriceValue(id){
   return parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
@@ -4026,7 +4042,7 @@ function _byoAddItem(sec){
       '<div id="_bya-count" style="font-size:12px;font-weight:700;color:var(--text3)"></div>'+
     '</div>'+
     '<div id="_bya-book"></div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3, walls only" autocomplete="off"></div>'+
+    '<div class="f" style="margin-bottom:4px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" placeholder="'+escHtml(_byaExample(0))+'" autocomplete="off"></div>'+
     '<div id="_bya-sugg" style="margin-bottom:10px"></div>'+
     _byaQtyRateHTML(1,'','')+
     _byaDescFieldHTML('')+
@@ -4035,7 +4051,7 @@ function _byoAddItem(sec){
       '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
     '</div></div>';
   document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _byaBackdropGuard(ov);
   _byaDescHint();_byaLineMath();_byaLineMath();
   _byaRenderBook(sec);
   // The search is wired synchronously: the field exists the moment the sheet is
@@ -4172,7 +4188,7 @@ function _byaQtyRateHTML(qty,unit,rate){
         list.map(u=>'<option value="'+escHtml(u)+'"'+(u===cur?' selected':'')+'>'+escHtml(u)+'</option>').join('')+
       '</select>'+
       '<div class="input-prefix" style="flex:1;min-width:0"><span>$</span>'+
-        '<input type="text" inputmode="numeric" id="_bya-price" value="'+(rate?Number(rate).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this);_byaLineMath()" aria-label="Rate"></div>'+
+        '<input type="text" inputmode="decimal" id="_bya-price" value="'+(rate?Number(rate).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" placeholder="0" oninput="_fmtMoneyInput(this);_byaLineMath()" aria-label="Rate"></div>'+
     '</div>'+
     '<div id="_bya-line-total" style="font-size:12px;font-weight:700;color:var(--text3);margin-top:6px;font-variant-numeric:tabular-nums"></div>'+
   '</div>';
@@ -4191,10 +4207,28 @@ function _byaLineMath(){
 function _byaQtyValue(){const v=parseFloat((document.getElementById('_bya-qty')?.value||'').replace(/,/g,''));return (v>0)?v:1;}
 function _byaUnitValue(){return document.getElementById('_bya-unit')?.value||_byaUnitList()[0]||'ea';}
 
+// The examples under the item sheet's fields, in HIS trade. A plumber was told
+// to type "Bedroom 3, walls only" and "Two coats", which says this app is for
+// somebody else.
+const _BYA_EXAMPLES={
+  painting:['Bedroom 3, walls only','Two coats, ceilings included, all trim cut in by hand'],
+  plumbing:['Replace 50 gal water heater','Drain and haul away the old tank, set the new one, new shutoff and flex lines, test for leaks'],
+  electrical:['Add a 20 amp kitchen circuit','New breaker, wire run to the counter, GFCI outlet, test and label the panel'],
+  hvac:['Replace 3 ton condenser','Recover refrigerant, set the new unit on a pad, new disconnect, charge and test'],
+  roofing:['Tear off and reroof, 24 squares','Strip to the deck, replace bad decking, ice and water shield, new drip edge and vents'],
+  landscaping:['Front bed cleanup and mulch','Pull weeds, edge the beds, 3 yards of mulch, haul off the debris'],
+  general:['Replace the back door','Remove the old door and frame, set a new pre-hung door, trim, caulk and haul off'],
+};
+function _byaExample(i){
+  let t='general';
+  try{t=_pbTrade();}catch(_e){}
+  const e=_BYA_EXAMPLES[t]||_BYA_EXAMPLES.general;
+  return 'e.g. '+e[i];
+}
 function _byaDescFieldHTML(val){
   return '<div class="f" style="margin-bottom:6px">'+
     '<label>Description <span style="font-weight:400;color:var(--text3)">, what it consists of</span></label>'+
-    '<textarea id="_bya-notes" rows="3" oninput="_byaDescHint()" placeholder="e.g. Two coats, ceilings included, all trim cut in by hand" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(val||'')+'</textarea>'+
+    '<textarea id="_bya-notes" rows="3" oninput="_byaDescHint()" placeholder="'+escHtml(_byaExample(1))+'" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(val||'')+'</textarea>'+
     '<div id="_bya-desc-hint" style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:4px"></div>'+
   '</div>';
 }
@@ -4232,7 +4266,7 @@ function _byaBumpCount(){
   if(close)close.textContent='Done';
 }
 function _byaConfirm(sec){
-  const label=(document.getElementById('_bya-label')?.value||'').trim();
+  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
   const rate=_byaPriceValue('_bya-price');
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
@@ -4246,7 +4280,7 @@ function _byaConfirm(sec){
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
-  const label=(document.getElementById('_bya-label')?.value||'').trim();
+  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
   const rate=_byaPriceValue('_bya-price');
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
@@ -4266,7 +4300,7 @@ function _byoEditItem(idx){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3, walls only"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="'+escHtml(_byaExample(0))+'"></div>'+
     _byaQtyRateHTML(it.qty,it.unit,(Number(it.rate)>0?it.rate:it.price))+
     _byaDescFieldHTML(it.notes||'')+
     '<div style="display:flex;gap:10px">'+
@@ -4274,7 +4308,7 @@ function _byoEditItem(idx){
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
     '</div></div>';
   document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _byaBackdropGuard(ov);
   _byaDescHint();
   setTimeout(()=>{
     const labelEl=document.getElementById('_bya-label');
@@ -4290,7 +4324,7 @@ function _byoEditItem(idx){
 }
 function _byaEditConfirm(idx){
   if(!_matView(idx))return;
-  const label=(document.getElementById('_bya-label')?.value||'').trim();
+  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
   const rate=_byaPriceValue('_bya-price');
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
@@ -6155,9 +6189,9 @@ function _geiAddFreeFormLine(prefill){
         '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint, 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
-        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" inputmode="decimal" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
         '<div class="f"><label>Unit</label><input id="_ffa-unit" type="text" value="'+escHtml(d.unit||'ea')+'" placeholder="ea" style="font-size:14px"></div>'+
-        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="number" value="'+(d.rate||'')+'" min="0" step="any" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="number" inputmode="decimal" value="'+(d.rate||'')+'" min="0" step="any" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
@@ -6330,7 +6364,7 @@ function _geiOpenCatSheet(catLabel){
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
         <span style="font-size:12px;color:var(--text3)">$</span>
-        <input type="number" id="${inputId}" value="${defaultTotal}" min="0" step="1"
+        <input type="number" inputmode="decimal" id="${inputId}" value="${defaultTotal}" min="0" step="any"
           style="width:74px;padding:5px 4px;border-radius:var(--r);${inputBorder};font-size:14px;font-weight:800;${inputColor};text-align:right;background:var(--bg);font-family:inherit"
           onclick="event.stopPropagation()">
         <button onclick="_geiAddWithRate(${JSON.stringify(job).replace(/"/g,'&quot;')},document.getElementById('${inputId}'));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
@@ -6626,12 +6660,12 @@ function _geiShowFreeFormModal(job){
         <input id="_ff-model" type="text" placeholder="${escHtml(job.freeFormLabel||'e.g. Mitsubishi MSZ-GL09NA')}" style="font-size:14px" autocomplete="off">
       </div>
       ${isCustomQty?`<div class="fg fg2" style="margin-bottom:10px">
-        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="number" value="1" min="0.1" step="any" style="font-size:14px"></div>
+        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="number" inputmode="decimal" value="1" min="0.1" step="any" style="font-size:14px"></div>
         <div></div>
       </div>`:''}
       <div class="fg fg2" style="margin-bottom:14px">
-        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
-        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
+        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" inputmode="decimal" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
+        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" inputmode="decimal" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
       </div>
       <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to proposal</button>
       <button class="btn" onclick="document.getElementById('_gei-ff-ov')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>
@@ -7183,7 +7217,7 @@ function _geiEnsureClientProperty(clientId,addr){
   if(typeof addClientAddress==='function')addClientAddress(c,'Additional property',addr);
   else{c.extraAddresses=c.extraAddresses||[];c.extraAddresses.push({label:'Additional property',addr});}
 }
-function saveGenericEstimate(draft){
+function saveGenericEstimate(draft,opts){
   const v=id=>document.getElementById(id)?.value||'';
   _geiEnsureClientProperty(_geiClientId,v('gei-addr'));
   // Saving is the other deliberate moment worth learning from: it catches the
@@ -7312,7 +7346,9 @@ function saveGenericEstimate(draft){
   const _snEl=document.getElementById('gei-sitenote');
   if(_snEl&&_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){setSiteNote(_c,_geiSiteAddr(),_snEl.value.trim());saveAll();}}
   if(!draft)_saveToLineHistory();
-  showToast(draft?'Draft saved':'Proposal saved','✅');
+  // quiet: the send path saves a draft on its way to the send sheet, and a
+  // "Draft saved" toast landing on top of that sheet covered the Text button.
+  if(!(opts&&opts.quiet))showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');
 }
 
@@ -7701,8 +7737,25 @@ function _propIncludedHtml(texts,accent,title,tm,tint){
     `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${accent};margin:0 4px 12px">${title||'Included in your price'}</div>`+
     `<div>${tiles}</div></div>`;
 }
+// Lines whose price is wildly off: over $50,000 on one line, or more than five
+// times what his own price book charges for the same item (only a book price
+// he has used at least twice counts; a one-off could be the typo itself).
+const _GEI_LINE_MAX=50000,_GEI_BOOK_X=5;
+function _geiPriceOutliers(){
+  const out=[];
+  const lines=[];
+  (_byoItems||[]).forEach(it=>{if(it&&it.on!==false&&!it._rrp)lines.push({label:it.label,qty:Number(it.qty)||1,rate:Number(it.rate)>0?Number(it.rate):Number(it.price)||0,amt:Number(it.price)||0});});
+  if(!_geiIsFreeForm)(_geiLines||[]).forEach(l=>{if(l&&!l._rrp&&!l._tmLabor){const q=Number(l.qty)||1,r=Number(l.rate)||0;lines.push({label:l.desc,qty:q,rate:r,amt:q*r});}});
+  lines.forEach(l=>{
+    if(!l.label||!(l.amt>0))return;
+    let book=0;
+    try{const hit=_pbFind(l.label);if(hit&&(hit.n||1)>=2)book=Number(hit.rate)||0;}catch(_e){}
+    if(l.amt>_GEI_LINE_MAX||(book>0&&l.rate>book*_GEI_BOOK_X))out.push({label:String(l.label),amt:l.amt,book:book>0&&l.rate>book*_GEI_BOOK_X?book:0});
+  });
+  return out;
+}
 async function sendGenericProposal(previewOnly,opts){
-  saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
+  saveGenericEstimate(true,{quiet:true}); // draft=true skips navigation, modal shows over estimate page
   _saveToLineHistory();
   if(!previewOnly){
     // BYO line items already define the scope; chips are optional summary only.
@@ -7741,6 +7794,20 @@ async function sendGenericProposal(previewOnly,opts){
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
       if(!_byoOn.length){zAlert('Add at least one line before you send this.',{title:'Nothing to send yet'});return;}
+    }
+    // ONE LAST LOOK AT A PRICE THAT CANNOT BE RIGHT. A dropped decimal point
+    // turned a $1,289.50 water heater into $128,950 and it went out with no
+    // word from us. Asked once per send, never a wall: "Send anyway" goes.
+    if(!(opts&&opts.priceChecked)){
+      const _odd=_geiPriceOutliers();
+      if(_odd.length){
+        const _f=n=>(typeof fmt==='function'?fmt(n):'$'+n);
+        const _msg=_odd.slice(0,3).map(o=>'<div style="margin:6px 0"><strong>'+escHtml(o.label)+'</strong>: '+_f(o.amt)+
+          (o.book?' (your price book says '+_f(o.book)+')':'')+'</div>').join('')+'Is that price right?';
+        zConfirm(_msg,()=>sendGenericProposal(previewOnly,Object.assign({},opts||{},{priceChecked:true})),
+          {title:'Double-check this price',yes:'Send anyway',no:'Fix the price',danger:false,safeRight:true});
+        return;
+      }
     }
     // Build minimal proposal for sign.html
     if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour proposal is saved. Once you\'re back online, open this proposal and tap Send to send the link to your client.',{title:'No internet connection'});return;}
@@ -8299,17 +8366,12 @@ async function sendGenericProposal(previewOnly,opts){
   const b=bids.find(x=>x.id===bidId);
   if(b){
     b.signingToken=token;b.proposalKey=proposalKey;
-    // Mark Pending now so hub snapshot shows the proposal, _commitProposalSent still
-    // fires on Text/Email but is safe to call twice (idempotent status change)
-    if(b.status==='Draft'||!b.status)b.status='Pending';
-    b.draft=false;
-    if(!b.proposalSentDate)b.proposalSentDate=todayKey();
-    // THIS is the real send moment: proposals.js _commitProposalSent (Text/Email
-    // share) also logs proposal_sent, but that only fires if the contractor taps
-    // one of those specific share options. A contractor who just copies the link
-    // (or the hub URL above) never hits that path, so the milestone belongs here,
-    // once=true dedupes if _commitProposalSent also fires later for the same bid.
-    try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:b.id,clientId:b.client_id});}catch(_e){}
+    // NOT SENT YET. The link exists, the customer has it only once he taps
+    // Text, Email or Other app on the sheet below, and that tap is where
+    // proposals.js _commitProposalSent marks it Pending, starts the follow-up
+    // clock and logs proposal_sent (and re-uploads the hub). Marking it here
+    // told him "Pending, reminder in 3 days" about a proposal that a closed
+    // sheet had never sent to anybody.
     saveAll();
     // saveAll() only SCHEDULES a debounced cloud write (2s timer), force + await it
     // now so the bid's signingToken/proposalKey/status are confirmed in td_bids

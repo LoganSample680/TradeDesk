@@ -1194,8 +1194,12 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     await page.waitForTimeout(300);
 
     const heroText = await page.locator('#mil-hero-wrap').textContent();
-    expect(heroText).toContain('Add a vehicle to start logging');
-    expect(heroText).toContain('Add vehicle in Fleet');
+    // Changed 2026-09-27 (Earl audit): the old prompt replaced the whole page,
+    // hiding every logged trip and the IRS export. Now it is a banner and the
+    // log stays below it.
+    expect(heroText).toContain('Add a vehicle');
+    expect(heroText).toContain('Your trips are still below');
+    expect(heroText).toContain('business miles');
 
     assertNoErrors(page, 'Mileage no-vehicle prompt');
   });
@@ -1217,7 +1221,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
 
     // Hero should show a mileage deduction figure, not the no-vehicle prompt
     const heroText = await page.locator('#mil-hero-wrap').textContent();
-    expect(heroText).not.toContain('Add a vehicle to start logging');
+    expect(heroText).not.toContain('Your trips are still below');
     expect(heroText).toContain('business miles');
 
     assertNoErrors(page, 'Mileage renders normally with vehicles');

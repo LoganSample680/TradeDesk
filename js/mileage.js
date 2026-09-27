@@ -1391,7 +1391,7 @@ function _supplyRunScan(k){
   if(v&&!v.value&&store)v.value=store;
   const dd=m.querySelector('#em-date');
   const dm=day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(dd&&dm)dd.value=dm[2]+'/'+dm[3]+'/'+dm[1];
+  if(dd&&dm)dd.value=day; // native date input: ISO
   const c=m.querySelector('#em-cat');
   if(c)c.value='materials';
   // Straight into the camera, still inside the tap's user gesture. If the
@@ -2654,16 +2654,23 @@ function renderAllMileage(){
   const heroEl=document.getElementById('mil-hero-wrap');
   if(heroEl){
     const vehs=getVehicles();
+    // No vehicle on file is a banner, not a wall (Earl audit 2026-09-27): it
+    // used to return here, which hid every trip already recorded and the IRS
+    // export along with them. The log below and the export still render.
     if(!vehs.length){
       heroEl.innerHTML=
-        '<div style="background:var(--bg2);border-radius:var(--r);padding:20px;text-align:center;margin-bottom:12px">'+
-          '<div style="font-size:28px;margin-bottom:8px">'+svgIcon('🚛',{size:28})+'</div>'+
-          '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px">Add a vehicle to start logging</div>'+
-          '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5">The IRS requires a vehicle description on every mileage entry. You\'re one tap away from tracking deductible trips.</div>'+
-          '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;padding:11px 22px">+ Add vehicle in Fleet</button>'+
+        '<div id="mil-no-vehicle" style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">'+
+          '<div style="flex:1;min-width:180px">'+
+            '<div style="font-size:14px;font-weight:800;color:#92400E">Add a vehicle</div>'+
+            '<div style="font-size:12px;color:#92400E;line-height:1.5">The IRS wants a vehicle on every trip. Your trips are still below.</div>'+
+          '</div>'+
+          '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;min-height:44px;padding:10px 16px">+ Add vehicle</button>'+
+        '</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px">'+
+          '<div style="font-size:13px;color:var(--text2)"><b>'+tot.toFixed(1)+'</b> business miles · '+filtered.length+' trip'+(filtered.length!==1?'s':'')+' · '+fmt(deduction)+'</div>'+
+          '<button class="btn" id="mil-export-btn" onclick="openExportPanel(\'mileage\')" style="min-height:44px">'+svgIcon('📊',{size:16})+' Export mileage log</button>'+
         '</div>';
-      return;
-    }
+    }else{
     const pVeh=vehs[0]||null;
     const odoRec=_vehOdo(pVeh,yr);
     const startOdo=odoRec.start||0;
@@ -2716,12 +2723,13 @@ function renderAllMileage(){
             '<div class="mil-action-icon">'+svgIcon('🔢',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
           '</button>'+
-          '<button class="mil-action" onclick="openExportPanel()">'+
+          '<button class="mil-action" id="mil-export-btn" onclick="openExportPanel(\'mileage\')">'+
             '<div class="mil-action-icon">'+svgIcon('📊',{size:20})+'</div>'+
-            '<div class="mil-action-body"><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Export mileage log</div><div class="mil-action-sub">IRS trip log · Excel</div></div>'+
           '</button>'+
         '</div>'+
       '</div>';
+    }
   }
 
   // ── Vehicle worksheet ──

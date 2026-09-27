@@ -673,6 +673,11 @@ function getLicenseAlerts(){
 }
 
 // Returns the actual working calendar dates for a job, skipping weekends (unless job.allowWeekend)
+// The START day is always a work day (Earl audit 2026-09-27): a call booked on
+// a Sunday without the weekend box ticked used to slide to Monday here, so the
+// month grid said Monday while Home, Upcoming and the crew's day all said
+// Sunday. Somebody picked that date on purpose; only the days AFTER it skip
+// the weekend.
 function getJobWorkDays(job){
   const allowWknd=!!job.allowWeekend;
   const numDays=parseInt(job.days)||1;
@@ -681,10 +686,82 @@ function getJobWorkDays(job){
   let count=0;
   while(count<numDays){
     const dow=parseD(cur).getDay();
-    if(allowWknd||(dow!==0&&dow!==6)){days.push(cur);count++;}
+    if(allowWknd||count===0||(dow!==0&&dow!==6)){days.push(cur);count++;}
     if(count<numDays)cur=addDays(cur,1);
   }
   return days;
+}
+// The last day a job is actually worked (weekends skipped the same way the
+// grid skips them), so "is this job over yet" agrees with the calendar.
+function _jobLastWorkDay(job){
+  if(!job||!job.start)return '';
+  const wd=getJobWorkDays(job);
+  return wd.length?wd[wd.length-1]:job.start;
+}
+// A multi-day PROJECT holds the crew's whole day (a repaint, a remodel). A
+// one-day job is a service call: a plumber runs four to six of them, so it
+// never holds the day by itself (Earl audit 2026-09-27, the second call for
+// the same guy on the same day was refused).
+function _jobIsProject(j){return !!j&&j.eventType!=='estimate'&&(parseInt(j.days)||1)>1;}
+// Start/end minutes of a job's time slot, or null when it has no start time.
+// Estimates carry hours; a timed job with no length is read as one hour.
+function _jobSlot(j){
+  const t=String((j&&j.time)||'');const m=t.match(/^(\d{1,2}):(\d{2})/);
+  if(!m)return null;
+  const a=parseInt(m[1])*60+parseInt(m[2]);
+  const h=parseFloat(j.hours);
+  return {a,b:a+Math.max(15,Math.round((h>0?h:1)*60))};
+}
+// Why a new or moved job collides with the SAME crew member's work, or '' when
+// it does not. Never a block (the caller warns and lets him book it anyway):
+//   * two timed jobs on the same day whose slots actually overlap, or
+//   * a multi-day project laid over another multi-day project.
+// Two untimed service calls on one day are just a busy day, not a conflict.
+function _schedClash(nj,excludeId){
+  if(!nj||!nj.start)return '';
+  const crew=nj.assignedTo?String(nj.assignedTo):'';
+  const ndays=new Set(getJobWorkDays(nj));
+  const nslot=_jobSlot(nj);
+  for(const j of (Array.isArray(jobs)?jobs:[])){
+    if(!j||j.id===excludeId||j.status==='canceled'||j.status==='done'||j.completion_date)continue;
+    if((j.assignedTo?String(j.assignedTo):'')!==crew)continue;
+    if(!j.start)continue;
+    const shared=getJobWorkDays(j).filter(d=>ndays.has(d));
+    if(!shared.length)continue;
+    if(_jobIsProject(nj)&&_jobIsProject(j))return '"'+(j.name||'Another job')+'" is already booked across '+shared.length+' of those days.';
+    const s=_jobSlot(j);
+    if(nslot&&s&&nslot.a<s.b&&s.a<nslot.b)return '"'+(j.name||'Another job')+'" is at '+(typeof fmtTime==='function'?fmtTime(j.time):j.time)+' that day, the times overlap.';
+  }
+  return '';
+}
+// Who may see every job on the board. The owner and co-owner always; a crew
+// member only with Manage team or Schedule jobs. Everybody else sees the jobs
+// assigned to him, the same rule the crew home's Today's Jobs already uses.
+function _seesAllJobs(){
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
+  const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
+  return !!(p.team||p.schedule);
+}
+function _jobsForViewer(list){
+  const arr=Array.isArray(list)?list:[];
+  if(_seesAllJobs())return arr;
+  const me=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.id!=null)?String(_employeeRecord.id):null;
+  if(me==null)return [];
+  return arr.filter(j=>j&&String(j.assignedTo)===me);
+}
+// Dollar figures on shared screens (Home, Calendar, Jobs, the job sheet).
+// The same rule as _canSeeFinancials in js/clients.js, read defensively so a
+// page that does not load clients.js still answers.
+function _moneyVisible(){
+  if(typeof _canSeeFinancials==='function')return _canSeeFinancials();
+  return typeof _ownerUI!=='function'||_ownerUI();
+}
+// A job he can mark done: a real job (not an estimate visit), not finished or
+// cancelled, and its first day is today or already past. Nothing ever set
+// status 'active', so the old test for that hid the button for good.
+function _jobDueForDone(j,tk){
+  if(!j||j.eventType==='estimate'||j.status==='done'||j.status==='canceled'||j.cancelled||j.completion_date)return false;
+  return !!j.start&&j.start<=(tk||todayKey());
 }
 function getTimeOffDays(){
   const days=new Set();
@@ -754,8 +831,11 @@ function getBookedDays(){
     // Estimates never block a day, Zach can book multiple estimates on the same day
     // at different times (morning, afternoon, evening). Only paint jobs block days.
     if(j.eventType==='estimate')return;
+    // Only a multi-day project holds the day (a one-day service call never
+    // does: see _jobIsProject). Its buffer days still show as buffer.
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
@@ -772,7 +852,9 @@ function getBookedDays(){
 function _jobActiveOn(j,dateKey){
   if(!j||j.completion_date||j.cancelled||j.status==='done')return false;
   const start=j.start||j.date||'';if(!start)return false;
-  const end=addDays(start,(parseInt(j.days)||1)-1);
+  // Ends on the last WORKED day, the same day the calendar grid ends it, so a
+  // five-day job started on a Thursday is still on the crew's day next Wednesday.
+  const end=_jobLastWorkDay({start,days:j.days,allowWeekend:j.allowWeekend});
   return start<=dateKey&&end>=dateKey;
 }
 // Crew-scoped variant (owner spec 2026-07-18: multi-crew dispatch at
@@ -790,8 +872,9 @@ function getBookedDaysForCrew(empId){
     if(j.eventType==='estimate')return;
     const sameCrew=empId?String(j.assignedTo||'')===String(empId):!j.assignedTo;
     if(!sameCrew)return;
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
@@ -2067,8 +2150,11 @@ function obBtn(label,onclick,secondary){
 }
 function obInput(id,label,placeholder,type,value){
   return '<div style="margin-bottom:18px">'+
-    '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">'+label+'</label>'+
-    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
+    // Readable labels and 48px fields (Earl audit 2026-09-27): 12px grey caps
+    // over 42px boxes was built for a designer's eyes, not a man in bifocals.
+    // 16px text also stops iOS zooming the page on focus.
+    '<label for="'+id+'" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">'+label+'</label>'+
+    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
   '</div>';
 }
 
@@ -2109,10 +2195,10 @@ function obStepAccount(el){
     (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+
     (oauth?'':obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
-    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">State</label>'+
-    '<select id="ob-state" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-bphone" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">Phone</label>'+
+    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-state" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">State</label>'+
+    '<select id="ob-state" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     // The two real documents, not a paraphrase in an alert. Apple asks for a
     // reachable privacy policy, and a person signing up is entitled to read the
@@ -2379,21 +2465,34 @@ function obStepServices(el){
     shown.map((j,i)=>{
       const idx=jobs.indexOf(j);
       const on=_ob.svcPicked.includes(idx);
-      return '<button onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
+      return '<button type="button" class="ob-svc" data-svc="'+idx+'" aria-pressed="'+on+'" onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:48px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
         '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name)+'</span>'+
-        '<span style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
+        '<span class="ob-svc-price" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
       '</button>';
     }).join('')+
     '</div>'+
     (!all&&jobs.length>_OB_SVC_SHOWN?'<button onclick="_ob.svcAll=true;renderObStep()" style="width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:14px">Show all '+jobs.length+' '+escHtml(tLabel.toLowerCase())+' jobs</button>':'')+
-    obBtn(_ob.svcPicked.length?'Add '+_ob.svcPicked.length+' to my price book':'Continue','obNextServices()')+
+    '<div id="ob-svc-go">'+obBtn(_obSvcGoLabel(),'obNextServices()')+'</div>'+
     obBtn('Skip, I will build it as I go','obNextServices(true)','quiet');
 }
+function _obSvcGoLabel(){return (_ob.svcPicked||[]).length?'Add '+_ob.svcPicked.length+' to my price book':'Continue';}
+// Toggled IN PLACE, the way obSelectType flips the trade buttons (Earl audit
+// 2026-09-27): re-rendering the whole step threw him back to the top of the
+// list after every tap, so the job he wanted next was a scroll away again.
 function obToggleSvc(i){
   _ob.svcPicked=_ob.svcPicked||[];
   const at=_ob.svcPicked.indexOf(i);
   if(at===-1)_ob.svcPicked.push(i);else _ob.svcPicked.splice(at,1);
-  renderObStep();
+  const on=at===-1;
+  const btn=document.querySelector('#ob-body .ob-svc[data-svc="'+i+'"]');
+  if(!btn){renderObStep();return;}
+  btn.style.borderColor=on?'var(--blue)':'var(--border2)';
+  btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+  btn.setAttribute('aria-pressed',String(on));
+  const price=btn.querySelector('.ob-svc-price');
+  if(price)price.style.color=on?'var(--blue)':'var(--text3)';
+  const go=document.querySelector('#ob-svc-go button');
+  if(go)go.textContent=_obSvcGoLabel();
 }
 function obNextServices(skip){
   if(!skip&&(_ob.svcPicked||[]).length){

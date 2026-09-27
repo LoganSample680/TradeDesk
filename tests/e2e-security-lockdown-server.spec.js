@@ -153,6 +153,30 @@ test.describe('20261049 security lockdown: edge functions', () => {
     expect(src).toMatch(/hubKey\(body\.u, body\.c, body\.t\)/);
   });
 
+  test('proposal-sign takes one change after signing: Pay Later to the method picked, on the same link', () => {
+    // sign.html saves the signature the moment he signs, as Pay Later (Earl
+    // audit 2026-09-27), and sends the method once he picks it. That second
+    // call may change the method and nothing else, and only from Pay Later,
+    // only while unpaid, only on the link that signed.
+    const src = fn('proposal-sign');
+    const block = src.slice(src.indexOf("if (state === 'signed') {"), src.indexOf("const portfolio ="));
+    expect(block).toMatch(/existing\.payment_method === 'later' && existing\.payment_status === 'pending_later'/);
+    expect(block).toMatch(/existing\.signing_token === pk\.token/);
+    expect(block, 'the update is guarded in the database too, so a race cannot overwrite a paid row')
+      .toMatch(/\.eq\('payment_method', 'later'\)\.eq\('payment_status', 'pending_later'\)/);
+    expect(block, 'only the method changes').toMatch(/\.update\(\{ payment_method: method, payment_status: 'pending_' \+ method \}\)/);
+    expect((block.match(/\.update\(/g) || []).length, 'that one update is the only write: signature, name, amount and time stay as first written').toBe(1);
+    expect(block, 'a second signature is still refused').toMatch(/alreadySigned: true/);
+    expect(block, 'the signing token never goes back to the page').not.toMatch(/row: existing\b/);
+  });
+
+  test('sign.html has no direct write to signed_proposals, early save included', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'sign.html'), 'utf8');
+    expect(html).not.toMatch(/from\('signed_proposals'\)\.(upsert|insert|update)/);
+    expect(html).toMatch(/_earlySigSave=_saveSignature\('later'\)/);
+    expect(html).toMatch(/await _signCall\(\{action:'sign',key,signerName:name,method,/);
+  });
+
   test('create-checkout refuses a payment that names no proposal, and trusts only stored values', () => {
     const src = fn('create-checkout');
     expect(src).toMatch(/missing its proposal/);

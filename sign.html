@@ -132,6 +132,11 @@ input[type=text]:focus{border-color:var(--denim)}
 .btn-green{background:#1D5C14;box-shadow:0 3px 16px rgba(29,92,20,.35)}
 .btn-ghost{background:none;border:none;color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:6px;transition:background .15s}
 .btn-ghost:hover{background:var(--bg)}
+/* A way back is a text link, never a button that competes with paying. */
+.pay-back-link{display:block;margin:4px auto 0;min-height:44px;padding:0 16px;border:0;background:none;color:var(--text3);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+/* Pay Later, Check and Cash are real choices; they read as tappable, not greyed out. */
+.pay-method-opt{min-height:48px;padding:11px 8px;border-radius:10px;border:1.5px solid var(--border2);background:#fff;color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 1px 3px rgba(27,22,18,.08)}
+.pay-method-opt:active{background:var(--bg)}
 
 /* Legacy pay-opt and radio hidden for JS compat */
 .pay-opt{display:none}
@@ -199,12 +204,15 @@ input[type=text]:focus{border-color:var(--denim)}
 .sig-pay-opts-label{font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px}
 
 /* Payment option tiles */
-.sig-pay-opts-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
-.sig-pay-opt{border:2px solid var(--border2);border-radius:16px;padding:16px;cursor:pointer;background:#fff;text-align:center;transition:border-color .15s,background .15s}
+.sig-pay-opts-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:20px}
+/* minmax(0,1fr) + min-width:0: a plain 1fr track is at least as wide as its
+   longest word, so a six-figure "Pay in Full" amount pushed the card past the
+   edge of a 375px screen. */
+.sig-pay-opt{min-width:0;box-sizing:border-box;border:2px solid var(--border2);border-radius:16px;padding:16px 10px;cursor:pointer;background:#fff;text-align:center;transition:border-color .15s,background .15s}
 .sig-pay-opt.sel{border-color:var(--denim);background:var(--blue-lt)}
 .sig-pay-opt-badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px}
 .sig-pay-opt.sel .sig-pay-opt-badge{color:var(--denim)}
-.sig-pay-opt-amt{font-size:24px;font-weight:900;font-family:var(--font-display);color:var(--text);margin-bottom:4px}
+.sig-pay-opt-amt{font-size:clamp(15px,4.3vw,24px);overflow-wrap:anywhere;font-variant-numeric:tabular-nums;font-weight:900;font-family:var(--font-display);color:var(--text);margin-bottom:4px}
 .sig-pay-opt.sel .sig-pay-opt-amt{color:var(--denim)}
 .sig-pay-opt-sub{font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:6px}
 .sig-pay-opt-sel{font-size:11px;font-weight:700;color:var(--denim)}
@@ -452,7 +460,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="pay-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
 
     </div>
-    <button class="btn btn-sec" onclick="backToSign()">← Back</button>
+    <button class="pay-back-link" onclick="backToSign()">← Back to signature</button>
   </div>
 
   <!-- EPA Pre-Renovation Disclosure, Document 2 of 2 (review before signing) -->
@@ -546,7 +554,7 @@ input[type=text]:focus{border-color:var(--denim)}
        never at the client themselves. -->
   <div id="sticky-deposit-line" style="display:none;text-align:center;font-size:12px;color:var(--text2);font-weight:600;line-height:1.4"></div>
   <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s"><span id="approve-btn-label"></span></button>
-  <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px">Download PDF</button>
+  <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px;min-height:44px;margin:-6px 0 -8px">Download PDF</button>
 </div>
 
 <script>
@@ -772,7 +780,7 @@ function _renderAlreadySigned(_sigRecord){
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
     (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
     '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
-    (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
+    (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none;display:inline-block;padding:13px 0;margin:-13px 0">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
   if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
   show('pg-done');
@@ -1071,7 +1079,7 @@ async function init(){
         const _tb=document.querySelector('.topbar');if(_tb)_tb.style.background=_dk;
         const _st=document.createElement('style');_st.id='wl-brand';
         _st.textContent='.dot.active{background:#'+_bc+'!important}.dot.done{background:#'+_bc+'!important;opacity:.55}'+
-          '.btn{background:#'+_bc+';box-shadow:0 2px 12px rgba('+_r+','+_g+','+_b+',.28)}'+
+          '.btn:not(.btn-sec){background:#'+_bc+';box-shadow:0 2px 12px rgba('+_r+','+_g+','+_b+',.28)}'+
           '.btn:disabled{opacity:.35}';
         document.head.appendChild(_st);
       }else{_rs.setProperty('--accent','#2D5DA8');}
@@ -1082,7 +1090,7 @@ async function init(){
     // Contractor contact footer
     (function(){
       const _ctct=[];
-      if(_prop.businessPhone)_ctct.push('<a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_prop.businessPhone)+'</a>');
+      if(_prop.businessPhone)_ctct.push('<a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);text-decoration:none;font-weight:600;display:inline-block;padding:13px 0;margin:-13px 0">'+escHtmlN(_prop.businessPhone)+'</a>');
       const _em=_prop.notifyEmail||'';if(_em.includes('@'))_ctct.push('<a href="mailto:'+escHtmlN(_em)+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_em)+'</a>');
       const _ws=(_prop.bwebsite||'').trim();
       if(_ws&&/^https?:\/\//i.test(_ws)){const _wh=_ws;_ctct.push('<a href="'+escHtmlN(_wh)+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_ws.replace(/^https?:\/\//,''))+'</a>');}
@@ -1333,6 +1341,7 @@ function goToPayment(){
   if(!r.ok){document.getElementById('sign-err').textContent=r.err;return;}
   if(!r.signerName&&!r.sigData){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
   _sigData=r.sigData;
+  _saveSignatureEarly();
   _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
@@ -1428,26 +1437,48 @@ function _updatePayButtons(){
 }
 
 
+// THE ONE SIGNATURE WRITE. Both the early save (goToPayment, the moment he
+// signs) and the confirm button (submitCash, once he picks how to pay) go
+// through here, and both go through the proposal-sign function: the page
+// holds no direct write to signed_proposals (security lockdown, 2026-09-27).
+//
+// Why the early save exists: the signature used to be written ONLY after a
+// payment choice. A homeowner who signed, looked at the payment screen and
+// closed it had signed nothing as far as the contractor could see. Signing is
+// the commitment; the early row records it as Pay Later, which is exactly
+// what a closed payment screen means (balance owed, any channel open). The
+// function then takes exactly one change on that same link: Pay Later
+// becoming the method he picks. A second signature is still refused.
+async function _saveSignature(method){
+  await _whenSupaReady();
+  const name=(document.getElementById('sig-name')?.value||'').trim();
+  const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
+  const ts=new Date().toISOString();
+  // The function takes the amount and deposit from the stored proposal, never
+  // from this page, and writes the row and the signed proposal file together.
+  await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
+    portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
+    buyerSenior:!!window._buyerSenior});
+  // Signal the contractor's open TradeDesk tab to refresh immediately
+  try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(_prop.id),ts}));}catch(_){}
+}
+let _earlySigSave=null;
+function _saveSignatureEarly(){
+  if(_isPreview||window._viewerIsContractor||!_prop?.id)return;
+  _earlySigSave=_saveSignature('later').catch(e=>{console.warn('early signature save failed, the confirm button retries it:',e?.message||e);});
+}
+
 async function submitCash(){
   if(_isPreview){document.getElementById('pay-err').textContent='Preview mode, payments are disabled.';return;}
   const btn=event.target;btn.disabled=true;
   const method=_manualPayMethod||'cash';
   const origLabel=btn.textContent;
   btn.textContent='Confirming...';
-  const name=document.getElementById('sig-name').value.trim();
-  const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
-  const ts=new Date().toISOString();
   try{
-    // One call: proposal-sign proves the link, takes the amount and deposit
-    // from the stored proposal (never from this page), writes the
-    // signed_proposals row (signature image, EPA acknowledgement, senior
-    // flag) and the signed proposal file together. A second tap on another
-    // device answers alreadySigned instead of signing twice.
-    await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
-      portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
-      buyerSenior:!!window._buyerSenior});
-    // Signal the contractor's open TradeDesk tab to refresh immediately
-    try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(_prop.id),ts}));}catch(_){}
+    // The early write must land first, or it could finish after this one and
+    // put "Pay Later" back over the method he just picked.
+    if(_earlySigSave)await _earlySigSave;
+    await _saveSignature(method);
   }catch(e){
     console.error(e);
     const _det=e?.message||e?.details||'';
@@ -1607,7 +1638,7 @@ function _renderSignPayBtns(){
   // Never dead-end the client: if the contractor disabled every manual option
   // AND has no card checkout, keep Pay Later so signing can still complete.
   if(!stripeOk&&!showLater&&!showCheck&&!showCash)showLater=true;
-  const _optBtn=(m,label)=>'<button onclick="_paySign(\''+m+'\')" style="padding:11px 8px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">'+label+'</button>';
+  const _optBtn=(m,label)=>'<button class="pay-method-opt" onclick="_paySign(\''+m+'\')">'+label+'</button>';
   const opts=[];
   if(showLater)opts.push(_optBtn('later','Pay Later'));
   if(showCheck)opts.push(_optBtn('check','Check'));

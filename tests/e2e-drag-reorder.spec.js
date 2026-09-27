@@ -248,7 +248,8 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
       S.dashWidgetOrder = saved;
       return result;
     });
-    expect(order).toEqual(['kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    // Calendar moved to second (Earl audit 2026-09-27): today's jobs were five screens down.
+    expect(order).toEqual(['kpi', 'calendar', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'sources']);
   });
 
   test('_applyDashOrder reorders widgets in DOM (full 10-widget order; stale "crew" id skipped)', async () => {
@@ -268,7 +269,8 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
     const restored = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(restored).toEqual(['kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    // Calendar moved to second (Earl audit 2026-09-27).
+    expect(restored).toEqual(['kpi', 'calendar', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'sources']);
   });
 
   // §11.4 companion: a PRE-SPLIT saved order (6 ids) must not dump the new cards
@@ -277,9 +279,11 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
     const merged = await page.evaluate(() =>
       _mergeDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar'])
     );
-    // alerts/contracts/goal follow kpi (their default predecessor), in default order.
+    // alerts/contracts/goal follow their default predecessor, in default order.
+    // That predecessor is 'calendar' since it moved up to second (Earl audit
+    // 2026-09-27), and this saved order keeps calendar last, so they follow it.
     // readyQueue's default predecessor is contracts, so it lands right after it.
-    expect(merged).toEqual(['sources', 'kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
+    expect(merged).toEqual(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar', 'alerts', 'contracts', 'readyQueue', 'goal']);
     // And applying the old order yields all 10 in the DOM, nothing orphaned.
     const applied = await page.evaluate(() => {
       _applyDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar']);

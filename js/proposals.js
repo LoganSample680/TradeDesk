@@ -560,7 +560,7 @@ function _showGeiSendOverlay(){
         '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
       '</div>'+
       '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Proposal saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Nothing goes out until you pick one. Once it is sent, you\'ll get a follow-up reminder in 3 days if no response.</div>'+
     '</div>';
   document.body.appendChild(ov);
 }

@@ -90,11 +90,30 @@ async function doSign(req: Request, body: any) {
   if (!/^[a-z_]{2,20}$/.test(method) || method === 'declined') return json({ error: 'Invalid payment method' }, 400);
 
   const { data: existing } = await supabase.from('signed_proposals')
-    .select('bid_id,signed_at,client_signed_name,payment_method,payment_status')
+    .select('bid_id,signed_at,client_signed_name,payment_method,payment_status,signing_token')
     .eq('bid_id', pk.bid).maybeSingle();
   const state = signedRowState(existing);
   if (state === 'declined') return json({ error: 'This proposal was declined.', code: 'declined' }, 409);
-  if (state === 'signed') return json({ ok: true, alreadySigned: true, row: existing });
+  if (state === 'signed') {
+    // The one change a signed row takes (Earl audit 2026-09-27): sign.html
+    // saves the signature the moment he signs, as Pay Later, so a homeowner
+    // who closes the payment screen has still signed. When he then picks how
+    // to pay, that pick replaces Pay Later. Only from Pay Later, only while
+    // nothing has been paid, and only on the same link that signed. The
+    // signature, name, amount and time stay exactly as first written.
+    const fromLater = existing.payment_method === 'later' && existing.payment_status === 'pending_later';
+    const sameLink = !!existing.signing_token && existing.signing_token === pk.token;
+    if (fromLater && sameLink && method !== 'later') {
+      const { error: mErr } = await supabase.from('signed_proposals')
+        .update({ payment_method: method, payment_status: 'pending_' + method })
+        .eq('bid_id', pk.bid).eq('payment_method', 'later').eq('payment_status', 'pending_later');
+      if (mErr) { console.error('sign method update:', mErr.message); return json({ error: 'Could not save the payment choice' }, 500); }
+      const { error: jErr } = await writeJson(pk.key, { ...prop, paymentMethod: method });
+      if (jErr) console.warn('sign json method update:', jErr.message);
+      return json({ ok: true, methodUpdated: true, signedAt: existing.signed_at });
+    }
+    return json({ ok: true, alreadySigned: true, row: { bid_id: existing.bid_id, signed_at: existing.signed_at, client_signed_name: existing.client_signed_name, payment_method: existing.payment_method, payment_status: existing.payment_status } });
+  }
 
   const portfolio = !!body.portfolioAccepted && Number(prop.discountedPrice) > 0;
   const amount = portfolio ? Number(prop.discountedPrice) : Number(prop.amount) || 0;

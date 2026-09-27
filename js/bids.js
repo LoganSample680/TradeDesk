@@ -989,9 +989,9 @@ function openPayPanel(bidId, autoType){
   // How they paid: pills, not a <select>. One tap instead of open-scroll-confirm,
   // and every option is readable at a glance. #mpay-method stays a real field (now
   // hidden) so logPayment and every caller still read it the same way.
-  const payMethods=['Cash','Check','Venmo','Zelle','Card','Other'];
+  const payMethods=_MPAY_METHODS;
   const methodPills='<div id="mpay-method-pills" style="display:flex;flex-wrap:wrap;gap:6px">'+
-    payMethods.map(m=>'<button type="button" data-pmeth="'+m+'" onclick="_mpayPickMethod(\''+m+'\')" style="flex:1 1 30%;padding:9px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--text)">'+m+'</button>').join('')+
+    payMethods.map(m=>'<button type="button" data-pmeth="'+m+'" onclick="_mpayPickMethod(\''+m+'\')" style="flex:1 1 30%;min-height:44px;padding:9px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--text)">'+m+'</button>').join('')+
   '</div>';
 
   // The sheet leads with an INK BAND, the same dark surface as the nav and the tab
@@ -1031,7 +1031,7 @@ function openPayPanel(bidId, autoType){
           chipRow+
         '</div>'+
         '<div id="mpay-method-row" style="margin-top:12px">'+
-          '<input type="hidden" id="mpay-method" value="Check">'+
+          '<input type="hidden" id="mpay-method" value="'+_mpayDefaultMethod()+'">'+
           methodPills+
           '<button type="button" id="mpay-venmo-qr" onclick="showVenmoQr('+bidId+')" style="display:none;width:100%;margin-top:8px;padding:11px;border-radius:var(--r);border:1.5px solid #3D95CE;background:#EAF4FB;color:#1F6FA8;cursor:pointer;font-family:inherit;font-size:13px;font-weight:800">Show my Venmo code</button>'+
         '</div>'+
@@ -1052,7 +1052,7 @@ function openPayPanel(bidId, autoType){
       '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin:10px 0 0"></div>'+
       '<button id="mpay-submit-btn" onclick="logPayment()" style="display:none;width:100%;margin-top:14px;padding:15px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">Record payment</button>'+
       '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border2)">'+
-        '<button type="button" onclick="_mpayToggleAdj()" style="background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0;text-align:left">Adjustments &amp; refunds</button>'+
+        '<button type="button" onclick="_mpayToggleAdj()" style="min-height:44px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0;text-align:left">Adjustments &amp; refunds</button>'+
         '<div id="_mpay-adj-btns" style="display:none">'+refundBtn+cancelRefundBtn+'</div>'+
       '</div>'+
       '</div>'+
@@ -1063,7 +1063,9 @@ function openPayPanel(bidId, autoType){
   document.getElementById('mpay-date').value=todayKey();
   document.getElementById('mpay-amount').value='';
   document.getElementById('mpay-ref').value='';
-  _mpayPickMethod('Check');
+  // His last method, not always Check (Earl audit 2026-09-27). Quiet: a
+  // remembered Venmo only lights its pill, it never pops the pay code by itself.
+  _mpayPickMethod(_mpayDefaultMethod(),{quiet:true});
 
   // Manual is pre-selected: it is what the contractor is doing nine times out of ten,
   // and pre-selecting it means the collect card costs the same taps it always did.
@@ -1219,7 +1221,7 @@ async function _sendPaidInvoice(bidId){
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
-function closePayPanel(){document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
+function closePayPanel(){if(document.querySelector('.pay-modal-overlay')&&typeof _armPayTapGuard==='function')_armPayTapGuard();document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);
@@ -1476,7 +1478,14 @@ function _mpayToggleAdj(){
 }
 // Pick how they paid. The pills write to the hidden #mpay-method field, so
 // logPayment and every existing caller/test still read one plain value.
-function _mpayPickMethod(m){
+// How they paid, remembered per business (S is per business, so a side
+// business keeps its own). A fresh business starts on Check.
+const _MPAY_METHODS=['Cash','Check','Venmo','Zelle','Card','Other'];
+function _mpayDefaultMethod(){
+  const m=(typeof S!=='undefined'&&S)?S.lastPayMethod:null;
+  return _MPAY_METHODS.includes(m)?m:'Check';
+}
+function _mpayPickMethod(m,opts){
   const f=document.getElementById('mpay-method');
   if(f)f.value=m;
   document.querySelectorAll('#mpay-method-pills button[data-pmeth]').forEach(b=>{
@@ -1488,7 +1497,7 @@ function _mpayPickMethod(m){
   _mpayMethodChange();
   // Venmo: the code comes up by itself, no second button to find. The button
   // stays under the pills to bring it back.
-  if(m==='Venmo'){
+  if(m==='Venmo'&&!(opts&&opts.quiet)){
     if(!_venmoUser()){showToast('Add your Venmo username in Settings first.','⚠');return;}
     document.getElementById('mpay-venmo-qr')?.click();
   }
@@ -1545,6 +1554,57 @@ function _refundBanner(msg,isErr){
   document.body.appendChild(banner);
   setTimeout(()=>banner.remove(),4000);
 }
+// The after-payment banner (Earl audit 2026-09-27): it used to sit over the
+// top of the screen for 9 seconds, covering the expense sheet's close button
+// and Scan receipt. Now it is shorter, taps pass straight through it to
+// whatever is underneath (only its own buttons take a tap), and the first tap
+// anywhere else, or its x, dismisses it.
+function _payBanner(html){
+  document.getElementById('_pay-banner')?.remove();
+  const banner=document.createElement('div');
+  banner.id='_pay-banner';
+  banner.setAttribute('role','status');
+  banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease;pointer-events:none';
+  banner.innerHTML=html+
+    '<button type="button" aria-label="Dismiss" onclick="document.getElementById(\'_pay-banner\')?.remove()" style="pointer-events:auto;position:absolute;top:0;right:0;width:44px;height:44px;border:none;background:none;color:#fff;font-size:18px;cursor:pointer">'+svgIcon('✕',{size:16,color:'currentColor'})+'</button>';
+  banner.querySelectorAll('button').forEach(b=>{b.style.pointerEvents='auto';});
+  document.body.appendChild(banner);
+  const _off=e=>{if(banner.contains(e.target))return;banner.remove();document.removeEventListener('pointerdown',_off,true);};
+  setTimeout(()=>document.addEventListener('pointerdown',_off,true),0);
+  setTimeout(()=>{banner.remove();document.removeEventListener('pointerdown',_off,true);},5000);
+  return banner;
+}
+// DOUBLE TAP ON "Record payment" (Earl audit 2026-09-27): the first tap records
+// and closes the sheet, and the second tap of the same double tap landed on
+// whatever sat under his thumb once the sheet was gone, the Tim button. For
+// 400ms after the pay sheet closes, a tap at the same spot is swallowed. Only
+// that spot, only that long: a tap anywhere else goes through untouched.
+let _payTapGuard=null;
+let _payLastDown=null;
+function _payTapPoint(e){const t=e&&e.changedTouches&&e.changedTouches[0];return t?{x:t.clientX,y:t.clientY}:{x:e.clientX,y:e.clientY};}
+if(typeof window!=='undefined'&&!window.__payTapGuardOn){
+  window.__payTapGuardOn=true;
+  window.addEventListener('pointerdown',e=>{_payLastDown={..._payTapPoint(e),t:Date.now()};},true);
+  const _swallow=e=>{
+    const g=_payTapGuard;if(!g)return;
+    if(Date.now()>g.until){_payTapGuard=null;return;}
+    const p=_payTapPoint(e);
+    if(Math.abs(p.x-g.x)<=48&&Math.abs(p.y-g.y)<=48){e.preventDefault();e.stopImmediatePropagation();}
+  };
+  ['pointerdown','pointerup','mousedown','mouseup','click','touchstart','touchend'].forEach(t=>window.addEventListener(t,_swallow,{capture:true,passive:false}));
+}
+// The 400ms starts when the save is FINISHED, not when the sheet closes:
+// recording a payment is heavy (save, re-render, sync), and on a slow phone
+// (an SE, or WebKit in CI) the whole window used to run out while that work
+// was still going, so the second tap, queued behind it, went straight through.
+// Until the timer below runs, the guard holds; input queued during the work is
+// handled before the timer, so it is swallowed.
+function _armPayTapGuard(){
+  if(!(_payLastDown&&Date.now()-_payLastDown.t<1500))return;
+  const g={x:_payLastDown.x,y:_payLastDown.y,until:Infinity};
+  _payTapGuard=g;
+  setTimeout(()=>{if(_payTapGuard===g)g.until=Date.now()+400;},0);
+}
 function logPayment(){
   if(_submitting)return;
   const errEl=document.getElementById('mpay-err');if(errEl){errEl.style.display='none';}
@@ -1590,6 +1650,7 @@ function logPayment(){
     }
   }
   const storedAmount=isRefund?-a:a;
+  if(!isRefund&&_MPAY_METHODS.includes(pmethod)&&S.lastPayMethod!==pmethod){S.lastPayMethod=pmethod;S.settingsTs=Date.now();}
   payments.push({id:_newId(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
   // Where it was collected: an on-site tap and an office cheque are different
   // facts, and only the phone knows which this was.
@@ -1626,53 +1687,39 @@ function logPayment(){
     return;
   }
 
-  const tIn=income.reduce((s,r)=>s+(r.amount||0),0)+a;
-  const tEx=expenses.reduce((s,r)=>s+(r.amount||0),0);
-  const tMi=deductibleTrips(mileage).reduce((s,r)=>s+(r.miles||0),0);
-  const netSelf=Math.max(0,tIn-tEx-(tMi*IRS()));
-  const seBase=netSelf*.9235,seTax=seBase*.153,seDed=seTax/2;
-  const status=v('tx-status')||S.txStatus||'single';
-  const stdDed=STD_DED[status]||14600;
-  const fedTax=calcBrackets(Math.max(0,netSelf-seDed-stdDed),FED_BRACKETS[status]||FED_BRACKETS.single);
-  const ksTax=calcBrackets(Math.max(0,netSelf-seDed-(KS_STD[status]||3500)),KS_BRACKETS[status]||KS_BRACKETS.single);
-  const totalOwed=seTax+fedTax+ksTax;
-  const reserveRate=netSelf>0?Math.ceil(totalOwed/netSelf*100):32;
-  const reserveFromThis=Math.ceil(a*reserveRate/100);
+  // What to put away from THIS payment: the payment times the year's set-aside
+  // rate, the one definition the Taxes screen and Home read too (taxSetAside,
+  // js/tax.js). It used to run its own 15% sum on the wrong income with a
+  // hardcoded deduction, so three screens showed three tax numbers.
+  const _payYr=String(pdate).slice(0,4);
+  const setAside=(typeof taxSetAside==='function')?taxSetAside(a,_payYr):0;
+  const _setAsidePct=(typeof taxYearSnapshot==='function')?(taxYearSnapshot(_payYr).setAsideRate*100).toFixed(1).replace(/\.0$/,''):'0';
+  const _setAsideLine=setAside>0?'Set aside <strong>'+fmt(setAside)+'</strong> of this payment for taxes ('+_setAsidePct+'%)':'';
 
   const newBalance=getBidBalance(bid);
   if(newBalance<=0.01){
     saveAll();
     renderClientDetail();
-    const banner=document.createElement('div');
-    banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
-    banner.innerHTML=
-      '<div style="background:var(--green);color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+
-        svgIcon('✓',{size:15})+' Paid in full, '+fmt(bid.amount)+' received'+
+    // The amount of THIS payment, never the job total (Earl took $1,347.50 and
+    // was told "$1,847.50 received").
+    _payBanner(
+      '<div style="background:var(--green);color:#fff;padding:12px 16px;text-align:center;font-size:15px;font-weight:700">'+
+        svgIcon('✓',{size:15})+' '+fmt(a)+' received, paid in full'+
       '</div>'+
-      '<div style="background:#1A4A0A;color:#fff;padding:10px 16px;text-align:center;font-size:13px">'+
-        svgIcon('💰',{size:13})+' Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
-      '</div>'+
-      _invoiceBannerBtn(_savedBidId,true);
-    document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),9000);
+      (_setAsideLine?'<div style="background:#1A4A0A;color:#fff;padding:8px 16px;text-align:center;font-size:13px">'+_setAsideLine+'</div>':'')+
+      _invoiceBannerBtn(_savedBidId,true));
     // NOTE: do NOT auto-log to income here, payments array is the source of truth for bid revenue.
     // Income array is for manual non-bid entries only. Auto-logging caused dashboard double-counting.
   } else {
-    const banner=document.createElement('div');
-    banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
-    banner.innerHTML=
-      '<div style="background:var(--blue);color:#fff;padding:12px 16px;text-align:center;font-size:13px;font-weight:700">'+
-        fmt(a)+' logged · '+fmt(newBalance)+' still owed'+
+    _payBanner(
+      '<div style="background:var(--blue);color:#fff;padding:12px 16px;text-align:center;font-size:14px;font-weight:700">'+
+        fmt(a)+' received · '+fmt(newBalance)+' still owed'+
       '</div>'+
-      '<div style="background:#1A3A5A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
-        '&#128176; Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
-      '</div>'+
+      (_setAsideLine?'<div style="background:#1A3A5A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+_setAsideLine+'</div>':'')+
       _invoiceBannerBtn(_savedBidId,false)+
       (bid.surfaces?.length?'<div style="background:#2D4A1A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
-        '&#128230; Deposit received, <button onclick="this.closest(\'div\').parentElement.remove();showSupplyList('+bid.id+')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
-      '</div>':'');
-    document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),9000);
+        'Deposit received, <button onclick="document.getElementById(\'_pay-banner\')?.remove();showSupplyList('+bid.id+')" style="pointer-events:auto;min-height:44px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
+      '</div>':''));
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);
@@ -1751,7 +1798,10 @@ function openLienPanel(bidId){
   document.getElementById('lien-date').value=existing?existing.date:todayKey();
   document.getElementById('lien-status').value=existing?existing.status:'intent';
   document.getElementById('lien-amount').value=(existing?existing.amount:getBidBalance(bid)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  document.getElementById('lien-county').value=existing?existing.county:'Sedgwick County';
+  // The job's own county (Earl audit 2026-09-27): this prefilled "Sedgwick
+  // County" for every contractor in the country. Blank when we do not know it.
+  const _lc=getCountyForBid(bid).county;
+  document.getElementById('lien-county').value=existing?existing.county:(_lc&&_lc!=='your county'?_lc:'');
   document.getElementById('lien-notes').value=existing?existing.notes:'';
   document.getElementById('cd-lien-panel').style.display='block';
   document.getElementById('cd-lien-panel').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -1931,7 +1981,14 @@ function getCountyForBid(bid){
   const addr=(bid.addr||c?.addr||'').toUpperCase();
   const stateCode=(typeof stateFromAddr==='function'?stateFromAddr(addr):null)||S.state||'KS';
   let county=null;
-  for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
+  // The county record for this property is the best answer (propDataCounty,
+  // e.g. "Shawnee, KS", written by the county lookup). The city table below is
+  // Kansas-only and stays the fallback.
+  try{
+    const _pc=(c&&typeof getProperty==='function')?getProperty(c,bid.addr||c.addr).propDataCounty:null;
+    if(_pc){const _n=String(_pc).split(',')[0].trim();if(_n)county=/county|parish|borough/i.test(_n)?_n:_n+' County';}
+  }catch(_e){}
+  if(!county&&stateCode==='KS')for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
   if(!county)county='your county';
   return{stateCode,county};
 }

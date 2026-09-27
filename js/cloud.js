@@ -729,7 +729,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.27.26.13';
+const APP_VERSION='09.27.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -966,7 +966,7 @@ function _opOwner(){
   try{if(_mergeOnSignIn&&_loadedDataOwner)return _loadedDataOwner;}catch(_e){}
   return null;
 }
-function _opRebaseline(){
+function _opRebaseline(knownIds){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
@@ -978,10 +978,32 @@ function _opRebaseline(){
     _opPrevPayload={};
     for(const tdef of _TD_TABLES){
       const m=new Map();
-      for(const r of _opCanonicalRows(tdef))m.set(String(r.id),_opClone(r));
+      const _known=knownIds?(knownIds[tdef.t]||new Set()):null;
+      for(const r of _opCanonicalRows(tdef)){if(_known&&!_known.has(String(r.id)))continue;m.set(String(r.id),_opClone(r));}
       _opPrevPayload[tdef.t]=m;
     }
   }catch(_e){}
+}
+// The rows this device had already PERSISTED for this login, per table, read from
+// zp3_cloud_cache. The first derive of a session baselines against these instead of
+// against live memory. Live memory can already hold an edit made in the seconds
+// before the first cloud load lands (a payment, an income row); baselining it as
+// "already known" meant no CREATE op, so the load's array replace, which only
+// re-appends rows with a pending create, dropped it for good. No cache at all means
+// nothing in memory came from the server. Another login's cache means we cannot
+// tell, so the caller keeps the old whole-memory baseline.
+function _opKnownIdsFromCache(owner){
+  try{
+    const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
+    if(!cc)return {};
+    if(cc._owner&&owner&&cc._owner!==owner)return null;
+    const out={};
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      out[t]=new Set((Array.isArray(cc[key])?cc[key]:[]).filter(r=>r&&r.id!=null).map(r=>String(r.id)));
+    }
+    return out;
+  }catch(_e){return null;}
 }
 // SHADOW derive, called at the save choke-point. Emits the create/update ops the diff
 // implies (vs the baseline) and COUNTS would-be absence-deletes without acting on them.
@@ -991,7 +1013,10 @@ function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
-    if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
+    // Account switched → fresh baseline, no bleed. The FIRST derive of a session
+    // (no previous owner) baselines only what this device had persisted, so an edit
+    // made before the first cloud load finished is still a create (_opKnownIdsFromCache).
+    if(owner!==_opPrevOwner){_opRebaseline(_opPrevOwner===null?(_opKnownIdsFromCache(owner)||undefined):undefined);}
     // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
     // uses). supaSaveToCloud's _saveSkip correctly stops the redacted zero from reaching
@@ -2950,7 +2975,6 @@ const _EMP_PERM_LABELS={
   financials:'View financials',team:'Manage team',payroll:'Pay & profit'
 };
 const _EMP_CLASSIFICATIONS=['','Apprentice','Journeyman','Master','Foreman / Lead','Helper','Subcontractor'];
-function _togglePermInfo(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==='block'?'none':'block';}
 // Collapsible Permissions block in the team-member modal (default closed). max-height
 // transition (not display) so it animates per the app's motion standard (§8.4).
 function _togglePermsAccordion(hdr){
@@ -2968,55 +2992,6 @@ function _setEmpRolePreset(role){
     if(el)el.checked=!!preset[p];
   });
 }
-function openInviteEmployeeModal(){
-  document.getElementById('_emp-invite-ov')?.remove();
-  const ov=document.createElement('div');ov.id='_emp-invite-ov';ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  const permRows=Object.keys(_EMP_PERM_LABELS).map(p=>{
-    const label=escHtml(_EMP_PERM_LABELS[p]);
-    const info=escHtml(_EMP_PERM_INFO[p]);
-    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'+
-      '<input type="checkbox" id="_perm-'+p+'" style="width:20px;height:20px;margin-top:1px;flex-shrink:0;accent-color:var(--blue);cursor:pointer">'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-          '<label for="_perm-'+p+'" style="font-size:14px;font-weight:600;cursor:pointer">'+label+'</label>'+
-          '<button onclick="_togglePermInfo(\'_pi-'+p+'\')" style="width:18px;height:18px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-family:inherit;line-height:1">i</button>'+
-        '</div>'+
-        '<div id="_pi-'+p+'" style="display:none;font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5">'+info+'</div>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Add Team Member</div>'+
-    '<div class="fg fg2" style="margin-bottom:10px">'+
-      '<div class="f"><label>Full name <span style="color:var(--c-red)">*</span></label>'+
-        '<input id="_inv-name" placeholder="Blake Sample" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-      '<div class="f"><label>Phone</label>'+
-        '<input id="_inv-phone" placeholder="785-555-5250" type="tel" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-    '</div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Email <span style="font-size:10px;font-weight:400;color:var(--text3)">(for app access)</span></label>'+
-      '<input id="_inv-email" placeholder="blake@email.com" type="email" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.4">Enter their email then tap "Add &amp; Invite", they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Access role</label>'+
-      '<select id="_inv-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
-        '<option value="tech">Field Tech</option>'+
-        '<option value="office">Office / CSR</option>'+
-        '<option value="manager">Manager</option>'+
-        '<option value="owner">Owner (sees and runs everything)</option>'+
-      '</select></div>'+
-    '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
-      '<select id="_inv-class" style="font-size:14px;padding:10px">'+
-        _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'">'+escHtml(c||'- None -')+'</option>').join('')+
-      '</select></div>'+
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Permissions</div>'+
-    permRows+
-    '<div style="height:14px"></div>'+
-    '<button onclick="_submitInviteEmployee()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Add &amp; Invite</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>{document.getElementById('_inv-name')?.focus();_setEmpRolePreset('tech');},80);
-}
 // Mint a SERVER-VERIFIED single-use invite token (crew_invites row) for a roster
 // entry. The legacy ?emp_invite= payload is forgeable base64 that only ever linked
 // via email-match; the token links regardless of sign-up email and can't be forged
@@ -3033,63 +3008,6 @@ async function _mintCrewInviteToken(cid,email){
     return inv.token;
   }catch(_e){return null;}
 }
-async function _submitInviteEmployee(){
-  const name=(document.getElementById('_inv-name')?.value||'').trim();
-  if(!name){zAlert('Enter a name.');return;}
-  const phone=(document.getElementById('_inv-phone')?.value||'').trim();
-  const email=(document.getElementById('_inv-email')?.value||'').trim();
-  const role=document.getElementById('_inv-role')?.value||'tech';
-  const classification=(document.getElementById('_inv-class')?.value||'').trim();
-  const permissions={};
-  Object.keys(_EMP_PERM_LABELS).forEach(p=>{permissions[p]=!!(document.getElementById('_perm-'+p)?.checked);});
-  const newEmp={id:_newId(),name,phone,email,role,classification,permissions};
-  if(!S.employees)S.employees=[];
-  S.employees.push(newEmp);
-  _settingsChanged();saveAll();
-  // Build invite link. Sync team_members FIRST (awaited) so the server-minted token
-  // can reference the roster row; the link then carries `tok`, the forge-proof,
-  // single-use claim path that links even if the crew member signs up with a
-  // different email. Email-match remains the fallback when minting is unavailable.
-  const cid=_contractorUserId||_supaUser?.id||'';
-  let _invTok=null;
-  if(email&&supaEnabled()&&_supaUser){
-    const{error}=await _supa.from('team_members').upsert({contractor_user_id:cid,email,name,role:newEmp.role,permissions:permissions||{},active:false,invited_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
-    if(error)console.warn('team_members upsert:',error);
-    else _invTok=await _mintCrewInviteToken(cid,email);
-  }
-  const inviteLink=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:newEmp.id,email:email||'',bname:S.bname||'',ename:name||'',tok:_invTok||undefined}));
-  // Send branded invite email if address provided
-  if(email&&supaEnabled()&&_supaUser){
-    const{data:{session:_invSess}}=await _supa.auth.getSession();
-    const _invToken=_invSess?.access_token;
-    if(_invToken)fetch(SUPA_URL+'/functions/v1/send-invite-email',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_invToken},
-      body:JSON.stringify({to:email,empName:name,businessName:S.bname||'Your Contractor',inviteUrl:inviteLink,replyTo:_supaUser?.email||''})
-    }).catch(()=>{});
-  }
-  // Show step 2 in same modal
-  const box=document.getElementById('_emp-invite-ov')?.querySelector('.zmodal');
-  if(!box)return;
-  const _emailSentLine=email?'<div style="font-size:13px;color:var(--green-mid);margin-bottom:10px">'+svgIcon('📧')+' Invite sent to '+escHtml(email)+'</div>':'';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Invite Link Ready</div>'+
-    _emailSentLine+
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:14px">Share this link with <strong>'+escHtml(name)+'</strong>:</div>'+
-    '<div id="_inv-link-box" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:12px;line-height:1.5">'+escHtml(inviteLink)+'</div>'+
-    '<button id="_inv-copy-btn" onclick="_copyInviteLink(\''+escHtml(inviteLink)+'\')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px;margin-bottom:8px">Copy Link</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove();renderTeam()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-}
-function _copyInviteLink(link){
-  if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>{
-    const btn=document.getElementById('_inv-copy-btn');
-    if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}
-  }).catch(()=>{});}else{
-    try{const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
-    const btn=document.getElementById('_inv-copy-btn');if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}}catch(_e){}
-  }
-}
-
 // ── Dispatch Board ───────────────────────────────────────────────────────────
 // ── What is actually happening out there, right now ─────────────────────────
 // Every competitor sells "real-time status from the field" and on every one of
@@ -4150,10 +4068,17 @@ function renderTeam(){
             '<div><div style="font-size:13px;font-weight:700">'+escHtml(e.name||'')+'</div>'+
             '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px">'+escHtml(_roleLabel)+'</span>'+_classTag+_payTag+'</div>'+
           '</div>'+
-          (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
+          (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:13px;min-height:44px;min-width:44px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
-        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
+        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+'</div>':'')+
+        (e.role!=='owner'?(function(){
+          const st=_crewInviteStatus(e);
+          return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">'+
+            '<span class="td-crew-status" data-st="'+st.key+'" style="font-size:11px;font-weight:700;background:'+st.bg+';color:'+st.fg+';padding:2px 8px;border-radius:8px">'+escHtml(st.label)+'</span>'+
+            (st.key!=='joined'?'<button type="button" class="td-crew-text" onclick="_crewTextInvite('+i+')" style="min-height:44px;padding:0 14px;border-radius:var(--r);border:1px solid var(--blue);background:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Text invite</button>':'')+
+          '</div>';
+        })():'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
         (function(){
           // The owner's own row shows too now (owner ask 2026-08-26: "should
@@ -4312,6 +4237,7 @@ function renameDevice(id){
 // employee modal can pre-fill without a per-open round trip. Populated by
 // _loadTeamComp() on team-page render.
 let _teamComp={};
+let _teamJoined={};
 let _teamCompLoaded=false;
 // Only the account owner or a payroll-permitted manager may see/edit pay.
 function _canViewComp(){
@@ -4681,11 +4607,16 @@ async function _loadTeamComp(){
   const cid=_contractorUserId||_supaUser.id;
   try{
     const{data,error}=await _supa.from('team_members')
-      .select('email,pay_type,pay_rate').eq('contractor_user_id',cid);
+      .select('email,pay_type,pay_rate,employee_user_id,active').eq('contractor_user_id',cid);
     if(error||!data)return;
-    const next={};
-    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};});
-    _teamComp=next;
+    const next={},joined={};
+    data.forEach(r=>{
+      if(!r.email)return;
+      next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};
+      // A roster row a login has claimed is a person who JOINED.
+      if(r.employee_user_id&&r.active!==false)joined[r.email.toLowerCase()]=true;
+    });
+    _teamComp=next;_teamJoined=joined;
   }catch(_e){}
 }
 function _empPayTypeSync(){
@@ -4717,14 +4648,14 @@ function _employeeModalHTML(emp,idx){
       '<div style="font-size:10px;color:var(--text3);margin-top:4px">They\'ll receive an employment agreement to sign, then get their account setup link.</div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
-      '<div class="f" style="margin:0"><label>Access role</label>'+
+      '<div class="f" style="margin:0"><label>What they can see</label>'+
         '<select id="emp-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
           '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
           '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
           '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner (sees and runs everything)</option>'+
         '</select></div>'+
-      '<div class="f" style="margin:0"><label>Classification</label>'+
+      '<div class="f" style="margin:0"><label>Skill level</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'- None -')+'</option>').join('')+
         '</select></div>'+
@@ -4747,7 +4678,7 @@ function _employeeModalHTML(emp,idx){
     (_canViewComp()?
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Pay</div>'+
-        '<button type="button" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--text3);background:none;color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;line-height:16px;text-align:center;flex-shrink:0">?</button>'+
+        '<button type="button" class="td-hit44" aria-label="What is this?" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:44px;height:44px;margin:-12px 0 -12px -8px;border:none;background:none;cursor:pointer;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid var(--text3);color:var(--text3);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">?</span></button>'+
       '</div>'+
       '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
         'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this, not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
@@ -4763,7 +4694,7 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
-    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
+    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
       '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">'+svgIcon('▶',{size:11})+'</span>'+
@@ -4774,10 +4705,12 @@ function _employeeModalHTML(emp,idx){
         const checked=e.permissions&&e.permissions[k];
         const info=_EMP_PERM_INFO[k]||'';
         return '<div style="background:var(--bg2);border-radius:var(--r)">'+
-          '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px 10px">'+
-            '<input type="checkbox" id="_perm-'+k+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)">'+
+          // The whole row is the label, 44px tall, so a thumb anywhere on
+          // it flips the box (Earl audit 2026-09-27: 16px boxes, 18px "?").
+          '<label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;padding:0 0 0 10px;min-height:44px">'+
+            '<input type="checkbox" id="_perm-'+k+'"'+(checked?' checked':'')+' style="width:22px;height:22px;cursor:pointer;flex-shrink:0;accent-color:var(--blue);margin:0">'+
             '<span style="flex:1">'+escHtml(lbl)+'</span>'+
-            (info?'<button type="button" onclick="event.preventDefault();event.stopPropagation();var d=this.parentElement.parentElement.querySelector(\'.perm-info\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:18px;height:18px;border-radius:50%;border:1.5px solid var(--text3);background:none;color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit;line-height:18px;text-align:center">?</button>':'')+
+            (info?'<button type="button" class="td-hit44" aria-label="What does this allow?" onclick="event.preventDefault();event.stopPropagation();var d=this.parentElement.parentElement.querySelector(\'.perm-info\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:44px;height:44px;border:none;background:none;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit;display:flex;align-items:center;justify-content:center"><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid var(--text3);color:var(--text3);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">?</span></button>':'')+
           '</label>'+
           (info?'<div class="perm-info" style="display:none;font-size:12px;color:var(--text3);padding:0 10px 10px 34px;line-height:1.45">'+escHtml(info)+'</div>':'')+
         '</div>';
@@ -4785,10 +4718,42 @@ function _employeeModalHTML(emp,idx){
     '</div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
-      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add & Invite':'Save')+'</button>'+
+      (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
+      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add & Invite':'Save')+'</button>'+
     '</div>'+
-    '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+    '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;min-height:44px;padding:8px;border:none;background:none;color:var(--text2);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+}
+// The crew invite link: ?emp_invite= with the server-minted claim token when
+// there is one (email-match fallback when not). One builder, used by the save
+// and by Text invite, so the two can never hand out different links.
+function _crewInviteUrl(emp,tok){
+  const cid=(typeof _effectiveUid==='function'&&_effectiveUid())||_contractorUserId||(_supaUser&&_supaUser.id)||'';
+  return window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp&&emp.id,email:(emp&&emp.email)||'',bname:S.bname||'',ename:(emp&&emp.name)||'',tok:tok||undefined}));
+}
+// Where this person really stands, never a guess dressed up as green.
+function _crewInviteStatus(e){
+  const em=String((e&&e.email)||'').toLowerCase();
+  if((em&&_teamJoined[em])||(e&&e.joined))return{key:'joined',label:'Joined',bg:'#dcfce7',fg:'#15803d'};
+  if(!em)return{key:'none',label:'Not sent: no email',bg:'#FEF3C7',fg:'#92400E'};
+  const st=e.inviteState;
+  if(st==='sent')return{key:'sent',label:'Invite sent',bg:'var(--blue-lt,#E8EEF8)',fg:'var(--blue-dk,#1E3F73)'};
+  if(st==='sending')return{key:'sending',label:'Sending invite',bg:'var(--bg3,#f1f5f9)',fg:'var(--text2)'};
+  if(st==='failed')return{key:'failed',label:'Invite not sent',bg:'#FEE2E2',fg:'#991B1B'};
+  // Added before this was tracked: nobody knows if it went, so say that.
+  return{key:'unknown',label:'Not joined yet',bg:'var(--bg3,#f1f5f9)',fg:'var(--text2)'};
+}
+// Text invite: opens HIS Messages with the link filled in, the same sms:
+// hand-off the sub invite uses (_subInviteNavigate), so he is the sender.
+function _crewTextInvite(idx){
+  const e=(S.employees||[])[idx];
+  if(!e)return false;
+  const first=String(e.name||'').split(/\s+/)[0];
+  const biz=S.bname||(typeof getBusinessName==='function'&&getBusinessName())||'';
+  const link=e.inviteUrl||_crewInviteUrl(e,null);
+  const msg='Hi'+(first?' '+first:'')+', '+(biz?'it\'s '+biz+'. ':'')+'Here is your link to join the crew on TradeDesk: '+link;
+  _subInviteNavigate('sms:'+String(e.phone||'').replace(/\D/g,'')+'&body='+encodeURIComponent(msg));
+  if(!e.inviteState||e.inviteState==='none'||e.inviteState==='failed'){e.invitedByTextAt=new Date().toISOString();_settingsChanged();}
+  return true;
 }
 function openAddEmployeeModal(){
   _openEmpModal(null,null);
@@ -4797,7 +4762,19 @@ function openEditEmployeeModal(idx){
   const e=(S.employees||[])[idx];
   _openEmpModal(e,idx);
 }
+// Set by the dashboard's "Add your crew" (_setupTeamRoute): a SAVE from that
+// trip lands on Fleet & Team, Team tab, so he sees who he just added. Opening
+// either form clears it, so no other add inherits the trip.
+let _crewAddFromSetup=false;
+function _crewAddLand(){
+  if(!_crewAddFromSetup)return false;
+  _crewAddFromSetup=false;
+  if(typeof goPg==='function')goPg('pg-team');
+  if(typeof setFleetTab==='function')setFleetTab('team');
+  return true;
+}
 function _openEmpModal(emp,idx){
+  _crewAddFromSetup=false;
   document.getElementById('emp-modal-overlay')?.remove();
   const ov=document.createElement('div');ov.id='emp-modal-overlay';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -4848,9 +4825,33 @@ async function _saveEmployee(idx){
   // picks the prompt's framing: first-ever hire gets full business setup,
   // every later hire leads with that person's own W-4/I-9/new-hire paperwork.
   const _priorNonOwnerCount=S.employees.filter(e=>e.role!=='owner').length;
+  // What actually happened to the invite, kept on the row so the Team list
+  // can say it honestly (Earl audit 2026-09-27: every row with an email read
+  // a green "Invite sent", including the ones whose send failed). 'none' is
+  // no email, 'sending' is in flight, then 'sent' or 'failed'.
+  if(isNew){emp.inviteState=email?'sending':'none';delete emp.inviteUrl;}
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
-  if(isNew&&_empRole!=='owner'&&typeof _showPayrollSetupPrompt==='function')_showPayrollSetupPrompt(_empId,_priorNonOwnerCount===0);
+  if(isNew)_crewAddLand();
+  const _inviteDone=(state,url)=>{
+    emp.inviteState=state;if(url)emp.inviteUrl=url;
+    _settingsChanged();renderTeam();
+  };
+  if(isNew&&!email){
+    showToast('No email: '+(name.split(/\s+/)[0]||'they')+' can\'t log in until you add one or text them the invite','⚠️');
+  }
+  // The W-2 paperwork checklist opens ONCE per business, on the first hire
+  // (Earl audit 2026-09-27: three hires was three full-screen popups). It
+  // lives on the Team page permanently, so every later hire gets a one-line
+  // pointer to it instead. Reverses the 2026-07-12 every-hire prompt.
+  if(isNew&&_empRole!=='owner'){
+    if(!S.payrollPromptSeen&&typeof _showPayrollSetupPrompt==='function'){
+      S.payrollPromptSeen=true;_settingsChanged();
+      _showPayrollSetupPrompt(_empId,_priorNonOwnerCount===0);
+    }else if(email)showToast('Hiring paperwork for '+name+' is on your Team page','📋');
+  }
+  // Nothing to send it through: say "not sent" rather than pretend.
+  if(isNew&&email&&!(_supa&&_supaUser))_inviteDone('failed');
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
     // permissions MUST ride along: has_team_perm() and the load_account_data RPC
@@ -4870,12 +4871,12 @@ async function _saveEmployee(idx){
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
     const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
-    if(error){console.warn('team_members upsert failed:',error);return;}
+    if(error){console.warn('team_members upsert failed:',error);if(isNew)_inviteDone('failed');return;}
     // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
       const cid=_effectiveUid();
       const _tok2=await _mintCrewInviteToken(cid,emp.email); // server-verified claim token (null → legacy email-match link)
-      const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
+      const inviteUrl=_crewInviteUrl(emp,_tok2);
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
       const _saveToken=_saveSess?.access_token;
       // Build the signing link, embed inviteUrl in the contract snapshot so
@@ -4914,10 +4915,10 @@ async function _saveEmployee(idx){
             headers:{'Content-Type':'application/json','Authorization':'Bearer '+_saveToken},
             body:JSON.stringify({to:email,empName:emp.name,businessName:S.bname||'Your Contractor',inviteUrl:signUrl,replyTo:_supaUser.email||''})
           });
-          if(_invRes.ok)showToast('Agreement sent to '+email,'📝');
-          else showToast('Saved: email failed','⚠️');
-        }catch(_e){showToast('Saved: email failed','⚠️');}
-      }
+          if(_invRes.ok){_inviteDone('sent',signUrl);showToast('Agreement sent to '+email,'📝');}
+          else{_inviteDone('failed',signUrl);showToast('Saved: email failed','⚠️');}
+        }catch(_e){_inviteDone('failed',signUrl);showToast('Saved: email failed','⚠️');}
+      }else _inviteDone('failed',signUrl);
     }
   }
 }
@@ -4989,13 +4990,14 @@ function _subModalHTML(sub,idx){
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="_removeSub('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
-      '<button onclick="_saveSub('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
+      '<button onclick="_saveSub('+(isNew?'null':idx)+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
     '</div>'+
-    '<button onclick="document.getElementById(\'_sub-modal-ov\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+    '<button onclick="document.getElementById(\'_sub-modal-ov\').remove()" style="width:100%;min-height:44px;padding:8px;border:none;background:none;color:var(--text2);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
 }
 function openAddSubModal(){_openSubModal(null,null);}
 function openEditSubModal(idx){_openSubModal((S.subcontractors||[])[idx],idx);}
 function _openSubModal(sub,idx){
+  _crewAddFromSetup=false;
   document.getElementById('_sub-modal-ov')?.remove();
   const ov=document.createElement('div');ov.id='_sub-modal-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -5024,6 +5026,7 @@ function _saveSub(idx){
   if(!S.subcontractors)S.subcontractors=[];
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+  if(idx==null)_crewAddLand();
   showToast(idx==null?'Subcontractor added':'Saved','✓');
   // The invite moment: a brand-new sub with a phone or email is a warm
   // referral: they run a trade business too. One tap sends it: email goes

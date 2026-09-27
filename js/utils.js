@@ -348,14 +348,53 @@ function geoIfGranted(cb, errCb, opts){
 // ── Auto-capitalize EVERY free-text field ───────────────────────────────────
 // Title-cases the first letter of every space-separated word so anything typed
 // can never be saved as "master bedroom" or "Master bedroom", it always
-// normalizes to "Master Bedroom". App-wide by default (every <textarea> and
-// text <input>), so no per-field wiring is needed. The rest of each word is left
-// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive,
-// only the word-initial letter is forced upper.
+// normalizes to "Master Bedroom" (owner rule). App-wide by default, so no
+// per-field wiring is needed. The rest of each word is left as typed, so
+// acronyms ("ABC Painting") and camelCase ("McDowell") survive. A field that
+// sets autocapitalize="sentences" itself gets sentence case instead.
+// The Earl audit (2026-09-27) saw "Replce 50 Gal Water Heter" on a proposal.
+// The capitals were the owner's rule; the typos were the bug, so the common
+// trade misspellings below are fixed as he types and when a line is saved.
 function _autoCapWords(s){
   return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
 }
-// Skip only the field types/modes where title-casing is WRONG (email, password,
+function _autoCapSentences(s){
+  return String(s==null?'':s).replace(/(^\s*|[.!?]\s+)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
+}
+// The trade words people mistype most, fixed as they are typed and when a line
+// is saved. Small on purpose: only misspellings that are never a real word, so
+// a fix can never change what he meant.
+const _TRADE_TYPOS={
+  replce:'replace',repalce:'replace',relpace:'replace',replase:'replace',
+  heter:'heater',heatr:'heater',haeter:'heater',hetaer:'heater',
+  watter:'water',wter:'water',wtaer:'water',
+  toliet:'toilet',toilit:'toilet',tiolet:'toilet',
+  faucit:'faucet',facuet:'faucet',fawcet:'faucet',fuacet:'faucet',
+  vavle:'valve',vlave:'valve',
+  instal:'install',intsall:'install',instll:'install',isntall:'install',
+  galon:'gallon',gallan:'gallon',
+  disposel:'disposal',dispoasl:'disposal',
+  guage:'gauge',
+  breakr:'breaker',braeker:'breaker',
+  outlit:'outlet',oulet:'outlet',
+  recepticle:'receptacle',receptical:'receptacle',
+  thermastat:'thermostat',thermostate:'thermostat',
+  furnance:'furnace',condensor:'condenser',
+  shingels:'shingles',
+  drian:'drain',
+  sewar:'sewer',
+  plumbng:'plumbing',electical:'electrical',elecrtical:'electrical',
+};
+function _tradeSpellFix(s){
+  return String(s==null?'':s).replace(/[A-Za-z]+/g,function(w){
+    var fix=_TRADE_TYPOS[w.toLowerCase()];
+    if(!fix)return w;
+    if(w.length>1&&w===w.toUpperCase())return fix.toUpperCase();
+    if(w.charAt(0)!==w.charAt(0).toLowerCase())return fix.charAt(0).toUpperCase()+fix.slice(1);
+    return fix;
+  });
+}
+// Skip only the field types/modes where capitalizing is WRONG (email, password,
 // phone, number, url, search). Any other field can opt out with
 // autocapitalize="none" (or "off").
 function _autoCapEligible(el){
@@ -367,19 +406,26 @@ function _autoCapEligible(el){
   if (im === 'email' || im === 'url' || im === 'numeric' || im === 'decimal' || im === 'tel' || im === 'search') return false;
   return true;
 }
-// TWO mechanisms, both triggered by the SPACEBAR (capitalize each word as you
-// type), and neither mutates a field during a programmatic value-set:
-//   1. MOBILE (primary): set autocapitalize="words" on every eligible field, so
-//      the device keyboard capitalizes each word natively as it's typed, the
-//      "hits on the spacebar" behavior, with zero value rewriting.
-//   2. DESKTOP (fallback): on a real spacebar keydown, title-case the value. A
+// Words everywhere (owner rule); a field that set its own
+// autocapitalize="sentences" keeps it.
+function _autoCapMode(el){
+  var ac = (el.getAttribute('autocapitalize') || '').toLowerCase();
+  return ac === 'sentences' ? 'sentences' : 'words';
+}
+// TWO mechanisms, both triggered by the SPACEBAR, and neither mutates a field
+// during a programmatic value-set:
+//   1. MOBILE (primary): set autocapitalize to the field's mode on every
+//      eligible field, so the device keyboard capitalizes natively as it's
+//      typed, with zero value rewriting.
+//   2. DESKTOP (fallback): on a real spacebar keydown, apply the mode (and the
+//      trade typo fixes) to the value. A
 //      keydown only fires from genuine typing, Playwright's page.fill() sets the
 //      value WITHOUT a keydown, so the offline suite is never affected.
 function _applyAutoCapAttrs(root){
   try {
     (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
       if (!_autoCapEligible(el)) return;
-      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'words');
+      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', _autoCapMode(el));
       // iOS/Safari silently disable autocorrect on fields they can't classify
       // (most of ours carry autocomplete="off"). Explicit autocorrect="on" +
       // spellcheck restore native as-you-type correction on every free-text
@@ -403,7 +449,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     if (!_autoCapEligible(el)) return;
     // Let the space land first, then normalize the words typed so far.
     setTimeout(function(){
-      var v = el.value, capped = _autoCapWords(v);
+      var v = el.value, fixed = _tradeSpellFix(v), capped = _autoCapMode(el) === 'words' ? _autoCapWords(fixed) : _autoCapSentences(fixed);
       if (capped !== v) {
         var pos = el.selectionStart;
         el.value = capped;
