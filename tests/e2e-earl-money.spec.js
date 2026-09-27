@@ -170,7 +170,12 @@ test.describe('Earl: one definition of his money', () => {
   test('double tap on Record payment: one payment, and the second tap does not land on what is under it', async ({ page }) => {
     await boot(page);
     await seedEarl(page, { paid: false });
-    await page.evaluate((BID) => { openPayPanel(BID); document.getElementById('mpay-amount').value = '200.00'; }, BID);
+    // On the calendar already, so logPayment raises no "Schedule now?" prompt
+    // that could land late on WebKit and take the last tap (CI 2026-09-27).
+    await page.evaluate((BID) => {
+      jobs.push({ id: 7710301, bid_id: BID, client_id: 7710001, start: todayKey(), days: 1 });
+      openPayPanel(BID); document.getElementById('mpay-amount').value = '200.00';
+    }, BID);
     const box = await page.locator('#mpay-submit-btn').boundingBox();
     const x = box.x + box.width / 2, y = box.y + box.height / 2;
     // A probe where the Tim button would be: under the sheet, at the same spot.
@@ -187,8 +192,7 @@ test.describe('Earl: one definition of his money', () => {
     expect(r.hits).toBe(0);
     // The guard is short: a deliberate tap after it lapses goes through.
     await page.waitForTimeout(450);
-    // The "schedule this job?" prompt a partial payment raises is not what is under test.
-    await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()));
+    await expect(page.locator('.zmodal-overlay')).toHaveCount(0);
     await page.mouse.click(x, y);
     expect(await page.evaluate(() => window.__probeHits)).toBe(1);
   });
