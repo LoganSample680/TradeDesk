@@ -3134,7 +3134,10 @@ function _bizHM(d){
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
-  const out={loaded:{},wage:{},name:{},entries:[],shopEntries:[]};
+  // comp: the raw team_members pay row per uid, so Crew Cost can hand it to
+  // the one pay function (_payPersonPeriod) instead of an hourly figure.
+  // Additive, every other consumer ignores it.
+  const out={loaded:{},wage:{},comp:{},name:{},entries:[],shopEntries:[]};
   if(!supaEnabled()||!_supaUser)return out;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
   try{
@@ -3142,11 +3145,13 @@ async function _fetchCrewLabor(sinceISO){
     (tm||[]).forEach(r=>{
       if(!r.employee_user_id)return;
       const comp={pay_type:r.pay_type,pay_rate:r.pay_rate};
+      out.comp[r.employee_user_id]=comp;
       out.loaded[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(comp):0;
       out.wage[r.employee_user_id]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
       out.name[r.employee_user_id]=r.name||r.email||'Crew';
     });
     const _oc={pay_type:S.ownerPayType,pay_rate:S.ownerPayRate};
+    out.comp[cid]=_oc;
     out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
     out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
     out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
@@ -3221,13 +3226,23 @@ async function _crewCostRender(range){
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;
   if(range==='today'){sinceStr=todayStr;label='today';}
-  else if(range==='week'){sinceStr=_bizDateStr(new Date(Date.now()-6*86400000));label='this week';}
+  // A payroll week, Sunday to Saturday, the same week Payroll and the Time
+  // Log use (_tlWeekKey). It was "the last seven days", which never lined up
+  // with any paycheck (owner 2026-09-27).
+  else if(range==='week'){sinceStr=_tlWeekKey(todayStr)||todayStr;label='this week';}
   else if(range==='month'){sinceStr=yr+'-'+String(mo).padStart(2,'0')+'-01';label='this month';}
   else if(range==='quarter'){const qm=Math.floor((mo-1)/3)*3+1;sinceStr=yr+'-'+String(qm).padStart(2,'0')+'-01';label='this quarter';}
   else{sinceStr=yr+'-01-01';label='this year';}
   // Fetch with 1-day UTC buffer before period start; CT-date comparison is the authoritative filter
   const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
-  const data=await _fetchCrewLabor(sinceISO);
+  // PAY comes off the Time Log's own rows, through the one pay function
+  // Payroll uses (_payPersonPeriod, js/payroll-summary.js): paid minutes only,
+  // weekly overtime over 40h at 1.5x. _timeLogRows fetches the crew payload
+  // itself and parks it in _tlCrewCache, so the breakdown below reuses it
+  // rather than asking the server twice.
+  const tlRows=(typeof _timeLogRows==='function')?await _timeLogRows(sinceISO):[];
+  const data=(typeof _tlCrewCache!=='undefined'&&_tlCrewCache&&_tlCrewCache.since===sinceISO&&_tlCrewCache.payload&&_tlCrewCache.payload.comp)
+    ?_tlCrewCache.payload:await _fetchCrewLabor(sinceISO);
   // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) alongside
   // GPS-tracked entries, mapped into the same {employee_user_id,job_id,minutes,
   // arrived_at,source} shape so the aggregation below treats both identically.
@@ -3238,7 +3253,8 @@ async function _crewCostRender(range){
     .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
   const ents=data.entries.filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr);
-  if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
+  const _ccAnyPaid=tlRows.some(r=>r&&!r.unpaid&&(r.minutes||0)>0&&r.date>=sinceStr&&r.date<=todayStr);
+  if(!ents.length&&!shopEnts.length&&!_ccAnyPaid){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Nominal work day for the unaccounted-time estimate. This used to derive from
   // the configurable tracking window; that window is gone (tracking no longer
   // has a time lock at all), so this is simply a display baseline, 11 hours.
@@ -3277,8 +3293,9 @@ async function _crewCostRender(range){
     const uid=en.employee_user_id;if(!uid)return;
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
-    // e.min, which drives loaded cost and wage, and out of dayMins, which drives
-    // the overtime flag. Counting a lunch break as either is a payroll error.
+    // e.min and dayMins, which drive the on-site breakdown and the unaccounted
+    // estimate. (Pay itself comes from _payPersonPeriod below, which skips
+    // unpaid rows by the Time Log's own rule.)
     // NOTHING VOUCHED FOR THIS ROW, so it is shown and never paid: rules 13,
     // 15 and 18 (js/geo-derive.js). It sat in the wrong place until now,
     // falling past the drive and place arms into the on-site bucket, so a
@@ -3326,21 +3343,41 @@ async function _crewCostRender(range){
     e.min+=m;e.shopMin+=m;
     e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // Revenue attribution + overtime per employee
+  // Pay per person, from the Time Log rows in range, through the one pay
+  // function. The old per-day "OT 5d" flag (any day over 8h) is gone: federal
+  // overtime is weekly over 40h, and it is money, so it is priced here.
+  const _ccUid=r=>String((r&&r.personUid)||cid);
+  const _ccRows={};
+  tlRows.forEach(r=>{if(r&&r.date>=sinceStr&&r.date<=todayStr)(_ccRows[_ccUid(r)]||(_ccRows[_ccUid(r)]=[])).push(r);});
+  const _ccEmp=uid=>(S.employees||[]).find(x=>x&&String(x.employee_user_id||'')===String(uid))||null;
+  const pay={};
+  Object.keys(_ccRows).forEach(uid=>{
+    const kind=String(uid)===String(cid)?'owner':_payWorkerKind(_ccEmp(uid));
+    pay[uid]=_payPersonPeriod(_ccRows[uid],data.comp[uid]||{pay_type:'hourly',pay_rate:0},
+      {kind,periodsPerYear:range==='week'?52:0});
+    if(pay[uid].paidMin>0)_emp(uid);
+  });
+  // Revenue attribution per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));
     byEmp[uid].revenue=[...bidsSeen].reduce((s,bidId)=>{const b=bids.find(x=>String(x.id)===String(bidId));return s+(b?b.amount||0:0);},0);
-    byEmp[uid].otDays=Object.values(byEmp[uid].dayMins).filter(m=>m>480).length;
   });
+  const burden=Number(S.laborBurden)||1.3;
   const _jobName=bidId=>{
     const b=bids.find(x=>String(x.id)===String(bidId));if(b)return b.client_name||b.name||'Job';
     const j=jobs.find(x=>String(x.id)===String(bidId));return j?(j.clientName||j.name||'Job'):'Other';
   };
-  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  const _paidOf=uid=>pay[uid]?pay[uid].paidMin:byEmp[uid].min;
+  const uids=Object.keys(byEmp).sort((a,b)=>_paidOf(b)-_paidOf(a));
   let grand=0;
   const rowsHtml=uids.map(uid=>{
     const e=byEmp[uid];
-    const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
+    const p=pay[uid]||null;
+    const hrs=_paidOf(uid)/60;
+    const wage=p?p.wages:hrs*(data.wage[uid]||0);
+    // Loaded = what they are paid (overtime included) times the burden
+    // multiplier, the same multiplier _empLoadedHourly applies.
+    const loaded=Math.round(wage*burden*100)/100;
     grand+=loaded;
     const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60,offHrs=e.offMin/60,plHrs=e.placeMin/60;
     // Use actual days worked (days with any entry), not the full range length,
@@ -3348,10 +3385,12 @@ async function _crewCostRender(range){
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
     const hasBreakdown=e.driveMin>0||e.shopMin>0||e.offMin>0||e.placeMin>0;
-    const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⚠',{size:12})+' OT '+e.otDays+'d</span>':'';
+    const otTag=(p&&p.otMin>0)?'<span class="cc-ot" style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⏱',{size:12})+' '+(p.otMin/60).toFixed(1)+'h overtime</span>':'';
     const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
     const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
       const jh=e.jobs[bid]/60;
+      // Per-job lines stay at the straight loaded rate: overtime is a fact
+      // about the WEEK, not about whichever job happened to push past 40h.
       return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);padding:1px 0 1px 10px"><span>'+escHtml(_jobName(bid))+'</span><span>'+jh.toFixed(1)+'h · '+fmt(jh*(data.loaded[uid]||0))+'</span></div>';
     }).join('');
     const breakdownHtml=hasBreakdown?
@@ -3370,7 +3409,7 @@ async function _crewCostRender(range){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:2px 0 2px">'+
         '<span>'+hrs.toFixed(1)+'h'+otTag+rlTag+'</span>'+
-        '<span>wage '+fmt(wage)+' + burden</span>'+
+        '<span>pay <span class="cc-pay">'+fmt(wage)+'</span> + burden</span>'+
       '</div>'+
       breakdownHtml+jobLines+
     '</div>';
