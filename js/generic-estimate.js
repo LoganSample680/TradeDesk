@@ -7566,6 +7566,35 @@ function _propSentence(t){
 // it for panels, a deeper shade for the price card's gradient. Set once per
 // document by sendGenericProposal; read by every piece below.
 let _PT={a:'#1a365d',rgb:[26,54,93]};
+// ── THE DOCUMENT SHELL, shared by the proposal and the invoice ─────────────
+// Owner 2026-09-26: "can invoice share the same code even though one is a
+// proposal and the other is a final doc?" It does: his colour, the page it
+// sits on, the cover, the sections and the sign-off are these functions, and
+// both documents are built from them (sendGenericProposal here, the quick
+// invoice in js/quick-invoice.js). Change the letterhead once and both follow.
+function _propBrand(){
+  let a='#1a365d',a2='#2a4a7f',rgb=[26,54,93];
+  if(typeof S!=='undefined'&&S&&S.brandColor){
+    // adaBrand clamp: the accent renders as text on white AND as a bg under
+    // white text, a light brand pick would fail WCAG both ways. Belt for
+    // legacy stored values; settings.js also clamps at save time now.
+    const h=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
+    const r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);
+    if(!isNaN(r)&&!isNaN(g)&&!isNaN(b)){
+      a='rgb('+r+','+g+','+b+')';
+      a2='rgb('+Math.min(255,r+42)+','+Math.min(255,g+42)+','+Math.min(255,b+42)+')';
+      rgb=[r,g,b];
+    }
+  }
+  return {a,a2,rgb};
+}
+function _propDoc(inner){return '<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">'+inner+'</div>';}
+// The closing line, his name and a thank-you. The wording is the document's.
+function _propSignoff(nm,lead){
+  nm=String(nm||'').trim();
+  if(!nm)return '';
+  return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">${lead||'Thank you for considering'} <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
+}
 function _propTheme(accent,rgb){
   const r=rgb||[26,54,93];
   const dk=r.map(x=>Math.round(x*0.72));
@@ -7673,12 +7702,13 @@ function _propCover(o){
       `<div class="prop-mark" style="min-width:0;${tile?'width:100%':'flex:1 1 220px'}">${mark}</div>`+
       `<span style="flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);padding:5px 10px;border-radius:999px">${o.label}</span>`+
     `</div>`+
-    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">Prepared for <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
+    `<div style="margin-top:34px;font-size:14px;color:rgba(255,255,255,.82)">${o.forLabel||'Prepared for'} <strong style="color:#fff;font-weight:700">${o.name}</strong></div>`+
     `<div style="font-size:32px;font-weight:800;letter-spacing:-.032em;line-height:1.08;margin-top:6px;color:#fff">${o.project}</div>`+
     `<div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px">`+
       (o.addr?chip('pin',o.addr):'')+(o.phone?chip('phone',o.phone):'')+
       (o.duration?chip('clock','Est. duration: '+o.duration):'')+
-      chip('clock','Valid until: '+_propDate(o.until))+
+      // An invoice passes until:null: a bill for finished work has no expiry.
+      (o.until===null?'':chip('clock','Valid until: '+_propDate(o.until)))+
     `</div>`+
     `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
@@ -7811,19 +7841,10 @@ async function sendGenericProposal(previewOnly,opts){
   // boot overlay, so a branded account's proposal actually looks like THEIRS
   // instead of generic navy. Falls back to the original navy when unset, zero
   // visual change for every account that hasn't picked a brand color.
-  let _pAccent='#1a365d',_pAccent2='#2a4a7f',_pRGB=[26,54,93];
-  if(S&&S.brandColor){
-    // adaBrand clamp: the accent renders as text on white AND as a bg under
-    // white text, a light brand pick would fail WCAG both ways. Belt for
-    // legacy stored values; settings.js also clamps at save time now.
-    const _bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
-    const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
-    if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
-      _pAccent='rgb('+_br+','+_bg+','+_bb+')';
-      _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
-      _pRGB=[_br,_bg,_bb];
-    }
-  }
+  // His brand colour, or the original navy when unset (_propBrand, shared
+  // with the invoice).
+  const _pb=_propBrand();
+  let _pAccent=_pb.a,_pAccent2=_pb.a2,_pRGB=_pb.rgb;
   // The brand as a wash and a hairline, for the panels that carry it quietly.
   const _pTint='rgba('+_pRGB.join(',')+',.06)',_pLine='rgba('+_pRGB.join(',')+',.20)';
   _propTheme(_pAccent,_pRGB);
@@ -8228,16 +8249,12 @@ async function sendGenericProposal(previewOnly,opts){
   // claim, and the last thing read before the signature.
   // The sign-off: centred, his name, a thank-you. Courtesy, not a claim, and
   // the last thing read before the signature.
-  const _propFooter=(()=>{
-    const nm=String(_bnameRaw||'').trim();
-    if(!nm)return '';
-    return `<div style="margin:8px 24px 0;padding:24px 0 28px;border-top:1px solid #eceef2;text-align:center;font-size:15px;color:#475569;line-height:1.5">Thank you for considering <strong style="color:#0b1220;font-weight:700">${escHtml(nm)}</strong>${/[.!?]$/.test(nm)?'':'.'}</div>`;
-  })();
-  const proposalHtml=`<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">`+
+  const _propFooter=_propSignoff(_bnameRaw);
+  const proposalHtml=_propDoc(
     _propCover({bname:_bnameRaw,bphone:_bphoneRaw,blic:_blicRaw,accent:_pAccent,label:_hdrLabel,num:estNum,date:dateStr,name:clientName,addr:clientAddr,phone:clientPhone,project:_projectTitle,duration,until:_geiExpD})+
     `${_optionsSection}${_scopeSection}${_exclSection}${_optDiffSection}${_rrpSection}${_scanPlanSection}`+
     `<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px ${_PT.line}">${_lineItemsSection}</div>`+
-    `${notesHtml}${_propPanelHtml}${_propFooter}</div>`;
+    `${notesHtml}${_propPanelHtml}${_propFooter}`);
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

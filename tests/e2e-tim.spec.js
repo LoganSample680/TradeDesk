@@ -86,6 +86,8 @@ test.describe('tim', () => {
       'pg-est-generic': 'the estimate builder. It is opened with a client and a ' +
         'mode by openGenericEstimate, which is the whole estimate path Tim ' +
         'already drives. Landing on it cold shows a form bound to nobody.',
+      'pg-qi': 'the quick invoice. It is always FOR somebody: openQuickInvoice(cid) '+
+        'opens it from the customer picker, and cold it is an invoice to nobody.',
     };
     test('every screen in the app is either reachable by name or listed as needing a subject', async () => {
       const r = await page.evaluate(() => ({

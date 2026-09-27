@@ -804,7 +804,9 @@ function printInvoice(bidId){
 <table>
   <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
   <tbody>
-    <tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>
+    ${b.kind==='quick_invoice'&&Array.isArray(b.lineItems)&&b.lineItems.length
+      ?b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
+      :`<tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>`}
   </tbody>
 </table>
 
@@ -907,7 +909,8 @@ function openPayPanel(bidId, autoType){
   // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
-  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  // A quick invoice bills work already done: no deposit, only the balance.
+  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
@@ -1030,6 +1033,7 @@ function openPayPanel(bidId, autoType){
         '<div id="mpay-method-row" style="margin-top:12px">'+
           '<input type="hidden" id="mpay-method" value="Check">'+
           methodPills+
+          '<button type="button" id="mpay-venmo-qr" onclick="showVenmoQr('+bidId+')" style="display:none;width:100%;margin-top:8px;padding:11px;border-radius:var(--r);border:1.5px solid #3D95CE;background:#EAF4FB;color:#1F6FA8;cursor:pointer;font-family:inherit;font-size:13px;font-weight:800">Show my Venmo code</button>'+
         '</div>'+
         '<div style="display:flex;gap:8px;margin-top:8px">'+
           '<input id="mpay-ref" placeholder="Check # (optional)" style="flex:1;min-width:0;font-size:13px;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);box-sizing:border-box;color:var(--text);font-family:inherit">'+
@@ -1108,6 +1112,52 @@ function _invoiceBannerBtn(bidId,paidInFull){
 // Publish first, THEN hand over the link: sending a client a link to an invoice
 // that has not been re-uploaded yet shows them a stale balance, which is the one
 // thing an invoice must never do.
+// ── Venmo (owner 2026-09-26) ────────────────────────────────────────────────
+// "Can our app launch Venmo?" Yes: a venmo.com link opens the customer's own
+// Venmo app with the amount and note filled in, pointed at this business's
+// username. The money moves Venmo to Venmo, TradeDesk never touches it and
+// charges nothing. The username lives on S, which is per business, so an owner
+// with a side business (9.10) has his own and never pays into his employer's.
+// Venmo usernames are letters, numbers, dashes and underscores; anything else
+// someone typed (an @, a space, a full link) is cleaned off.
+function _venmoUser(){return _venmoClean(typeof S!=='undefined'&&S&&S.venmoUser);}
+function _venmoClean(raw){
+  let u=String(raw||'').trim();
+  u=u.replace(/^(https?:\/\/)?(www\.|account\.)?venmo\.com\/(u\/)?/i,'').replace(/^@+/,'').split(/[/?#\s]/)[0];
+  return u.replace(/[^A-Za-z0-9_-]/g,'').slice(0,30);
+}
+function _venmoPayUrl(amount,note){
+  const u=_venmoUser();const a=Number(amount);
+  if(!u||!(a>0))return '';
+  return 'https://venmo.com/'+encodeURIComponent(u)+'?txn=pay&amount='+(Math.round(a*100)/100).toFixed(2)+'&note='+encodeURIComponent(String(note||'').slice(0,80));
+}
+function _venmoNote(bid){
+  const nm=(typeof S!=='undefined'&&S&&S.bname)||'';
+  return 'Invoice'+(nm?' from '+nm:'')+(bid&&bid.id?' #'+String(bid.id).slice(-4):'');
+}
+// In person: the customer scans this with their camera, Venmo opens on THEIR
+// phone with the amount in. Same full-screen code as the card QR (showPayQr).
+function showVenmoQr(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const url=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));
+  if(!url){showToast('Add your Venmo in Settings first.','⚠');return;}
+  document.getElementById('_venmo-qr-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_venmo-qr-ov';ov.className='zmodal-overlay';
+  ov.innerHTML='<div class="zmodal" style="text-align:center">'+
+    '<div style="font-size:17px;font-weight:800">Pay '+fmt(getBidBalance(bid))+' with Venmo</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin:4px 0 14px">Have them scan this with their camera. Venmo opens with the amount in, paying @'+escHtml(_venmoUser())+'.</div>'+
+    '<div id="_venmo-qr-wrap" style="display:flex;justify-content:center;min-height:240px"></div>'+
+    '<button type="button" onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;margin-top:14px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>'+
+  '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const wrap=document.getElementById('_venmo-qr-wrap');
+  const img=document.createElement('img');
+  img.style.cssText='width:240px;height:240px;display:block;border-radius:8px';img.alt='Venmo code';
+  img.onerror=()=>{wrap.innerHTML='<div style="font-size:11px;word-break:break-all;max-width:240px;color:var(--text2)">'+escHtml(url)+'</div>';};
+  img.src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(url)+'&margin=10';
+  wrap.appendChild(img);
+}
 async function _sendPaidInvoice(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);
@@ -1122,16 +1172,25 @@ async function _sendPaidInvoice(bidId){
   const first=(c.name||'').split(' ')[0]||'there';
   const body=paid
     ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
-    :'Hi '+first+', here is your updated invoice: '+url;
+    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+': '+url:'Hi '+first+', here is your updated invoice: '+url)+
+      // Venmo last: a link at the end of a text is the one a phone makes tappable.
+      (()=>{const v=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));return v?'\n\nOr pay with Venmo: '+v:'';})();
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📄')+(paid?' Paid invoice ready':' Invoice ready')+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' &middot; '+(paid?'marked paid in full':fmt(getBidBalance(bid))+' still owed')+'</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+escHtml(url)+'</div>'+
-    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:'+String(c.phone).replace(/\D/g,'')+'?body=\'+encodeURIComponent('+JSON.stringify(body)+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Text it to them</button>':'')+
-    '<button onclick="navigator.clipboard.writeText('+JSON.stringify(url)+').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+    // Wired below with listeners, not inline: the message and the link both
+    // carry quotes, and JSON inside onclick="..." closed the attribute early,
+    // so both buttons were dead on tap (found 2026-09-26).
+    (c.phone?'<button type="button" data-inv-text style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Text it to them</button>':'')+
+    '<button type="button" data-inv-copy style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  const tb=box.querySelector('[data-inv-text]');
+  if(tb){tb.dataset.body=body;tb.addEventListener('click',()=>{ov.remove();window.location.href='sms:'+String(c.phone).replace(/\D/g,'')+'?body='+encodeURIComponent(body);});}
+  const cb=box.querySelector('[data-inv-copy]');
+  if(cb)cb.addEventListener('click',()=>{try{navigator.clipboard.writeText(url).then(()=>showToast('Copied!','📋')).catch(()=>{});}catch(_e){}cb.textContent='✓ Copied';});
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -1304,7 +1363,8 @@ function selectPayType(btn, bidId){
   const bid=bids.find(b=>b.id==bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  // A quick invoice bills work already done: no deposit, only the balance.
+  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
   const hint=document.getElementById('mpay-max-hint');
@@ -1404,6 +1464,10 @@ function _mpayPickMethod(m){
 }
 function _mpayMethodChange(){
   const m=document.getElementById('mpay-method')?.value||'';
+  // Venmo picked and the business has a username: one button that puts the
+  // pay code on screen for the customer to scan.
+  const vq=document.getElementById('mpay-venmo-qr');
+  if(vq)vq.style.display=(m==='Venmo'&&_venmoUser())?'block':'none';
   // The reference field is unlabelled now, its placeholder IS the label, so it has
   // to say the right thing for the method that's selected.
   const ref=document.getElementById('mpay-ref');

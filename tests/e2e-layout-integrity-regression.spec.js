@@ -221,7 +221,10 @@ test.describe('layout integrity, mobile', () => {
       _geiIsFreeForm = true;
       // The worst case: a seven-figure price, so the price column is as wide as
       // it ever gets, and every action button present.
-      _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: 'n', price: 1232134, on: true }];
+      // A WORK section, not Materials: Materials is the one card shared with
+      // T&M (js/materials.js, #97) and draws its own rows, so the iOS line this
+      // guards lives in every other section (#100, 2026-09-26).
+      _byoItems = [{ id: 1, section: _byoWorkSection(), label: 'test', notes: 'n', price: 1232134, on: true }];
       _byoRenderSections();
       // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
       // price on one line, the description full width under them
@@ -289,7 +292,10 @@ test.describe('layout integrity, mobile', () => {
       goGeiStep(2);
       _geiIsFreeForm = true;
       const longNote = Array(20).fill('Long wrapped note line here').join(' ');
-      _byoItems = [{ id: 1, section: 'Materials', label: 'Bedroom', notes: longNote, price: 234234, on: true }];
+      // A WORK section, not Materials: Materials is the one card shared with
+      // T&M (js/materials.js, #97) and draws its own rows, so the iOS line this
+      // guards lives in every other section (#100, 2026-09-26).
+      _byoItems = [{ id: 1, section: _byoWorkSection(), label: 'Bedroom', notes: longNote, price: 234234, on: true }];
       _byoRenderSections();
       // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
       // price on one line, the description full width under them

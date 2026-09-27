@@ -1356,7 +1356,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 8 CTAs (5 optional + QR + location + motion)').toBe(8);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 9 CTAs (6 optional incl. Venmo + QR + location + motion)').toBe(9);
     expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
@@ -1401,7 +1401,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       // nothing left. Motion is skippable like places/getpaid/logo/team, so
       // it joins the skipped list rather than needing its own cache pinned.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['places', 'getpaid', 'logo', 'team', 'motion']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'venmo', 'logo', 'team', 'motion']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();

@@ -43,6 +43,8 @@ const TIM_PLACES=[
   // Oak" needs it to stay.
   {pg:'pg-photos',      name:'Photos',      say:['photos page','photo page','the photos page','all photos','all my photos','photo library']},
   {pg:'pg-proposals',   name:'Proposals',   say:['proposals','my proposals','bids','my bids','quotes','sent estimates']},
+  // The water heater flush list (#94). "Annual service" is its on-screen name.
+  {pg:'pg-wh-list',     name:'Annual service', say:['annual service','water heater list','water heaters','flush list','water heater flushes']},
   {pg:'pg-money',       name:'Collect',     say:['collect','invoices','payments','get paid','whats owed','who owes me']},
   {pg:'pg-tracker',     name:'Books',       say:['books','bookkeeping','the numbers','profit','income','expenses','mileage','p and l','my money']},
   {pg:'pg-taxes',       name:'Taxes',       say:['taxes','tax','write offs','deductions','1099s']},
