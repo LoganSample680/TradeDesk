@@ -141,16 +141,18 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
 
       // ── Pass 2: crew links, grouped to spend the fewest token calls. One
       // boss session upserts ALL its members' roster rows (the invite modal's
-      // exact upsert), then one member session claims ALL its links (the same
-      // SECURITY DEFINER claim_crew_by_email RPC loadAccountData's email-match
-      // path uses). 7 boss sessions + ~14 member sessions instead of two
-      // sign-ins per (member, boss) pair. ──
+      // exact upsert) and mints one invite token per row (the modal's
+      // _mintCrewInviteToken insert), then one member session claims ALL its
+      // links with claim_crew_invite, the only way into a seat since 20261049
+      // (H4 retired the email-only claim). 7 boss sessions + ~14 member
+      // sessions instead of two sign-ins per (member, boss) pair. ──
       const byBoss = {};
       for (const p of Object.values(ROSTER)) {
         if (!p.crewOf || !uidOf[p.tag]) continue;
         for (const bossTag of p.crewOf) (byBoss[bossTag] = byBoss[bossTag] || []).push(p);
       }
       const needsClaim = new Set();
+      const tokensFor = {};
       for (const [bossTag, members] of Object.entries(byBoss)) {
         const boss = ROSTER[bossTag];
         if (!boss || !uidOf[bossTag]) { report.errors.push('boss ' + bossTag + ' unavailable for links'); continue; }
@@ -168,6 +170,12 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
               }, { onConflict: 'contractor_user_id,email' });
               if (tmErr) { report.errors.push(p.tag + '→' + bossTag + ': team_members upsert: ' + tmErr.message); continue; }
             }
+            const { data: tmRow } = await sb.from('team_members').select('id').eq('contractor_user_id', bossUid).eq('email', p.email).maybeSingle();
+            const { data: inv, error: invErr } = tmRow
+              ? await sb.from('crew_invites').insert({ contractor_user_id: bossUid, team_member_id: tmRow.id, email: p.email }).select('token').single()
+              : { data: null, error: { message: 'roster row not found' } };
+            if (invErr || !inv) { report.errors.push(p.tag + '→' + bossTag + ': invite mint: ' + (invErr && invErr.message)); continue; }
+            (tokensFor[p.tag] = tokensFor[p.tag] || []).push(inv.token);
             needsClaim.add(p.tag);
           }
           await sb.auth.signOut();
@@ -178,12 +186,11 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
         try {
           const ms = await signIn(p);
           if (!ms.ok) { report.errors.push(p.tag + ': member sign-in for claim: ' + ms.error); continue; }
-          // Each RPC call links one unlinked row; loop caps at this persona's
-          // own link count.
-          for (let i = 0; i < p.crewOf.length + 1; i++) {
-            const { data: cl, error: clErr } = await sb.rpc('claim_crew_by_email');
+          // One claim per invite token this persona was sent.
+          for (const tok of (tokensFor[tag] || [])) {
+            const { data: cl, error: clErr } = await sb.rpc('claim_crew_invite', { tok });
             if (clErr) { report.errors.push(p.tag + ': claim RPC: ' + clErr.message); break; }
-            if (!cl || !cl.ok) break; // nothing left to claim
+            if (!cl || !cl.ok) report.errors.push(p.tag + ': claim refused: ' + (cl && cl.reason));
           }
           for (const bossTag of p.crewOf) {
             if (!uidOf[bossTag]) continue;

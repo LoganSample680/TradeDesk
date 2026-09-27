@@ -103,6 +103,11 @@ async function recordPayment(stripe: Stripe, meta: Stripe.Metadata, amountPaid: 
     signed_at: ts,
     notify_email: meta.notifyEmail,
     storage_key: meta.proposalKey,
+    // create-checkout reads these off the stored proposal (20261049); the
+    // card path used to write them from the browser, which can no longer
+    // touch this table.
+    ...(meta.epa === '1' ? { epa_required: true, epa_ack_at: ts } : {}),
+    ...(meta.senior === '1' ? { buyer_senior: true } : {}),
   }, { onConflict: 'bid_id' });
 
   const { data: zjRow } = await supabase

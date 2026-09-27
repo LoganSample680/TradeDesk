@@ -2065,6 +2065,7 @@ function _qrIntakeShim(qrLabel) {
         auth:{ getUser:()=>noopResult({user:null}), getSession:()=>noopResult({session:null}),
           onAuthStateChange:(cb)=>{if(typeof window!=='undefined')window.__capturedAuthCallback=cb;return{data:{subscription:{unsubscribe:()=>{}}}};} },
         from:(table)=>queryBuilder(table),
+        rpc:(fn,args)=>noopResult(fn==='account_public_card'?ACCT_ROW:[]),
         storage:{from:(b)=>({upload:(p,d,o)=>noopResult({path:p}),download:(p)=>noopResult(null),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noopResult(null),list:(pr)=>noopResult([])})},
         functions:{invoke:(n,o)=>noopResult({ok:true})},
         channel:(n)=>({on:function(){return this;},subscribe:function(cb){if(cb)cb('SUBSCRIBED');return this;},unsubscribe:()=>{}}),

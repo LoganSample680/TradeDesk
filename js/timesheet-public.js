@@ -176,6 +176,11 @@ function _tspFooter(){
     el.innerHTML='<div class="tsp-done back">'+svgIcon('↩',{size:14})+' Sent back '+escHtml(_tspWhen(d.rejected_at))+
       (d.reject_note?'<div class="tsp-done-note">“'+escHtml(String(d.reject_note))+'”</div>':'')+'</div>'+
       '<div class="tsp-fine">A corrected timesheet will show up at this same link.</div>';
+  }else if(d.can_decide===false){
+    // THE VIEW LINK (20261049, H6). The link the crew member texted shows the
+    // week and cannot decide it; the approve link went to the business
+    // owner's email, where the person who submitted the week cannot reach it.
+    el.innerHTML='<div class="tsp-fine" id="tsp-view-only">To approve or send this back, open the link TradeDesk emailed to the business owner.</div>';
   }else{
     el.innerHTML=
       '<div id="tsp-reject-box" class="tsp-reject-box" hidden>'+
@@ -243,6 +248,9 @@ async function _tspDecide(decision){
   }catch(_e){
     _tsp.busy=false;
     document.querySelectorAll('#tsp-foot button').forEach(b=>{b.disabled=false;});
+    const _m=String((_e&&_e.message)||'');
+    if(/emailed to the business owner/.test(_m))return _tspFail('Approve from the link TradeDesk emailed to the business owner.');
+    if(/your own timesheet/.test(_m))return _tspFail('You cannot approve your own timesheet.');
     return _tspFail('That did not save, try again');
   }finally{_tsp.busy=false;}
 }

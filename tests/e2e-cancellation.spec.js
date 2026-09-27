@@ -255,14 +255,19 @@ test.describe('Declined proposal, never rendered as signed', () => {
     decline_reason: 'Price',
   };
 
+  // Signing state reaches the hub through hub_signed_proposals (20261049),
+  // which checks the hub link; signed_proposals is closed to anon.
   async function mergeDeclined(page) {
     await page.evaluate(async (row) => {
-      const origFrom = _supa.from.bind(_supa);
-      _supa.from = (table) => table === 'signed_proposals'
-        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
-        : origFrom(table);
+      const origRpc = _supa.rpc;
+      window.__hubRpcArgs = null;
+      _supa.rpc = (fn, args) => {
+        if (fn !== 'hub_signed_proposals') return origRpc(fn, args);
+        window.__hubRpcArgs = args;
+        return Promise.resolve({ data: [row], error: null });
+      };
       await _mergeSignedProposals(_hub, _hub.contractorUserId);
-      _supa.from = origFrom;
+      _supa.rpc = origRpc;
     }, DECLINED_ROW);
   }
 
@@ -279,6 +284,9 @@ test.describe('Declined proposal, never rendered as signed', () => {
     expect(bid.declinedAt).toBe(DECLINED_ROW.signed_at);
     expect(bid.lostReason).toBe('Price'); // client-picked reason surfaces in Documents immediately
     expect(bid.balance).toBe(0);
+    // The read carries the hub link, which is what the server checks (20261049).
+    const args = await page.evaluate(() => window.__hubRpcArgs);
+    expect(args).toMatchObject({ p_u: FAKE_USER_ID, p_c: '1', p_t: FAKE_TOKEN, p_bid_ids: [String(FAKE_BID_ID_1)] });
     assertNoErrors(page, 'declined merge');
   });
 
@@ -366,12 +374,10 @@ test.describe('Declined proposal, never rendered as signed', () => {
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await page.evaluate(async () => {
       const row = { bid_id: String(_hub.bids[0].id), client_signed_name: 'Alice Smith', payment_method: 'cash', payment_status: 'pending', signed_at: '2026-07-06T12:00:00.000Z' };
-      const origFrom = _supa.from.bind(_supa);
-      _supa.from = (table) => table === 'signed_proposals'
-        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
-        : origFrom(table);
+      const origRpc = _supa.rpc;
+      _supa.rpc = (fn, args) => fn === 'hub_signed_proposals' ? Promise.resolve({ data: [row], error: null }) : origRpc(fn, args);
       await _mergeSignedProposals(_hub, _hub.contractorUserId);
-      _supa.from = origFrom;
+      _supa.rpc = origRpc;
     });
     const bid = await page.evaluate(() => ({ status: _hub.bids[0].status, signedAt: _hub.bids[0].signedAt || null, signerName: _hub.bids[0].signerName || null }));
     expect(bid.status).toBe('Closed Won');

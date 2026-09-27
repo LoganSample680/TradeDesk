@@ -254,7 +254,11 @@ async function init(){
     return;
   }
   try{
-    const{data,error}=await _supa.from('account_public').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
+    // One business, by the id in this QR link (20261049). The account_public
+    // view used to answer anon for EVERY business; account_public_card answers
+    // for exactly the one asked about.
+    const{data:_cards,error}=await _supa.rpc('account_public_card',{p_id:ACCOUNT_ID});
+    const data=Array.isArray(_cards)?_cards[0]:null;
     if(error||!data){
       showErr('Contractor not found','This link may be invalid or expired.');
       return;

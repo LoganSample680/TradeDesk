@@ -41,3 +41,13 @@ verify_jwt = false
 # no JWT — so gateway verification must be off.
 [functions.send-sub-invite-email]
 verify_jwt = false
+
+# Public signing pages (sign.html, client.html, contract-sign.html) write
+# through this with no session; it proves the secret link itself (20261049).
+[functions.proposal-sign]
+verify_jwt = false
+
+# Kicked by the database (pg_net) with no JWT when payout details change; it
+# takes no input and only emails the account owner (20261049).
+[functions.payout-alert]
+verify_jwt = false

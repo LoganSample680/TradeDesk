@@ -397,14 +397,11 @@ async function loadAccountData(){
       // and stay unlinked forever, which is 9.10's entire case, and it landed
       // on the first real one we had.
       //
-      // Both claim paths, in the order the crew block already uses them: the
-      // forge-proof token while the invite link is still stashed, then the
-      // email match. The email match is what makes this RETROACTIVE and is the
-      // reason it is not gated on a stash: Blake has none left, and
-      // claim_crew_by_email reads his address off auth.users rather than from
-      // the client, so every invite sitting unclaimed against a login that
-      // owns a business links itself on that login's next boot with nothing
-      // for the contractor to re-send.
+      // The claim is the forge-proof token while the invite link is still
+      // stashed. There is no email-only claim any more (20261049, H4): email
+      // confirmation is off, so an address proves nothing, and a stranger who
+      // signed up as the invited address could take the seat. An owner who
+      // lost the stash opens the invite link again.
       //
       // Claiming is not switching. The hat still has to be chosen below, and
       // an unchosen hat still lands them in their own business exactly as
@@ -416,7 +413,6 @@ async function loadAccountData(){
           const{data:_ct}=await _supa.rpc('claim_crew_invite',{tok:_tok});
           if(_ct&&_ct.ok){try{localStorage.removeItem('_pendingEmpInvite');}catch(_e2){}}
         }
-        await _supa.rpc('claim_crew_by_email');
       }catch(_e){}
       // NAMED, not just counted. The plain select below can only ever return
       // team_members.name, which is the CREW MEMBER's name and not the
@@ -532,42 +528,10 @@ async function loadAccountData(){
       }
       return _linkAsCrew(empRow,false);
     }
-    // (2) Pending invite by EMAIL MATCH, server-side (SECURITY DEFINER). Under strict
-    // RLS the employee can't even SEE their unlinked roster row (employee_user_id null
-    // → no policy grants it), so the legacy client-side select+update silently linked
-    // NOTHING on a from-migrations stack, hosted only worked via dashboard-era
-    // permissive policies (same drift family as the missing columns, caught live by
-    // the crew certification). The RPC links the most recent unlinked row for this
-    // login's email atomically; the email comes from auth.users, never the client.
-    try{
-      const{data:_em,error:_emErr}=await _supa.rpc('claim_crew_by_email');
-      if(!_emErr&&_em?.ok){
-        localStorage.removeItem('_pendingEmpInvite');
-        return _linkAsCrew({id:_em.team_member_id,contractor_user_id:_em.contractor_user_id,employee_user_id:_supaUser.id,name:_em.name||'',role:_em.role||'tech',permissions:_em.permissions||{},active:true},true);
-      }
-    }catch(_e){} // RPC not deployed → legacy path below (hosted-compat)
-    const{data:inviteRows}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).order('invited_at',{ascending:false});
-    const inviteRow=inviteRows&&inviteRows[0];
-    if(inviteRow){
-      await _supa.from('team_members').update({employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()}).eq('id',inviteRow.id);
-      localStorage.removeItem('_pendingEmpInvite');
-      return _linkAsCrew({...inviteRow,employee_user_id:_supaUser.id,active:true},true);
-    }
-    // (3) Legacy fallback: unsigned _pendingEmpInvite payload (pre-token links).
-    const _pi=_pend;
-    if(_pi?.cid){
-      const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
-      if(!_piErr){
-        _isEmployee=true;_contractorUserId=_pi.cid;_coOwner=false;
-        _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
-        _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
-        applyPermissions();
-        localStorage.removeItem('_pendingEmpInvite');
-        showToast('Welcome to the crew! 👋','✅');
-        try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
-        return true;
-      }
-    }
+    // (2) There is no email-match or unsigned-payload join any more (20261049,
+    // H4). Both trusted something a stranger can type: an address (email
+    // confirmation is off) or a base64 payload anyone can forge. The seat is
+    // claimed with the invite token above, or not at all.
     // (4) A crew invite is pending but NOTHING linked: the crew member almost
     // certainly signed up with a different email than the boss put on the roster.
     // This used to dead-end SILENTLY into a brand-new empty owner account, the

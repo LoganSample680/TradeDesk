@@ -734,6 +734,28 @@ async function _fetchStorageJson(key){
 }
 // "Already signed" terminal page, extracted from init so the stash-handoff path
 // can also reach it from its background signed-status verify.
+// Signing state, through the token-checked RPC (20261049). signed_proposals
+// is closed to anon now: the storage key IS the proof this page holds the
+// link, and the server checks it before answering. A declined row comes back
+// too, and it is a NO, never a signature.
+async function _sigStatus(key){
+  try{
+    if(!_supa||typeof _supa.rpc!=='function'||!key)return null;
+    const{data,error}=await _supa.rpc('proposal_sign_status',{p_key:key});
+    if(error||!Array.isArray(data))return null;
+    return data[0]||null;
+  }catch(_){return null;}
+}
+function _sigIsDecline(r){return !!r&&(r.payment_status==='declined'||r.payment_method==='declined');}
+// Every write this page makes goes through proposal-sign (20261049), which
+// proves the link, takes the amount from the stored proposal and writes the
+// row and the proposal file together.
+async function _signCall(body){
+  const{data,error}=await _supa.functions.invoke('proposal-sign',{body});
+  if(error)throw error;
+  if(data&&data.error)throw new Error(data.error);
+  return data||{};
+}
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
   const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -809,7 +831,7 @@ async function init(){
     // can easily point at a signed proposal and must never flash the sign UI first.
     if(_prop.status==='signed'||_prop.status==='paid'){
       await _whenSupaReady();
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+      const sigRow=await _sigStatus(key);
       _renderAlreadySigned(sigRow);return;
     }
     if(_fromStash){
@@ -818,11 +840,13 @@ async function init(){
       // the residual chop. The verify itself is not urgent, a signed-elsewhere
       // race just swaps to the Already-signed page a beat later.
       setTimeout(()=>{_whenSupaReady().then(async()=>{
-        const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
-        if(sigRow)_renderAlreadySigned(sigRow);
+        const sigRow=await _sigStatus(key);
+        if(_sigIsDecline(sigRow))show('pg-declined');
+        else if(sigRow)_renderAlreadySigned(sigRow);
       }).catch(()=>{});},1600);
     }else{
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+      const sigRow=await _sigStatus(key);
+      if(_sigIsDecline(sigRow)){show('pg-declined');return;}
       if(sigRow){_renderAlreadySigned(sigRow);return;}
     }
     // Log view via Edge Function, skip entirely when preview=1 (contractor previewing, not a real client open).
@@ -1082,14 +1106,9 @@ async function init(){
     // Terms accordion, shared with the contractor's estimate-builder Preview
     // overlay via _applyTermsAccordion (js/legal.js) so the two views can't drift.
     _applyTermsAccordion(document.getElementById('prop-html'));
-    // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
-    // so hub preview and all future views (client.html) reflect the correct state-specific terms.
-    // (Signed/paid proposals returned early above, so this only ever touches pending ones.
-    //  Background: the deferred supabase-js may not have landed yet on the stash path.)
-    if(_proposalHtml!==_proposalHtmlOrig&&key){
-      const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
-      setTimeout(()=>{_whenSupaReady().then(()=>{_supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});}).catch(()=>{});},1600);
-    }
+    // Legacy patches above are applied in memory only. This page used to write
+    // the patched proposal back to storage as anon; that door is closed
+    // (20261049), and the contractor's next send republishes it anyway.
     // Remove the embedded signature block from the proposal HTML, signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
     // Show EPA notice banner and "Document 1 of 2" label for pre-1978 proposals (all trades)
@@ -1418,51 +1437,15 @@ async function submitCash(){
   const name=document.getElementById('sig-name').value.trim();
   const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
-  const _subAmt=(window._portfolioAccepted&&_prop.discountedPrice)?_prop.discountedPrice:_prop.amount;
-  const _subDepFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
-  const _subDep=Math.round(_subAmt*_subDepFrac*100)/100;
   try{
-    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[],buyerSenior:!!window._buyerSenior};
-    // Storage failure must not block the signature (DB row is the source of truth),
-    // but it means the drawn-signature image won't render on the proposal, log it.
-    const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
-    if(_storErr)console.warn('proposal JSON update failed, signature image will not show on stored proposal:',_storErr.message);
-    // Core columns exist in every deployment. Optional compliance/analytics columns
-    // may lag behind where newer migrations haven't been applied, if PostgREST
-    // rejects the row with an unknown-column error (PGRST204), retry with core only
-    // so the signature is never lost to a schema mismatch.
-    const _core={
-      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
-      client_name:_prop.clientName,client_signed_name:name,
-      amount:_subAmt,deposit:_subDep,
-      payment_method:method,payment_status:'pending_'+method,
-      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-    };
-    const _optional={
-      portfolio_accepted:window._portfolioAccepted||false,
-      portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
-      epa_required:_prop.epaRequired||false,
-      epa_ack_at:_prop.epaRequired?ts:null,
-      rrp_firm_cert:_prop.epaRequired?(_prop.rrpFirmCertNum||null):null,
-      rrp_renovator_name:_prop.epaRequired?(_prop.rrpRenovatorName||null):null,
-      // Drawn signature image, stored in the DB so documents can always render it,
-      // even when the storage-JSON update was missed at signing time.
-      signature_data:_sigData||null,
-      // California 65+ (Civ. Code §1689.6): five business days to cancel.
-      buyer_senior:!!window._buyerSenior,
-    };
-    let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional},{onConflict:'bid_id'});
-    // buyer_senior is the newest column: if the database has not caught up yet,
-    // drop only it first so the signature image and EPA fields still land.
-    if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))&&/buyer_senior/.test(_upsertErr.message||'')){
-      const{buyer_senior:_bs,..._optNoSenior}=_optional;
-      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optNoSenior},{onConflict:'bid_id'}));
-    }
-    if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))){
-      console.warn('signed_proposals: optional column rejected, retrying core only -',_upsertErr.message);
-      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core,{onConflict:'bid_id'}));
-    }
-    if(_upsertErr)throw _upsertErr;
+    // One call: proposal-sign proves the link, takes the amount and deposit
+    // from the stored proposal (never from this page), writes the
+    // signed_proposals row (signature image, EPA acknowledgement, senior
+    // flag) and the signed proposal file together. A second tap on another
+    // device answers alreadySigned instead of signing twice.
+    await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
+      portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
+      buyerSenior:!!window._buyerSenior});
     // Signal the contractor's open TradeDesk tab to refresh immediately
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(_prop.id),ts}));}catch(_){}
   }catch(e){
@@ -1475,7 +1458,6 @@ async function submitCash(){
   // Outside the try, a confirmation-screen render hiccup must not report a
   // successfully saved signature as a failure.
   showDone(method);
-  _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
 }
 
 function showDone(method){
@@ -1516,10 +1498,6 @@ function showDone(method){
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
   show('pg-done');scrollTo(0,0);
-  if(_prop?.epaRequired){
-    const _epaTs=new Date().toISOString();
-    _supa.from('signed_proposals').update({epa_ack_at:_epaTs,epa_required:true,rrp_firm_cert:_prop.rrpFirmCertNum||null,rrp_renovator_name:_prop.rrpRenovatorName||null}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('EPA ack:',e));
-  }
 }
 
 // ── EPA Pre-Renovation Disclosure (Document 2 of 2), review page ──────────
@@ -1567,7 +1545,6 @@ async function _confirmDecline(){
   const params2=new URLSearchParams(location.search);
   let key=params2.get('key');
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
-  const ts=new Date().toISOString();
   // Reason is entirely optional, an empty pick just means no signal, never a blocker.
   let declineReason=_declineReason;
   if(declineReason==='Other'){
@@ -1575,19 +1552,9 @@ async function _confirmDecline(){
     declineReason=t?'Other: '+t:'Other';
   }
   try{
-    // Update proposal JSON in storage
-    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts,declineReason});
-    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
-    // Write to signed_proposals with payment_status:'declined' so the contractor app
-    // sees the decline and marks the bid as Closed Lost (not Closed Won)
-    await _supa.from('signed_proposals').upsert({
-      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
-      client_name:_prop.clientName,client_signed_name:_prop.clientName||'Client',
-      amount:_prop.amount,deposit:_prop.deposit,
-      payment_method:'declined',payment_status:'declined',
-      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:false,decline_reason:declineReason||null,
-    },{onConflict:'bid_id'});
+    // proposal-sign writes the declined row (the contractor app reads it as
+    // Closed Lost) and marks the stored proposal declined, after proving the link.
+    await _signCall({action:'decline',key,reason:declineReason||null});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
@@ -1713,6 +1680,7 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
         bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
         notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
         signerName:document.getElementById('sig-name').value.trim(),
+        buyerSenior:!!window._buyerSenior,
         colorChoices:window._colorChoices||[],
         successUrl:location.href+'&payment=success',cancelUrl:location.href,
         embedded:true,
