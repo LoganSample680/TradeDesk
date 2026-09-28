@@ -76,6 +76,17 @@ test.describe('Blake Sample: what he said is what the proposal says', () => {
     ]);
   });
 
+  test('the second walk, word for word as the phone logged it', async () => {
+    // td_tim_asks, 2026-09-28 01:24 UTC, T&M, Blake Sample's proposal.
+    expect(await split('I am doing a water heater Adding in A protect powered rod Removing the old unit')).toEqual([
+      'Doing a water heater',
+      'Adding in a Corro-Protec powered anode rod',
+      'Removing the old unit',
+    ]);
+    const r = await page.evaluate(() => ['swap the power rod', 'a powered anode rod', 'protect the floor with drop cloths', 'the power washer'].map(_timkHeard));
+    expect(r).toEqual(['swap the powered anode rod', 'a powered anode rod', 'protect the floor with drop cloths', 'the power washer']);
+  });
+
   test('and nothing that was already right is touched', async () => {
     const same = [
       'The heater, we were testing it',
