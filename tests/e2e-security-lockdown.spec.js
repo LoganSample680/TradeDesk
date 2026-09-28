@@ -28,6 +28,9 @@ async function boot(browser) {
   await mockAllExternal(page);
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await waitForAppBoot(page);
+  // The first cloud load lands ~10s after boot on WebKit. Let it finish before
+  // any test swaps _supa.from for a stub, or the load runs through the stub.
+  await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 20000 }).catch(() => {});
   return page;
 }
 
@@ -116,7 +119,7 @@ test.describe('a hostile lead from the public form stays inert end to end', () =
   test.afterEach(async () => { assertNoErrors(page, 'security lockdown leads'); });
 
   // A chainable stub for every table, so update().eq() and select() resolve.
-  const STUB = `(() => { const c = { eq: () => c, in: () => c, select: () => c, order: () => c, maybeSingle: () => Promise.resolve({ data: null, error: null }),
+  const STUB = `(() => { const c = { eq: () => c, in: () => c, is: () => c, select: () => c, order: () => c, maybeSingle: () => Promise.resolve({ data: null, error: null }),
       update: () => c, then: (f) => Promise.resolve({ data: [], error: null }).then(f) }; return () => c; })()`;
 
   test('new-lead toast, review card and Add to pipeline render the payload as text', async () => {
