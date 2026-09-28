@@ -1,0 +1,746 @@
+[
+  {
+    "id": "blindB-01",
+    "trade": "remodel",
+    "said": "okay so kitchen. we're gonna demo the upper and lower cabinets. haul it all off. install new shaker cabinets and put in silly stone countertops with an undermount sink",
+    "expect": [
+      "Demo the upper and lower cabinets",
+      "Haul it all off",
+      "Install new shaker cabinets",
+      "Put in Silestone countertops with an undermount sink"
+    ],
+    "heard": [
+      {"said": "silly stone", "means": "Silestone"}
+    ]
+  },
+  {
+    "id": "blindB-02",
+    "trade": "remodel",
+    "said": "Master bath. Tear out the tub. Install a coaler shower pan. tile the walls to the ceiling. New vanity 36 inch. Replace the toilet with a comfort height",
+    "expect": [
+      "Tear out the tub",
+      "Install a Kohler shower pan",
+      "Tile the walls to the ceiling",
+      "New vanity 36 inch",
+      "Replace the toilet with a comfort height"
+    ],
+    "heard": [
+      {"said": "coaler", "means": "Kohler"}
+    ]
+  },
+  {
+    "id": "blindB-03",
+    "trade": "remodel",
+    "said": "um so basement finish we're gonna frame the exterior walls with two by fours about 140 linear feet hang drywall tape and finish paint ceilings and walls um put in a drop ceiling in the utility room no wait scratch that just leave the utility room open and run lvp through the main area",
+    "expect": [
+      "Frame the exterior walls with 2x4s about 140 linear feet",
+      "Hang drywall",
+      "Tape and finish",
+      "Paint ceilings and walls",
+      "Run LVP through the main area"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-04",
+    "trade": "remodel",
+    "said": "Add a half bath under the stairs. Rough in plumbing for toilet and sink. Run a new 20 amp circuit for the fan. Hang drywall. Install toilet and pedestal sink. 8500 for the whole thing",
+    "expect": [
+      "Add a half bath under the stairs",
+      "Rough in plumbing for toilet and sink",
+      "Run a new 20 amp circuit for the fan",
+      "Hang drywall",
+      "Install toilet and pedestal sink"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-05",
+    "trade": "remodel",
+    "said": "Remove the wall between the kitchen and dining room. it's load bearing so we're gonna put in an LVL beam. Patch the ceiling and the floor where the wall was. Paint to match",
+    "expect": [
+      "Remove the wall between the kitchen and dining room",
+      "Put in an LVL beam",
+      "Patch the ceiling and the floor where the wall was",
+      "Paint to match"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-06",
+    "trade": "remodel",
+    "said": "Kitchen backsplash. Remove existing laminate backsplash. install 3 by 6 subway tile about 30 square feet. Grout with map a flex color. Caulk the countertop joint",
+    "expect": [
+      "Remove existing laminate backsplash",
+      "Install 3x6 subway tile about 30 square feet",
+      "Grout with Mapei Flexcolor",
+      "Caulk the countertop joint"
+    ],
+    "heard": [
+      {"said": "map a flex color", "means": "Mapei Flexcolor"}
+    ]
+  },
+  {
+    "id": "blindB-07",
+    "trade": "remodel",
+    "said": "alright replace the door in the first bedroom with a solid core door and new hardware. patch the hole in the wall behind the door in the second bedroom. swap out the vanity light in the hall bath. Living room install crown molding, about 60 feet. make that 72 feet",
+    "expect": [
+      "Replace the door in the first bedroom with a solid core door and new hardware",
+      "Patch the hole in the wall behind the door in the second bedroom",
+      "Swap out the vanity light in the hall bath",
+      "Living room install crown molding about 72 feet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-08",
+    "trade": "remodel",
+    "said": "okay sunroom. pour the footings, frame the 12 by 16 sunroom floor walls and roof, install 5 Andersen windows and a sliding door, shingle the roof to match the house. about 38,000",
+    "expect": [
+      "Pour the footings",
+      "Frame the 12x16 sunroom floor walls and roof",
+      "Install 5 Andersen windows and a sliding door",
+      "Shingle the roof to match the house"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-09",
+    "trade": "remodel",
+    "said": "Guest bath. replace the tile floor with, actually let's do LVP instead. new toilet. regrout the tub surround",
+    "expect": [
+      "Replace the tile floor with LVP",
+      "New toilet",
+      "Regrout the tub surround"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-10",
+    "trade": "remodel",
+    "said": "Kitchen refresh. paint the kitchen cabinets white. swap the hardware, 32 pulls. replace the kitchen faucet with a moan pull down. new under cabinet LED lights",
+    "expect": [
+      "Paint the kitchen cabinets white",
+      "Swap the hardware 32 pulls",
+      "Replace the kitchen faucet with a Moen pull down",
+      "New under cabinet LED lights"
+    ],
+    "heard": [
+      {"said": "moan", "means": "Moen"}
+    ]
+  },
+  {
+    "id": "blindB-11",
+    "trade": "remodel",
+    "said": "yeah so what we're looking at here is we're gonna gut the whole hall bath down to the studs um new plumbing for the shower valve then cement board on the walls uh shlooter curdy over that the tile goes up to 8 feet then a frameless glass door and a new exhaust fan vented outside",
+    "expect": [
+      "Gut the whole hall bath down to the studs",
+      "New plumbing for the shower valve",
+      "Cement board on the walls",
+      "Schluter Kerdi over that",
+      "The tile goes up to 8 feet",
+      "Frameless glass door",
+      "New exhaust fan vented outside"
+    ],
+    "heard": [
+      {"said": "shlooter curdy", "means": "Schluter Kerdi"}
+    ]
+  },
+  {
+    "id": "blindB-12",
+    "trade": "remodel",
+    "said": "Attic conversion. install collar ties no wait rafter ties every 4 feet. spray foam the roof deck. subfloor with 3/4 advantage tech. two skylights Velux",
+    "expect": [
+      "Install rafter ties every 4 feet",
+      "Spray foam the roof deck",
+      "Subfloor with 3/4 AdvanTech",
+      "2 skylights Velux"
+    ],
+    "heard": [
+      {"said": "advantage tech", "means": "AdvanTech"}
+    ]
+  },
+  {
+    "id": "blindB-13",
+    "trade": "remodel",
+    "said": "demo the laundry room cabinets 300. install new upper cabinets and a folding counter 2400. move the dryer vent to the outside wall another 350. new utility sink for 600",
+    "expect": [
+      "Demo the laundry room cabinets",
+      "Install new upper cabinets and a folding counter",
+      "Move the dryer vent to the outside wall",
+      "New utility sink"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-14",
+    "trade": "remodel",
+    "said": "replace the front entry door with a fiberglass door. new storm door. paint the trim. Install a new keyless deadbolt 180 installed",
+    "expect": [
+      "Replace the front entry door with a fiberglass door",
+      "New storm door",
+      "Paint the trim",
+      "Install a new keyless deadbolt"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-15",
+    "trade": "remodel",
+    "said": "Drywall repair in the living room ceiling from the leak. texture to match. prime and paint the ceiling",
+    "expect": [
+      "Drywall repair in the living room ceiling from the leak",
+      "Texture to match",
+      "Prime and paint the ceiling"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-16",
+    "trade": "remodel",
+    "said": "the island. extend the island 2 feet. new caesar stone top. add two pendant lights over the island, scratch that three pendant lights. add an outlet on the end of the island for code",
+    "expect": [
+      "Extend the island 2 feet",
+      "New Caesarstone top",
+      "Add 3 pendant lights over the island",
+      "Add an outlet on the end of the island for code"
+    ],
+    "heard": [
+      {"said": "caesar stone", "means": "Caesarstone"}
+    ]
+  },
+  {
+    "id": "blindB-17",
+    "trade": "handyman",
+    "said": "hang 3 pictures. mount the tv in the living room. fix the sticking bedroom door. replace the bathroom exhaust fan cover",
+    "expect": [
+      "Hang 3 pictures",
+      "Mount the TV in the living room",
+      "Fix the sticking bedroom door",
+      "Replace the bathroom exhaust fan cover"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-18",
+    "trade": "handyman",
+    "said": "okay um replace the flapper in the upstairs toilet tighten the loose handrail on the basement stairs caulk around the kitchen sink and replace all five smoke detectors",
+    "expect": [
+      "Replace the flapper in the upstairs toilet",
+      "Tighten the loose handrail on the basement stairs",
+      "Caulk around the kitchen sink",
+      "Replace all 5 smoke detectors"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-19",
+    "trade": "handyman",
+    "said": "scrape and paint the iron railing on the front steps with rust oleum black. 250. patch the concrete step corner. another 80",
+    "expect": [
+      "Scrape and paint the iron railing on the front steps with Rust-Oleum black",
+      "Patch the concrete step corner"
+    ],
+    "heard": [
+      {"said": "rust oleum", "means": "Rust-Oleum"}
+    ]
+  },
+  {
+    "id": "blindB-20",
+    "trade": "handyman",
+    "said": "swap the garbage disposal for an in sink a rator half horse. Fix the leak under the bathroom sink. Adjust the cabinet doors in the kitchen so they close",
+    "expect": [
+      "Swap the garbage disposal for an InSinkErator half horse",
+      "Fix the leak under the bathroom sink",
+      "Adjust the cabinet doors in the kitchen so they close"
+    ],
+    "heard": [
+      {"said": "in sink a rator", "means": "InSinkErator"}
+    ]
+  },
+  {
+    "id": "blindB-21",
+    "trade": "handyman",
+    "said": "install two ceiling fans, no wait, one ceiling fan in the master. hang the new light fixture in the dining room. replace 12 outlets with tamper resistant",
+    "expect": [
+      "Install 1 ceiling fan in the master",
+      "Hang the new light fixture in the dining room",
+      "Replace 12 outlets with tamper resistant"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-22",
+    "trade": "handyman",
+    "said": "weatherstrip the back door and the garage door. new door sweep on the front. Re-caulk the windows on the south side",
+    "expect": [
+      "Weatherstrip the back door and the garage door",
+      "New door sweep on the front",
+      "Re-caulk the windows on the south side"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-23",
+    "trade": "handyman",
+    "said": "change the locks on front and back doors to quick set smart locks keyed alike. 2 of them for 320 plus labor. install a nest thermostat",
+    "expect": [
+      "Change the locks on front and back doors to Kwikset smart locks keyed alike",
+      "Install a Nest thermostat"
+    ],
+    "heard": [
+      {"said": "quick set", "means": "Kwikset"}
+    ]
+  },
+  {
+    "id": "blindB-24",
+    "trade": "handyman",
+    "said": "Patch the drywall where the old thermostat was. Touch up paint in the hallway. about an hour. Replace the crushed dryer vent hose",
+    "expect": [
+      "Patch the drywall where the old thermostat was",
+      "Touch up paint in the hallway",
+      "Replace the crushed dryer vent hose"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-25",
+    "trade": "handyman",
+    "said": "install 2 grab bars in the shower. replace the shower head with a Delta handheld. new GFI outlet by the vanity",
+    "expect": [
+      "Install 2 grab bars in the shower",
+      "Replace the shower head with a Delta handheld",
+      "New GFI outlet by the vanity"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-26",
+    "trade": "handyman",
+    "said": "Alright so. clean the gutters. and reattach the downspout on the corner. Also rehang the dragging fence gate. And pressure wash the back patio. Oh and she mentioned the attic stairs, replace the attic ladder. That's about it.",
+    "expect": [
+      "Clean the gutters",
+      "Reattach the downspout on the corner",
+      "Rehang the dragging fence gate",
+      "Pressure wash the back patio",
+      "Replace the attic ladder"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-27",
+    "trade": "handyman",
+    "said": "Assemble 2 bookcases. anchor them to the wall. Mount curtain rods on 4 windows. 95 an hour",
+    "expect": [
+      "Assemble 2 bookcases",
+      "Anchor them to the wall",
+      "Mount curtain rods on 4 windows"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-28",
+    "trade": "handyman",
+    "said": "prime the water stain on the ceiling with kills. paint the bathroom walls in bear ultra satin. make that semi gloss. replace the towel bar",
+    "expect": [
+      "Prime the water stain on the ceiling with Kilz",
+      "Paint the bathroom walls in Behr Ultra semi gloss",
+      "Replace the towel bar"
+    ],
+    "heard": [
+      {"said": "kills", "means": "Kilz"},
+      {"said": "bear", "means": "Behr"}
+    ]
+  },
+  {
+    "id": "blindB-29",
+    "trade": "flooring",
+    "said": "pull the old carpet in the dining room first. install sure LVP in the kitchen and dining about 420 square feet. new quarter round. transitions at the hallway",
+    "expect": [
+      "Pull the old carpet in the dining room first",
+      "Install Shaw LVP in the kitchen and dining about 420 square feet",
+      "New quarter round",
+      "Transitions at the hallway"
+    ],
+    "heard": [
+      {"said": "sure", "means": "Shaw"}
+    ]
+  },
+  {
+    "id": "blindB-30",
+    "trade": "flooring",
+    "said": "carpet the 3 bedrooms about 540 square feet with an 8 pound pad, no wait, 10 pound pad. haul off the old carpet",
+    "expect": [
+      "Carpet the 3 bedrooms about 540 square feet with a 10 pound pad",
+      "Haul off the old carpet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-31",
+    "trade": "flooring",
+    "said": "sand and refinish the oak floors in the living room and hallway um stain it special walnut actually no stain just natural then three coats of bona traffic",
+    "expect": [
+      "Sand and refinish the oak floors in the living room and hallway",
+      "No stain just natural",
+      "3 coats of Bona Traffic"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-32",
+    "trade": "flooring",
+    "said": "tile the laundry room floor 12 by 24 porcelain about 80 square feet. Ditra underneath. shooter edge at the doorway",
+    "expect": [
+      "Tile the laundry room floor 12x24 porcelain about 80 square feet",
+      "Ditra underneath",
+      "Schluter edge at the doorway"
+    ],
+    "heard": [
+      {"said": "shooter", "means": "Schluter"}
+    ]
+  },
+  {
+    "id": "blindB-33",
+    "trade": "flooring",
+    "said": "okay so we're gonna tear up the kitchen vinyl and the underlayment. level the subfloor, it's got a dip by the fridge. Then LVP kitchen, pantry, and the half bath. 310 feet. in the family room we're keeping the carpet so nothing there. new baseboards through the kitchen, about 90 linear feet. 3.25 a foot",
+    "expect": [
+      "Tear up the kitchen vinyl and the underlayment",
+      "Level the subfloor",
+      "LVP kitchen, pantry, and the half bath 310 feet",
+      "New baseboards through the kitchen about 90 linear feet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-34",
+    "trade": "flooring",
+    "said": "glue down karen dean in the sunroom about 200 square feet. self level first. new threshold",
+    "expect": [
+      "Glue down Karndean in the sunroom about 200 square feet",
+      "Self level first",
+      "New threshold"
+    ],
+    "heard": [
+      {"said": "karen dean", "means": "Karndean"}
+    ]
+  },
+  {
+    "id": "blindB-35",
+    "trade": "flooring",
+    "said": "replace the stair treads with red oak 13 treads, scratch that 14 treads. new risers painted white. stain the treads to match the floor",
+    "expect": [
+      "Replace the stair treads with red oak 14 treads",
+      "New risers painted white",
+      "Stain the treads to match the floor"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-36",
+    "trade": "flooring",
+    "said": "install core tech plus in the basement over the concrete 650 square feet. 6 mil vapor barrier. undercut the door jambs. 4200 for the job",
+    "expect": [
+      "Install COREtec Plus in the basement over the concrete 650 square feet",
+      "6 mil vapor barrier",
+      "Undercut the door jambs"
+    ],
+    "heard": [
+      {"said": "core tech", "means": "COREtec"}
+    ]
+  },
+  {
+    "id": "blindB-37",
+    "trade": "concrete",
+    "said": "grind out the cracks in the garage floor. fill with seeker flex. then epoxy coat the whole garage 2 car about 480 square feet",
+    "expect": [
+      "Grind out the cracks in the garage floor",
+      "Fill with Sikaflex",
+      "Epoxy coat the whole garage 2 car about 480 square feet"
+    ],
+    "heard": [
+      {"said": "seeker flex", "means": "Sikaflex"}
+    ]
+  },
+  {
+    "id": "blindB-38",
+    "trade": "concrete",
+    "said": "tear out the old driveway. pour new 4 inch driveway with fiber mesh 20 by 40. broom finish. saw cut control joints every 10 feet",
+    "expect": [
+      "Tear out the old driveway",
+      "Pour new 4 inch driveway with fiber mesh 20x40",
+      "Broom finish",
+      "Saw cut control joints every 10 feet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-39",
+    "trade": "concrete",
+    "said": "so we're gonna form and pour a 12 by 14 patio off the back door stamped ashlar slate pattern color charcoal seal it after it cures um 6 inches of gravel base first",
+    "expect": [
+      "Form and pour a 12x14 patio off the back door",
+      "Stamped ashlar slate pattern color charcoal",
+      "Seal it after it cures",
+      "6 inches of gravel base first"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-40",
+    "trade": "masonry",
+    "said": "repoint the chimney mortar joints. replace the cracked crown with quick treat crown mix. new chimney cap stainless. 1850",
+    "expect": [
+      "Repoint the chimney mortar joints",
+      "Replace the cracked crown with Quikrete crown mix",
+      "New chimney cap stainless"
+    ],
+    "heard": [
+      {"said": "quick treat", "means": "Quikrete"}
+    ]
+  },
+  {
+    "id": "blindB-41",
+    "trade": "masonry",
+    "said": "rebuild the front steps, 4 risers. brick to match the house. new black iron railing both sides",
+    "expect": [
+      "Rebuild the front steps 4 risers",
+      "Brick to match the house",
+      "New black iron railing both sides"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-42",
+    "trade": "masonry",
+    "said": "install bell guard pavers for the walkway about 150 square feet. 4 inches of base compacted. poly sand the joints. edge restraint both sides",
+    "expect": [
+      "Install Belgard pavers for the walkway about 150 square feet",
+      "4 inches of base compacted",
+      "Poly sand the joints",
+      "Edge restraint both sides"
+    ],
+    "heard": [
+      {"said": "bell guard", "means": "Belgard"}
+    ]
+  },
+  {
+    "id": "blindB-43",
+    "trade": "masonry",
+    "said": "build a retaining wall along the back yard 60 feet long 3 feet tall with segmental block. perforated drain pipe behind it. gravel backfill. 60 feet no scratch that 64 feet",
+    "expect": [
+      "Build a retaining wall along the back yard 64 feet long 3 feet tall with segmental block",
+      "Perforated drain pipe behind it",
+      "Gravel backfill"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-44",
+    "trade": "concrete",
+    "said": "mudjack the sunken sidewalk slabs 3 of them. caulk the expansion joints with self leveling sealant. about 700",
+    "expect": [
+      "Mudjack the sunken sidewalk slabs 3 of them",
+      "Caulk the expansion joints with self leveling sealant"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-45",
+    "trade": "decks",
+    "said": "build a 16 by 12 deck off the kitchen. pressure treated framing. a Zeke decking in the color, um, slate gray. picture frame border. 3 steps down to the yard",
+    "expect": [
+      "Build a 16x12 deck off the kitchen",
+      "Pressure treated framing",
+      "Azek decking in the color slate gray",
+      "Picture frame border",
+      "3 steps down to the yard"
+    ],
+    "heard": [
+      {"said": "a Zeke", "means": "Azek"}
+    ]
+  },
+  {
+    "id": "blindB-46",
+    "trade": "decks",
+    "said": "replace the deck boards with tracks transcend. keep the framing. replace 4 joists that are rotted. new fascia boards",
+    "expect": [
+      "Replace the deck boards with Trex Transcend",
+      "Replace 4 joists that are rotted",
+      "New fascia boards"
+    ],
+    "heard": [
+      {"said": "tracks", "means": "Trex"}
+    ]
+  },
+  {
+    "id": "blindB-47",
+    "trade": "fencing",
+    "said": "tear out the old chain link about 180 feet install 6 foot privacy fence pressure treated dog ear pickets plus a 4 foot walk gate and a 10 foot double drive gate",
+    "expect": [
+      "Tear out the old chain link about 180 feet",
+      "Install 6 foot privacy fence pressure treated dog ear pickets",
+      "A 4 foot walk gate and a 10 foot double drive gate"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-48",
+    "trade": "decks",
+    "said": "power wash first. stain and seal the deck and railings. 650",
+    "expect": [
+      "Power wash first",
+      "Stain and seal the deck and railings"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-49",
+    "trade": "fencing",
+    "said": "wash the fence then stain both sides with sure win Williams superdeck semi transparent cedar tone about 240 feet of fence",
+    "expect": [
+      "Wash the fence",
+      "Stain both sides with Sherwin-Williams SuperDeck semi transparent cedar tone about 240 feet of fence"
+    ],
+    "heard": [
+      {"said": "sure win Williams", "means": "Sherwin-Williams"}
+    ]
+  },
+  {
+    "id": "blindB-50",
+    "trade": "decks",
+    "said": "okay so on the back deck the stairs are shot. rebuild the stairs 5 steps with a landing. add a handrail to code on both sides. then swap the deck railing wood balusters for black aluminum, about 40 linear feet. oh and add post cap lights on the 8 posts, actually just the 4 corner posts",
+    "expect": [
+      "Rebuild the stairs 5 steps with a landing",
+      "Add a handrail to code on both sides",
+      "Swap the deck railing wood balusters for black aluminum about 40 linear feet",
+      "Add post cap lights on the 4 corner posts"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-51",
+    "trade": "decks",
+    "said": "build a 10 by 10 landing deck at the side door. fiber on composite. 2 steps. hidden fasteners",
+    "expect": [
+      "Build a 10x10 landing deck at the side door",
+      "Fiberon composite",
+      "2 steps",
+      "Hidden fasteners"
+    ],
+    "heard": [
+      {"said": "fiber on", "means": "Fiberon"}
+    ]
+  },
+  {
+    "id": "blindB-52",
+    "trade": "fencing",
+    "said": "replace 3 rotted fence posts set in concrete. re-hang the gate and add a latch. 425",
+    "expect": [
+      "Replace 3 rotted fence posts set in concrete",
+      "Re-hang the gate",
+      "Add a latch"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-53",
+    "trade": "siding",
+    "said": "side the back of the house with hardy plank lap siding about 9 squares. house wrap underneath. new trim around 4 windows. paint it arctic white",
+    "expect": [
+      "Side the back of the house with Hardie plank lap siding about 9 squares",
+      "House wrap underneath",
+      "New trim around 4 windows",
+      "Paint it arctic white"
+    ],
+    "heard": [
+      {"said": "hardy", "means": "Hardie"}
+    ]
+  },
+  {
+    "id": "blindB-54",
+    "trade": "windows",
+    "said": "replace 6 double hung windows with mill guard vinyl. 1 slider in the kitchen. make that 2 sliders. capped exterior trim. 450 installed",
+    "expect": [
+      "Replace 6 double hung windows with Milgard vinyl",
+      "2 sliders in the kitchen",
+      "Capped exterior trim"
+    ],
+    "heard": [
+      {"said": "mill guard", "means": "Milgard"}
+    ]
+  },
+  {
+    "id": "blindB-55",
+    "trade": "gutters",
+    "said": "seamless 6 inch gutters around the whole house about 160 feet. 3 by 4 downspouts 6 of them. gutter guards. tear off and haul away the old gutters",
+    "expect": [
+      "Seamless 6 inch gutters around the whole house about 160 feet",
+      "3x4 downspouts 6 of them",
+      "Gutter guards",
+      "Tear off and haul away the old gutters"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-56",
+    "trade": "windows",
+    "said": "um replace the bay window in the living room with a pella 3 light bay um new head and seat board insulate the cavity above it and wrap the exterior in copper no wait aluminum",
+    "expect": [
+      "Replace the bay window in the living room with a Pella 3 light bay",
+      "New head and seat board",
+      "Insulate the cavity above it",
+      "Wrap the exterior in aluminum"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-57",
+    "trade": "gutters",
+    "said": "replace the rotted fascia on the front, about 40 feet. wrap it in all side aluminum. new vented soffit along the same run. 1600",
+    "expect": [
+      "Replace the rotted fascia on the front about 40 feet",
+      "Wrap it in Alside aluminum",
+      "New vented soffit along the same run"
+    ],
+    "heard": [
+      {"said": "all side", "means": "Alside"}
+    ]
+  },
+  {
+    "id": "blindB-58",
+    "trade": "siding",
+    "said": "okay. so. We're gonna. redo the siding on the garage with certain teed vinyl. dutch lap in pewter. new J channel around the doors",
+    "expect": [
+      "Redo the siding on the garage with CertainTeed vinyl",
+      "Dutch lap in pewter",
+      "New J channel around the doors"
+    ],
+    "heard": [
+      {"said": "certain teed", "means": "CertainTeed"}
+    ]
+  },
+  {
+    "id": "blindB-59",
+    "trade": "gutters",
+    "said": "clean gutters 175. flush downspouts. reattach the sagging section over the porch another 90. add 2 splash blocks",
+    "expect": [
+      "Clean gutters",
+      "Flush downspouts",
+      "Reattach the sagging section over the porch",
+      "Add 2 splash blocks"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindB-60",
+    "trade": "windows",
+    "said": "alright last one here. storm damage on the west side. replace the cracked window, it's a Marvin casement, 30 by 48. replace the hail damaged siding on the west wall. um about 3 squares of it. check the gutter on that side too, scratch that, replace the gutter on the west side it's dented",
+    "expect": [
+      "Replace the cracked window Marvin casement 30x48",
+      "Replace the hail damaged siding on the west wall about 3 squares",
+      "Replace the gutter on the west side"
+    ],
+    "heard": []
+  }
+]

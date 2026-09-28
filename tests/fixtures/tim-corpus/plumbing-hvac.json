@@ -1,0 +1,803 @@
+[
+  {
+    "id": "plumb-01",
+    "trade": "plumbing",
+    "said": "Pull the old 50 gallon water heater. Install new Bradford White 50 gallon gas. New flex connectors and a new expansion tank. Haul away the old one.",
+    "expect": [
+      "Pull the old 50 gallon water heater",
+      "Install new Bradford White 50 gallon gas",
+      "New flex connectors and a new expansion tank",
+      "Haul away the old one"
+    ],
+    "heard": [],
+    "note": "Short and punchy. 'and' joining two nouns under one implied verb stays one line."
+  },
+  {
+    "id": "plumb-02",
+    "trade": "plumbing",
+    "said": "okay so we're gonna drain and flush the tank and then pull the old anode and put in a core protect powered and load rod for 350",
+    "expect": [
+      "Drain and flush the tank",
+      "Pull the old anode",
+      "Put in a Corro-Protec powered anode rod"
+    ],
+    "heard": [
+      { "said": "core protect", "means": "Corro-Protec" },
+      { "said": "powered and load rod", "means": "powered anode rod" }
+    ],
+    "note": "'drain and flush' shares one object, one line. 'powered and load' contains a fake 'and' that must not split. Price dropped from the line."
+  },
+  {
+    "id": "plumb-03",
+    "trade": "plumbing",
+    "said": "Um so I'm gonna remove the existing 40 gallon tank, install a Navy in NPE 240A tankless, run new 3/4 inch gas line from the meter, and then vent it out the side wall with PVC. Install isolation valves.",
+    "expect": [
+      "Remove the existing 40 gallon tank",
+      "Install a Navien NPE 240A tankless",
+      "Run new 3/4 inch gas line from the meter",
+      "Vent it out the side wall with PVC",
+      "Install isolation valves"
+    ],
+    "heard": [
+      { "said": "Navy in", "means": "Navien" }
+    ],
+    "note": "Model number with digits and a space must survive intact."
+  },
+  {
+    "id": "plumb-04",
+    "trade": "plumbing",
+    "said": "descale the Rinnai tankless flush it with vinegar for an hour clean the inlet filter check the error codes",
+    "expect": [
+      "Descale the Rinnai tankless",
+      "Flush it with vinegar for an hour",
+      "Clean the inlet filter",
+      "Check the error codes"
+    ],
+    "heard": [],
+    "note": "No punctuation at all. Every split is a run-on verb seam."
+  },
+  {
+    "id": "plumb-05",
+    "trade": "plumbing",
+    "said": "Alright so we're gonna repipe the whole house in PEX with you pan or expansion fittings, three bathrooms, kitchen and laundry. Will be opening up the drywall in the hallway ceiling and the closets to run the lines, and then patch the drywall after. Pressure test before we close up. Texture's on the homeowner.",
+    "expect": [
+      "Repipe the whole house in PEX with Uponor expansion fittings, 3 bathrooms, kitchen and laundry",
+      "Opening up the drywall in the hallway ceiling and the closets to run the lines",
+      "Patch the drywall after",
+      "Pressure test before we close up",
+      "Texture's on the homeowner"
+    ],
+    "heard": [
+      { "said": "you pan or", "means": "Uponor" },
+      { "said": "Will be", "means": "We'll be" }
+    ],
+    "note": "Comma list of rooms is not a new action. 'Will be' is a misheard subject and gets dropped like 'We'll be'. 'before we close up' keeps its 'we'. The exclusion stays as a line."
+  },
+  {
+    "id": "plumb-06",
+    "trade": "plumbing",
+    "said": "Snake the kitchen line from the cleanout. Camera it after. 225.",
+    "expect": [
+      "Snake the kitchen line from the cleanout",
+      "Camera it after"
+    ],
+    "heard": [],
+    "note": "A bare trailing number is a price, not a line."
+  },
+  {
+    "id": "plumb-07",
+    "trade": "plumbing",
+    "said": "We're gonna run the camera down the main from the roof vent, no wait from the cleanout out front, locate and mark the belly with the locator, and then hydro jet the main line",
+    "expect": [
+      "Run the camera down the main from the cleanout out front",
+      "Locate and mark the belly with the locator",
+      "Hydro jet the main line"
+    ],
+    "heard": [],
+    "note": "Self-correction: 'from the roof vent' is replaced, not kept, and 'no wait' must not start its own line."
+  },
+  {
+    "id": "plumb-08",
+    "trade": "plumbing",
+    "said": "okay so the sewer lateral is shot it's orange burg all the way out so we're gonna excavate from the foundation to the city tap about 60 feet replace it with 4 inch SDR 35 install a two way clean out at the house and then backfill and compact. Permit and inspection included.",
+    "expect": [
+      "Excavate from the foundation to the city tap about 60 feet",
+      "Replace it with 4 inch SDR 35",
+      "Install a two way clean out at the house",
+      "Backfill and compact",
+      "Permit and inspection included"
+    ],
+    "heard": [
+      { "said": "orange burg", "means": "Orangeburg" }
+    ],
+    "note": "Opening clause is the existing condition, not work, so it is not a line. The mishearing sits in that dropped clause."
+  },
+  {
+    "id": "plumb-09",
+    "trade": "plumbing",
+    "said": "Pull the toilet in the hall bath, replace the wax ring and closet bolts, reset it. If the flange is broke, we'll put in a repair ring for 45 bucks extra.",
+    "expect": [
+      "Pull the toilet in the hall bath",
+      "Replace the wax ring and closet bolts",
+      "Reset it",
+      "If the flange is broke, put in a repair ring"
+    ],
+    "heard": [],
+    "note": "Conditional: the comma after 'broke' must not split the condition from its action. 'we'll' dropped mid-sentence. Price with 'bucks extra' removed."
+  },
+  {
+    "id": "plumb-10",
+    "trade": "plumbing",
+    "said": "Remove and dispose of the old toilet install a new cooler Highline comfort height elongated new supply line and angle stop",
+    "expect": [
+      "Remove and dispose of the old toilet",
+      "Install a new Kohler Highline comfort height elongated",
+      "New supply line and angle stop"
+    ],
+    "heard": [
+      { "said": "cooler", "means": "Kohler" }
+    ],
+    "note": "No punctuation and the second seam is a bare 'new' after an adjective, not a verb."
+  },
+  {
+    "id": "plumb-11",
+    "trade": "plumbing",
+    "said": "Take out the old kitchen faucet, install customer supplied Moan Arbor pulldown. New braided supplies. Check for leaks.",
+    "expect": [
+      "Take out the old kitchen faucet",
+      "Install customer supplied Moen Arbor pulldown",
+      "New braided supplies",
+      "Check for leaks"
+    ],
+    "heard": [
+      { "said": "Moan", "means": "Moen" }
+    ]
+  },
+  {
+    "id": "plumb-12",
+    "trade": "plumbing",
+    "said": "swap out the garbage disposal with a half horse in sink a racer evolution, knock out the dishwasher plug, reconnect the drain hose",
+    "expect": [
+      "Swap out the garbage disposal with a half horse InSinkErator Evolution",
+      "Knock out the dishwasher plug",
+      "Reconnect the drain hose"
+    ],
+    "heard": [
+      { "said": "in sink a racer", "means": "InSinkErator" }
+    ],
+    "note": "Three-word mishearing of one brand, contains 'a' which is not an article here."
+  },
+  {
+    "id": "plumb-13",
+    "trade": "plumbing",
+    "said": "Replace the main shutoff with a 3/4 inch full port ball valve for $250",
+    "expect": [
+      "Replace the main shutoff with a 3/4 inch full port ball valve"
+    ],
+    "heard": []
+  },
+  {
+    "id": "plumb-14",
+    "trade": "plumbing",
+    "said": "Water pressure's at 110. We're putting in a new what's LF25AUB PRV set it to 60 and then add a Watts expansion tank on the cold side",
+    "expect": [
+      "Putting in a new Watts LF25AUB PRV",
+      "Set it to 60",
+      "Add a Watts expansion tank on the cold side"
+    ],
+    "heard": [
+      { "said": "what's", "means": "Watts" }
+    ],
+    "note": "Same brand misheard once and heard right once. The pressure reading is an observation, not a line, and '60' is a setting, not a price."
+  },
+  {
+    "id": "plumb-15",
+    "trade": "plumbing",
+    "said": "Install a 2 gallon Amtrol Therm-X-Trol expansion tank on the cold line. Strap it. 185.",
+    "expect": [
+      "Install a 2 gallon Amtrol Therm-X-Trol expansion tank on the cold line",
+      "Strap it"
+    ],
+    "heard": []
+  },
+  {
+    "id": "plumb-16",
+    "trade": "plumbing",
+    "said": "uh pull the dead sump pump and put in a new Zola M53, third horse, new check valve, new discharge to the outside, and um test it with a bucket of water",
+    "expect": [
+      "Pull the dead sump pump",
+      "Put in a new Zoeller M53, third horse",
+      "New check valve",
+      "New discharge to the outside",
+      "Test it with a bucket of water"
+    ],
+    "heard": [
+      { "said": "Zola", "means": "Zoeller" }
+    ],
+    "note": "'and put in' is a verb seam with its own object, so it splits. ', third horse,' is a spec of the pump, not a new line. Filler 'uh' and 'um' in two places."
+  },
+  {
+    "id": "plumb-17",
+    "trade": "plumbing",
+    "said": "Install a 48,000 grain water softener with a flex 5600 head, bypass loop, drain to the laundry standpipe. Load 4 bags of salt.",
+    "expect": [
+      "Install a 48,000 grain water softener with a Fleck 5600 head",
+      "Bypass loop",
+      "Drain to the laundry standpipe",
+      "Load 4 bags of salt"
+    ],
+    "heard": [
+      { "said": "flex", "means": "Fleck" }
+    ],
+    "note": "The comma inside 48,000 is not a seam. 'flex' is a real plumbing word elsewhere (plumb-01), only 'flex 5600 head' makes it Fleck."
+  },
+  {
+    "id": "plumb-18",
+    "trade": "plumbing",
+    "said": "Run a new half inch black iron gas line from the manifold to the range about 25 feet, new shutoff and flex at the range, pressure test at 15 psi for 15 minutes",
+    "expect": [
+      "Run a new half inch black iron gas line from the manifold to the range about 25 feet",
+      "New shutoff and flex at the range",
+      "Pressure test at 15 psi for 15 minutes"
+    ],
+    "heard": []
+  },
+  {
+    "id": "plumb-19",
+    "trade": "plumbing",
+    "said": "run track pipe CSST to the new dryer about 30 feet and bond it to the grounding electrode",
+    "expect": [
+      "Run TracPipe CSST to the new dryer about 30 feet",
+      "Bond it to the grounding electrode"
+    ],
+    "heard": [
+      { "said": "track pipe", "means": "TracPipe" }
+    ]
+  },
+  {
+    "id": "plumb-20",
+    "trade": "plumbing",
+    "said": "So leak detection showed the hot line leaking under the kitchen slab, like I said, so we're gonna reroute the hot line overhead through the attic in PEX, abandon the old line under the slab, cut in at the water heater and at the kitchen sink, and then patch the drywall in two, no wait, three spots",
+    "expect": [
+      "Reroute the hot line overhead through the attic in PEX",
+      "Abandon the old line under the slab",
+      "Cut in at the water heater and at the kitchen sink",
+      "Patch the drywall in 3 spots"
+    ],
+    "heard": [],
+    "note": "Rambling. Leading finding and 'like I said' are not lines. 'cut in at X and at Y' is one action. Self-correction inside the last line resolves to 3."
+  },
+  {
+    "id": "plumb-21",
+    "trade": "plumbing",
+    "said": "replace the two frozen hose bibs with 12 inch wood ford frost free model 17s and caulk them to the siding",
+    "expect": [
+      "Replace the 2 frozen hose bibs with 12 inch Woodford frost free model 17s",
+      "Caulk them to the siding"
+    ],
+    "heard": [
+      { "said": "wood ford", "means": "Woodford" }
+    ]
+  },
+  {
+    "id": "plumb-22",
+    "trade": "plumbing",
+    "said": "Annual backflow test on the 1 inch Febco RPZ. Rebuild the relief valve if it fails. File the report with the city. $95 for the test.",
+    "expect": [
+      "Annual backflow test on the 1 inch Febco RPZ",
+      "Rebuild the relief valve if it fails",
+      "File the report with the city"
+    ],
+    "heard": [],
+    "note": "A whole sentence that is only a price produces no line."
+  },
+  {
+    "id": "plumb-23",
+    "trade": "plumbing",
+    "said": "Cut out the bad section of copper under the sink and put a shark bite coupling on it",
+    "expect": [
+      "Cut out the bad section of copper under the sink",
+      "Put a SharkBite coupling on it"
+    ],
+    "heard": [
+      { "said": "shark bite", "means": "SharkBite" }
+    ]
+  },
+  {
+    "id": "plumb-24",
+    "trade": "plumbing",
+    "said": "Tear out the vanity, run new supply lines, set the new Delta faucet and the P trap, and hook up the drain",
+    "expect": [
+      "Tear out the vanity",
+      "Run new supply lines",
+      "Set the new Delta faucet and the P trap",
+      "Hook up the drain"
+    ],
+    "heard": [],
+    "note": "One verb with two objects ('faucet and the P trap') stays one line."
+  },
+  {
+    "id": "plumb-25",
+    "trade": "plumbing",
+    "said": "Okay so um we're gonna take out the old AO Smith, it's leaking from the bottom, put in a 50 gallon Bradford White, we'll add a thermal expansion tank, new gas flex, new drip leg, and we're gonna put a a protect anode in it for 175 extra. Haul off the old tank.",
+    "expect": [
+      "Take out the old AO Smith",
+      "Put in a 50 gallon Bradford White",
+      "Add a thermal expansion tank",
+      "New gas flex",
+      "New drip leg",
+      "Put a Corro-Protec anode in it",
+      "Haul off the old tank"
+    ],
+    "heard": [
+      { "said": "a a protect", "means": "a Corro-Protec" }
+    ],
+    "note": "', it's leaking from the bottom,' is a reason, not a new action, so it stays on its line. Subjects dropped mid-run ('we'll', 'we're gonna'). The doubled 'a a' is the mishearing, not a stutter to collapse."
+  },
+  {
+    "id": "plumb-26",
+    "trade": "plumbing",
+    "said": "run the camera through the main from the roof vent record the video for the customer locate and mark the break with the sonde",
+    "expect": [
+      "Run the camera through the main from the roof vent",
+      "Record the video for the customer",
+      "Locate and mark the break with the sonde"
+    ],
+    "heard": [],
+    "note": "No punctuation. 'locate and mark' is one action."
+  },
+  {
+    "id": "plumb-27",
+    "trade": "plumbing",
+    "said": "install a Renai RU199iN on the garage wall, run 3/4 gas, concentric vent through the roof, condensate neutralizer to the floor drain, and install service valves",
+    "expect": [
+      "Install a Rinnai RU199iN on the garage wall",
+      "Run 3/4 gas",
+      "Concentric vent through the roof",
+      "Condensate neutralizer to the floor drain",
+      "Install service valves"
+    ],
+    "heard": [
+      { "said": "Renai", "means": "Rinnai" }
+    ]
+  },
+  {
+    "id": "plumb-28",
+    "trade": "plumbing",
+    "said": "Tub's slow. Pull the drain stop, snake it, clear the hair. 150.",
+    "expect": [
+      "Pull the drain stop",
+      "Snake it",
+      "Clear the hair"
+    ],
+    "heard": [],
+    "note": "'Tub's slow.' is the complaint, not work."
+  },
+  {
+    "id": "plumb-29",
+    "trade": "plumbing",
+    "said": "Where putting in all new type L copper for the mains and three quarter inch branches, sweat everything with lead free solder and then insulate the lines in the crawl space. after that we'll hang it on clevis hangers every 6 feet",
+    "expect": [
+      "Putting in all new type L copper for the mains and 3/4 inch branches",
+      "Sweat everything with lead free solder",
+      "Insulate the lines in the crawl space",
+      "Hang it on clevis hangers every 6 feet"
+    ],
+    "heard": [
+      { "said": "Where putting", "means": "We're putting" }
+    ],
+    "note": "The homophone subject 'Where' must be dropped like 'We're'. Lowercase 'after that' after a period."
+  },
+  {
+    "id": "plumb-30",
+    "trade": "plumbing",
+    "said": "Replace the shower valve with a Moen posse temp, open the wall from the closet side, install new cartridge and trim and then close the wall back up with an access panel",
+    "expect": [
+      "Replace the shower valve with a Moen Posi-Temp",
+      "Open the wall from the closet side",
+      "Install new cartridge and trim",
+      "Close the wall back up with an access panel"
+    ],
+    "heard": [
+      { "said": "posse temp", "means": "Posi-Temp" }
+    ]
+  },
+  {
+    "id": "plumb-31",
+    "trade": "plumbing",
+    "said": "Thaw the frozen line. In the crawl, find the split cut it out. And repair with 2 SharkBites, wrap it in heat tape",
+    "expect": [
+      "Thaw the frozen line in the crawl",
+      "Find the split",
+      "Cut it out and repair with 2 SharkBites",
+      "Wrap it in heat tape"
+    ],
+    "heard": [],
+    "note": "Phone-added periods in the wrong places: 'In the crawl' belongs to the line before, and 'And repair' continues the line before. Periods here are pauses, not sentence ends."
+  },
+  {
+    "id": "plumb-32",
+    "trade": "plumbing",
+    "said": "replace the water heater flew with new B vent through the roof, new rain cap and storm collar, and then check the draft with a match",
+    "expect": [
+      "Replace the water heater flue with new B vent through the roof",
+      "New rain cap and storm collar",
+      "Check the draft with a match"
+    ],
+    "heard": [
+      { "said": "flew", "means": "flue" }
+    ]
+  },
+  {
+    "id": "plumb-33",
+    "trade": "plumbing",
+    "said": "Rebuild the upstairs toilet, new Fluidmaster fill valve and flapper, and uh the downstairs one too, actually no just the upstairs one. $135.",
+    "expect": [
+      "Rebuild the upstairs toilet",
+      "New Fluidmaster fill valve and flapper"
+    ],
+    "heard": [],
+    "note": "Retraction: 'the downstairs one too' is taken back, so it produces no line, and 'actually no just the upstairs one' is not a line either."
+  },
+  {
+    "id": "plumb-34",
+    "trade": "plumbing",
+    "said": "so you know there's no cleanout on this house so we're gonna dig down by the foundation you know find the main install a 4 inch two way cleanout with a riser to grade, snake the line from there and then backfill and restore the sod",
+    "expect": [
+      "Dig down by the foundation",
+      "Find the main",
+      "Install a 4 inch two way cleanout with a riser to grade",
+      "Snake the line from there",
+      "Backfill and restore the sod"
+    ],
+    "heard": [],
+    "note": "'you know' is filler twice, once acting as the only seam between two actions. 'backfill and restore the sod' is one closing step."
+  },
+  {
+    "id": "plumb-35",
+    "trade": "plumbing",
+    "said": "Run a new pecks line from the water heater to the new laundry box, install an Oatey laundry box with a hammer arrester, 2 inch drain tied into the stack",
+    "expect": [
+      "Run a new PEX line from the water heater to the new laundry box",
+      "Install an Oatey laundry box with a hammer arrester",
+      "2 inch drain tied into the stack"
+    ],
+    "heard": [
+      { "said": "pecks", "means": "PEX" }
+    ],
+    "note": "Last line starts with a digit, nothing to capitalize."
+  },
+  {
+    "id": "hvac-01",
+    "trade": "hvac",
+    "said": "Okay so we're gonna pull out the old Goodman furnace and the 3 ton condenser, install a new Trane S9V2 96 percent furnace and a 3 ton XR14 condenser with a matching coil, new line set, new pad, and then pull the permit and do the startup",
+    "expect": [
+      "Pull out the old Goodman furnace and the 3 ton condenser",
+      "Install a new Trane S9V2 96 percent furnace and a 3 ton XR14 condenser with a matching coil",
+      "New line set",
+      "New pad",
+      "Pull the permit",
+      "Do the startup"
+    ],
+    "heard": [],
+    "note": "Two objects under one verb stay together; 'pull the permit and do the startup' are two separate actions."
+  },
+  {
+    "id": "hvac-02",
+    "trade": "hvac",
+    "said": "Clean the evaporator coil. Clean the condenser coil. Flush the condensate line.",
+    "expect": [
+      "Clean the evaporator coil",
+      "Clean the condenser coil",
+      "Flush the condensate line"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hvac-03",
+    "trade": "hvac",
+    "said": "Replace the heat pump with a 2 and a half ton Carrier Performance, new air handler, flush the line set, pull a vacuum to 500 microns, weigh in the charge, and set up the new echo bee",
+    "expect": [
+      "Replace the heat pump with a 2.5 ton Carrier Performance",
+      "New air handler",
+      "Flush the line set",
+      "Pull a vacuum to 500 microns",
+      "Weigh in the charge",
+      "Set up the new Ecobee"
+    ],
+    "heard": [
+      { "said": "echo bee", "means": "Ecobee" }
+    ],
+    "note": "'2 and a half ton' contains 'and' that is a size, not a seam."
+  },
+  {
+    "id": "hvac-04",
+    "trade": "hvac",
+    "said": "install a 12,000 BTU Mitsubishi many split in the bonus room, core the wall for the line set, run line hide down to the condenser, mount the condenser on a wall bracket, and run a condensate pump",
+    "expect": [
+      "Install a 12,000 BTU Mitsubishi mini split in the bonus room",
+      "Core the wall for the line set",
+      "Run line hide down to the condenser",
+      "Mount the condenser on a wall bracket",
+      "Run a condensate pump"
+    ],
+    "heard": [
+      { "said": "many split", "means": "mini split" }
+    ]
+  },
+  {
+    "id": "hvac-05",
+    "trade": "hvac",
+    "said": "replace the dual run capacitor 45/5 MFD replace the contactor clean the condenser check the amp draw",
+    "expect": [
+      "Replace the dual run capacitor 45/5 MFD",
+      "Replace the contactor",
+      "Clean the condenser",
+      "Check the amp draw"
+    ],
+    "heard": [],
+    "note": "No punctuation. '45/5 MFD' is a rating, not a price."
+  },
+  {
+    "id": "hvac-06",
+    "trade": "hvac",
+    "said": "Will be replacing the seized blower motor with a new ECM motor, new run capacitor, clean the blower wheel while it's out. $650 installed.",
+    "expect": [
+      "Replacing the seized blower motor with a new ECM motor",
+      "New run capacitor",
+      "Clean the blower wheel while it's out"
+    ],
+    "heard": [
+      { "said": "Will be", "means": "We'll be" }
+    ],
+    "note": "'$650 installed.' is a price sentence, no line."
+  },
+  {
+    "id": "hvac-07",
+    "trade": "hvac",
+    "said": "Swap the old Honeywell round thermostat for a Nest Learning, run a new 18/5 thermostat wire from the air handler, and then add a C wire adapter if needed",
+    "expect": [
+      "Swap the old Honeywell round thermostat for a Nest Learning",
+      "Run a new 18/5 thermostat wire from the air handler",
+      "Add a C wire adapter if needed"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hvac-08",
+    "trade": "hvac",
+    "said": "um the system's low on charge so we're gonna leak search with the sniffer and bubbles, and then if it's the shrader cores, replace them, recharge with R410A about 2 pounds at 95 a pound",
+    "expect": [
+      "Leak search with the sniffer and bubbles",
+      "If it's the Schrader cores, replace them",
+      "Recharge with R-410A about 2 pounds"
+    ],
+    "heard": [
+      { "said": "shrader", "means": "Schrader" }
+    ],
+    "note": "The comma before 'replace them' starts a verb but belongs to the condition. 'at 95 a pound' is a unit price and comes off the line; '2 pounds' is a quantity and stays."
+  },
+  {
+    "id": "hvac-09",
+    "trade": "hvac",
+    "said": "Alright so the return's undersized, we're gonna add a second 20 by 25 return in the hallway ceiling, run 16 inch flex back to the plenum, cut in a new return drop on the furnace, and seal all the joints with mastic. Also we'll replace the two crushed supply runs in the attic with 6 inch R8 flex.",
+    "expect": [
+      "Add a second 20 by 25 return in the hallway ceiling",
+      "Run 16 inch flex back to the plenum",
+      "Cut in a new return drop on the furnace",
+      "Seal all the joints with mastic",
+      "Replace the 2 crushed supply runs in the attic with 6 inch R8 flex"
+    ],
+    "heard": [],
+    "note": "Rambling. The undersized-return finding is not a line; 'Also we'll' is filler plus subject."
+  },
+  {
+    "id": "hvac-10",
+    "trade": "hvac",
+    "said": "The flew is rusted through, replace the flew pipe from the furnace to the chimney with 4 inch B vent, new thimble, and then seal it at the chimney",
+    "expect": [
+      "Replace the flue pipe from the furnace to the chimney with 4 inch B vent",
+      "New thimble",
+      "Seal it at the chimney"
+    ],
+    "heard": [
+      { "said": "flew", "means": "flue" }
+    ],
+    "note": "Same mishearing twice; the first sits in a condition clause that is not a line."
+  },
+  {
+    "id": "hvac-11",
+    "trade": "hvac",
+    "said": "Clear the condensate line with nitrogen, install a float switch on the secondary pan, and add a cleanout tee at the air handler. 125 bucks.",
+    "expect": [
+      "Clear the condensate line with nitrogen",
+      "Install a float switch on the secondary pan",
+      "Add a cleanout tee at the air handler"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hvac-12",
+    "trade": "hvac",
+    "said": "Spring tune up. Change the filter. Check the charge. Clean the drain. Tighten the electrical.",
+    "expect": [
+      "Change the filter",
+      "Check the charge",
+      "Clean the drain",
+      "Tighten the electrical"
+    ],
+    "heard": [],
+    "note": "'Spring tune up' is a named service with no verb and still a line."
+  },
+  {
+    "id": "hvac-13",
+    "trade": "hvac",
+    "said": "replace the hot service igniter clean the flame sensor check the inducer motor and the pressure switch",
+    "expect": [
+      "Replace the hot surface igniter",
+      "Clean the flame sensor",
+      "Check the inducer motor and the pressure switch"
+    ],
+    "heard": [
+      { "said": "hot service", "means": "hot surface" }
+    ],
+    "note": "No punctuation; 'service' is a real trade word, only 'hot service igniter' makes it wrong."
+  },
+  {
+    "id": "hvac-14",
+    "trade": "hvac",
+    "said": "Install a Lennox ML180 80 percent furnace, 60,000, no wait, 80,000 BTU, tie into the existing duct, new gas shutoff and sediment trap",
+    "expect": [
+      "Install a Lennox ML180 80 percent furnace, 80,000 BTU",
+      "Tie into the existing duct",
+      "New gas shutoff and sediment trap"
+    ],
+    "heard": [],
+    "note": "Self-correction on a size between commas, and the corrected size stays on the furnace line."
+  },
+  {
+    "id": "hvac-15",
+    "trade": "hvac",
+    "said": "Replace the condenser with a 2 ton Goodman GSXN3, braze in with nitrogen flowing, new disconnect and whip, pull a vacuum, release the charge.",
+    "expect": [
+      "Replace the condenser with a 2 ton Goodman GSXN3",
+      "Braze in with nitrogen flowing",
+      "New disconnect and whip",
+      "Pull a vacuum",
+      "Release the charge"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hvac-16",
+    "trade": "hvac",
+    "said": "put in a Honeywell 4 inch media filter cabinet on the return and leave them 2 spare filters",
+    "expect": [
+      "Put in a Honeywell 4 inch media filter cabinet on the return",
+      "Leave them 2 spare filters"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hvac-17",
+    "trade": "hvac",
+    "said": "So like I said the heat pump isn't defrosting, um, we're gonna replace the defrost board, replace the outdoor coil sensor, and uh test it in forced defrost, and then you know check the reversing valve while we're there",
+    "expect": [
+      "Replace the defrost board",
+      "Replace the outdoor coil sensor",
+      "Test it in forced defrost",
+      "Check the reversing valve while we're there"
+    ],
+    "heard": [],
+    "note": "'while we're there' ends a line and its 'we're' is not a subject to drop."
+  },
+  {
+    "id": "hvac-18",
+    "trade": "hvac",
+    "said": "Mount a Fuji two 9,000 BTU wall head in the master, run the line set through the attic to the condenser out back, set the condenser on a pad, and wire the disconnect",
+    "expect": [
+      "Mount a Fujitsu 9,000 BTU wall head in the master",
+      "Run the line set through the attic to the condenser out back",
+      "Set the condenser on a pad",
+      "Wire the disconnect"
+    ],
+    "heard": [
+      { "said": "Fuji two", "means": "Fujitsu" }
+    ],
+    "note": "'two' in the mishearing is not a quantity and must not become '2'."
+  },
+  {
+    "id": "hvac-19",
+    "trade": "hvac",
+    "said": "seal the ducts with arrow seal test the leakage before and after give them the report",
+    "expect": [
+      "Seal the ducts with Aeroseal",
+      "Test the leakage before and after",
+      "Give them the report"
+    ],
+    "heard": [
+      { "said": "arrow seal", "means": "Aeroseal" }
+    ]
+  },
+  {
+    "id": "hvac-20",
+    "trade": "hvac",
+    "said": "Replace the leaking evaporator coil with a 3 ton cased coil for 1850, new TXV, braze it in, flush and pressure test with nitrogen to 300, then pull a vacuum, then charge it",
+    "expect": [
+      "Replace the leaking evaporator coil with a 3 ton cased coil",
+      "New TXV",
+      "Braze it in",
+      "Flush and pressure test with nitrogen to 300",
+      "Pull a vacuum",
+      "Charge it"
+    ],
+    "heard": [],
+    "note": "Price mid-line ('for 1850') comes off; '300' is a test pressure and stays."
+  },
+  {
+    "id": "hvac-21",
+    "trade": "hvac",
+    "said": "Replace the. Inducer motor on the Carrier furnace. Reset the, pressure switch hose and. Test the. Safeties",
+    "expect": [
+      "Replace the inducer motor on the Carrier furnace",
+      "Reset the pressure switch hose",
+      "Test the safeties"
+    ],
+    "heard": [],
+    "note": "Phone-added punctuation on every pause. A period after 'the' or 'and' is never a real sentence end."
+  },
+  {
+    "id": "hvac-22",
+    "trade": "hvac",
+    "said": "Okay um so for the Hendersons, we're gonna pull the old Rheem package unit off the roof with the crane, set a new 4 ton Rheem package unit on the existing curb, we'll need a curb adapter for about 400, reconnect the gas and the power, new thermostat, and then startup and commissioning. Crane's 800 on top of that.",
+    "expect": [
+      "Pull the old Rheem package unit off the roof with the crane",
+      "Set a new 4 ton Rheem package unit on the existing curb",
+      "Curb adapter",
+      "Reconnect the gas and the power",
+      "New thermostat",
+      "Startup and commissioning"
+    ],
+    "heard": [],
+    "note": "'we'll need' is a subject plus helper, leaving the noun. Two prices: one inline, one as its own sentence about the crane that makes no line. The customer name is not a line."
+  },
+  {
+    "id": "hvac-23",
+    "trade": "hvac",
+    "said": "Add a UV light to the air handler, Honeywell UV100, wire it to the blower. 300.",
+    "expect": [
+      "Add a UV light to the air handler, Honeywell UV100",
+      "Wire it to the blower"
+    ],
+    "heard": [],
+    "note": "A comma followed by a brand and model is a spec, not a new action."
+  },
+  {
+    "id": "hvac-24",
+    "trade": "hvac",
+    "said": "Replace the control board on the train furnace and then reprogram the dip switches for the blower speed",
+    "expect": [
+      "Replace the control board on the Trane furnace",
+      "Reprogram the dip switches for the blower speed"
+    ],
+    "heard": [
+      { "said": "train", "means": "Trane" }
+    ]
+  },
+  {
+    "id": "hvac-25",
+    "trade": "hvac",
+    "said": "First thing we're gonna do is shut the power off, recover the refrigerant, after that cut out the old compressor, braze in a new Copeland scroll, new filter drier, and then evacuate and recharge, check superheat and subcool",
+    "expect": [
+      "Shut the power off",
+      "Recover the refrigerant",
+      "Cut out the old compressor",
+      "Braze in a new Copeland scroll",
+      "New filter drier",
+      "Evacuate and recharge",
+      "Check superheat and subcool"
+    ],
+    "heard": [],
+    "note": "'First thing we're gonna do is' is a filler lead-in, longer than a plain subject. 'evacuate and recharge' is one paired step."
+  }
+]

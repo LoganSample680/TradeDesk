@@ -2041,7 +2041,10 @@ function _geiScopeBuild(containerId){
   // Every job walk and what Tim made of it, so a bad split is visible to the
   // owner instead of only to the homeowner (js/tim-log.js timLogScope).
   if(typeof timLogScope==='function')timLogScope(said,built.steps,_geiIsTM?'tm':'est',_geiEditBidId);
+  // What he said he is buying goes to Materials (js/materials.js).
+  const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
   if(!built.steps.length){
+    if(matsIn.rows+matsIn.listed){if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return;}
     if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
     return;
   }
@@ -2941,7 +2944,11 @@ function _byoSayBuild(){
   if(typeof timScopeBuild!=='function')return;
   const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   if(typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
-  if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
+  const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
+  if(!built.steps.length){
+    if(matsIn.rows+matsIn.listed){_byoSayOpen=false;_byoRenderSections();_byoUpdateRail();_byoAutosave();if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return;}
+    if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;
+  }
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
   built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());}});
   _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
