@@ -3831,6 +3831,37 @@ async function _geoRefreshBattery(){
     return _geoBatt;
   }catch(_e){_geoBatt=null;_geoTherm=null;return null;}
 }
+// ── THE BATTERY, ON THE RECORD (owner 2026-09-28) ────────────────────────────
+// "What time did we go from 100 percent off the charger?" Nothing could say.
+// The battery was read only when the app was opened, and every location ping
+// after that repeated the same cached number: Jack's phone reported 95% from
+// 4:30pm to 9:35am, and 30% to 95% inside one minute the afternoon before.
+//
+// So the reading is refreshed on every wake JS gets (the 30-minute ping and
+// every open, close and relaunch), which also makes location_pings.battery
+// current, and a `battery` row goes to geo_events whenever the level or the
+// charger changes. Its kind reads "charging 100" or "battery 95", so "off the
+// charger" is the first battery row after a charging one. Change-only on
+// purpose: an unchanged reading is not news, and the last one written is kept
+// on the device so a reload does not repeat it.
+const _GEO_BATT_LAST_KEY='td_geo_batt_last';
+function _geoBatteryTick(){
+  try{
+    return Promise.resolve(_geoRefreshBattery()).then((b)=>{
+      if(!b||!(b.level>=0))return null;
+      const pct=Math.round(b.level*100);
+      const charging=!!b.charging;
+      let last=null;
+      try{last=JSON.parse(localStorage.getItem(_GEO_BATT_LAST_KEY)||'null');}catch(_e){}
+      if(last&&last.pct===pct&&last.charging===charging)return null;
+      try{localStorage.setItem(_GEO_BATT_LAST_KEY,JSON.stringify({pct,charging}));}catch(_e){}
+      if(typeof supaEnabled==='function'&&!supaEnabled())return null;
+      const row={type:'battery',ts:Date.now(),kind:(charging?'charging ':'battery ')+pct};
+      _geoIngestPost([row]);
+      return row;
+    }).catch(()=>null);
+  }catch(_e){return Promise.resolve(null);}
+}
 function _geoReportPermission(state){
   if(!_supa||!_supaUser)return;
   const now=new Date().toISOString();
@@ -5450,6 +5481,8 @@ async function _geoTdEvent(ev,replay){
   // where a fixless or 3km-cached event could false-exit a fence.
   if(ev.type==='push-ping'||/^app-/.test(String(ev.type||''))){
     if(!replay)_geoParkNote(String(ev.type),ev.acc!=null?Math.round(ev.acc)+'m':'');
+    // Every wake reads the battery fresh (see _geoBatteryTick).
+    if(!replay)_geoBatteryTick();
     // ── THE 30-MINUTE CONFIRMER (owner 2026-09-01) ────────────────────────
     // "then the 30 minute cron job keeps confirming and checking the
     // location." This push IS that cron (geo-ping-cron.yml -> push-geo-ping),
