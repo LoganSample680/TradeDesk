@@ -5972,12 +5972,16 @@ function _tmRenderMore(rule,locked){
   const w=document.getElementById('tm-more-row');if(!w)return;
   rule=rule||_tmStateRule();locked=locked||_tmLockedLayers();
   if(rule.rule==='block'){w.innerHTML='';return;}
-  // Materials and Estimate are not offered on a new T&M (2026-09-23): the
-  // materials TERM is a row of its own, and an estimate turns T&M back into a
-  // price the customer holds him to. Pennsylvania's estimate is on the page,
-  // required. A draft that already has either keeps its switch to turn it off.
-  // Up front is a row of its own too.
-  const opts=TM_LAYERS.filter(l=>!locked.has(l.k)&&l.k!=='dep'&&((l.k!=='est'&&l.k!=='mat')||_tmLayers.has(l.k)));
+  // Estimate is not offered on a new T&M (2026-09-23): an estimate turns T&M
+  // back into a price the customer holds him to. Pennsylvania's estimate is on
+  // the page, required. A draft that already has one keeps its switch to turn
+  // it off. Up front is a row of its own too.
+  // MATERIALS IS OFFERED AGAIN, OFF UNTIL HE TURNS IT ON (owner 2026-09-27:
+  // "not seeing a materials section in t&m"). 2026-09-23 took the switch away,
+  // and then 2026-09-26 put the supply house quote reader inside the shared
+  // Materials card (js/materials.js), which left that reader unreachable on
+  // every new T&M.
+  const opts=TM_LAYERS.filter(l=>!locked.has(l.k)&&l.k!=='dep'&&(l.k!=='est'||_tmLayers.has(l.k)));
   const onNames=opts.filter(l=>_tmLayers.has(l.k)&&l.k!=='rate'&&l.k!=='cap').map(l=>l.label);
   const offer=opts.filter(l=>l.k!=='rate'&&l.k!=='cap');
   // iOS (2026-09-23): a disclosure row, and when open, a SWITCH per option,
