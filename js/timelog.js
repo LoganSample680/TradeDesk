@@ -483,10 +483,30 @@ function _tlBlendManual(rows){
       if(!x.r.unpaid)return;
       if(manual.some(m=>m.a<=x.a&&m.b>=x.b))x.r.clockPaid=true;
     });
+    // ── AN ANSWERED HOLE KEEPS ONLY WHAT NOTHING ELSE COUNTS (owner 2026-09-28)
+    // Jack answered 9:21 to 9:28 as work at 9:40. The server later placed him
+    // on site from 9:21, so the visit carries those minutes and so does the
+    // clock around them, and the answer kept its own 7 on top of both: the
+    // loop below hands each tracked row to the FIRST clock that overlaps it,
+    // the real clock took the visit, and the answer found nothing left to
+    // subtract. An answer is a claim about a hole, never a bracket, so it is
+    // measured against every span that already counts, the clocks included,
+    // and keeps the rest. Nothing left is the Personal shape: in the rows so
+    // no hole is asked again, on no rail and in no total.
+    const clocks=manual.filter(m=>!m.r.gapAnswer);
+    manual.forEach(m=>{
+      if(!m.r.gapAnswer||!((m.r.minutes||0)>0))return;
+      const covers=list.filter(x=>x!==m&&!x.r.unpaid&&
+        (x.r.source==='manual'?!x.r.gapAnswer:(x.r.minutes||0)>0)).map(x=>[x.a,x.b]);
+      const left=Math.round(_tlSubtractCovered(m.a,m.b,covers).reduce((n,[s,e])=>n+(e-s),0)/60000);
+      if(left>=m.r.minutes)return;
+      m.r.minutes=left;
+      if(!left)m.r.dismissed=true;
+    });
     const autos=list.filter(x=>x.r.source!=='manual'&&!x.r.unpaid&&(x.r.minutes||0)>0);
     if(!autos.length)return;
     const spent=[];
-    manual.forEach(m=>{
+    clocks.forEach(m=>{
       const base=m.r.minutes||0;
       if(base<=0)return;
       let covered=0;
@@ -543,7 +563,7 @@ function _tlBlendManual(rows){
     // the stretch between the two clocks belongs to neither, so it stays a
     // real hole for _tlFillUnaccounted to ask about. Lunch is a clock out, not
     // a guess this code makes.
-    manual.forEach(m=>{
+    clocks.forEach(m=>{
       if(!(m.r.minutes>0))return;
       // Spans, not minutes. A tracked row covers the wall-clock stretch it
       // brackets; how many minutes it claims is a different number and is
@@ -686,6 +706,9 @@ async function _timeLogRows(sinceISO,opts){
       // It stays in the ROWS so _tlFillUnaccounted sees the span covered; the
       // rail is where it disappears (_tlDayRailHtml).
       dismissed:_tlIsPersonalGap(e),
+      // An answered hole is a claim about a stretch INSIDE the day, never a
+      // clock: the rail must not draw it as a clock in and clock out.
+      gapAnswer:_tlIsGapAnswer(e),
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
@@ -2310,7 +2333,12 @@ function _tlDayRailHtml(rows){
   // Only a clock with both ends can bracket anything. An entry still running,
   // or one saved without a time, stays an ordinary row: there is no closing
   // cap to draw and a half-open bracket is worse than no bracket.
-  const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
+  // AN ANSWERED HOLE IS NOT A CLOCK (owner 2026-09-28). Jack clocked in at
+  // 7:58 and never out; at 9:40 he answered "unaccounted time" 9:21 to 9:28 as
+  // work, and his day drew CLOCKED OUT 9:28, because every manual row with two
+  // ends was taken for a shift. The answer is still a row on the day, with its
+  // own minutes, exactly as Personal and Break answers are handled above.
+  const clocks=list.filter(r=>r&&r.source==='manual'&&!r.gapAnswer&&r.startTime&&r.endTime&&
     Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
   // A RUNNING clock has no closing end and so is not in `clocks`, but it is
   // still a cap: it opens the day and nothing closes it yet. Counted here so
