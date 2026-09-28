@@ -1146,7 +1146,7 @@ function _tlPopulateYearSel(years){
   _tlYear=cur;
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>').join('');
 }
-function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
+function setTimeLogYear(yr){_tlYear=String(yr);_tlMotion();renderTimeLog();}
 // Manual entries only, GPS-verified auto entries aren't user-editable, same as
 // every competitor researched (editing GPS-verified data would defeat its
 // purpose). Own entries always editable/deletable; others' only with the same
@@ -2780,14 +2780,17 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
       floorMin:_TL_MONTH_FLOOR,level:'month',tip:'Tap a week to open it'});
 }
-// "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
-// the dash so a six-column month still fits a 320px phone.
+// "23–29" inside one month, "8/30–9/5" across a boundary. No spaces round
+// the dash so a six-column month still fits a 320px phone. The boundary week
+// said "Aug 30–Sep 5" until the bigger text (#98) wrapped it to two lines on a
+// phone and knocked its hours out of line with every other week (owner
+// 2026-09-27); the numbers still name both months, in the width of one line.
 function _tlWeekRangeLabel(wk){
   const s=new Date(String(wk||'')+'T00:00:00');
   if(isNaN(s.getTime()))return String(wk||'');
   const e=new Date(s);e.setDate(e.getDate()+6);
   if(s.getMonth()===e.getMonth())return s.getDate()+'\u2013'+e.getDate();
-  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const f=d=>(d.getMonth()+1)+'/'+d.getDate();
   return f(s)+'\u2013'+f(e);
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
@@ -2816,6 +2819,17 @@ function _tlWeekShortLabel(wk){
 // cleared by anything else. Declared beside the selection it belongs to and
 // ABOVE setTimeLogMonth, which writes it.
 let _tlMonthDir='';
+// MOTION BELONGS TO A TAP, NOT TO A REPAINT (owner 2026-09-27: "why do the bar
+// graphs glitch out quickly 3 times when going back into the app?"). Coming
+// back into the app repaints this screen about three times as fresh hours,
+// the timesheet status and place names land, and every repaint rebuilt the
+// chart, so the bars grew again and the last drill's zoom played again each
+// time. The zoom, slide and bar-rise now play only on the render that follows
+// something the person did (open the screen, tap a bar, arrow a month, switch
+// Me/Team or the year). Every other repaint swaps the numbers in place.
+let _tlAnimNext=true;
+function _tlMotion(){_tlAnimNext=true;}
+function _tlBodyCls(anim){return anim?(_tlMonthDir?' tl-mbars-'+_tlMonthDir:''):' tl-still';}
 // Kept as the public way to jump to a month. It routes through the drill so
 // there is still exactly one path that changes what month is on screen.
 function setTimeLogMonth(mo,dir){
@@ -2980,6 +2994,7 @@ function _tlDrillTo(level,key,dir){
   // tap picks a different SLICE of rows the page is already holding. So it
   // paints from the rows it already has, synchronously, in the same task as
   // the tap, and _tlRevalidateRows checks the server afterwards.
+  _tlMotion();
   renderTimeLog({cached:true});
 }
 // Into one crew member's week. The ONLY way uid is ever set, so there is one
@@ -3744,6 +3759,7 @@ function setTimeLogScope(scope){
   // simply being dead.
   _tlDrill.uid=null;
   _tlScope=scope;
+  _tlMotion();
   renderTimeLog();
 }
 // "Share this week's hours" (Me scope only, any role): the current Sun–Sat
@@ -3938,6 +3954,7 @@ async function _tlRevalidateRows(paintedRows,gen,force){
 async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
   const _gen=++_tlRenderGen;
+  const _anim=_tlAnimNext;_tlAnimNext=false;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
@@ -4096,7 +4113,7 @@ async function renderTimeLog(opts){
         backLabel:'All crew',share:false}):null;
       if(lv){
         el.innerHTML=lv.head+
-          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
+          '<div class="tl-drill-body'+_tlBodyCls(_anim)+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
         if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
         return;
       }
@@ -4130,7 +4147,7 @@ async function renderTimeLog(opts){
       // like any other, and arrowing between months is a sideways like any
       // other: without the class, the one screen you return to was the one
       // screen that just appeared.
-      '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
+      '<div class="tl-drill-body'+_tlBodyCls(_anim)+
         '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo,owe)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
@@ -4145,7 +4162,7 @@ async function renderTimeLog(opts){
   // The slide direction rides as a class so the animation is pure CSS and the
   // JS never touches a style property (§8.5).
   el.innerHTML=head+
-    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+body+'</div>';
+    '<div class="tl-drill-body'+_tlBodyCls(_anim)+'"'+_tlDrillXStyle()+'>'+body+'</div>';
   // The page-level Share button is GONE. It said "this calendar week", which
   // on a screen that now carries Send this month and Send this week (the one
   // you are actually looking at) was a third Send button meaning a fourth
