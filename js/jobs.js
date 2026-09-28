@@ -972,6 +972,9 @@ function _clockElapsedStr(ms){
 }
 function updateClockTimer(){
   if(!_activeTimer)return;
+  // Display only, and it recomputes from the start time every tick, so a tick
+  // skipped in a pocket loses nothing (owner 2026-09-28, battery).
+  if(document.hidden)return;
   const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
   const full=_clockElapsedStr(Date.now()-_activeTimer.startTime);
   const el=document.getElementById('clock-banner-time');

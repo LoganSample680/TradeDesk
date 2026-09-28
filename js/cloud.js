@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.28.26.3';
+const APP_VERSION='09.28.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -9165,6 +9165,8 @@ async function supaLoadFromCloud({silent=false}={}){
       // so the interval is tuned for convergence latency, not cost. Skipped within 3s of a
       // local save (our own echo) and while the tab is hidden or a load is already running.
       const _RECONCILE_HEARTBEAT_MS=5000;
+      // A backgrounded phone asks at most this often (see _heartbeatTick).
+      const _HIDDEN_CURSOR_MIN_MS=60000;
       // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
@@ -9234,7 +9236,18 @@ async function supaLoadFromCloud({silent=false}={}){
         // hidden tabs check at most once per 60s (browsers clamp background timers
         // anyway), visible tabs keep the full cadence. Foregrounding converges
         // immediately via the visibilitychange cursor check below.
-        if(!(document.visibilityState==='hidden'&&Date.now()-(window._lastCloudLoadAt||0)<60000)){
+        //
+        // THE THROTTLE MEASURED THE WRONG THING (owner 2026-09-28, on Jack's
+        // battery: 4-5% an hour for weeks, 8-10% the first day keep-awake held
+        // the app alive in his pocket). It compared against the last LOAD, and
+        // a check that finds nothing new never loads, so a quiet backgrounded
+        // phone was never throttled at all: the server logs show his phone
+        // asking about every 15 seconds all morning, which keeps the cell radio
+        // from ever sleeping. It is the last CHECK that makes the next one
+        // unnecessary, so that is what the minute is measured from now.
+        const _hid=document.visibilityState==='hidden';
+        if(!(_hid&&Date.now()-Math.max(window._lastCloudLoadAt||0,window._lastHiddenCursorAt||0)<_HIDDEN_CURSOR_MIN_MS)){
+          if(_hid)window._lastHiddenCursorAt=Date.now();
           window._cursorCheckReconcile();
         }
         setTimeout(_heartbeatTick,_RECONCILE_HEARTBEAT_MS*(0.8+Math.random()*0.4));
@@ -9246,7 +9259,11 @@ async function supaLoadFromCloud({silent=false}={}){
       // same-page account switch (bug #39 teardown removes all channels) the next account never
       // got a fresh sig-feed. Co-locating it with the td-sync/user-data channels re-subscribes it
       // per account under the correct uid.
-      setInterval(()=>_loadPendingInbound(),30000);
+      // Not while hidden (owner 2026-09-28): keep-awake keeps this page alive in
+      // a pocket all shift, and a query every 30 seconds nobody can see is
+      // battery for nothing. Coming back to the screen converges through the
+      // foreground pull like everything else.
+      setInterval(()=>{if(!document.hidden)_loadPendingInbound();},30000);
       // A mileage row's own live measurement call can fail (one bad network
       // moment is enough) and _initMapKit only sweeps pending trips ONCE, at
       // boot: a mid-session failure sat at 0 miles for the rest of the day,
