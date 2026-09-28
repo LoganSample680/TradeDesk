@@ -55,8 +55,17 @@ test.describe('Tim reads materials by shape', () => {
   });
 
   test('work is never taken for a purchase', async () => {
-    const r = await read(['install 6 recessed lights in the kitchen', 'replace about 60 feet of fascia and paint it', 'paint 3 bedrooms, 2 coats', 'tear off 28 squares down to the deck']);
+    const r = await read(['replace about 60 feet of fascia and paint it', 'paint 3 bedrooms, 2 coats', 'tear off 28 squares down to the deck', 'install grab bars by the toilet']);
     expect(r).toEqual([[], [], [], []]);
+  });
+
+  test('a part he installs is a material too, and the step stays on the scope', async () => {
+    const r = await page.evaluate(() => {
+      const b = timScopeBuild('install 6 recessed lights in the kitchen. replaced the wax ring and reset the toilet.', { rejected: [] });
+      return { steps: b.steps.map(s => s.text), mats: b.materials.map(m => m.qty + ' ' + m.unit + ' ' + m.item.toLowerCase()) };
+    });
+    expect(r.steps).toEqual(['Install 6 recessed lights in the kitchen', 'Replaced the wax ring', 'Reset the toilet']);
+    expect(r.mats).toEqual(['6 ea recessed lights', '1 ea wax ring']);
   });
 
   test('what the customer supplies is not on the list, and a correction wins', async () => {

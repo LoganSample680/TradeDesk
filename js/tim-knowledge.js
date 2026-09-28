@@ -1585,6 +1585,7 @@ function _timkMendSentences(list){
     if(/^(?:done|that's\s+it|that's\s+all|that's\s+everything)[.!]?$/i.test(t))return;
     const prev=out.length?out[out.length-1]:null;
     const lone=t.replace(/[.;!?]+$/,'').trim();
+    if(prev!==null&&typeof _timkOnlyMaterials==='function'&&/^\s*(?:\d|an?\s|one\s|a\s+couple|a\s+dozen|figure|grab|used)/i.test(lone)&&_timkOnlyMaterials(lone)){out.push(t);return;}
     if(prev!==null&&(_timkIsHeading(lone)&&!_TIMK_AREA.test((String(prev).replace(/[.;!?,]+$/,'').split(/\s+/).pop()||'').toLowerCase())||_timkIsRemark(lone))&&!/^and\s/i.test(lone)){out.push(t);return;}
     if(prev!==null){
       const p=prev.replace(/[.;!?]+$/,'').trim();
@@ -1924,8 +1925,11 @@ function timScopeBuild(text,opts){
     // shopping list after the comma comes off the step.
     const bits=String(p.text).split(/,\s+/);
     if(bits.length<2)return p;
-    const shoppy=b=>/^(?:and\s+)?(?:figure|figuring|grab|get|we\s+need|i\s+need|need|plus|materials?|parts?)\b/i.test(b.trim());
-    const keep=bits.filter((b,i)=>i===0||!(shoppy(b)&&_timkOnlyMaterials(b)));
+    const shoppy=b=>/^(?:and\s+)?(?:figure|figuring|grab|get|we\s+need|i\s+need|need|plus|materials?|parts?|used)\b/i.test(b.trim())||/^(?:and\s+)?\d/.test(b.trim());
+    // "Bring in about 10 yards of fill dirt, and 4 yards of topsoil": when the
+    // step itself names a material, a count after it is more of the same work.
+    let headMat=false;try{headMat=timSaidMaterials(bits[0]).some(r=>r.kind==='list');}catch(_e){}
+    const keep=bits.filter((b,i)=>i===0||!(shoppy(b)&&!(headMat&&/^(?:and\s+)?\d/.test(b.trim()))&&_timkOnlyMaterials(b)));
     return keep.length===bits.length?p:Object.assign({},p,{text:keep.join(', ')});
   });
   const steps=priced.map(p=>p.text);
@@ -3266,7 +3270,7 @@ const _TIMK_SELL_UNITS=[
 function _timkSellUnit(w){const x=String(w||'').toLowerCase().replace(/[^a-z0-9]/g,'');for(const [re,u] of _TIMK_SELL_UNITS)if(re.test(x))return u;return null;}
 // A number straight after the count that is the SIZE of the thing, not how many.
 const _TIMK_SIZE_WORD=/^(?:inch|inches|in|gallon|gal|amp|amps|ton|volt|volts|v|watt|watts|w|btu|mil|gauge|ga|foot|ft|kw|horse|hp|psi|pound|lb|mm|oz|ounce|space|circuit|pole|way|piece|cfm|seer|lumen|k)$/i;
-const _TIMK_MAT_LEAD=/^(?:(?:okay|ok|so|alright|um|uh|and|plus|also|then|oh|yeah|well)\s+)*(?:(?:we'll|we\s+will|i'll|we're\s+gonna|gonna|we|i|you)\s+)?(?:(?:need|needs|want|wanna|have\s+to|gotta|got\s+to)\s+(?:to\s+)?)?(?:grab|get|pick\s+up|picking\s+up|buy|order|bring|throw\s+in|add|figure|figuring|call\s+it|about|around|roughly|maybe|like|need|we\s+need|i\s+need|used|we\s+used|i\s+used|went\s+through|materials?|parts?|supplies|for\s+materials|with|plus|another|also)?\b[\s:,]*/i;
+const _TIMK_MAT_LEAD=/^(?:(?:okay|ok|so|alright|um|uh|and|plus|also|then|oh|yeah|well)\s+)*(?:(?:we'll|we\s+will|i'll|we're\s+gonna|gonna|we|i|you)\s+)?(?:(?:need|needs|want|wanna|have\s+to|gotta|got\s+to)\s+(?:to\s+)?)?(?:grab|get|pick\s+up|picking\s+up|buy|order|bring|throw\s+in|figure|figuring|call\s+it|about|around|roughly|maybe|like|need|we\s+need|i\s+need|used|we\s+used|i\s+used|went\s+through|materials?|parts?|supplies|for\s+materials|with|plus|another|also)?\b[\s:,]*/i;
 const _TIMK_MAT_QTY=/^(a\s+couple(?:\s+of)?|couple(?:\s+of)?|a\s+dozen|dozen|half\s+of\s+an?|half\s+an?|a\s+half|a\s+few|few|\d+(?:\.\d+)?|\d+\/\d+|an?|one)\s+/i;
 function _timkQtyVal(q){
   const s=String(q||'').toLowerCase().trim().replace(/\s+of$/,'');
@@ -3321,16 +3325,36 @@ function _timkMatGood(item){
 function _timkOnlyMaterials(line){
   const t=String(line||'');
   let m;try{m=timSaidMaterials(t);}catch(_e){m=[];}
-  if(!m.length)return false;
-  // "A 4 foot walk gate": a thing he sells as a line, said with "a", stays a
-  // line. It is a shopping list when he said it like one: a selling unit on
-  // every item, or "grab", "figure", "we need" in front.
-  const lead=/^\s*(?:(?:okay|ok|so|and|plus|also|then|um|uh)[,\s]+)*(?:figure|figuring|grab|get|pick\s+up|buy|order|we\s+need|i\s+need|need|we'll\s+need|materials?|parts?|supplies|shopping\s+list|used|we\s+used|i\s+used|went\s+through)\b/i.test(t)||/^\s*(?:\d+(?:\.\d+)?|an?|one|a\s+couple|a\s+dozen)\s+[a-z]+\s+of\s/i.test(_timkClean(t))&&_timkSellUnit((_timkClean(t).match(/^\s*\S+(?:\s+\S+)?\s+([a-z]+)\s+of\s/i)||[])[1]);
-  if(!lead&&!m.every(r=>r.unit!=='ea'))return false;
-  let rest=' '+_timkClean(t).toLowerCase()+' ';
-  m.forEach(r=>{rest=rest.split(String(r.said||'').toLowerCase()).join(' ');});
-  rest=rest.replace(/\b(?:and|plus|also|then|with|figure|figuring|grab|get|pick\s+up|we\s+need|i\s+need|need|we'll|we|i|about|around|roughly|maybe|like|of|the|materials?|parts?|supplies|for|used|another|call\s+it|some|sq|ft|feet|inch|inches|to|by|x|each|on\s+top)\b/g,' ').replace(/[^a-z]/g,'');
-  return rest.length<3;
+  // A part named in the work ("add a Watts expansion tank", "new supply
+  // lines") is a line on the proposal AND a material; only a list is not.
+  if(!m.length||m.some(r=>r.kind==='part'))return false;
+  // "A 4 foot walk gate and a 10 foot double drive gate": things said one at
+  // a time with "a" are the lines he sells, unless he said it as a list.
+  const shopLead=/^\s*(?:(?:okay|ok|so|and|plus|also|then|um|uh)[,\s]+)*(?:figure|figuring|grab|get|pick\s+up|buy|order|we\s+need|i\s+need|need|we'll\s+need|materials?|parts?|supplies|used|we\s+used|i\s+used|went\s+through)\b/i.test(t);
+  if(!shopLead&&m.every(r=>r.unit==='ea'&&Number(r.qty)===1))return false;
+  // A line that starts with work is a step with materials in it: "Load 4 bags
+  // of salt", "Bring in a yard of topsoil", "Run a dedicated 20 with 12/2".
+  {const w0=_timkTidy(t).toLowerCase().split(/\s+/)[0]||'';
+   if(_timkVerbLike(w0)&&!/^(?:grab|get|need|order|buy|pick|use|used|figure|figuring)$/.test(w0))return false;}
+  // Take out every material he said, and the words a supply run is wrapped in
+  // ("order", "for the Johnson job", "drop at the Miller house", "supply house
+  // run", a price). What is left decides: a work verb means it is a step with
+  // materials in it; almost nothing left means it was a shopping list.
+  const base=_timkNumbers(_timkUnfill(_timkHeard(t))).toLowerCase();
+  let rest=' '+base+' ';
+  m.forEach(r=>{
+    [r.said,r.item].forEach(x=>{const q=String(x||'').toLowerCase().trim();if(q.length>1)rest=rest.split(q).join(' ');});
+  });
+  rest=rest
+    .replace(/\b(?:for|at|to)\s+the\s+[a-z]+\s+(?:job|house|place|site|jobsite|project|bath|kitchen|deck|rail|stairs|fence)\b/g,' ')
+    .replace(/\b(?:drop(?:\s+off)?|supply\s+(?:house\s+)?run|supply\s+house|hardware\s+store|home\s+depot|lowe's|lowes|irrigation\s+parts|parts|supplies|materials?|order|ordering|shopping\s+list|pick\s+list)\b/g,' ')
+    .replace(/\$?\d[\d,.]*(?:\s+(?:all\s+in|total|bucks|dollars|installed|a\s+piece|each))?/g,' ')
+    .replace(/\b(?:should\s+be|about|around|roughly|maybe|probably|like|figure|figuring|call\s+it|it's|its|runs?|costs?|all\s+in|total|a\s+piece|each)\b/g,' ')
+    .replace(/\b(?:and|plus|also|then|with|grab|get|pick\s+up|we\s+need|i\s+need|need|we'll|we|i|of|the|a|an|for|used|we\s+used|i\s+used|another|some|sq|ft|feet|inch|inches|to|by|x|on\s+top|no|wait|actually|just|make\s+it|make\s+that|uh|um|oh|eh|ok|okay|so|whatever|ones?|them|those|in|at|on|it|that|this|too)\b/g,' ');
+  const restWords=rest.replace(/[^a-z' ]/g,' ').split(/\s+/).filter(Boolean);
+  if(restWords.some(w=>_timkVerbLike(w)&&!_TIMK_NOUNISH.has(w)&&!/^(?:grab|get|need|order|buy|pick|use|used|figure|drop)$/.test(w)))return false;
+  const baseLetters=base.replace(/[^a-z]/g,'').length||1;
+  return restWords.join('').length<=Math.max(3,baseLetters*0.3);
 }
 // The list seams inside a sentence. Commas, but never the one inside
 // "40,000". "And" and "plus" in front of a count. And in a list said with no
@@ -3430,6 +3454,42 @@ function _timkMatFix2(t){
   }
   return {qty,unit};
 }
+// ── PARTS NAMED IN THE WORK ─────────────────────────────────────────────────
+// "Replaced the wax ring", "swapped the igniter, used a White-Rodgers 768A",
+// "put in a new drain valve": the part he installed is on the bill, count one
+// unless he said more. Only things that are PARTS, by name, after a verb that
+// puts one in: "replace the flange" is a part, "paint the walls" is not.
+const _TIMK_PART=/\b(wax\s+ring|toilet\s+flange|flange\s+(?:repair\s+)?ring|fill\s+valve|flapper|flush\s+valve|supply\s+lines?|angle\s+stops?|shut\s?offs?|ball\s+valves?|drain\s+valves?|t\s*&\s*p\s+valve|relief\s+valve|prv|pressure\s+reducing\s+valve|expansion\s+tank|p-?traps?|trap\s+kits?|air\s+gap|cartridge|anode\s+rod|thermocouple|flame\s+sensor|igniter|ignitor|capacitor|contactor|blower\s+motor|inducer\s+motor|limit\s+switch|pressure\s+switch|gas\s+valve|control\s+board|thermostat|filter|txv|condensate\s+pump|float\s+switch|disconnect|whip|gfcis?|gfci\s+outlets?|outlets?|receptacles?|switch(?:es)?|dimmers?|breakers?|smoke\s+(?:detectors?|alarms?)|co\s+detectors?|ceiling\s+fans?|exhaust\s+fans?|bath\s+fans?|light\s+fixtures?|fixtures?|can\s+lights?|recessed\s+lights?|pipe\s+boots?|vent\s+boots?|drip\s+edge|ridge\s+vent|turtle\s+vents?|gooseneck(?:\s+vent)?|downspouts?|gutter\s+guards?|splash\s+blocks?|pickets?|posts?|gate\s+latch|latch|hinges?|anti-?sag\s+kit|balusters?|post\s+caps?|stair\s+treads?|treads?|joists?|ledger(?:\s+board)?|window\s+sills?|sills?|thresholds?|door\s+sweeps?|weather\s*strip(?:ping)?|lockset|deadbolts?|door\s+knobs?|knobs?|levers?|door\s+stops?|towel\s+bars?|grab\s+bars?|mirror|vanity|faucet|disposal|garbage\s+disposal|toilet|sump\s+pump|check\s+valve|water\s+heater|screens?|spline|shutters?|j\s*channel|outside\s+corners?|soffit\s+vents?|gable\s+vents?|dryer\s+vent)\b/i;
+const _TIMK_PUT_IN=/\b(?:replac(?:e|ed|ing)|install(?:ed|ing)?|put(?:ting)?\s+in|swap(?:ped|ping)?(?:\s+(?:out|in))?|add(?:ed|ing)?|hung|hang|mount(?:ed)?|set|used|new)\b/i;
+function _timkPartsInWork(clause){
+  const t=String(clause||'');
+  if(!_TIMK_PUT_IN.test(t))return [];
+  const out=[];
+  const re=new RegExp('(?:^|\\s)(?:(\\d+|an?|one|two|three|four|five|six|the|new|a\\s+new|the\\s+old|the\\s+broken|the\\s+bad|the\\s+busted)\\s+)((?:[A-Za-z0-9/\\-]+\\s+){0,4}?)'+_TIMK_PART.source,'gi');
+  let m;
+  while((m=re.exec(t))){
+    const det=(m[1]||'').toLowerCase();
+    const before=t.slice(0,m.index).trim().split(/\s+/).pop()||'';
+    const after=t.slice(m.index+m[0].length);
+    // "by the toilet" is a place; "GFCI covers" is covers; "the switch with a
+    // Lutron dimmer" is what came out, and the dimmer is what went in.
+    if(/^(?:by|in|on|at|under|behind|near|to|from|over|around|beside|off)$/i.test(before))continue;
+    // "reset the toilet", "reinstall the vanity": the same one goes back.
+    {const lead=t.slice(0,m.index).split(/,|\band\b|\bthen\b/i).pop();
+     if(/\b(?:re-?set|reinstall(?:ed)?|re-?hang|rehung|reattach(?:ed)?|remount(?:ed)?|reuse[d]?|clean(?:ed)?|check(?:ed)?|adjust(?:ed)?|tighten(?:ed)?|test(?:ed)?|inspect(?:ed)?|remove[d]?|pull(?:ed)?|haul(?:ed)?|tear\s+out|tore\s+out|demo(?:ed)?)\b/i.test(lead)&&!/\b(?:replac|install|new|swap|put\s+in)\w*/i.test(lead))continue;}
+    if(/^\s+(?!and\b|with\b|for\b|on\b|in\b|at\b|to\b|by\b|from\b|that\b|then\b|so\b|but\b|too\b|it\b|the\b|a\b)[a-z]/i.test(after)&&!/^\s+(?:[a-z]+ed|[a-z]+ing)\b/i.test(after))continue;
+    if(/^\s*(?:with|for)\s+(?:a|an|the\s+new|new|\d)/i.test(after)&&/^(?:the|the\s+old|the\s+broken|the\s+bad|the\s+busted)$/.test(det))continue;
+    // "the old one", "the broken" part is what came out; what went in is the
+    // same thing, new, one of it.
+    const qty=/^\d/.test(det)?+det:/^(?:two)$/.test(det)?2:/^(?:three)$/.test(det)?3:/^(?:four)$/.test(det)?4:1;
+    let pre=(m[2]||'').trim();
+    if(/\b(?:old|broken|bad|busted|existing|dead|leaking|cracked|rotted)\b/i.test(det+' '+pre)&&!/\b(?:new|with|for)\b/i.test(t.slice(m.index+m[0].length,m.index+m[0].length+30)))pre=pre.replace(/\b(?:old|broken|bad|busted|existing|dead|leaking|cracked|rotted)\b/gi,'').trim();
+    pre=pre.replace(/\b(?:new|old|the|a|an|broken|bad|busted|existing|dead|leaking|cracked|rotted|customer's|customers)\b/gi,'').replace(/\s+/g,' ').trim();
+    const item=(pre?pre+' ':'')+m[3];
+    out.push({qty,unit:'ea',item,said:m[0].trim()});
+  }
+  return out;
+}
 function timSaidMaterials(text){
   // Heard and numbers, not the scope's corrections: a correction in a list is
   // about a count, and _timkMatFix reads it against the item it corrects.
@@ -3466,7 +3526,7 @@ function timSaidMaterials(text){
         const last=out[out.length-1];last.item=last.item+' '+cl.replace(/^(?:the|in)\s+/i,'');return;
       }
       if(/\b(?:not|don't|dont|no\s+need|skip|already\s+(?:have|got))\b/i.test(cl))return;
-      const workStart=(()=>{const w=_timkTidy(cl).toLowerCase().split(/\s+/)[0]||'';return _timkVerbLike(w)&&!_TIMK_NOUNISH.has(w)&&!/^(?:grab|get|pick|buy|order|bring|need|add|use|used|figure|throw)$/.test(w);})();
+      const workStart=(()=>{const w=_timkTidy(cl).toLowerCase().split(/\s+/)[0]||'';return _timkVerbLike(w)&&!_TIMK_NOUNISH.has(w)&&!/^(?:grab|get|pick|buy|order|bring|need|use|used|figure|throw)$/.test(w);})();
       // "put down fabric, figure 2 rolls", "Poly sand, 4 bags", "6-3 NM, about
       // 60 feet": a count and a unit with no thing is the thing just named.
       {const bare=cl.replace(_TIMK_MAT_LEAD,'').match(/^(\d+(?:\.\d+)?|an?|a\s+couple|a\s+dozen)\s+([a-z0-9]+)\s*$/i);
@@ -3499,7 +3559,18 @@ function timSaidMaterials(text){
       // Shape 2: COUNT THING, only in a list.
       const lead=cl.replace(_TIMK_MAT_LEAD,'');
       const listClause=!workStart&&(listy||prevWasMat||lead!==cl||ci>0&&clauses.length>1&&/^(?:\d|an?\s|one\s|a\s+couple|couple|a\s+dozen|dozen)/i.test(cl)||/^(?:\d|an?\s|one\s|a\s+couple|couple|a\s+dozen|dozen)/i.test(cl)&&clauses.length>1);
-      if(!listClause)return;
+      if(!listClause){
+        // Shape 3: a part named in the work, when nothing else took it.
+        if(workStart||_TIMK_PUT_IN.test(cl)){
+          _timkPartsInWork(cl).forEach(r=>{
+            r._replaced=/\b(?:replac(?:e|ed|ing)|swap(?:ped|ping)?)\b/i.test(cl);r._part=true;
+            if(/\b(?:customer|customer's|homeowner|supplied|she\s+bought|he\s+bought|they\s+bought|her\s+own|his\s+own)\b/i.test(sent))return;
+            if(out.some(o=>o.item.toLowerCase().indexOf(r.item.toLowerCase().split(' ').pop())>=0))return;
+            out.push(r);
+          });
+        }
+        return;
+      }
       const m2=lead.match(_TIMK_MAT_QTY);
       if(!m2)return;
       let rest=lead.slice(m2[0].length);
@@ -3521,6 +3592,11 @@ function timSaidMaterials(text){
       }finally{prevText=cl;}
     });
   });
+  // A part he replaced, when he also said what he used, is the same thing said
+  // twice: the list names it better ("replaced the capacitor ... used a 45/5
+  // cap").
+  if(out.some(r=>!r._part)){for(let i=out.length-1;i>=0;i--)if(out[i]._part&&out[i]._replaced)out.splice(i,1);}
+  out.forEach(r=>{r.kind=r._part?'part':'list';delete r._part;delete r._replaced;});
   // One line per thing: "4 rolls of underlayment" said twice is one line.
   const seen=new Map();
   out.forEach(r=>{
