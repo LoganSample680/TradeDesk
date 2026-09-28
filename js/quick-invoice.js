@@ -186,7 +186,10 @@ function _qiVisitsFor(c,entries,names,addr){
   const list=(entries||[]).filter(e=>e&&typeof e==='object');
   const site=list.filter(isSite);
   // Every other customer place on record, so a leg to one of them is shared.
+  // The rows now come back for this customer only (_qiLoadVisits), so the
+  // other customers' places come from the customer book as well.
   const custPlaces=new Set(list.filter(e=>!_QI_NOT_A_VISIT.test(String(e.source||''))&&e.dest_place).map(e=>String(e.dest_place).trim()));
+  (clients||[]).forEach(o=>{if(o&&String(o.id)!==cid)_qiPlaceNames(o).forEach(n=>custPlaces.add(n));});
   const out=site.map(e=>({kind:'site',arrivedAt:e.arrived_at,departedAt:e.departed_at,minutes:e.minutes,employeeName:who(e.employee_user_id)}));
   list.forEach(e=>{
     if(!_QI_DRIVE.test(String(e.source||'')))return;
@@ -225,8 +228,25 @@ async function _qiLoadVisits(cid,addr){
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return null;
   const {through}=_qiBilled(cid,addr);
   const since=new Date(Math.max(through||0,Date.now()-180*86400000)).toISOString();
-  const lab=await _fetchCrewLabor(since);
+  // Only this customer's rows, and no shop rows (owner 2026-09-28: "time to
+  // search for hours is slow"): their jobs, or a visit or drive at one of
+  // their places. Every customer's crew for six months was the slow part.
+  const lab=await _fetchCrewLabor(since,{noShop:true,only:_qiOnly(c,addr)});
   return _qiVisitsFor(c,lab&&lab.entries,lab&&lab.name,addr);
+}
+function _qiOnly(c,addr){
+  return {jobIds:(jobs||[]).filter(j=>j&&String(j.client_id)===String(c.id)).map(j=>j.id),places:_qiPlaceNames(c,addr)};
+}
+// What the Time Log already fetched, if it covers this customer's window:
+// the hours paint at once from it, and the fresh read replaces them.
+function _qiVisitsCached(cid,addr){
+  const c=getClientById(cid);
+  if(!c||typeof _tlCrewCache==='undefined'||!_tlCrewCache||!_tlCrewCache.payload)return null;
+  const {through}=_qiBilled(cid,addr);
+  const since=Math.max(through||0,Date.now()-180*86400000);
+  const got=Date.parse(_tlCrewCache.since||'')||0;
+  if(got>since)return null;
+  return _qiVisitsFor(c,_tlCrewCache.payload.entries,_tlCrewCache.payload.name,addr);
 }
 
 // The unbilled work: one line per person (their minutes at this customer's
@@ -282,7 +302,8 @@ function openQuickInvoice(cid,addr){
     return;
   }
   addr=addr||'';
-  const un=_qiUnbilled(cid,null,addr);
+  const cached=_qiVisitsCached(cid,addr);
+  const un=_qiUnbilled(cid,cached,addr);
   const hasWork=un.lines.length>0;
   const mode=c.qiMode||(hasWork?'hourly':'set');
   _qi={cid,addr,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode};
