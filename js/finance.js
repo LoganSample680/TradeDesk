@@ -1449,6 +1449,10 @@ function executeQuickAction(actionType,clientId,bidId,jobId,addr){
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='invoice'){
     if(typeof openQuickInvoice==='function')openQuickInvoice(clientId,addr);
+  } else if(actionType==='service'){
+    // The service board's add form (js/wh-board.js): the customer, and the
+    // house when the search named one.
+    if(typeof svcAddSetClient==='function')svcAddSetClient(clientId,addr);
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){

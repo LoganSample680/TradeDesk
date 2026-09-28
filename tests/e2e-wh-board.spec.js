@@ -325,49 +325,82 @@ test.describe('Water heater flush board', () => {
   });
 
   // Jack (2026-09-28): "not seeing an option to tag an address on the water
-  // heater service card on somebody who only has one address". Every card has
-  // an Address row now: one address is filled in, several are a pick.
-  test('address: one address is filled in, several are a pick, and the unit keeps the one chosen', async () => {
+  // heater service card on somebody who only has one address". Owner, same
+  // day: "address picker should follow the TrueShot search". The client is
+  // found with the ONE customer search (showQuickPicker + clientMatches) and
+  // the house with the ONE property sheet (pickClientAddress), never a
+  // dropdown of the form's own.
+  test('address: the client comes from the shared search, and one address is filled in', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      openWhAdd('client');
+      const noDropdown = !document.querySelector('#_wh-add-ov select');
+      const addrBefore = document.querySelector('#_svc-addr-row .td-svc-tap-v').textContent;
+      document.getElementById('_svc-client-row').click();
+      const search = document.getElementById('qp-search');
+      search.value = 'elm'; search.dispatchEvent(new Event('input'));
+      const shown = [...document.querySelectorAll('#qp-sugs button[data-q]')].filter(b => b.style.display !== 'none').map(b => b.querySelector('div div').firstChild.textContent);
+      [...document.querySelectorAll('#qp-sugs button[data-q]')].find(b => b.style.display !== 'none').click();
+      return { noDropdown, addrBefore, shown, client: document.getElementById('_wh-client').value, addr: document.getElementById('_wh-addr').value,
+        row: document.querySelector('#_svc-addr-row .td-svc-tap-v').textContent, sheet: !!document.getElementById('_addrpick-ov') };
+    });
+    expect(r.noDropdown, 'no dropdown of its own').toBe(true);
+    expect(r.addrBefore).toBe('Pick a client first');
+    expect(r.shown, 'the search finds a customer by their street').toEqual(['Lee Later']);
+    expect(r.client).toBe('502');
+    expect(r.addr).toBe('2 Elm St');
+    expect(r.row).toBe('2 Elm St');
+    expect(r.sheet, 'one address is not asked').toBe(false);
+    await page.evaluate(() => document.getElementById('_wh-add-done').click());
+  });
+
+  test('address: several houses are asked with the shared sheet, and the unit, board and schedule use the one picked', async () => {
     await seed();
     const r = await page.evaluate(() => {
       clients.push({ id: 504, name: 'Mo Many', phone: '5557778888', addr: '9 Pine St, Topeka, KS', extraAddresses: [{ label: 'Rental', addr: '44 Lake Rd, Topeka, KS' }] });
       openWhAdd('client');
-      const pick = id => { const s = document.getElementById('_wh-client'); s.value = id; s.dispatchEvent(new Event('change')); };
-      const before = document.getElementById('_wh-addr');
-      pick('502');
-      const one = document.getElementById('_wh-addr');
-      const oneShape = { tag: one.tagName, value: one.value };
-      pick('504');
-      const many = document.getElementById('_wh-addr');
-      const manyShape = { tag: many.tagName, options: [...many.options].map(o => o.textContent) };
-      many.value = '44 Lake Rd, Topeka, KS';
       document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
+      svcAddSetClient(504);
+      const sheetRows = [...document.querySelectorAll('#_addrpick-sheet [onclick^="_addrPickChoose"]')].map(x => x.textContent);
+      _addrPickChoose(1);
+      const row = document.querySelector('#_svc-addr-row .td-svc-tap-v').textContent;
+      const dateKept = document.getElementById('_wh-date').value === _whAddMonths(todayKey(), -12);
       document.getElementById('_wh-add-save').click();
       document.getElementById('_wh-add-done').click();
       const e = equipment.find(x => x.clientId === 504);
       _renderWhBoard();
-      const row = [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Mo Many'));
-      return { beforeTag: before && before.tagName, oneShape, manyShape, unitAddr: e && e.addr, rowText: row ? row.textContent : '', id: e && e.id };
+      const boardRow = [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Mo Many'));
+      // A search that names one house goes straight to it, no question.
+      openWhAdd('client');
+      svcAddSetClient(504, '9 Pine St, Topeka, KS');
+      const named = { sheet: !!document.getElementById('_addrpick-ov'), row: document.querySelector('#_svc-addr-row .td-svc-tap-v').textContent };
+      document.getElementById('_wh-add-done').click();
+      return { sheetRows, row, dateKept, unitAddr: e && e.addr, boardText: boardRow ? boardRow.textContent : '', id: e && e.id, named };
     });
-    expect(r.beforeTag, 'the Address row is there before a client is picked').toBe('INPUT');
-    expect(r.oneShape).toEqual({ tag: 'INPUT', value: '2 Elm St' });
-    expect(r.manyShape).toEqual({ tag: 'SELECT', options: ['9 Pine St · Primary', '44 Lake Rd · Rental'] });
+    expect(r.sheetRows[0]).toContain('9 Pine St');
+    expect(r.sheetRows[1]).toContain('44 Lake Rd');
+    expect(r.row).toBe('44 Lake Rd · Rental');
+    expect(r.dateKept, 'what he typed survives the pick').toBe(true);
     expect(r.unitAddr).toBe('44 Lake Rd, Topeka, KS');
-    expect(r.rowText).toContain('44 Lake Rd');
-    // Schedule goes to the house the unit is at, not the primary.
+    expect(r.boardText).toContain('44 Lake Rd');
+    expect(r.named).toEqual({ sheet: false, row: '9 Pine St · Primary' });
     await page.evaluate(id => whScheduleFlush(id), r.id);
     await page.waitForFunction(() => window._schedPrefill && document.getElementById('s-name').value.includes('Mo Many'));
     expect(await page.evaluate(() => document.getElementById('s-addr').value)).toBe('44 Lake Rd, Topeka, KS');
     await page.evaluate(() => { window._schedPrefill = null; goPg('pg-dash'); });
   });
 
-  test('address: a customer with none gets the one typed, and an untagged unit shows the customer address', async () => {
+  test('address: a customer with none adds one from the same sheet, and an untagged unit shows the customer address', async () => {
     await seed();
     const r = await page.evaluate(() => {
       openWhAdd('client');
-      const s = document.getElementById('_wh-client'); s.value = '503'; s.dispatchEvent(new Event('change'));
-      const empty = document.getElementById('_wh-addr').value;
-      document.getElementById('_wh-addr').value = '7 Birch Ln';
+      svcAddSetClient(503);
+      const asked = !!document.getElementById('_addrpick-ov');
+      document.getElementById('_svc-addr-row').click();
+      _addrPickAddNew();
+      document.getElementById('_addrpick-new').value = '7 Birch Ln';
+      _addrPickSaveNew();
+      const row = document.querySelector('#_svc-addr-row .td-svc-tap-v').textContent;
       document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
       document.getElementById('_wh-add-save').click();
       document.getElementById('_wh-add-done').click();
@@ -375,11 +408,12 @@ test.describe('Water heater flush board', () => {
       const tagged = equipment.filter(x => x.clientId === 503).map(x => x.addr || '');
       _renderWhBoard();
       const dana = [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Dana Due'));
-      return { empty, clientAddr: c.addr, tagged, dana: dana ? dana.querySelector('.td-wh-addr')?.textContent : null,
+      return { asked, row, clientAddrs: clientAddresses(c).map(a => a.addr), tagged, dana: dana ? dana.querySelector('.td-wh-addr')?.textContent : null,
         helpers: [_whAddrOf(null, null), _whAddrOf({}, { addr: '1 Oak St, Topeka' }), _whStreet({ addr: '5 Ash Ct, Topeka, KS' }, null)] };
     });
-    expect(r.empty).toBe('');
-    expect(r.clientAddr, 'the address typed becomes theirs').toBe('7 Birch Ln');
+    expect(r.asked, 'no address on file is not asked until he taps').toBe(false);
+    expect(r.row).toBe('7 Birch Ln');
+    expect(r.clientAddrs, 'the address added is theirs').toContain('7 Birch Ln');
     expect(r.tagged).toContain('7 Birch Ln');
     expect(r.dana, 'untagged units show the customer address').toBe('1 Oak St');
     expect(r.helpers).toEqual(['', '1 Oak St, Topeka', '5 Ash Ct']);
