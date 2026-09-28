@@ -1,0 +1,921 @@
+[
+  {
+    "id": "paint-01",
+    "trade": "painting",
+    "said": "Okay so we're gonna paint the living room walls and ceiling, 2 coats Sherman Williams Emerald. Then do all the baseboards and door casings in semi gloss.",
+    "expect": [
+      "Paint the living room walls and ceiling, 2 coats Sherwin-Williams Emerald",
+      "Do all the baseboards and door casings in semi gloss"
+    ],
+    "heard": [
+      {
+        "said": "Sherman Williams",
+        "means": "Sherwin-Williams"
+      }
+    ],
+    "note": "\"walls and ceiling, 2 coats\" is one action; the comma before the coat count is not a split"
+  },
+  {
+    "id": "paint-02",
+    "trade": "painting",
+    "said": "Scrape. Prime. Paint trim. 1 coat.",
+    "expect": [
+      "Scrape",
+      "Prime",
+      "Paint trim, 1 coat"
+    ],
+    "heard": [],
+    "note": "\"1 coat\" is a bare spec fragment and belongs to the line before it, not its own line"
+  },
+  {
+    "id": "paint-03",
+    "trade": "painting",
+    "said": "pressure wash the whole house scrape all the loose paint on the south side spot prime bare wood with zincer bin then 2 coats of Duration on the siding",
+    "expect": [
+      "Pressure wash the whole house",
+      "Scrape all the loose paint on the south side",
+      "Spot prime bare wood with Zinsser BIN",
+      "2 coats of Duration on the siding"
+    ],
+    "heard": [
+      {
+        "said": "zincer bin",
+        "means": "Zinsser BIN"
+      }
+    ],
+    "note": "no punctuation at all; splits come from verb seams (scrape, spot prime) and \"then\""
+  },
+  {
+    "id": "paint-04",
+    "trade": "painting",
+    "said": "Um so will be removing all the kitchen cabinet doors and hardware, degrease everything, scuff sand, prime with Benjamin more Stix, uh actually no, prime with Zinsser BIN, then spray 2 coats of Advance in satin. Reinstall doors and hardware. 4800 for the kitchen.",
+    "expect": [
+      "Removing all the kitchen cabinet doors and hardware",
+      "Degrease everything",
+      "Scuff sand",
+      "Prime with Zinsser BIN",
+      "Spray 2 coats of Advance in satin",
+      "Reinstall doors and hardware"
+    ],
+    "heard": [
+      {
+        "said": "will be",
+        "means": "we'll be"
+      },
+      {
+        "said": "Benjamin more",
+        "means": "Benjamin Moore"
+      }
+    ],
+    "note": "self-correction: the Stix primer line is retracted by \"uh actually no\" and replaced; \"4800 for the kitchen\" is a price, not a line; \"will be\" is a misheard subject and is dropped"
+  },
+  {
+    "id": "paint-05",
+    "trade": "painting",
+    "said": "Scrape the popcorn off the ceilings in the 3 bedrooms and hallway. Skim coat, sand smooth, prime with kills and paint flat white ceiling paint.",
+    "expect": [
+      "Scrape the popcorn off the ceilings in the 3 bedrooms and hallway",
+      "Skim coat",
+      "Sand smooth",
+      "Prime with Kilz",
+      "Paint flat white ceiling paint"
+    ],
+    "heard": [
+      {
+        "said": "kills",
+        "means": "Kilz"
+      }
+    ],
+    "note": "\"and\" joining two verbs that each have their own complement splits; \"3 bedrooms and hallway\" does not"
+  },
+  {
+    "id": "paint-06",
+    "trade": "painting",
+    "said": "alright so we're gonna steam off the 2 layers of wallpaper in the downstairs bathroom, you know, get all the glue residue off with DIF, then skim any gouges and prime with guards. Walls get Regal Select eggshell 2 coats.",
+    "expect": [
+      "Steam off the 2 layers of wallpaper in the downstairs bathroom",
+      "Get all the glue residue off with DIF",
+      "Skim any gouges",
+      "Prime with Gardz",
+      "Walls get Regal Select eggshell 2 coats"
+    ],
+    "heard": [
+      {
+        "said": "guards",
+        "means": "Gardz"
+      }
+    ],
+    "note": "\"you know\" filler sits at a comma seam and must not end up on either line"
+  },
+  {
+    "id": "paint-07",
+    "trade": "painting",
+    "said": "Where painting the sofit and fashia all the way around, 1 coat Duration satin in the existing color. Replace the rotted fashia board over the garage, about 12 feet. Cock all the gaps with Alex plus.",
+    "expect": [
+      "Painting the soffit and fascia all the way around, 1 coat Duration satin in the existing color",
+      "Replace the rotted fascia board over the garage, about 12 feet",
+      "Caulk all the gaps with Alex Plus"
+    ],
+    "heard": [
+      {
+        "said": "Where painting",
+        "means": "we're painting"
+      },
+      {
+        "said": "sofit",
+        "means": "soffit"
+      },
+      {
+        "said": "fashia",
+        "means": "fascia"
+      },
+      {
+        "said": "Cock",
+        "means": "Caulk"
+      },
+      {
+        "said": "Alex plus",
+        "means": "Alex Plus"
+      }
+    ],
+    "note": "\"Where\" is a misheard \"we're\" and is dropped as a subject; \"about 12 feet\" is a quantity, not a price"
+  },
+  {
+    "id": "paint-08",
+    "trade": "painting",
+    "said": "Pressure wash the 400 square foot deck, let it dry 48 hours, then 2 coats of Cabot semi transparent in cedar tone. Stain the rails and spindles too. 1850.",
+    "expect": [
+      "Pressure wash the 400 square foot deck",
+      "Let it dry 48 hours",
+      "2 coats of Cabot semi transparent in cedar tone",
+      "Stain the rails and spindles too"
+    ],
+    "heard": [],
+    "note": "bare \"1850.\" at the end is the price; 400 and 48 are quantities"
+  },
+  {
+    "id": "paint-09",
+    "trade": "painting",
+    "said": "stain the fence both sides Olympic Maximum semi solid, around 220 linear feet, spray and back brush",
+    "expect": [
+      "Stain the fence both sides Olympic Maximum semi solid, around 220 linear feet, spray and back brush"
+    ],
+    "heard": [],
+    "note": "\"spray and back brush\" is manner, not a new action: one line"
+  },
+  {
+    "id": "paint-10",
+    "trade": "painting",
+    "said": "Patch the 3 holes in the hallway where they took the TV mount down, tape and mud, sand, texture to match orange peel, then prime and paint the whole wall so it doesn't flash.",
+    "expect": [
+      "Patch the 3 holes in the hallway where they took the TV mount down",
+      "Tape and mud",
+      "Sand",
+      "Texture to match orange peel",
+      "Prime and paint the whole wall so it doesn't flash"
+    ],
+    "heard": [],
+    "note": "\"prime and paint the whole wall\" shares one object and stays one line; \"tape and mud\" is one step"
+  },
+  {
+    "id": "paint-11",
+    "trade": "painting",
+    "said": "Follow RRP lead safe practices, house is pre 1978. Set up containment with 6 mil poly on the ground 10 feet out, wet scrape all the peeling paint on the porch, HEPA vac, then prime with Sherman Williams exterior oil primer. 2 coats SuperPaint. Clean up and bag all the chips.",
+    "expect": [
+      "Follow RRP lead safe practices, house is pre 1978",
+      "Set up containment with 6 mil poly on the ground 10 feet out",
+      "Wet scrape all the peeling paint on the porch",
+      "HEPA vac",
+      "Prime with Sherwin-Williams exterior oil primer",
+      "2 coats SuperPaint",
+      "Clean up and bag all the chips"
+    ],
+    "heard": [
+      {
+        "said": "Sherman Williams",
+        "means": "Sherwin-Williams"
+      }
+    ],
+    "note": "1978 is a year, not a price; \"house is pre 1978\" is a reason clause, not a new action"
+  },
+  {
+    "id": "paint-12",
+    "trade": "painting",
+    "said": "Grind the 2 car garage floor, about 480 square feet, fill cracks with the epoxy patch, 2 part epoxy base coat, full broadcast flake, 2 coats of polyaspartic top coat. 3200 bucks.",
+    "expect": [
+      "Grind the 2 car garage floor, about 480 square feet",
+      "Fill cracks with the epoxy patch",
+      "2 part epoxy base coat",
+      "Full broadcast flake",
+      "2 coats of polyaspartic top coat"
+    ],
+    "heard": [],
+    "note": "verbless items that are their own application step are their own lines, unlike a bare spec such as \"about 480 square feet\"; \"3200 bucks\" is the price"
+  },
+  {
+    "id": "paint-13",
+    "trade": "painting",
+    "said": "Paint 3 bedrooms. Walls only. 2 coats.",
+    "expect": [
+      "Paint 3 bedrooms, walls only, 2 coats"
+    ],
+    "heard": [],
+    "note": "two spec fragments after phone periods both attach to the one action"
+  },
+  {
+    "id": "paint-14",
+    "trade": "painting",
+    "said": "um okay so we're gonna paint the master bedroom walls Benjamin more Aura in uh what was it Pale Oak, eggshell, and the ceiling, no wait, ceiling's fine, leave the ceiling. Trim and doors in Advance semi gloss white.",
+    "expect": [
+      "Paint the master bedroom walls Benjamin Moore Aura in Pale Oak, eggshell",
+      "Trim and doors in Advance semi gloss white"
+    ],
+    "heard": [
+      {
+        "said": "Benjamin more",
+        "means": "Benjamin Moore"
+      }
+    ],
+    "note": "\"and the ceiling\" is retracted by \"no wait\"; \"leave the ceiling\" is not work; \"what was it\" is filler mid-line"
+  },
+  {
+    "id": "paint-15",
+    "trade": "painting",
+    "said": "Pressure wash the whole exterior day 1, 350. Scrape and sand all failing areas. Replace 2 rotted window sills, 180 each. Caulk all windows and trim joints. Prime bare wood. 2 coats Emerald Rain Refresh on the body, trim in Duration satin. Paint front door Tricorn Black. Total about 9400.",
+    "expect": [
+      "Pressure wash the whole exterior day 1",
+      "Scrape and sand all failing areas",
+      "Replace 2 rotted window sills",
+      "Caulk all windows and trim joints",
+      "Prime bare wood",
+      "2 coats Emerald Rain Refresh on the body",
+      "Trim in Duration satin",
+      "Paint front door Tricorn Black"
+    ],
+    "heard": [],
+    "note": "prices mid-walk (350, 180 each) come off their lines; \"Total about 9400\" is not a line; \"day 1\" is not a price; body and trim are separate scopes at the comma"
+  },
+  {
+    "id": "paint-16",
+    "trade": "painting",
+    "said": "patch nail holes sand and prime patches paint all walls in the upstairs 2 coats super paint satin paint all the closets too ceilings get 1 coat flat",
+    "expect": [
+      "Patch nail holes",
+      "Sand and prime patches",
+      "Paint all walls in the upstairs 2 coats SuperPaint satin",
+      "Paint all the closets too",
+      "Ceilings get 1 coat flat"
+    ],
+    "heard": [
+      {
+        "said": "super paint",
+        "means": "SuperPaint"
+      }
+    ],
+    "note": "no punctuation; \"sand and prime patches\" shares one object; \"ceilings get\" is a new-subject seam"
+  },
+  {
+    "id": "paint-17",
+    "trade": "painting",
+    "said": "Remove switch plates. And outlet covers. Mask floors, paint the hallway. Stairwell. And landing. Reinstall covers.",
+    "expect": [
+      "Remove switch plates and outlet covers",
+      "Mask floors",
+      "Paint the hallway, stairwell and landing",
+      "Reinstall covers"
+    ],
+    "heard": [],
+    "note": "phone inserted periods at every pause; fragments starting with \"And\" or a bare noun rejoin the action before them instead of becoming lines"
+  },
+  {
+    "id": "paint-18",
+    "trade": "painting",
+    "said": "Paint 14 interior doors both sides and the jambs. Sand between coats. Use advanced satin. Frog tape on the hinges.",
+    "expect": [
+      "Paint 14 interior doors both sides and the jambs",
+      "Sand between coats",
+      "Use Advance satin",
+      "Frog tape on the hinges"
+    ],
+    "heard": [
+      {
+        "said": "advanced",
+        "means": "Advance"
+      }
+    ]
+  },
+  {
+    "id": "paint-19",
+    "trade": "painting",
+    "said": "Reglaze the 6 basement windows with Sarco putty, then prime and paint the sashes. Remove the old storm windows and haul them off.",
+    "expect": [
+      "Reglaze the 6 basement windows with Sarco putty",
+      "Prime and paint the sashes",
+      "Remove the old storm windows",
+      "Haul them off"
+    ],
+    "heard": [],
+    "note": "\"remove X and haul them off\" is two actions each with its own object; \"prime and paint the sashes\" shares one object"
+  },
+  {
+    "id": "paint-20",
+    "trade": "painting",
+    "said": "So there's a water stain on the kitchen ceiling from the old leak. Spot prime the stain with bin, then repaint the whole kitchen ceiling flat white, 1 coat.",
+    "expect": [
+      "Spot prime the stain with BIN",
+      "Repaint the whole kitchen ceiling flat white, 1 coat"
+    ],
+    "heard": [
+      {
+        "said": "bin",
+        "means": "BIN"
+      }
+    ],
+    "note": "the opening sentence is an observation, not work, and makes no line"
+  },
+  {
+    "id": "paint-21",
+    "trade": "painting",
+    "said": "will be spraying the hardy siding 2 coats of Duration color matched to their existing, Accessible Beige, and back roll it. Brush and roll the trim in Extra White.",
+    "expect": [
+      "Spraying the Hardie siding 2 coats of Duration color matched to their existing, Accessible Beige, and back roll it",
+      "Brush and roll the trim in Extra White"
+    ],
+    "heard": [
+      {
+        "said": "will be",
+        "means": "we'll be"
+      },
+      {
+        "said": "hardy",
+        "means": "Hardie"
+      }
+    ],
+    "note": "\"and back roll it\" is how the siding is sprayed (manner), not a new line"
+  },
+  {
+    "id": "paint-22",
+    "trade": "painting",
+    "said": "yeah so basically we'll paint the walls and ceilings in the living room dining room and kitchen, uh, walls in Agreeable Gray eggshell ceilings flat white, trim is getting Pure White semi gloss, oh and the built in bookshelf too same white",
+    "expect": [
+      "Paint the walls and ceilings in the living room dining room and kitchen, walls in Agreeable Gray eggshell ceilings flat white",
+      "Trim is getting Pure White semi gloss",
+      "The built in bookshelf too same white"
+    ],
+    "heard": [],
+    "note": "color specs after the comma belong to the walls-and-ceilings line; trim is a new scope; \"oh and\" opens another; \"uh\" sits at a comma and must vanish cleanly"
+  },
+  {
+    "id": "paint-23",
+    "trade": "painting",
+    "said": "Paint the 2 bathroom vanities. Remove doors, sand, prime with Extreme Bond, 2 coats Emerald Urethane in satin. Install the new knobs the customer bought.",
+    "expect": [
+      "Paint the 2 bathroom vanities",
+      "Remove doors",
+      "Sand",
+      "Prime with Extreme Bond",
+      "2 coats Emerald Urethane in satin",
+      "Install the new knobs the customer bought"
+    ],
+    "heard": []
+  },
+  {
+    "id": "paint-24",
+    "trade": "painting",
+    "said": "Soft wash the vinyl siding, the gutters and the front walk. Clean the black streaks off the gutters with gutter brightener.",
+    "expect": [
+      "Soft wash the vinyl siding, the gutters and the front walk",
+      "Clean the black streaks off the gutters with gutter brightener"
+    ],
+    "heard": [],
+    "note": "the commas in the first sentence list objects, not new actions"
+  },
+  {
+    "id": "paint-25",
+    "trade": "painting",
+    "said": "Paint the brick chimney with locks on masonry primer and then 2 coats of Loxon top coat. Repoint the mortar on the cap first.",
+    "expect": [
+      "Paint the brick chimney with Loxon masonry primer",
+      "2 coats of Loxon top coat",
+      "Repoint the mortar on the cap first"
+    ],
+    "heard": [
+      {
+        "said": "locks on",
+        "means": "Loxon"
+      }
+    ],
+    "note": "order stays as said even though \"first\" says repointing comes before"
+  },
+  {
+    "id": "paint-26",
+    "trade": "painting",
+    "said": "front door gets stripped sanded and stained Minwax Jacobean then 3 coats spar urethane garage door just gets painted Tricorn black",
+    "expect": [
+      "Front door gets stripped sanded and stained Minwax Jacobean",
+      "3 coats spar urethane",
+      "Garage door just gets painted Tricorn black"
+    ],
+    "heard": [],
+    "note": "no punctuation; the verb list sharing one subject stays one line; the seam before \"garage door\" is a new subject, not a verb"
+  },
+  {
+    "id": "paint-27",
+    "trade": "painting",
+    "said": "Touch up the hallway scuffs. Paint the laundry room. Done.",
+    "expect": [
+      "Touch up the hallway scuffs",
+      "Paint the laundry room"
+    ],
+    "heard": [],
+    "note": "\"Done.\" is a sign-off, not a line"
+  },
+  {
+    "id": "paint-28",
+    "trade": "painting",
+    "said": "Sand the stair handrail and restain it, paint all 32 spindles and the risers white, treads stay natural.",
+    "expect": [
+      "Sand the stair handrail",
+      "Restain it",
+      "Paint all 32 spindles and the risers white"
+    ],
+    "heard": [],
+    "note": "\"treads stay natural\" is an exclusion, not work"
+  },
+  {
+    "id": "paint-29",
+    "trade": "painting",
+    "said": "Where gonna prime all the new drywall with pro mar 200 primer, then 2 coats of pro mar 200 eggshell in the basement, 1100 square feet of wall.",
+    "expect": [
+      "Prime all the new drywall with ProMar 200 primer",
+      "2 coats of ProMar 200 eggshell in the basement, 1100 square feet of wall"
+    ],
+    "heard": [
+      {
+        "said": "Where gonna",
+        "means": "we're gonna"
+      },
+      {
+        "said": "pro mar",
+        "means": "ProMar"
+      }
+    ],
+    "note": "200 is part of the product name, not a price or a quantity"
+  },
+  {
+    "id": "paint-30",
+    "trade": "painting",
+    "said": "Test the popcorn ceilings for asbestos first. If it's clean scrape them, retexture knockdown and paint.",
+    "expect": [
+      "Test the popcorn ceilings for asbestos first",
+      "If it's clean scrape them",
+      "Retexture knockdown",
+      "Paint"
+    ],
+    "heard": [],
+    "note": "the condition stays on the line it governs; a bare trailing \"and paint\" is still its own action"
+  },
+  {
+    "id": "paint-31",
+    "trade": "painting",
+    "said": "Take down the 12 shudders, paint them black in the shop, rehang with new stainless screws.",
+    "expect": [
+      "Take down the 12 shutters",
+      "Paint them black in the shop",
+      "Rehang with new stainless screws"
+    ],
+    "heard": [
+      {
+        "said": "shudders",
+        "means": "shutters"
+      }
+    ]
+  },
+  {
+    "id": "paint-32",
+    "trade": "painting",
+    "said": "Paint the nursery walls 2 coats of bear Marquee, customer picked it. Ceiling stays.",
+    "expect": [
+      "Paint the nursery walls 2 coats of Behr Marquee, customer picked it"
+    ],
+    "heard": [
+      {
+        "said": "bear",
+        "means": "Behr"
+      }
+    ],
+    "note": "\"customer picked it\" is an aside on the same line; \"Ceiling stays\" is an exclusion, not work"
+  },
+  {
+    "id": "paint-33",
+    "trade": "painting",
+    "said": "Paint 4 bedrooms, no, 5 bedrooms, walls and ceilings, 2 coats. Trim not included.",
+    "expect": [
+      "Paint 5 bedrooms, walls and ceilings, 2 coats"
+    ],
+    "heard": [],
+    "note": "\"no, 5 bedrooms\" corrects the count in place; \"Trim not included\" is an exclusion, not work"
+  },
+  {
+    "id": "paint-34",
+    "trade": "painting",
+    "said": "Clean the island and upper cabinets with crud cutter, scuff, prime with Cover Stain, then 2 coats of Cabinet Coat in white.",
+    "expect": [
+      "Clean the island and upper cabinets with Krud Kutter",
+      "Scuff",
+      "Prime with Cover Stain",
+      "2 coats of Cabinet Coat in white"
+    ],
+    "heard": [
+      {
+        "said": "crud cutter",
+        "means": "Krud Kutter"
+      }
+    ]
+  },
+  {
+    "id": "paint-35",
+    "trade": "painting",
+    "said": "Um, so the porch ceiling gets hate blue, will scrape and repaint the porch floor with porch and floor enamel, uh, 2 coats, patch the rotted column bottoms with Bondo wood filler, and paint the railings. I'm thinking 2600 for all that.",
+    "expect": [
+      "The porch ceiling gets haint blue",
+      "Scrape and repaint the porch floor with porch and floor enamel, 2 coats",
+      "Patch the rotted column bottoms with Bondo wood filler",
+      "Paint the railings"
+    ],
+    "heard": [
+      {
+        "said": "hate blue",
+        "means": "haint blue"
+      },
+      {
+        "said": "will",
+        "means": "we'll"
+      }
+    ],
+    "note": "\"uh, 2 coats\" is a spec for the floor line, not a new line; \"I'm thinking 2600 for all that\" is the price"
+  },
+  {
+    "id": "land-01",
+    "trade": "landscaping",
+    "said": "Mow, edge and blow the front and back, weekly, 55 a cut.",
+    "expect": [
+      "Mow, edge and blow the front and back, weekly"
+    ],
+    "heard": [],
+    "note": "\"mow, edge and blow\" is one standard service line, not three; \"55 a cut\" is the price"
+  },
+  {
+    "id": "land-02",
+    "trade": "landscaping",
+    "said": "Pull weeds in all the beds, re edge the beds with a spade, put down 12 yards of double shredded hardwood mulch 3 inches deep. Haul off the debris.",
+    "expect": [
+      "Pull weeds in all the beds",
+      "Re edge the beds with a spade",
+      "Put down 12 yards of double shredded hardwood mulch 3 inches deep",
+      "Haul off the debris"
+    ],
+    "heard": []
+  },
+  {
+    "id": "land-03",
+    "trade": "landscaping",
+    "said": "Kill off the existing lawn with Roundup, wait 2 weeks, rototill, grade, and lay 1500 square feet of Bermuda sod. Roll it and water it in.",
+    "expect": [
+      "Kill off the existing lawn with Roundup",
+      "Wait 2 weeks",
+      "Rototill",
+      "Grade",
+      "Lay 1500 square feet of Bermuda sod",
+      "Roll it",
+      "Water it in"
+    ],
+    "heard": [],
+    "note": "list-final \", and lay\" is a new action; \"roll it and water it in\" is two actions, each with its own object"
+  },
+  {
+    "id": "land-04",
+    "trade": "landscaping",
+    "said": "Core aireate the whole yard, about 6000 square feet, over seed with tall fescue, 8 pounds per thousand, and put down starter fertilizer.",
+    "expect": [
+      "Core aerate the whole yard, about 6000 square feet",
+      "Over seed with tall fescue, 8 pounds per thousand",
+      "Put down starter fertilizer"
+    ],
+    "heard": [
+      {
+        "said": "aireate",
+        "means": "aerate"
+      }
+    ],
+    "note": "quantity clauses after commas stay on their line; only the verbs open new lines"
+  },
+  {
+    "id": "land-05",
+    "trade": "landscaping",
+    "said": "Replace the busted head on zone 3 by the driveway with a rain bird 1804, and adjust all the heads on zone 3 and 4 so they're not hitting the house. Reprogram the hunter pro C for 3 days a week.",
+    "expect": [
+      "Replace the busted head on zone 3 by the driveway with a Rain Bird 1804",
+      "Adjust all the heads on zone 3 and 4 so they're not hitting the house",
+      "Reprogram the Hunter Pro-C for 3 days a week"
+    ],
+    "heard": [
+      {
+        "said": "rain bird",
+        "means": "Rain Bird"
+      },
+      {
+        "said": "hunter pro C",
+        "means": "Hunter Pro-C"
+      }
+    ],
+    "note": "1804 is a model number, not a price"
+  },
+  {
+    "id": "land-06",
+    "trade": "landscaping",
+    "said": "Run drip line to the 14 shrubs along the fence, half inch poly with 1 gallon emitters, tie into the zone 5 valve, bury it under the mulch.",
+    "expect": [
+      "Run drip line to the 14 shrubs along the fence, half inch poly with 1 gallon emitters",
+      "Tie into the zone 5 valve",
+      "Bury it under the mulch"
+    ],
+    "heard": [],
+    "note": "the verbless material spec belongs to the drip line; the next two commas open new actions"
+  },
+  {
+    "id": "land-07",
+    "trade": "landscaping",
+    "said": "Trim the 2 oaks off the roof, raise the canopy to 12 feet, and thin out the crate myrtles, don't top them. Chip everything and haul off the brush.",
+    "expect": [
+      "Trim the 2 oaks off the roof",
+      "Raise the canopy to 12 feet",
+      "Thin out the crape myrtles, don't top them",
+      "Chip everything",
+      "Haul off the brush"
+    ],
+    "heard": [
+      {
+        "said": "crate myrtles",
+        "means": "crape myrtles"
+      }
+    ],
+    "note": "\"don't top them\" is an instruction on the same action, not a line"
+  },
+  {
+    "id": "land-08",
+    "trade": "landscaping",
+    "said": "Grind the 3 stumps 6 inches below grade, fill the holes with topsoil and seed them. 75 a stump.",
+    "expect": [
+      "Grind the 3 stumps 6 inches below grade",
+      "Fill the holes with topsoil",
+      "Seed them"
+    ],
+    "heard": [],
+    "note": "\"75 a stump\" is a unit price, not a line"
+  },
+  {
+    "id": "land-09",
+    "trade": "landscaping",
+    "said": "Build a 40 foot retaining wall, 3 feet tall, bell guard Celtik block, excavate, put down 6 inches of compacted base, lay perforated drain pipe behind it, backfill with clean gravel and cap it. 38 a face foot.",
+    "expect": [
+      "Build a 40 foot retaining wall, 3 feet tall, Belgard Celtik block",
+      "Excavate",
+      "Put down 6 inches of compacted base",
+      "Lay perforated drain pipe behind it",
+      "Backfill with clean gravel",
+      "Cap it"
+    ],
+    "heard": [
+      {
+        "said": "bell guard",
+        "means": "Belgard"
+      }
+    ],
+    "note": "the first two commas carry specs (height, block) and stay on the wall line; \"excavate\" is the first new action; \"38 a face foot\" is a unit price"
+  },
+  {
+    "id": "land-10",
+    "trade": "landscaping",
+    "said": "Tear out the old concrete patio, haul it off, then install a 16 by 20 paver patio with Unilock, uh, Unilock Beacon Hill in the gray, poly metric sand joints, seal it after 30 days.",
+    "expect": [
+      "Tear out the old concrete patio",
+      "Haul it off",
+      "Install a 16 by 20 paver patio with Unilock Beacon Hill in the gray, polymeric sand joints",
+      "Seal it after 30 days"
+    ],
+    "heard": [
+      {
+        "said": "poly metric",
+        "means": "polymeric"
+      }
+    ],
+    "note": "stutter \"Unilock, uh, Unilock Beacon Hill\" collapses to one name; \"16 by 20\" is a size"
+  },
+  {
+    "id": "land-11",
+    "trade": "landscaping",
+    "said": "Dig a French drain along the side yard about 60 feet, line the trench with fabric, lay 4 inch perforated pipe, backfill with number 57 stone, run it out to a pop up emitter at the curb.",
+    "expect": [
+      "Dig a French drain along the side yard about 60 feet",
+      "Line the trench with fabric",
+      "Lay 4 inch perforated pipe",
+      "Backfill with number 57 stone",
+      "Run it out to a pop up emitter at the curb"
+    ],
+    "heard": []
+  },
+  {
+    "id": "land-12",
+    "trade": "landscaping",
+    "said": "Fall cleanup. Blow out the beds. Mulch the leaves on the lawn. Cut back perennials. Last mow at 2 inches.",
+    "expect": [
+      "Fall cleanup",
+      "Blow out the beds",
+      "Mulch the leaves on the lawn",
+      "Cut back perennials",
+      "Last mow at 2 inches"
+    ],
+    "heard": [],
+    "note": "short punchy; \"Fall cleanup\" is the service itself, so it is a line"
+  },
+  {
+    "id": "land-13",
+    "trade": "landscaping",
+    "said": "trim all the boxwoods and the holly hedge along the front shape the Japanese maple lightly pick up all clippings",
+    "expect": [
+      "Trim all the boxwoods and the holly hedge along the front",
+      "Shape the Japanese maple lightly",
+      "Pick up all clippings"
+    ],
+    "heard": [],
+    "note": "no punctuation; split on verb seams only"
+  },
+  {
+    "id": "land-14",
+    "trade": "landscaping",
+    "said": "Regrade the backyard so it slopes away from the foundation, bring in about 10 yards of fill dirt, and 4 yards of topsoil on top, then hydroseed.",
+    "expect": [
+      "Regrade the backyard so it slopes away from the foundation",
+      "Bring in about 10 yards of fill dirt, and 4 yards of topsoil on top",
+      "Hydroseed"
+    ],
+    "heard": [],
+    "note": "\", and 4 yards of topsoil\" is a second object of \"bring in\", not a new action"
+  },
+  {
+    "id": "land-15",
+    "trade": "landscaping",
+    "said": "Pull out the old mulch in the front beds, put down commercial weed fabric, then 5 ton of Mexican beach pebble, no wait, make that river rock, 1 to 3 inch. Steel edging all along.",
+    "expect": [
+      "Pull out the old mulch in the front beds",
+      "Put down commercial weed fabric",
+      "5 ton of river rock, 1 to 3 inch",
+      "Steel edging all along"
+    ],
+    "heard": [],
+    "note": "\"no wait, make that river rock\" replaces the pebble in place; \"1 to 3 inch\" is a size, not a price"
+  },
+  {
+    "id": "land-16",
+    "trade": "landscaping",
+    "said": "Fix the leak on the main line by the backflow, replace the Tauro valve on zone 2, test all zones and set the controller.",
+    "expect": [
+      "Fix the leak on the main line by the backflow",
+      "Replace the Toro valve on zone 2",
+      "Test all zones",
+      "Set the controller"
+    ],
+    "heard": [
+      {
+        "said": "Tauro",
+        "means": "Toro"
+      }
+    ]
+  },
+  {
+    "id": "land-17",
+    "trade": "landscaping",
+    "said": "so uh the customer wants the whole front redone basically, um, we're gonna rip out the 8 overgrown junipers, grind the roots, amend the soil with compost, and plant, uh, let me think, 10 3 gallon Knock Out roses and 5 dwarf yo pon hollies, then mulch it all with pine straw.",
+    "expect": [
+      "Rip out the 8 overgrown junipers",
+      "Grind the roots",
+      "Amend the soil with compost",
+      "Plant 10 3 gallon Knock Out roses and 5 dwarf yaupon hollies",
+      "Mulch it all with pine straw"
+    ],
+    "heard": [
+      {
+        "said": "yo pon",
+        "means": "yaupon"
+      }
+    ],
+    "note": "the opening clause is context, not work; \"let me think\" is filler mid-line; \"10 3 gallon\" is a count then a pot size, neither is a price"
+  },
+  {
+    "id": "land-18",
+    "trade": "landscaping",
+    "said": "Edging 40 bucks. Mowing 45. Blow off the drive.",
+    "expect": [
+      "Edging",
+      "Mowing",
+      "Blow off the drive"
+    ],
+    "heard": [],
+    "note": "each price moves to its own line's price, leaving just the service"
+  },
+  {
+    "id": "land-19",
+    "trade": "landscaping",
+    "said": "Strip the dead grass in the backyard first, bring in a yard of topsoil to level the low spots, then lay about 2200 square feet of zoysia sod.",
+    "expect": [
+      "Strip the dead grass in the backyard first",
+      "Bring in a yard of topsoil to level the low spots",
+      "Lay about 2200 square feet of zoysia sod"
+    ],
+    "heard": []
+  },
+  {
+    "id": "land-20",
+    "trade": "landscaping",
+    "said": "Convert zone 6 to drip, cap the spray heads, install a Hunter pressure regulator and filter, run quarter inch tubing to each pot on the patio.",
+    "expect": [
+      "Convert zone 6 to drip",
+      "Cap the spray heads",
+      "Install a Hunter pressure regulator and filter",
+      "Run quarter inch tubing to each pot on the patio"
+    ],
+    "heard": [],
+    "note": "\"regulator and filter\" is one install, two nouns"
+  },
+  {
+    "id": "land-21",
+    "trade": "landscaping",
+    "said": "Hedge trimming. All the ligustrum. Along the back fence! And the front. Haul clippings.",
+    "expect": [
+      "Hedge trimming all the ligustrum along the back fence and the front",
+      "Haul clippings"
+    ],
+    "heard": [],
+    "note": "phone punctuation (periods and a stray \"!\") chops one action into four fragments that must rejoin"
+  },
+  {
+    "id": "land-22",
+    "trade": "landscaping",
+    "said": "Install a paver walkway from the driveway to the front porch, about 35 feet long, 4 feet wide, Belgard Holland stone, soldier course border, 4 inches of 3/4 minus base compacted, 1 inch of sand.",
+    "expect": [
+      "Install a paver walkway from the driveway to the front porch, about 35 feet long, 4 feet wide, Belgard Holland stone, soldier course border, 4 inches of 3/4 minus base compacted, 1 inch of sand"
+    ],
+    "heard": [],
+    "note": "every comma after the verb is a spec; nothing starts a new action, so it is one line"
+  },
+  {
+    "id": "land-23",
+    "trade": "landscaping",
+    "said": "Slit seed the front lawn with 50 pounds of Kentucky bluegrass blend, put down Scotts starter with Tenacity, and topdress with a half inch of compost.",
+    "expect": [
+      "Slit seed the front lawn with 50 pounds of Kentucky bluegrass blend",
+      "Put down Scotts starter with Tenacity",
+      "Topdress with a half inch of compost"
+    ],
+    "heard": []
+  },
+  {
+    "id": "land-24",
+    "trade": "landscaping",
+    "said": "um yeah so uh cut the grass weed eat around the fence and the mailbox blow the clippings off the walk and uh spray the driveway cracks with Round up",
+    "expect": [
+      "Cut the grass",
+      "Weed eat around the fence and the mailbox",
+      "Blow the clippings off the walk",
+      "Spray the driveway cracks with Roundup"
+    ],
+    "heard": [
+      {
+        "said": "Round up",
+        "means": "Roundup"
+      }
+    ],
+    "note": "no punctuation and filler both ends; \"fence and the mailbox\" is an object pair, \"and uh spray\" is a new action"
+  },
+  {
+    "id": "land-25",
+    "trade": "landscaping",
+    "said": "Install 2 catch basins, I mean 3 catch basins, in the back yard low spots, tie them into 4 inch solid pipe, in DS, run it 80 feet to daylight at the ditch. Pop up emitter at the end. Rebuild the grade and seed over the trench.",
+    "expect": [
+      "Install 3 catch basins in the back yard low spots",
+      "Tie them into 4 inch solid pipe, NDS",
+      "Run it 80 feet to daylight at the ditch",
+      "Pop up emitter at the end",
+      "Rebuild the grade",
+      "Seed over the trench"
+    ],
+    "heard": [
+      {
+        "said": "in DS",
+        "means": "NDS"
+      }
+    ],
+    "note": "\"I mean 3 catch basins\" corrects the count in place"
+  }
+]

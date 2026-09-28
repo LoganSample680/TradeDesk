@@ -1,0 +1,907 @@
+[
+  {
+    "id": "remod-01",
+    "trade": "remodel",
+    "said": "okay so we're gonna gut the hall bath down to the studs haul everything to the dumpster then reframe the niche wall and hang do rock on the shower walls then red guard all the seams and tile floor to ceiling",
+    "expect": [
+      "Gut the hall bath down to the studs",
+      "Haul everything to the dumpster",
+      "Reframe the niche wall",
+      "Hang Durock on the shower walls",
+      "RedGard all the seams",
+      "Tile floor to ceiling"
+    ],
+    "heard": [
+      {
+        "said": "do rock",
+        "means": "Durock"
+      },
+      {
+        "said": "red guard",
+        "means": "RedGard"
+      }
+    ],
+    "note": "No punctuation at all. Mix of run-on verb seams (studs/haul), 'then', and 'and <verb>'. RedGard is used as a verb."
+  },
+  {
+    "id": "remod-02",
+    "trade": "remodel",
+    "said": "Demo kitchen. Pull uppers and lowers. Cap the plumbing. Haul off.",
+    "expect": [
+      "Demo kitchen",
+      "Pull uppers and lowers",
+      "Cap the plumbing",
+      "Haul off"
+    ],
+    "heard": [],
+    "note": "Short and punchy. 'uppers and lowers' is one object, not two actions."
+  },
+  {
+    "id": "remod-03",
+    "trade": "remodel",
+    "said": "Install 12 linear feet of base cabinets, no wait make it 14 linear feet, then set the quartz countertop and cut in the undermount sink",
+    "expect": [
+      "Install 14 linear feet of base cabinets",
+      "Set the quartz countertop",
+      "Cut in the undermount sink"
+    ],
+    "heard": [],
+    "note": "Self-correction replaces only the quantity; the correction phrase must not become its own line."
+  },
+  {
+    "id": "remod-04",
+    "trade": "remodel",
+    "said": "We'll install Schluter Kerdi board on the shower walls for $1,850. Then tile the walls with 12x24 porcelain, that's another $3,200.",
+    "expect": [
+      "Install Schluter Kerdi board on the shower walls",
+      "Tile the walls with 12x24 porcelain"
+    ],
+    "heard": [],
+    "note": "Prices spoken inline ('for $1,850', 'that's another $3,200') come out of the line text. Brand already spelled right."
+  },
+  {
+    "id": "remod-05",
+    "trade": "remodel",
+    "said": "um so shlooter curdy on the walls and the curb, curdy drain in the center, slope the pan with deck mud and uh set the pebble floor",
+    "expect": [
+      "Schluter Kerdi on the walls and the curb",
+      "Kerdi drain in the center",
+      "Slope the pan with deck mud",
+      "Set the pebble floor"
+    ],
+    "heard": [
+      {
+        "said": "shlooter curdy",
+        "means": "Schluter Kerdi"
+      },
+      {
+        "said": "curdy drain",
+        "means": "Kerdi drain"
+      }
+    ],
+    "note": "'and the curb' is a second object, not a new action. 'and uh set' is a new action with filler in the seam."
+  },
+  {
+    "id": "remod-06",
+    "trade": "remodel",
+    "said": "Install 400 square feet of LifeProof LVP in the living room and hallway, pull the old carpet and pad first, and put new quarter round",
+    "expect": [
+      "Install 400 square feet of LifeProof LVP in the living room and hallway",
+      "Pull the old carpet and pad first",
+      "Put new quarter round"
+    ],
+    "heard": [],
+    "note": "'first' is an order hint; keep the words and the spoken order, do not reorder the lines."
+  },
+  {
+    "id": "remod-07",
+    "trade": "remodel",
+    "said": "where putting life proof vinyl plank in both bedrooms about 320 square feet and where gonna undercut the door jams",
+    "expect": [
+      "Putting LifeProof vinyl plank in both bedrooms about 320 square feet",
+      "Undercut the door jambs"
+    ],
+    "heard": [
+      {
+        "said": "where",
+        "means": "we're"
+      },
+      {
+        "said": "life proof",
+        "means": "LifeProof"
+      },
+      {
+        "said": "door jams",
+        "means": "door jambs"
+      }
+    ],
+    "note": "'where' for 'we're' twice: it is the subject and must be dropped, including mid-sentence after 'and'."
+  },
+  {
+    "id": "remod-08",
+    "trade": "remodel",
+    "said": "Sand the oak floors in the living room, dining room and stairs down to bare wood then stain Minwax Special Walnut and three coats of Bona Traffic HD",
+    "expect": [
+      "Sand the oak floors in the living room, dining room and stairs down to bare wood",
+      "Stain Minwax Special Walnut",
+      "3 coats of Bona Traffic HD"
+    ],
+    "heard": [],
+    "note": "Commas inside a room list are not action seams. 'and three coats' is a separate task even though it has no verb."
+  },
+  {
+    "id": "remod-09",
+    "trade": "remodel",
+    "said": "frame a new wall 2x4 16 on center 11 feet long with a 36 inch door opening header and king studs",
+    "expect": [
+      "Frame a new wall 2x4 16 on center 11 feet long with a 36 inch door opening header and king studs"
+    ],
+    "heard": [],
+    "note": "One action with a long spec. Do not split on 'and king studs' or on the numbers."
+  },
+  {
+    "id": "remod-10",
+    "trade": "remodel",
+    "said": "Hang dry wall in the garage 22 sheets of five eighths type X then tape mud and sand level 4 finish",
+    "expect": [
+      "Hang drywall in the garage 22 sheets of 5/8 type X",
+      "Tape mud and sand level 4 finish"
+    ],
+    "heard": [
+      {
+        "said": "dry wall",
+        "means": "drywall"
+      }
+    ],
+    "note": "Spoken fraction becomes digits. Tape, mud and sand is one finishing line, not three."
+  },
+  {
+    "id": "remod-11",
+    "trade": "remodel",
+    "said": "remove and replace 6 anderson 400 series double hungs in the front bedrooms, wrap the exterior trim in aluminum coil and caulk the perimeter",
+    "expect": [
+      "Remove and replace 6 Andersen 400 Series double hungs in the front bedrooms",
+      "Wrap the exterior trim in aluminum coil",
+      "Caulk the perimeter"
+    ],
+    "heard": [
+      {
+        "said": "anderson",
+        "means": "Andersen"
+      }
+    ],
+    "note": "'Remove and replace' is one action. 'and caulk the perimeter' is a new one."
+  },
+  {
+    "id": "remod-12",
+    "trade": "remodel",
+    "said": "Install Pella fiberglass entry door with sidelights and new threshold, $4,800. Paint the door and trim, $350.",
+    "expect": [
+      "Install Pella fiberglass entry door with sidelights and new threshold",
+      "Paint the door and trim"
+    ],
+    "heard": [],
+    "note": "A trailing price after a comma is not a new line and not part of the text."
+  },
+  {
+    "id": "remod-13",
+    "trade": "remodel",
+    "said": "tear off the old deck boards keep the framing, sister any rotted joists, new tree x transcend decking 16 by 12 and tree x railing on three sides",
+    "expect": [
+      "Tear off the old deck boards keep the framing",
+      "Sister any rotted joists",
+      "New Trex Transcend decking 16 by 12",
+      "Trex railing on 3 sides"
+    ],
+    "heard": [
+      {
+        "said": "tree x",
+        "means": "Trex"
+      }
+    ],
+    "note": "'keep the framing' qualifies the tear-off (it is a scope limit, not crew work) and stays on that line even though it looks like a verb seam."
+  },
+  {
+    "id": "remod-14",
+    "trade": "remodel",
+    "said": "Build a new 12 by 16 deck off the slider. Footings with Quikrete, 6x6 posts on Simpson strong tie post bases. Timber tech azek decking in coastline, hidden fasteners.",
+    "expect": [
+      "Build a new 12 by 16 deck off the slider",
+      "Footings with Quikrete",
+      "6x6 posts on Simpson Strong-Tie post bases",
+      "TimberTech AZEK decking in Coastline, hidden fasteners"
+    ],
+    "heard": [
+      {
+        "said": "Simpson strong tie",
+        "means": "Simpson Strong-Tie"
+      },
+      {
+        "said": "Timber tech azek",
+        "means": "TimberTech AZEK"
+      }
+    ],
+    "note": "'hidden fasteners' describes the decking install, so the comma before it is not a new action. The comma before '6x6 posts' is."
+  },
+  {
+    "id": "remod-15",
+    "trade": "remodel",
+    "said": "alright so down in the basement uh we're gonna frame the exterior walls with 2x4s and put 2 inch rigid foam behind them, then in the back corner we'll frame out a bedroom with a closet, egress window is already there so nothing on that. Then frame the bathroom, hang green board, and tile the shower with the Kerdi system. Drop ceiling in the main area with 2x2 tiles and put in 6 can lights, no wait make it 8.",
+    "expect": [
+      "Down in the basement frame the exterior walls with 2x4s",
+      "Put 2 inch rigid foam behind them",
+      "In the back corner frame out a bedroom with a closet",
+      "Frame the bathroom",
+      "Hang green board",
+      "Tile the shower with the Kerdi system",
+      "Drop ceiling in the main area with 2x2 tiles",
+      "Put in 8 can lights"
+    ],
+    "heard": [],
+    "note": "Long rambling walk. Subject sits mid-line after a location. The egress clause is explicitly no work and is dropped. Correction at the very end changes 6 to 8."
+  },
+  {
+    "id": "remod-16",
+    "trade": "remodel",
+    "said": "pull toilet and vanity remove tile floor install detra and 12 by 24 tile reset toilet new vanity with top and Moen faucet",
+    "expect": [
+      "Pull toilet and vanity",
+      "Remove tile floor",
+      "Install Ditra and 12 by 24 tile",
+      "Reset toilet",
+      "New vanity with top and Moen faucet"
+    ],
+    "heard": [
+      {
+        "said": "detra",
+        "means": "Ditra"
+      }
+    ],
+    "note": "No punctuation. Every seam is a verb or 'new'. The 'and' inside each line joins objects, never actions."
+  },
+  {
+    "id": "remod-17",
+    "trade": "remodel",
+    "said": "Pull the building permit, fees are about $450. Order a 20 yard dumpster. Schedule framing and final inspections.",
+    "expect": [
+      "Pull the building permit",
+      "Order a 20 yard dumpster",
+      "Schedule framing and final inspections"
+    ],
+    "heard": [],
+    "note": "'fees are about $450' is a price clause, not a line."
+  },
+  {
+    "id": "remod-18",
+    "trade": "remodel",
+    "said": "will be removing the load bearing wall between the kitchen and dining room, temp walls on both sides, then install a 3 ply LVL beam on Simpson post caps",
+    "expect": [
+      "Removing the load bearing wall between the kitchen and dining room",
+      "Temp walls on both sides",
+      "Install a 3 ply LVL beam on Simpson post caps"
+    ],
+    "heard": [
+      {
+        "said": "will be",
+        "means": "we'll be"
+      }
+    ],
+    "note": "'will be' is the misheard subject 'we'll be' and is dropped, leaving 'Removing'. Do not drop 'will be' when it is genuinely future tense inside a line."
+  },
+  {
+    "id": "remod-19",
+    "trade": "remodel",
+    "said": "reside the back of the house with hardy board lap siding about 900 square feet, house wrap first, and hardy trim on the corners and windows then prime and paint two coats",
+    "expect": [
+      "Reside the back of the house with Hardie board lap siding about 900 square feet",
+      "House wrap first",
+      "Hardie trim on the corners and windows",
+      "Prime and paint 2 coats"
+    ],
+    "heard": [
+      {
+        "said": "hardy board",
+        "means": "Hardie board"
+      },
+      {
+        "said": "hardy trim",
+        "means": "Hardie trim"
+      }
+    ],
+    "note": "Verbless items after commas are still separate tasks. 'Prime and paint' is one line."
+  },
+  {
+    "id": "remod-20",
+    "trade": "remodel",
+    "said": "Okay um tub to shower conversion. Rip out the tub, new mortar bed pan, red guard two coats, then tile with Mapei Ultraflex 2 thinset and grout with Flexcolor CQ.",
+    "expect": [
+      "Tub to shower conversion",
+      "Rip out the tub",
+      "New mortar bed pan",
+      "RedGard 2 coats",
+      "Tile with Mapei Ultraflex 2 thinset",
+      "Grout with Flexcolor CQ"
+    ],
+    "heard": [
+      {
+        "said": "red guard",
+        "means": "RedGard"
+      }
+    ],
+    "note": "The opening heading stays as a line (it is the job). 'Ultraflex 2' is a product name, the 2 is not a quantity."
+  },
+  {
+    "id": "remod-21",
+    "trade": "remodel",
+    "said": "In the kitchen we're gonna install 22 new shaker cabinets, that's about $9,400 installed. Then template and install 58 square feet of quartz, call it $4,100. After that subway tile backsplash around 30 square feet. And then reinstall the range and hook up the dishwasher.",
+    "expect": [
+      "In the kitchen install 22 new shaker cabinets",
+      "Template and install 58 square feet of quartz",
+      "Subway tile backsplash around 30 square feet",
+      "Reinstall the range",
+      "Hook up the dishwasher"
+    ],
+    "heard": [],
+    "note": "Two different price phrasings ('that's about $X installed', 'call it $X'). Subject dropped mid-line after the location."
+  },
+  {
+    "id": "remod-22",
+    "trade": "remodel",
+    "said": "Replace the vanity light with a 3 light fixture scratch that 4 light fixture. Replace the exhaust fan with a Panasonic whisper ceiling vented to the outside.",
+    "expect": [
+      "Replace the vanity light with a 4 light fixture",
+      "Replace the exhaust fan with a Panasonic WhisperCeiling vented to the outside"
+    ],
+    "heard": [
+      {
+        "said": "whisper ceiling",
+        "means": "WhisperCeiling"
+      }
+    ],
+    "note": "'scratch that' retracts only '3 light fixture', not the whole sentence."
+  },
+  {
+    "id": "remod-23",
+    "trade": "remodel",
+    "said": "Demo. The existing. Closet wall, frame new wall 3 feet back. Hang. Drywall tape and finish. Install new bifold doors.",
+    "expect": [
+      "Demo the existing closet wall",
+      "Frame new wall 3 feet back",
+      "Hang drywall",
+      "Tape and finish",
+      "Install new bifold doors"
+    ],
+    "heard": [],
+    "note": "Phone dropped periods on pauses mid-phrase. Periods that cut a verb from its object must be healed, and a real seam hides inside 'Drywall tape'."
+  },
+  {
+    "id": "remod-24",
+    "trade": "remodel",
+    "said": "Tear off 24 squares of shingles on the garage roof and haul off, $2,600. 30 yard dumpster, $650.",
+    "expect": [
+      "Tear off 24 squares of shingles on the garage roof",
+      "Haul off",
+      "30 yard dumpster"
+    ],
+    "heard": [],
+    "note": "'30 yard' starts a line: the number is part of the item, not a price."
+  },
+  {
+    "id": "remod-25",
+    "trade": "remodel",
+    "said": "per go outlast plus in the kitchen and laundry about 260 square feet float it over the existing vinyl and new transitions at the doorways",
+    "expect": [
+      "Pergo Outlast+ in the kitchen and laundry about 260 square feet",
+      "Float it over the existing vinyl",
+      "New transitions at the doorways"
+    ],
+    "heard": [
+      {
+        "said": "per go outlast plus",
+        "means": "Pergo Outlast+"
+      }
+    ],
+    "note": "Line starts with the product, no verb. 'kitchen and laundry' is one place list."
+  },
+  {
+    "id": "remod-26",
+    "trade": "remodel",
+    "said": "Install 4 bella lifestyle casements in the kitchen and family room, foam and trim out the inside, new sills",
+    "expect": [
+      "Install 4 Pella Lifestyle casements in the kitchen and family room",
+      "Foam and trim out the inside",
+      "New sills"
+    ],
+    "heard": [
+      {
+        "said": "bella lifestyle",
+        "means": "Pella Lifestyle"
+      }
+    ],
+    "note": "'Foam and trim out' is one action on one object."
+  },
+  {
+    "id": "remod-27",
+    "trade": "remodel",
+    "said": "like I said you know we'll patch the ceiling where the leak was, um, cut out the stained drywall, you know, replace it, then prime with kills and paint the whole ceiling",
+    "expect": [
+      "Patch the ceiling where the leak was",
+      "Cut out the stained drywall",
+      "Replace it",
+      "Prime with Kilz",
+      "Paint the whole ceiling"
+    ],
+    "heard": [
+      {
+        "said": "kills",
+        "means": "Kilz"
+      }
+    ],
+    "note": "Filler between commas ('um', 'you know') must not become empty lines. 'Replace it' is a real line even though it is two words."
+  },
+  {
+    "id": "remod-28",
+    "trade": "remodel",
+    "said": "Install three quarter inch white oak hardwood, 2 and a quarter inch strips, 540 square feet, over 15 pound felt, nail down",
+    "expect": [
+      "Install 3/4 inch white oak hardwood, 2 1/4 inch strips, 540 square feet, over 15 pound felt, nail down"
+    ],
+    "heard": [],
+    "note": "Every comma is a spec, not an action. 'nail down' is the install method. One line."
+  },
+  {
+    "id": "remod-29",
+    "trade": "remodel",
+    "said": "add a set of stairs 4 risers to grade, 2x12 stringers, then pour a 4 by 4 landing pad with quick Crete",
+    "expect": [
+      "Add a set of stairs 4 risers to grade, 2x12 stringers",
+      "Pour a 4 by 4 landing pad with Quikrete"
+    ],
+    "heard": [
+      {
+        "said": "quick Crete",
+        "means": "Quikrete"
+      }
+    ],
+    "note": "'2x12 stringers' is a spec of the stairs, stays on that line."
+  },
+  {
+    "id": "remod-30",
+    "trade": "remodel",
+    "said": "Cut in an egress window in the basement bedroom, dig the well and set a galvanized well liner, pull the permit for it",
+    "expect": [
+      "Cut in an egress window in the basement bedroom",
+      "Dig the well",
+      "Set a galvanized well liner",
+      "Pull the permit for it"
+    ],
+    "heard": [],
+    "note": "'dig the well and set a liner' are two actions with two objects."
+  },
+  {
+    "id": "remod-31",
+    "trade": "remodel",
+    "said": "where gutting the master bath. new walk in shower with a bench. niche. glass by others",
+    "expect": [
+      "Gutting the master bath",
+      "New walk in shower with a bench",
+      "Niche",
+      "Glass by others"
+    ],
+    "heard": [
+      {
+        "said": "where",
+        "means": "we're"
+      }
+    ],
+    "note": "One-word line 'Niche' is real scope. 'Glass by others' is an exclusion the contractor wants on the proposal; keep it."
+  },
+  {
+    "id": "remod-32",
+    "trade": "remodel",
+    "said": "hang do rock on the tub surround, tape the seams with alkali resistant mesh, then waterproof with map a aqua defense",
+    "expect": [
+      "Hang Durock on the tub surround",
+      "Tape the seams with alkali resistant mesh",
+      "Waterproof with Mapei AquaDefense"
+    ],
+    "heard": [
+      {
+        "said": "do rock",
+        "means": "Durock"
+      },
+      {
+        "said": "map a aqua defense",
+        "means": "Mapei AquaDefense"
+      }
+    ],
+    "note": "'map a' only resolves to Mapei because 'aqua defense' follows it."
+  },
+  {
+    "id": "remod-33",
+    "trade": "remodel",
+    "said": "Replace 7 interior doors with 2 panel shaker prehungs, new casing both sides, and new Kwikset levers",
+    "expect": [
+      "Replace 7 interior doors with 2 panel shaker prehungs",
+      "New casing both sides",
+      "New Kwikset levers"
+    ],
+    "heard": [],
+    "note": "'2 panel' is a door style, not a count to move to quantity."
+  },
+  {
+    "id": "remod-34",
+    "trade": "remodel",
+    "said": "Okay so take down the popcorn ceiling in the living room, skim coat and paint. In the hallway patch the holes from the old thermostat then paint the hallway walls. In the master bedroom uh remove the carpet, put down 280 square feet of LVP, and new baseboards. Then replace the storm door out front with a Larson.",
+    "expect": [
+      "Take down the popcorn ceiling in the living room",
+      "Skim coat and paint",
+      "In the hallway patch the holes from the old thermostat",
+      "Paint the hallway walls",
+      "In the master bedroom remove the carpet",
+      "Put down 280 square feet of LVP",
+      "New baseboards",
+      "Replace the storm door out front with a Larson"
+    ],
+    "heard": [],
+    "note": "Room-by-room walk. Room names lead a line and must stay with the first action in that room. Filler 'uh' sits between the room and the verb."
+  },
+  {
+    "id": "remod-35",
+    "trade": "remodel",
+    "said": "frame the soffit over the cabinets hang half inch drywall tape it mud it sand it prime it install crown molding caulk the nail holes paint the crown",
+    "expect": [
+      "Frame the soffit over the cabinets",
+      "Hang 1/2 inch drywall",
+      "Tape it",
+      "Mud it",
+      "Sand it",
+      "Prime it",
+      "Install crown molding",
+      "Caulk the nail holes",
+      "Paint the crown"
+    ],
+    "heard": [],
+    "note": "Nine run-on verb seams with no punctuation. Each 'verb it' was said as its own step, so each is its own line."
+  },
+  {
+    "id": "hand-01",
+    "trade": "handyman",
+    "said": "Adjust the front door so it latches, plane the top corner, and swap the strike plate",
+    "expect": [
+      "Adjust the front door so it latches",
+      "Plane the top corner",
+      "Swap the strike plate"
+    ],
+    "heard": [],
+    "note": "'so it latches' is the goal of the first action, not a new one."
+  },
+  {
+    "id": "hand-02",
+    "trade": "handyman",
+    "said": "Patch the doorknob hole in the hall wall $150, texture to match, paint the patch",
+    "expect": [
+      "Patch the doorknob hole in the hall wall",
+      "Texture to match",
+      "Paint the patch"
+    ],
+    "heard": [],
+    "note": "Price sits in the middle of the sentence with no separator before it."
+  },
+  {
+    "id": "hand-03",
+    "trade": "handyman",
+    "said": "swap the dining room light for the customer's new chandelier and um replace the dimmer with a loot Ron diva",
+    "expect": [
+      "Swap the dining room light for the customer's new chandelier",
+      "Replace the dimmer with a Lutron Diva"
+    ],
+    "heard": [
+      {
+        "said": "loot Ron diva",
+        "means": "Lutron Diva"
+      }
+    ],
+    "note": "Dictation split the brand into two words and capitalized the wrong one."
+  },
+  {
+    "id": "hand-04",
+    "trade": "handyman",
+    "said": "Scrape out the old caulk around the tub. Caulk with DAP silicone white.",
+    "expect": [
+      "Scrape out the old caulk around the tub",
+      "Caulk with DAP silicone white"
+    ],
+    "heard": [],
+    "note": "'caulk' is a noun in line 1 and a verb in line 2."
+  },
+  {
+    "id": "hand-05",
+    "trade": "handyman",
+    "said": "Mount a 65 inch TV above the fireplace, fish the wires in the wall, and install a power bridge kit",
+    "expect": [
+      "Mount a 65 inch TV above the fireplace",
+      "Fish the wires in the wall",
+      "Install a power bridge kit"
+    ],
+    "heard": [],
+    "note": "'65 inch' is a size, not a quantity."
+  },
+  {
+    "id": "hand-06",
+    "trade": "handyman",
+    "said": "hang 3 floating shelves in the office and put up a new closet rod and shelf in the guest room",
+    "expect": [
+      "Hang 3 floating shelves in the office",
+      "Put up a new closet rod and shelf in the guest room"
+    ],
+    "heard": [],
+    "note": "First 'and' starts a new action, second 'and' joins two objects."
+  },
+  {
+    "id": "hand-07",
+    "trade": "handyman",
+    "said": "clean out all the gutters and flush the downspouts, re-hang the sagging section on the back with new hidden hangers",
+    "expect": [
+      "Clean out all the gutters",
+      "Flush the downspouts",
+      "Re-hang the sagging section on the back with new hidden hangers"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hand-08",
+    "trade": "handyman",
+    "said": "replace 2 rotted fence posts set them in sack Crete fast setting and renail the pickets that are loose and replace the gate hinges",
+    "expect": [
+      "Replace 2 rotted fence posts",
+      "Set them in Sakrete fast setting",
+      "Renail the pickets that are loose",
+      "Replace the gate hinges"
+    ],
+    "heard": [
+      {
+        "said": "sack Crete",
+        "means": "Sakrete"
+      }
+    ],
+    "note": "Run-on seam at 'set', then two 'and <verb>' seams. 'fast setting' is a product spec, not a verb."
+  },
+  {
+    "id": "hand-09",
+    "trade": "handyman",
+    "said": "Weatherstrip the back door and the garage entry door, new door sweeps on both",
+    "expect": [
+      "Weatherstrip the back door and the garage entry door",
+      "New door sweeps on both"
+    ],
+    "heard": [],
+    "note": "'and the garage entry door' is a second object, not a split."
+  },
+  {
+    "id": "hand-10",
+    "trade": "handyman",
+    "said": "Swap out 6 smoke detectors for First Alert combo units, hardwired, and replace the CO detector in the hallway",
+    "expect": [
+      "Swap out 6 smoke detectors for First Alert combo units, hardwired",
+      "Replace the CO detector in the hallway"
+    ],
+    "heard": [],
+    "note": "', hardwired,' is a spec set off by commas and stays on the first line."
+  },
+  {
+    "id": "hand-11",
+    "trade": "handyman",
+    "said": "Replace the bathroom faucet with a mo and align, new pop up drain, new supply lines",
+    "expect": [
+      "Replace the bathroom faucet with a Moen Align",
+      "New pop up drain",
+      "New supply lines"
+    ],
+    "heard": [
+      {
+        "said": "mo and align",
+        "means": "Moen Align"
+      }
+    ],
+    "note": "The mishearing contains 'and align', which looks like an 'and <verb>' seam. It is not one."
+  },
+  {
+    "id": "hand-12",
+    "trade": "handyman",
+    "said": "assemble the IKEA Pax wardrobe and 2 Malm dressers and anchor them to the wall",
+    "expect": [
+      "Assemble the IKEA Pax wardrobe and 2 Malm dressers",
+      "Anchor them to the wall"
+    ],
+    "heard": [],
+    "note": "Two 'and's in one sentence: first joins objects, second starts an action."
+  },
+  {
+    "id": "hand-13",
+    "trade": "handyman",
+    "said": "alright honey do list. um kitchen cabinet door is hanging crooked adjust the hinges. replace the bulb in the range hood. the bathroom fan is loud replace it with a brone. hang the mirror in the entry. and then caulk the kitchen backsplash where it meets the counter.",
+    "expect": [
+      "Kitchen cabinet door is hanging crooked adjust the hinges",
+      "Replace the bulb in the range hood",
+      "The bathroom fan is loud replace it with a Broan",
+      "Hang the mirror in the entry",
+      "Caulk the kitchen backsplash where it meets the counter"
+    ],
+    "heard": [
+      {
+        "said": "brone",
+        "means": "Broan"
+      }
+    ],
+    "note": "The 'honey do list' heading is not work. A condition fused to its fix with no punctuation stays on one line: splitting at the verb seam would leave a line that is only a problem statement."
+  },
+  {
+    "id": "hand-14",
+    "trade": "handyman",
+    "said": "Rehang closet door. New knob. Patch nail holes.",
+    "expect": [
+      "Rehang closet door",
+      "New knob",
+      "Patch nail holes"
+    ],
+    "heard": []
+  },
+  {
+    "id": "hand-15",
+    "trade": "handyman",
+    "said": "Install 4 grab bars in the bathroom, sorry 3 grab bars, 2 by the toilet and 1 in the shower, Moen SecureMount anchors",
+    "expect": [
+      "Install 3 grab bars in the bathroom, 2 by the toilet and 1 in the shower, Moen SecureMount anchors"
+    ],
+    "heard": [],
+    "note": "'sorry 3 grab bars' corrects the count. Everything after is placement and spec for the same single action."
+  },
+  {
+    "id": "hand-16",
+    "trade": "handyman",
+    "said": "replace the garbage disposal with a in sink a rater badger 5 hook up the dishwasher drain test for leaks",
+    "expect": [
+      "Replace the garbage disposal with a InSinkErator Badger 5",
+      "Hook up the dishwasher drain",
+      "Test for leaks"
+    ],
+    "heard": [
+      {
+        "said": "in sink a rater badger 5",
+        "means": "InSinkErator Badger 5"
+      }
+    ],
+    "note": "No punctuation. 'Badger 5' is a model, the 5 is not a quantity, and the next word 'hook' is the seam."
+  },
+  {
+    "id": "hand-17",
+    "trade": "handyman",
+    "said": "Tighten the loose stair railing, $85. Replace the 2 broken balusters, $120. Touch up paint on the railing, $60.",
+    "expect": [
+      "Tighten the loose stair railing",
+      "Replace the 2 broken balusters",
+      "Touch up paint on the railing"
+    ],
+    "heard": [],
+    "note": "One price per line, each trailing after a comma."
+  },
+  {
+    "id": "hand-18",
+    "trade": "handyman",
+    "said": "pull the trim on the hall bath pocket door, uh, rehang it on new rollers and put the trim back",
+    "expect": [
+      "Pull the trim on the hall bath pocket door",
+      "Rehang it on new rollers",
+      "Put the trim back"
+    ],
+    "heard": [],
+    "note": "Filler set off by commas between two actions."
+  },
+  {
+    "id": "hand-19",
+    "trade": "handyman",
+    "said": "caulk the exterior of 8 windows with Oh S I quad Max. reglaze the cracked pane in the basement window",
+    "expect": [
+      "Caulk the exterior of 8 windows with OSI Quad Max",
+      "Reglaze the cracked pane in the basement window"
+    ],
+    "heard": [
+      {
+        "said": "Oh S I quad Max",
+        "means": "OSI Quad Max"
+      }
+    ],
+    "note": "Spelled-out acronym came through as a word plus letters."
+  },
+  {
+    "id": "hand-20",
+    "trade": "handyman",
+    "said": "Swap 5 can lights for Halo LED retrofits, replace the hallway switch with a motion sensor switch, and hang the sealing fan in the bedroom, customer has the Hunter fan",
+    "expect": [
+      "Swap 5 can lights for Halo LED retrofits",
+      "Replace the hallway switch with a motion sensor switch",
+      "Hang the ceiling fan in the bedroom, customer has the Hunter fan"
+    ],
+    "heard": [
+      {
+        "said": "sealing fan",
+        "means": "ceiling fan"
+      }
+    ],
+    "note": "The customer-supplied remark qualifies the fan line and stays on it; it is not crew work."
+  },
+  {
+    "id": "hand-21",
+    "trade": "handyman",
+    "said": "Replace the rotted trim board by the garage door, prime it and paint it, then replace the weather seal on the bottom of the garage door",
+    "expect": [
+      "Replace the rotted trim board by the garage door",
+      "Prime it and paint it",
+      "Replace the weather seal on the bottom of the garage door"
+    ],
+    "heard": [],
+    "note": "'Prime it and paint it' is one paired finishing step joined by 'and'. Compare remod-35, where each 'verb it' was said as its own step with no conjunction."
+  },
+  {
+    "id": "hand-22",
+    "trade": "handyman",
+    "said": "um so replace the fill valve and flapper with Fluidmaster, you know, then pull the toilet and replace the wax ring and reset it",
+    "expect": [
+      "Replace the fill valve and flapper with Fluidmaster",
+      "Pull the toilet",
+      "Replace the wax ring",
+      "Reset it"
+    ],
+    "heard": [],
+    "note": "'fill valve and flapper' is one object pair; the later 'and's each start actions."
+  },
+  {
+    "id": "hand-23",
+    "trade": "handyman",
+    "said": "Hang. The new mailbox on. The post! Replace house numbers? With 4 inch brushed nickel.",
+    "expect": [
+      "Hang the new mailbox on the post",
+      "Replace house numbers with 4 inch brushed nickel"
+    ],
+    "heard": [],
+    "note": "Odd phone punctuation: '!' and '?' inserted on pauses mid-phrase. None of them are real sentence ends."
+  },
+  {
+    "id": "hand-24",
+    "trade": "handyman",
+    "said": "cut out the water damaged dry wall under the kitchen sink about 2 by 3 foot, replace with half inch moisture resistant, tape, mud, and texture",
+    "expect": [
+      "Cut out the water damaged drywall under the kitchen sink about 2 by 3 foot",
+      "Replace with 1/2 inch moisture resistant",
+      "Tape, mud, and texture"
+    ],
+    "heard": [
+      {
+        "said": "dry wall",
+        "means": "drywall"
+      }
+    ],
+    "note": "'tape, mud, and texture' is one finishing line even though every word is a verb after a comma."
+  },
+  {
+    "id": "hand-25",
+    "trade": "handyman",
+    "said": "Okay so while we're here, plane the top of the bedroom door where it rubs. Replace the cracked outlet cover in the kitchen, and replace the GFCI in the bath. Hang curtain rods on the 3 living room windows. Oh and weatherstrip the attic hatch. After that swap the thermostat for the customer's echo bee.",
+    "expect": [
+      "Plane the top of the bedroom door where it rubs",
+      "Replace the cracked outlet cover in the kitchen",
+      "Replace the GFCI in the bath",
+      "Hang curtain rods on the 3 living room windows",
+      "Weatherstrip the attic hatch",
+      "Swap the thermostat for the customer's Ecobee"
+    ],
+    "heard": [
+      {
+        "said": "echo bee",
+        "means": "Ecobee"
+      }
+    ],
+    "note": "Honey-do walk. 'while we're here' lead-in and 'Oh and' are filler; 'After that' is a seam word that must not survive in the line."
+  }
+]
