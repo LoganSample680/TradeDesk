@@ -428,6 +428,7 @@ function _renderWhBoard(){
         '<div class="td-wh-who">'+
           '<div class="td-wh-name">'+escHtml(c.name||'Customer')+'</div>'+
           '<div class="td-wh-sub">'+escHtml(t.name)+', due '+_whFmt(_svcDueKey(e))+'</div>'+
+          (_whStreet(e,c)?'<div class="td-wh-sub td-wh-addr">'+escHtml(_whStreet(e,c))+'</div>':'')+
           status+
         '</div>'+
         '<button class="btn td-wh-txt" onclick="event.stopPropagation();whTextFlush(\''+eid+'\')"'+(c.phone?'':' disabled title="No phone on file"')+'>'+svgIcon('💬',{size:14})+'<span>Text</span></button>'+
@@ -481,6 +482,28 @@ function _svcUndatedLine(undated){
 function _whClient(id){
   if(id==null)return null;
   return (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).find(c=>c&&String(c.id)===String(id))||null;
+}
+// Which house the unit is at (owner 2026-09-28, from Jack: "tag an address
+// on the water heater service card" even for a customer with one address).
+// The unit's own tag wins; an untagged unit is at the customer's address.
+function _whAddrOf(e,c){return String((e&&e.addr)||(c&&c.addr)||'').trim();}
+function _whStreet(e,c){return _whAddrOf(e,c).split(',')[0].trim();}
+// The Address row on the add form for a customer already in the app: their
+// one address filled in (still editable), or a pick of their properties.
+function _whAddrField(cid,val){
+  const c=cid?_whClient(cid):null;
+  const addrs=(c&&typeof clientAddresses==='function')?clientAddresses(c):[];
+  if(addrs.length>1){
+    const cur=String(val||addrs[0].addr);
+    return '<select id="_wh-addr">'+addrs.map(a=>'<option value="'+escHtml(a.addr)+'"'+(a.addr===cur?' selected':'')+'>'+escHtml(String(a.addr).split(',')[0]+' · '+a.label)+'</option>').join('')+'</select>';
+  }
+  const v=val!=null&&val!==''?val:(addrs[0]?addrs[0].addr:'');
+  return '<input id="_wh-addr" placeholder="'+(c?'Where the unit is':'Pick a client first')+'" value="'+escHtml(String(v||''))+'">';
+}
+function _whAddrRefresh(){
+  const slot=document.getElementById('_wh-addr-slot');if(!slot)return;
+  const cid=(document.getElementById('_wh-client')||{}).value||'';
+  slot.innerHTML=_whAddrField(cid,'');
 }
 // Snoozed until the 1st of next month by "No answer yet". A snooze from an
 // earlier cycle (before the last service) is ignored, so it can never hide the
@@ -574,6 +597,7 @@ function renderWhList(){
           '<button type="button" class="td-svc-every" aria-label="Change how often" onclick="event.stopPropagation();svcEditEvery(\''+eid+'\')"><span>every '+_svcMonths(e)+' mo</span></button>'+
         '</div>'+
         '<div class="td-wh-sub">'+escHtml(ev.txt)+'</div>'+
+        (_whStreet(e,c)?'<div class="td-wh-sub td-wh-addr">'+escHtml(_whStreet(e,c))+'</div>':'')+
       '</div>'+
       '<div class="td-wh-list-r">'+right+'<span class="td-wh-chev">'+svgIcon('▸',{size:14})+'</span></div>'+
     '</div>';
@@ -812,7 +836,7 @@ function whScheduleFlush(id){
     window._schedPrefill={clientId:c.id,whEqId:e.id};
     const set=(k,val)=>{const f=document.getElementById(k);if(f)f.value=val;};
     set('s-name',(c.name||'Customer')+', '+t.name.toLowerCase());
-    set('s-addr',c.addr||'');
+    set('s-addr',_whAddrOf(e,c));
     set('s-days',1);
     set('s-buf','0');
     const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display='';
@@ -1014,7 +1038,8 @@ function openWhAdd(mode,keep){
         row('Phone','<input id="_wh-phone" type="tel" inputmode="tel" placeholder="(555) 555-5555" value="'+v(k.phone)+'">')+
         row('Address','<input id="_wh-addr" placeholder="Optional" value="'+v(k.addr)+'">')
       :
-        row('Client','<select id="_wh-client"><option value="">Pick a client</option>'+opts+'</select>')
+        row('Client','<select id="_wh-client" onchange="_whAddrRefresh()"><option value="">Pick a client</option>'+opts+'</select>')+
+        '<label class="sf-row"><div class="sf-body"><span class="sf-lbl">Address</span><span id="_wh-addr-slot">'+_whAddrField(k.client,k.addr)+'</span></div></label>'
       )+
       row(t?t.dateLbl:_SVC_WORDS.dateLbl,'<input id="_wh-date" type="date" value="'+v(k.date)+'">')+
       '<div class="sf-row"><div class="sf-body"><span class="sf-lbl">Every</span>'+_svcEveryField('_svc-months',months)+'</div></div>'+
@@ -1045,7 +1070,7 @@ function openWhAdd(mode,keep){
       customName=document.getElementById('_svc-custom-name').value.trim();
       if(!customName){err('Name the service.');return;}
     }
-    let cid=null,who='';
+    let cid=null,who='',unitAddr='';
     if(md==='new'){
       const name=document.getElementById('_wh-name').value.trim();
       if(!name){err('Enter a name.');return;}
@@ -1054,12 +1079,15 @@ function openWhAdd(mode,keep){
         addr,street:addr,city:'',state:'',zip:'',source:'Existing Contact',ref:'',notes:'',
         created:todayKey(),ptype:'',extraAddresses:[],clientToken:'',clientHubKey:''};
       _clientCommitNew(c);
-      cid=c.id;who=name;
+      cid=c.id;who=name;unitAddr=addr;
     }else{
       const raw=document.getElementById('_wh-client').value;
       const c=raw?_whClient(raw):null;
       if(!c){err('Pick a client.');return;}
       cid=c.id;who=c.name||'';
+      unitAddr=((document.getElementById('_wh-addr')||{}).value||'').trim();
+      // A customer with no address on file gets this one: it is where they live.
+      if(unitAddr&&!String(c.addr||'').trim()){c.addr=unitAddr;c.street=c.street||unitAddr;}
     }
     const type=kind===_SVC_CUSTOM?svcAddCustomType(customName,n):t;
     if(!type){err('Name the service.');return;}
@@ -1069,6 +1097,7 @@ function openWhAdd(mode,keep){
       row.serviceKind=type.key;
       if(type.custom)row.serviceName=type.name;
       if(n!==type.months)row.serviceMonths=n;
+      if(unitAddr)row.addr=unitAddr;
     }
     if(typeof saveAll==='function')saveAll();
     if(typeof showToast==='function')showToast(who+' added','✓');

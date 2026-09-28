@@ -324,6 +324,67 @@ test.describe('Water heater flush board', () => {
     expect(await boardNames()).toEqual(['Lee Later', 'Dana Due']);
   });
 
+  // Jack (2026-09-28): "not seeing an option to tag an address on the water
+  // heater service card on somebody who only has one address". Every card has
+  // an Address row now: one address is filled in, several are a pick.
+  test('address: one address is filled in, several are a pick, and the unit keeps the one chosen', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      clients.push({ id: 504, name: 'Mo Many', phone: '5557778888', addr: '9 Pine St, Topeka, KS', extraAddresses: [{ label: 'Rental', addr: '44 Lake Rd, Topeka, KS' }] });
+      openWhAdd('client');
+      const pick = id => { const s = document.getElementById('_wh-client'); s.value = id; s.dispatchEvent(new Event('change')); };
+      const before = document.getElementById('_wh-addr');
+      pick('502');
+      const one = document.getElementById('_wh-addr');
+      const oneShape = { tag: one.tagName, value: one.value };
+      pick('504');
+      const many = document.getElementById('_wh-addr');
+      const manyShape = { tag: many.tagName, options: [...many.options].map(o => o.textContent) };
+      many.value = '44 Lake Rd, Topeka, KS';
+      document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
+      document.getElementById('_wh-add-save').click();
+      document.getElementById('_wh-add-done').click();
+      const e = equipment.find(x => x.clientId === 504);
+      _renderWhBoard();
+      const row = [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Mo Many'));
+      return { beforeTag: before && before.tagName, oneShape, manyShape, unitAddr: e && e.addr, rowText: row ? row.textContent : '', id: e && e.id };
+    });
+    expect(r.beforeTag, 'the Address row is there before a client is picked').toBe('INPUT');
+    expect(r.oneShape).toEqual({ tag: 'INPUT', value: '2 Elm St' });
+    expect(r.manyShape).toEqual({ tag: 'SELECT', options: ['9 Pine St · Primary', '44 Lake Rd · Rental'] });
+    expect(r.unitAddr).toBe('44 Lake Rd, Topeka, KS');
+    expect(r.rowText).toContain('44 Lake Rd');
+    // Schedule goes to the house the unit is at, not the primary.
+    await page.evaluate(id => whScheduleFlush(id), r.id);
+    await page.waitForFunction(() => window._schedPrefill && document.getElementById('s-name').value.includes('Mo Many'));
+    expect(await page.evaluate(() => document.getElementById('s-addr').value)).toBe('44 Lake Rd, Topeka, KS');
+    await page.evaluate(() => { window._schedPrefill = null; goPg('pg-dash'); });
+  });
+
+  test('address: a customer with none gets the one typed, and an untagged unit shows the customer address', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      openWhAdd('client');
+      const s = document.getElementById('_wh-client'); s.value = '503'; s.dispatchEvent(new Event('change'));
+      const empty = document.getElementById('_wh-addr').value;
+      document.getElementById('_wh-addr').value = '7 Birch Ln';
+      document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
+      document.getElementById('_wh-add-save').click();
+      document.getElementById('_wh-add-done').click();
+      const c = clients.find(x => x.id === 503);
+      const tagged = equipment.filter(x => x.clientId === 503).map(x => x.addr || '');
+      _renderWhBoard();
+      const dana = [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Dana Due'));
+      return { empty, clientAddr: c.addr, tagged, dana: dana ? dana.querySelector('.td-wh-addr')?.textContent : null,
+        helpers: [_whAddrOf(null, null), _whAddrOf({}, { addr: '1 Oak St, Topeka' }), _whStreet({ addr: '5 Ash Ct, Topeka, KS' }, null)] };
+    });
+    expect(r.empty).toBe('');
+    expect(r.clientAddr, 'the address typed becomes theirs').toBe('7 Birch Ln');
+    expect(r.tagged).toContain('7 Birch Ln');
+    expect(r.dana, 'untagged units show the customer address').toBe('1 Oak St');
+    expect(r.helpers).toEqual(['', '1 Oak St, Topeka', '5 Ash Ct']);
+  });
+
   test('hidden for crew, and for a trade no service fits with nothing on the board', async () => {
     await seed();
     const r = await page.evaluate(() => {
