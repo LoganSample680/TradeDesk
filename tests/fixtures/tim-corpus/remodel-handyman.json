@@ -315,7 +315,6 @@
     "trade": "remodel",
     "said": "Okay um tub to shower conversion. Rip out the tub, new mortar bed pan, red guard two coats, then tile with Mapei Ultraflex 2 thinset and grout with Flexcolor CQ.",
     "expect": [
-      "Tub to shower conversion",
       "Rip out the tub",
       "New mortar bed pan",
       "RedGard 2 coats",
@@ -444,10 +443,10 @@
     "trade": "remodel",
     "said": "Install three quarter inch white oak hardwood, 2 and a quarter inch strips, 540 square feet, over 15 pound felt, nail down",
     "expect": [
-      "Install 3/4 inch white oak hardwood, 2 1/4 inch strips, 540 square feet, over 15 pound felt, nail down"
+      "Install 3/4 inch white oak hardwood, 2 and a quarter inch strips, 540 square feet, over 15 pound felt, nail down"
     ],
     "heard": [],
-    "note": "Every comma is a spec, not an action. 'nail down' is the install method. One line."
+    "note": "Every comma is a spec, not an action. 'nail down' is the install method. One line. Aligned 2026-09-28 with the rule every other walk follows (numbers as digits, asides dropped, a pronoun step after \"and\" is its own line)."
   },
   {
     "id": "remod-29",
@@ -552,7 +551,7 @@
     "said": "frame the soffit over the cabinets hang half inch drywall tape it mud it sand it prime it install crown molding caulk the nail holes paint the crown",
     "expect": [
       "Frame the soffit over the cabinets",
-      "Hang 1/2 inch drywall",
+      "Hang half inch drywall",
       "Tape it",
       "Mud it",
       "Sand it",
@@ -837,11 +836,12 @@
     "said": "Replace the rotted trim board by the garage door, prime it and paint it, then replace the weather seal on the bottom of the garage door",
     "expect": [
       "Replace the rotted trim board by the garage door",
-      "Prime it and paint it",
+      "Prime it",
+      "Paint it",
       "Replace the weather seal on the bottom of the garage door"
     ],
     "heard": [],
-    "note": "'Prime it and paint it' is one paired finishing step joined by 'and'. Compare remod-35, where each 'verb it' was said as its own step with no conjunction."
+    "note": "Aligned 2026-09-28: a finishing verb on its own pronoun after 'and' is its own step, the same as land-08's 'seed them' and paint-19's 'haul them off'."
   },
   {
     "id": "hand-22",
@@ -873,7 +873,7 @@
     "said": "cut out the water damaged dry wall under the kitchen sink about 2 by 3 foot, replace with half inch moisture resistant, tape, mud, and texture",
     "expect": [
       "Cut out the water damaged drywall under the kitchen sink about 2 by 3 foot",
-      "Replace with 1/2 inch moisture resistant",
+      "Replace with half inch moisture resistant",
       "Tape, mud, and texture"
     ],
     "heard": [

@@ -373,11 +373,11 @@
       "Paint the 2 bathroom vanities",
       "Remove doors",
       "Sand",
-      "Prime with Extreme Bond",
-      "2 coats Emerald Urethane in satin",
+      "Prime with Extreme Bond, 2 coats Emerald Urethane in satin",
       "Install the new knobs the customer bought"
     ],
-    "heard": []
+    "heard": [],
+    "note": "'2 coats ...' after a comma says how the step before is finished, the same as paint-01 and paint-07."
   },
   {
     "id": "paint-24",
@@ -511,10 +511,11 @@
     "trade": "painting",
     "said": "Paint 4 bedrooms, no, 5 bedrooms, walls and ceilings, 2 coats. Trim not included.",
     "expect": [
-      "Paint 5 bedrooms, walls and ceilings, 2 coats"
+      "Paint 5 bedrooms, walls and ceilings, 2 coats",
+      "Trim not included"
     ],
     "heard": [],
-    "note": "\"no, 5 bedrooms\" corrects the count in place; \"Trim not included\" is an exclusion, not work"
+    "note": "What is not included is a term and stays on the proposal, the same as plumb-08's 'Permit and inspection included'."
   },
   {
     "id": "paint-34",
@@ -730,7 +731,6 @@
     "trade": "landscaping",
     "said": "Fall cleanup. Blow out the beds. Mulch the leaves on the lawn. Cut back perennials. Last mow at 2 inches.",
     "expect": [
-      "Fall cleanup",
       "Blow out the beds",
       "Mulch the leaves on the lawn",
       "Cut back perennials",

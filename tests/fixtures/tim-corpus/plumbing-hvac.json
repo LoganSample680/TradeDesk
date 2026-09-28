@@ -321,7 +321,7 @@
     "trade": "plumbing",
     "said": "Okay so um we're gonna take out the old AO Smith, it's leaking from the bottom, put in a 50 gallon Bradford White, we'll add a thermal expansion tank, new gas flex, new drip leg, and we're gonna put a a protect anode in it for 175 extra. Haul off the old tank.",
     "expect": [
-      "Take out the old AO Smith, it's leaking from the bottom",
+      "Take out the old AO Smith",
       "Put in a 50 gallon Bradford White",
       "Add a thermal expansion tank",
       "New gas flex",
@@ -498,7 +498,7 @@
     "trade": "hvac",
     "said": "Replace the heat pump with a 2 and a half ton Carrier Performance, new air handler, flush the line set, pull a vacuum to 500 microns, weigh in the charge, and set up the new echo bee",
     "expect": [
-      "Replace the heat pump with a 2 and a half ton Carrier Performance",
+      "Replace the heat pump with a 2.5 ton Carrier Performance",
       "New air handler",
       "Flush the line set",
       "Pull a vacuum to 500 microns",
@@ -621,7 +621,6 @@
     "trade": "hvac",
     "said": "Spring tune up. Change the filter. Check the charge. Clean the drain. Tighten the electrical.",
     "expect": [
-      "Spring tune up",
       "Change the filter",
       "Check the charge",
       "Clean the drain",

@@ -240,13 +240,13 @@ const _TIMK_VERBS=new Set([
   // The holdout walks (2026-09-28).
   'reattach','mudjack','undercut','shingle','form','epoxy','carpet','stamp','repoint','reface','resod','reglue',
   'resecure','refasten','renail','rescreen','rekey','reline','resand','recoat','retile','regrade','dig',
-  'give','release','slope','hand','overseed','weedeat',
+  'give','release','slope','hand','overseed','weedeat','follow','trace','plane',
 ]);
 
 // What a man says before he gets to the work, which is not the work. "Okay so
 // we're going to" is throat clearing and does not belong in a numbered step a
 // homeowner reads.
-const _TIMK_FILLER=/^(?:first\s+thing\s+(?:we're\s+gonna\s+do|we'll\s+do|we\s+do|to\s+do)\s+is|what\s+we're\s+gonna\s+do\s+is|ok(?:ay)?|so|well|um+|uh+|right|alright|and|but|first(?:ly)?|then|next|after\s+that|afterwards?|finally|lastly|also|plus|basically|obviously|yeah|yep|oh|like|anyway|first\s+thing\s+(?:we're\s+gonna\s+do|we'll\s+do|we\s+do|to\s+do)\s+is|what\s+we're\s+gonna\s+do\s+is|the\s+plan\s+is(?:\s+to)?)\b[\s,]*/i;
+const _TIMK_FILLER=/^(?:first\s+thing\s+(?:we're\s+gonna\s+do|we'll\s+do|we\s+do|to\s+do)\s+is|what\s+we're\s+gonna\s+do\s+is|ok(?:ay)?|so|well|um+|uh+|right|alright|and|but|first(?:ly)?|then|next|after\s+that|afterwards?|finally|lastly|also|plus|basically|obviously|yeah|yep|oh|like|anyway|first\s+thing\s+(?:we're\s+gonna\s+do|we'll\s+do|we\s+do|to\s+do)\s+is|what\s+we're\s+gonna\s+do\s+is|the\s+plan\s+is(?:\s+to)?|while\s+(?:we're|we\s+are|i'm|we're\s+out)\s+(?:here|there|at\s+it|in\s+there))\b[\s,]*/i;
 const _TIMK_SUBJECT=/^(?:(?:i|we|they|you)(?:\s*(?:'|’)?(?:re|m|ll|ve|d))?|im|ive|were|weve|well)\s+(?:are\s+|is\s+|am\s+)?(?:gonna|going\s+to|gotta|got\s+to|have\s+to|need\s+to|want\s+to|will|shall|just|then|also)?\s*/i;
 // The words that always start a new step when they join two clauses.
 // "Next to the heater" is a place, not the next step.
@@ -338,16 +338,24 @@ const _TIMK_ING_NOUN=/^(?:dining|living|parking|siding|flooring|railing|decking|
 // after a comma is the next item on the list. A qualifier of the step before
 // ("about 480 square feet", "walls and ceilings", "satin", "Belgard block") is
 // not: it has a measure, a place, a finish or a name at its front.
-const _TIMK_QUALIFIER=/^(?:about|around|approximately|roughly|each|every|both|only|all|walls?|ceilings?|trim|doors?|inside|outside|interior|exterior|front|back|top|bottom|same|full|fully|semi|flat|matte|satin|eggshell|pearl|gloss|high|low|white|black|gray|grey|brown|tan|beige|color|colour|in|on|with|at|to|for|from|by|including|plus|no|not|just|also|too|then|and|or|so|but|if|when|where|while|because|since|as|like|per|the|a|an|this|that|these|those|his|her|their|our|my|your|its|it's|it|they|them|we|i|he|she|you|there|here|up|down|over|under|through|around|between|behind|along|across|upstairs|downstairs|whatever|either|any|some|most|half|one|once|twice|customer|homeowner|owner|master|guest|kitchen|bathroom|bath|living|dining|family|bedroom|bedrooms|hall|hallway|garage|basement|attic|stairwell|stairs|landing|closets?|rooms?|porch|deck|floors?|windows?|number|no|size|model|type|schedule|grade|class|looks|seems|probably|maybe|don't|dont|do|does|did|never|can't|won't|except|minus|same|match|matching)$/;
+const _TIMK_QUALIFIER=/^(?:about|around|approximately|roughly|each|every|both|only|all|walls?|ceilings?|trim|doors?|inside|outside|interior|exterior|front|back|top|bottom|same|full|fully|semi|flat|matte|satin|eggshell|pearl|gloss|high|low|white|black|gray|grey|brown|tan|beige|color|colour|in|on|with|at|to|for|from|by|including|plus|no|not|just|also|too|then|and|or|so|but|if|when|where|while|because|since|as|like|per|the|a|an|this|that|these|those|his|her|their|our|my|your|its|it's|it|they|them|we|i|he|she|you|there|here|up|down|over|under|through|around|between|behind|along|across|upstairs|downstairs|whatever|either|any|some|most|half|one|once|twice|customer|homeowner|owner|master|guest|kitchen|bathroom|bath|living|dining|family|bedroom|bedrooms|hall|hallway|garage|basement|attic|stairwell|stairs|landing|closets?|rooms?|porch|deck|floors?|windows?|number|no|size|model|type|schedule|grade|class|looks|seems|probably|maybe|don't|dont|do|does|did|never|can't|won't|except|minus|same|match|matching|third|quarter|first|second|last|next|hidden|concealed|exposed)$/;
 function _timkItemPiece(next){
   const raw=String(next||'').trim();
-  if(!raw||/^[A-Z]/.test(raw)&&!/^(?:New|A|An)\b/.test(raw))return false;
+  if(!raw)return false;
+  // A name on its own is which one ("Square D", "Belgard Celtik block"); a
+  // name with what it is and where is its own line ("Owens Corning Duration in
+  // estate gray", "Kerdi drain in the center").
+  if(/^[A-Z]/.test(raw)&&!/^(?:New|A|An)\b/.test(raw)&&raw.split(/\s+/).length<4)return false;
   const w=_timkTidy(raw).toLowerCase().replace(/[.,;!?]+$/,'').split(/\s+/).filter(Boolean);
   if(w.length<2||w.length>9)return false;
   if(/^(?:a|an)$/.test(w[0])&&w[1]==='new')return w.length>=3;
   if(w[0]==='new')return true;
-  if(_TIMK_QUALIFIER.test(w[0])||/^\d/.test(w[0])||/(?:ed|ly|er)$/.test(w[0])&&!/^(?:water|filter|meter|breaker|heater|timer|toilet|border|shower|gutter|paper|primer|sealer|header|ledger|rafter|stringer|washer|dryer|trimmer|marker|spacer|boiler|burner|fitter|holder|cover|hanger|river|center|corner|order|number|leader|sewer|chamber|fiber|lumber|tower|power|hammer)$/.test(w[0]))return false;
-  if(w.some(x=>_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x)&&!/(?:ed|ing)$/.test(x)&&!/^(?:set|run|drain|flush|stop|pull|mount|light|seal|cap|wash|bond|tie|grade|level|square|plumb|trim|finish|coat|test|check|charge|start|pump)$/.test(x)))return false;
+  // "2 part epoxy base coat", "2 inch drain tied into the stack": a counted
+  // thing of its own. "3 feet tall", "10 feet out", "8 pounds per 1000" say
+  // how much of the step before.
+  if(/^\d/.test(w[0]))return w.length>=4&&(/^(?:part|stage|car)$/.test(w[1])||w.slice(2).some(x=>/ed$/.test(x)&&_timkVerbLike(x)))&&!/^(?:tall|wide|long|deep|high|thick|apart|out|each|total|down|up|around|over|it|them|that|high|max|min|minimum|maximum|oc|center)$/.test(w[w.length-1])&&!w.some(x=>/^(?:per|a|an|each|of)$/.test(x))&&!/^(?:feet|foot|ft|squares?|yards?|percent|%|days?|hours?|minutes?|weeks?|times?|degrees?)$/.test(w[1]);
+  if(_TIMK_QUALIFIER.test(w[0])||/(?:ed|ly|er)$/.test(w[0])&&!/^(?:water|filter|meter|breaker|heater|timer|toilet|border|shower|gutter|paper|primer|sealer|header|ledger|rafter|stringer|washer|dryer|trimmer|marker|spacer|boiler|burner|fitter|holder|cover|hanger|river|center|corner|order|number|leader|sewer|chamber|fiber|lumber|tower|power|hammer)$/.test(w[0]))return false;
+  if(w.some(x=>_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x)&&!/(?:ed|ing)$/.test(x)&&!/^(?:set|run|drain|flush|stop|pull|mount|light|seal|cap|wash|bond|tie|grade|level|square|plumb|trim|finish|coat|test|check|charge|start|pump|wrap|fill|bed)$/.test(x)))return false;
   // Nothing but a colour or a finish: the step before's.
   if(w.every(x=>/^(?:flat|matte|satin|eggshell|pearl|semi|gloss|white|black|gray|grey|dark|light|same|color|colour|finish|coat|coats|and|or|the|in)$/.test(x)))return false;
   return true;
@@ -360,7 +368,7 @@ function _timkAndSplits(left,right){
     // "the whole house scrape AND sand the loose paint": two verbs sharing an
     // object. The seam is in front of the first verb, not at the "and".
     const lws=_timkTidy(left).toLowerCase().split(/\s+/).filter(Boolean);
-    if(lws.length>=3&&_TIMK_VERBS.has(lw)&&!_TIMK_NOUNISH.has(lw)&&_TIMK_STRONG.has(lw)&&_timkVerbLike(rw)&&!_TIMK_NOUNISH.has(rw)&&!/^(?:the|a|an|and|to|will|gonna|then|of|for|with)$/.test(lws[lws.length-2]))return false;
+    if(lws.length>=3&&_TIMK_VERBS.has(lw)&&!_TIMK_NOUNISH.has(lw)&&(_TIMK_STRONG.has(lw)||lws.length>=5&&/^(?:locate|find|expose|excavate|dig|check|inspect|test|patch|repair|fix|clean|scrape|sand|prep)$/.test(lw))&&_timkVerbLike(rw)&&!_TIMK_NOUNISH.has(rw)&&!/^(?:the|a|an|and|to|will|gonna|then|of|for|with)$/.test(lws[lws.length-2]))return false;
   }
   // Only the last comma piece is what "and" joins: in "run the camera down
   // the main, locate and mark the belly" the left side is "locate".
@@ -382,6 +390,15 @@ function _timkAndSplits(left,right){
   // "caulk all the windows AND TRIM prime the bare wood": the trim is what got
   // caulked; the new step starts at "prime".
   if(_TIMK_NOUNISH.has(w)&&words[1]&&_timkVerbLike(words[1])&&!_TIMK_NOUNISH.has(words[1]))return false;
+  // "caulk all windows AND trim joints": a list of things, not a new job.
+  {const lw2=(String(left||'').trim().split(/\s+/).pop()||'').toLowerCase().replace(/[^a-z]/g,'');
+   if(_TIMK_NOUNISH.has(w)&&/[^s]s$/.test(lw2)&&!_TIMK_VERBS.has(lw2)&&words[1]&&/[^s]s$/.test(words[1].replace(/[^a-z]/g,'')))return false;}
+  // "float it over the vinyl AND new transitions at the doorways", "stain it
+  // AND 3 coats of Bona": a new item after a step that is already whole.
+  if(/^(?:(?:a|an)\s+)?new\s+\S+\s+\S+/i.test(String(right).trim())&&_timkVerbLike((_timkTidy(left).toLowerCase().split(/\s+/)[0]||''))&&(_timkHasObject(_timkTidy(left).toLowerCase())||_timkPronounObject(left)))return true;
+  if(/^\d+\s+coats?\s+of\s+\S+/i.test(String(right).trim())&&_timkVerbLike((_timkTidy(left).toLowerCase().split(/\s+/)[0]||''))&&_timkHasObject(_timkTidy(left).toLowerCase()))return true;
+  // "on the body AND satin on the trim": a second finish is a second line.
+  if(/^(?:flat|matte|satin|eggshell|semi[\s-]?gloss|gloss|high[\s-]?gloss)\s+on\s+(?:the\s+)?\S+/i.test(String(right).trim())&&/\bon\s+(?:the\s+)?\S+/i.test(left))return true;
   // A verb, or the -ing form of anything ("Outting In A Tankless", typed),
   // except the -ing words that are things on a job: "paint the walls and
   // ceiling" is one step, not two.
@@ -393,7 +410,7 @@ function _timkAndSplits(left,right){
   // "fill the holes with topsoil and seed them", "remove the old storm windows
   // and haul them off": a verb that is always its own job, on what the left
   // side just named. "shut the water off and drain it down" stays one step.
-  if(/^\S+\s+(?:it|them)\b/i.test(String(right).trim())&&/^(?:haul|seed|cap|dispose|tape|paint|seal|stain|prime|test|caulk|bag|mulch|wrap|insulate|secure|mount|hang|sand|reinstall|install|pressure|bury|chip|grind|plant|sod|backfill|compact|restain|refinish|label|flash|vent|wire|glue|screw|nail|grout)$/.test(w)&&_timkHasObject(_timkTidy(left).toLowerCase())&&!_timkPronounObject(left))return true;
+  if(/^\S+\s+(?:it|them)\b/i.test(String(right).trim())&&/^(?:haul|seed|cap|dispose|tape|paint|seal|stain|prime|test|caulk|bag|mulch|wrap|insulate|secure|mount|hang|sand|reinstall|install|pressure|bury|chip|grind|plant|sod|backfill|compact|restain|refinish|label|flash|vent|wire|glue|screw|nail|grout|reset|reattach|rehang|tighten|level|shim)$/.test(w)&&_timkHasObject(_timkTidy(left).toLowerCase())&&!_timkPronounObject(left))return true;
   // "move all the circuits over and label everything".
   if(/^\S+\s+(?:everything|all\s+(?:of\s+)?(?:it|them|the\s+\w+))$/i.test(String(right).trim())&&_timkHasObject(_timkTidy(left).toLowerCase())&&!/^(?:make|get|keep|leave|let|have)$/.test(w))return true;
   if(/^\S+\s+(?:it|them)\b/i.test(String(right).trim())&&_timkPronounObject(left)&&!/^(?:make|get|keep|leave|let|have)$/.test(w))return true;
@@ -414,20 +431,27 @@ function _timkAndSplits(left,right){
 // and the word before the verb must not make it a noun ("the finish") or part
 // of the same action ("and cut", "to set").
 const _TIMK_STRONG=new Set(['replace','install','remove','pull','haul','tear','rip','swap','dig','hang','mount',
-  'disconnect','reinstall','rehang','demo','pour','frame','insulate','caulk','prime','sand','scrape','level','lay']);
+  'disconnect','reinstall','rehang','demo','pour','frame','insulate','caulk','prime','sand','scrape','level','lay',
+  'reset','test','reattach','rewire','regrout','weatherstrip']);
 const _TIMK_STARTER=/^(the|a|an|new|old|in|out|up|off|down|it|them|all|some|any|his|her|their|my|our|this|that|these|those|every|each|two|three|four|five|six|\d+)$/;
 const _TIMK_NOT_BEFORE=/^(the|a|an|and|or|to|will|gonna|then|of|for|with|new|old|this|that|each|every|so|we|i|you|they|it)$/;
 const _TIMK_NOUNISH=new Set(['line','water','seed','sod','mulch','trim','edge','cap','plug','tile','frame','level',
   'mark','record','file','land','core','chip','mud','tape','texture','vent','light','bond','bag','load','drop',
   'stage','square','plumb','feed','face','strap','support','jack','shore','permit','dumpster','scope','charge',
   'start','startup','pump','float','screw','bolt','nail','glue','roll','pipe','flash','cover','wait','thin','raise',
-  'disconnect','coat','match','weed','hand','touch','form','epoxy','carpet','stamp','shingle']);
+  'disconnect','coat','match','weed','hand','touch','drywall','form','epoxy','carpet','stamp','shingle']);
 function _timkVerbSplit(frag){
   const words=String(frag||'').trim().split(/\s+/).filter(Boolean);
   if(words.length<5||/[,;]/.test(frag))return [frag];
   const out=[];let start=0;
   for(let i=2;i<words.length-1;i++){
     const w=words[i].toLowerCase().replace(/[^a-z]/g,'');
+    // "reset toilet new vanity with top", "HDZ charcoal new ridge vent": in a
+    // run with no punctuation, "new" after a finished thing starts the next.
+    if(w==='new'&&i-start>=2&&i<words.length-1&&!/^\d/.test(words[i-2]||'')){
+      const pv=words[i-1].toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(pv&&!/'s$/.test(words[i-1])&&!/^(?:a|an|the|and|or|of|for|with|to|in|on|at|by|all|some|any|brand|two|three|four|\d+|put|install|installing|set|hang|run|add|get|with|into|onto|few|couple|whole|entire|this|that|every|each|is|are|be|was|his|her|their|our|my|your|completely|totally|like|looks|almost)$/.test(pv)&&!_timkVerbLike(pv)&&(_timkVerbLike((_timkTidy(words.slice(start,i).join(' ')).toLowerCase().split(/\s+/)[0]||''))||i-start>=4)&&_timkHasObject(_timkTidy(words.slice(start,i).join(' ')).toLowerCase())){out.push(words.slice(start,i).join(' '));start=i;continue;}
+    }
     const prev=words[i-1].toLowerCase().replace(/[^a-z]/g,'');
     const next=words[i+1].toLowerCase().replace(/[^a-z0-9]/g,'');
     if(!_timkVerbLike(w))continue;
@@ -439,13 +463,16 @@ function _timkVerbSplit(frag){
     // their own. They still open a step after a comma or a full stop.
     // "vent it out", "wire it to the switch", "cap it": with its pronoun
     // straight after, the word is doing, not naming.
-    const pronounNext=/^(?:it|them)$/.test(next);
-    if(!pronounNext&&(_TIMK_NOUNISH.has(w)||_TIMK_NOUNISH.has(w.replace(/(?:ing|s)$/,''))))continue;
+    const pronounNext=/^(?:it|them)$/.test(next)||w==='weed'&&next==='eat'||w==='tape'&&next==='and'&&/^(?:finish|mud|float|texture|sand|bed)$/.test((words[i+2]||'').toLowerCase().replace(/[^a-z]/g,''));
+    // "from the roof vent record the video": a noun-ish verb straight after a
+    // finished noun and straight before "the" is the next step.
+    const articleNext=/^(?:the|a|an)$/.test(next)&&!/^(?:whole|entire|full|same|rest|length|way)$/.test((words[i+2]||'').toLowerCase())&&!_TIMK_NOT_BEFORE.test(prev)&&!/^(?:new|old|and|or|of|for|to|with|in|on|at|by|from|into|some|any|more|less)$/.test(prev)&&!/(?:ing|ed)$/.test(prev)&&i-start>=4;
+    if(!pronounNext&&!articleNext&&(_TIMK_NOUNISH.has(w)||_TIMK_NOUNISH.has(w.replace(/(?:ing|s)$/,''))))continue;
     // "recessed LIGHTS in", "the SEALS on": a plural noun, not a verb. A man
     // dictating says "light" or "lighting", never "lights", to start a step.
     if(/[^s]s$/.test(w)&&!_TIMK_VERBS.has(w))continue;
     // "pressure test", "power wash": one verb in two words.
-    if(/^(?:pressure|leak|power|flow|smoke)$/.test(prev)&&/^(?:test|tested|testing|wash|washed|washing|check)$/.test(w))continue;
+    if(/^(?:pressure|leak|power|flow|smoke|backflow|door|blower|duct|radon|soil|perc|load|water|air)$/.test(prev)&&/^(?:test|tested|testing|wash|washed|washing|check)$/.test(w))continue;
     // "spot prime", "wet scrape", "scuff sand", "re pitch": one verb in two words.
     if(/^(?:spot|wet|scuff|dry|hand|touch|back|re|hydro|weed|top|over|slit|core|power)$/.test(prev)){
       // ...and the step starts at the first of the two words, not the second:
@@ -456,6 +483,8 @@ function _timkVerbSplit(frag){
     }
     // "line set", "heat pump", "drop cloth": two nouns, not a verb.
     if(/^(?:line|heat|sump|drop|test|pilot|set|shut|flush|clean|check|light|hook|run|pull|plug|trim|cap)$/.test(prev)&&/^(?:set|pump|cloth|plug|light|valve|out|box|off|up|screw|valves?)$/.test(w)&&/^(?:line|heat|sump|drop|test|pilot|set|shut)$/.test(prev))continue;
+    // "a two way clean out": the fitting, not the job.
+    if(/^(?:clean|cleans)$/.test(w)&&/^(?:way|new|a|the)$/.test(prev)&&next==='out')continue;
     // "the meter pull", "the TV mount", "a drawer pull": one thing, two words.
     if(/^(?:pull|pulls|mount|mounts)$/.test(w)&&/^(?:meter|tv|wall|drawer|cabinet|door|fan|ceiling|bracket|flush|surface|swivel|articulating|pull)$/.test(prev))continue;
     // "a Moen pull down", "the Delta pull out": a kind of faucet.
@@ -465,7 +494,7 @@ function _timkVerbSplit(frag){
     // "anode rod", "curtain rod": the thing, not a drain being rodded.
     if(/^rods?$/.test(w)&&/^(?:anode|curtain|ground|threaded|sacrificial|magnesium|aluminum|closet)$/.test(prev))continue;
     const stem=w.replace(/ing$/,'');
-    const strong=_TIMK_STRONG.has(w)||_TIMK_STRONG.has(stem)||_TIMK_STRONG.has(stem+'e');
+    const strong=_TIMK_STRONG.has(w)||_TIMK_STRONG.has(stem)||_TIMK_STRONG.has(stem+'e')||w==='weed'&&next==='eat';
     // "fifteen years old haul the heater": "old" before a strong verb that
     // opens an object is the end of the last clause, not an adjective.
     // "removing the old putting in the new" is the same seam with a plain verb,
@@ -477,7 +506,7 @@ function _timkVerbSplit(frag){
     const left=words.slice(start,i).join(' ');
     // Judged without the filler and the subject: "after that we'll" and "so
     // we're" in front of a verb are not a finished step.
-    if(i-start<2||!_timkHasObject(_timkTidy(left).toLowerCase()))continue;
+    if(i-start<2||!(_timkHasObject(_timkTidy(left).toLowerCase())||_timkPronounObject(left)))continue;
     out.push(left);start=i;
   }
   out.push(words.slice(start).join(' '));
@@ -542,6 +571,7 @@ function _timkUnfill(text){
 // a number. A lone "one" stays a word ("haul the old one away"), and a bare
 // "half" or "quarter" stays a word ("half the wall", "quarter round").
 function _timkNumbers(text){
+  text=String(text||'').replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-(one|two|three|four|five|six|seven|eight|nine)\b/gi,'$1 $2');
   const toks=_timkTok(text);
   const kind=c=>{const k=_timNumKind(c);return k==='pack'?null:k;};
   const out=[];
@@ -570,8 +600,10 @@ function _timkNumbers(text){
     const real=kinds.filter(k=>k&&k!=='join');
     // "a two way cleanout", "a three way switch", "8 pounds per thousand".
     const nxt=toks[j]?toks[j].c:'';
-    const named=real.length===1&&(/^(?:way|ways)$/.test(nxt)&&!run[run.length-1].p||real[0]==='scale'&&!aScale&&!(i>0&&/^\d/.test(out.length?out[out.length-1].c:'')));
-    const lone=named||real.length===1&&(real[0]==='one'&&/^ones?$/.test(run[0].c)||real[0]==='frac'||real[0]==='digit');
+    const prevC=i>0?toks[i-1].c:'';
+    const named=real.length===1&&(prevC==='the'&&(!!run[run.length-1].p||!toks[j])&&real[0]==='one'||/^(?:way|ways)$/.test(nxt)&&!run[run.length-1].p||real[0]==='scale'&&!aScale&&!(i>0&&/^\d/.test(out.length?out[out.length-1].c:'')));
+    const unitNext=/^(?:zone|coat|layer|inch|foot|story|storey|car|gallon|ton|way|hour|day|week|sheet|square|bag|yard|pound|amp|step|riser|row|course)s?$/.test(nxt)&&!(i>0&&/^(?:the|that|this)$/.test(toks[i-1].c));
+    const lone=named||real.length===1&&(real[0]==='one'&&/^ones?$/.test(run[0].c)&&!unitNext||real[0]==='frac'||real[0]==='digit');
     // "three quarter pex" is a pipe size, not a number to add up.
     const quarter=run.some(x=>/^quarters?$/.test(x.c));
     const n=(!run.length||lone||quarter||real.every(k=>k==='frac'))?null:timSpokenNumber(run.map(x=>x.c));
@@ -585,6 +617,15 @@ function _timkNumbers(text){
     const a=out[k].c,b=out[k+1].c;
     if(/^\d+$/.test(a)&&/^\d+$/.test(b)&&!out[k].p&&!out[k+1].p&&+a>0&&+a<100&&+b>=10&&+b<100&&/^(?:dollars?|bucks)$/.test(out[k+2].c)){
       const n=String(+a*100+(+b));out[k]={w:n,p:'',c:n};out.splice(k+1,1);
+    }
+  }
+  // "Figure six fifty.", "Two eighty-five.": hundreds first, said as a price,
+  // at the end of what he said.
+  for(let k=0;k<out.length-1;k++){
+    const a=out[k].c,b=out[k+1].c,prevC=k>0?out[k-1].c.replace(/[^a-z]/g,''):'';
+    const atStart=k===0||/[.!?;]/.test(out[k-1].p);
+    if(/^\d$/.test(a)&&/^\d\d$/.test(b)&&+b>=10&&!out[k].p&&(/[.!?;]/.test(out[k+1].p)||k+2>=out.length)&&(atStart||/^(?:figure|about|around|for|say|its|thats|runs|costs|call|it)$/.test(prevC))){
+      const n=String(+a*100+(+b));out[k]={w:n,p:out[k+1].p,c:n};out.splice(k+1,1);
     }
   }
   // "2500 dollars", "250 bucks": a price, written as one.
@@ -610,7 +651,7 @@ const _TIMK_CLAUSE_END=/[.!?;,\n]\s*|\s(?:and then|then|after that|next|also)\s/
 // a number fixes the last number before it; otherwise the correction has to
 // start with a word that is in what came before ("from", "prime") and cuts
 // back to it. With neither, his words are left alone.
-const _TIMK_REDO=/[,\s]+(?:uh\s+|um\s+)?(?:no\s+wait|wait\s+no|actually\s+no|no\s+actually|i\s+mean|no\s+more\s+like|or\s+rather|scratch\s+that|actually(?=\s+(?:just|only|let's|lets|make|we'll\s+do|do)\b)|no)[,.]?\s+/gi;
+const _TIMK_REDO=/[,\s]+(?:uh\s+|um\s+)?(?:no\s+wait|wait\s+no|actually\s+no|no\s+actually|i\s+mean|no\s+more\s+like|or\s+rather|scratch\s+that|sorry|actually(?=\s+(?:just|only|let's|lets|make|we'll\s+do|do)\b)|no)[,.]?\s+/gi;
 const _TIMK_NUMWORD={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
 const _timkSing=w=>String(w||'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/(ss|sh|ch|x|z)es$/,'$1').replace(/([^s])s$/,'$1');
 // "12 linear feet of base cabinets, no wait make it 14 linear feet, then set
@@ -665,7 +706,11 @@ function _timkRedo(text){
         }
         continue;
       }
-      if(trig==='no'||trig==='scratch that')continue;
+      // "no, actually she changed it to Simply White", "no wait she said the
+      // color is sandy beach": what she chose, said as a correction.
+      {const sh=b.match(/^(?:actually\s+)?(?:she|he|they|the\s+customer|customer)\s+(?:changed\s+(?:it|that|her\s+mind|his\s+mind|their\s+mind)\s+to|said\s+(?:the\s+colou?r\s+is|it's|it\s+is|make\s+it|to\s+make\s+it|to\s+do)|wants?|picked|chose)\s+/i);
+       if(sh){b='make it '+b.slice(sh[0].length);}
+       else if(trig==='no'||trig==='scratch that')continue;}
       // "replace the tile floor with, actually let's do LVP instead", "on the 8
       // posts, actually just the 4 corner posts": what he swapped in takes the
       // place of what it names, the same as "make that".
@@ -744,7 +789,16 @@ function _timkRedo(text){
           if(last){v=a.slice(0,clauseStart)+_timkRenumber(clause,last,rest);done=true;break;}
           continue;
         }
-        const at=Math.max(...['of','with','in','on','a','an','the'].map(x=>{const r=new RegExp('\\b'+x+'\\s','gi');let q,l=-1;while((q=r.exec(clause)))l=q.index+q[0].length;return l;}));
+        // "install a 1 zone Mitsubishi, no actually make it a Fujitsu": one
+        // name for another.
+        {const rn=rest.replace(/^(?:a|an|the)\s+/i,'');
+         if(/^[A-Z][a-z]/.test(rn)){
+           const cw=clause.replace(/[,\s]+$/,'').split(/\s+/);
+           let bi=-1;for(let q=cw.length-1;q>=1;q--){if(/^[A-Z][a-z]/.test(cw[q])){bi=q;while(bi>1&&/^[A-Z]/.test(cw[bi-1]))bi--;break;}}
+           if(bi<0&&cw.length<=2&&/^[A-Z]/.test(cw[0]))bi=0;
+           if(bi>=0){v=a.slice(0,clauseStart)+(bi?' '+cw.slice(0,bi).join(' ')+' ':(clauseStart?' ':''))+rn;v=v.replace(/\s{2,}/g,' ');done=true;break;}
+         }}
+        const at=Math.max(...['of','with','in','on','a','an','the'].map(x=>{const r=new RegExp('\\b'+x+'[,\\s]\\s*','gi');let q,l=-1;while((q=r.exec(clause)))l=q.index+q[0].length;return l;}));
         if(at>0){v=a.slice(0,clauseStart)+clause.slice(0,at)+rest;done=true;break;}
         continue;
       }
@@ -805,9 +859,37 @@ function _timkCorrect(text){
     // The number he is fixing: the last one before this, no more than one
     // sentence back ("Put in 2 valves. No wait, make that 3.").
     const nums=[...before.matchAll(/\$?\d+(?:\.\d+)?/g)];
-    const last=nums[nums.length-1];
+    let last=nums[nums.length-1];
+    const unitW=(after.replace(/^\s+/,'').match(/^([A-Za-z]+)/)||[])[1]||'';
+    // "32 by 60 shower base, no, make that 36 by 60": the size, both numbers.
+    {const dim=after.match(/^\s*(?:by|x)\s*(\d+(?:\.\d+)?)/i);
+     if(dim){const ds=[...before.matchAll(/(\d+(?:\.\d+)?)\s*(?:by|x)\s*(\d+(?:\.\d+)?)/gi)];const dl=ds[ds.length-1];
+       if(dl){v=before.slice(0,dl.index)+m[1]+' by '+dim[1]+before.slice(dl.index+dl[0].length).replace(/[\s,.;!?]+$/,'')+(m[2]&&/[.!?;]/.test(m[2])?m[2].replace(/,/g,''):'')+after.slice(dim[0].length).replace(/^[\s,]*/,/^[\s,]*[.!?;]/.test(after.slice(dim[0].length))?'':' ').replace(/^\s+$/,'');continue;}}}
+    // "add 6 recessed lights, 4 inch wafers. No wait make that 8 lights": the
+    // number he is fixing is the one his unit belongs to, two sentences back at
+    // most.
+    if(unitW&&_timkSing(unitW).length>=3){
+      const reach=before.slice(Math.max(0,(()=>{let k=before.length,c=0;while(k>0){k--;if(/[.!?]/.test(before[k])&&++c>2)break;}return k;})()));
+      const off=before.length-reach.length;
+      const hit=nums.slice().reverse().find(n=>n.index>=off&&before.slice(n.index+n[0].length).split(/\s+/).filter(Boolean).slice(0,4).some(x=>_timkSing(x)===_timkSing(unitW)));
+      if(hit)last=hit;
+      else{
+        // "self closing self latching gate, make that 2 gates": a count on a
+        // thing he never counted goes in front of it.
+        const sb=before.replace(/[\s,.;!?]+$/,'');const cs=Math.max(sb.lastIndexOf('. '),sb.lastIndexOf('! '),sb.lastIndexOf('? '))+1;
+        const cl=sb.slice(cs);const cw=cl.trim().split(/\s+/);
+        const wi=cw.map(x=>_timkSing(x)).lastIndexOf(_timkSing(unitW));
+        if(wi>=0&&wi>=cw.length-2){
+          let st=0;for(let q=wi-1;q>=0;q--){if(/^(?:a|an|the|one)$/i.test(cw[q])){st=q;cw.splice(q,1);break;}}
+          const wi2=cw.map(x=>_timkSing(x)).lastIndexOf(_timkSing(unitW));
+          cw[wi2]=cw[wi2].replace(/[A-Za-z]+/,unitW);cw.splice(st,0,m[1]);
+          const lead=sb.slice(0,cs)+(cs?' ':'');
+          v=lead+cw.join(' ')+(m[2]&&/[.!?;]/.test(m[2])?m[2].replace(/,/g,''):'.')+after.replace(/^\s*[A-Za-z]+/,'').replace(/^[\s,]*/,' ').replace(/^\s+$/,'');continue;
+        }
+      }
+    }
     const between=last?before.slice(last.index+last[0].length):'';
-    if(!last||(between.match(/[.!?]/g)||[]).length>1){
+    if(!last||(between.match(/[.!?]/g)||[]).length>2){
       // Nothing to fix: leave his words alone, but never loop on them.
       v=before+m[0].replace(/make/i,'make\u200b')+after;continue;
     }
@@ -1001,6 +1083,38 @@ const _TIMK_HEARD=[
   [/\b(one|three|five|seven)\s+eighths?\b/gi,(m,n)=>({one:1,three:3,five:5,seven:7}[n.toLowerCase()])+'/8'],
   [/\b(one|three)\s+quarters?(?=\s+(?:inch|thick|plywood|ply|osb|sheathing|advantech)\b)/gi,(m,n)=>({one:1,three:3}[n.toLowerCase()])+'/4'],
   [/\bmalarky\b/gi,'Malarkey'],
+  // Set C (2026-09-28).
+  [/\bcontact\s+her\b/gi,'contactor'],
+  [/\bwring(?=\s+(?:floodlight|flood\s+light|doorbell|door\s+bell|camera|cam|spotlight|video)\b)/gi,'Ring'],
+  [/\bflu(?:id)?\s+master\b/gi,'Fluidmaster'],
+  [/\belf(?:\s+uh)?(?=\s+closet\b)/gi,'Elfa'],
+  [/\bvel+ux\b/gi,'Velux'],
+  [/\bslue\s+ter\b|\bsl(?:oo|u)ter\b/gi,'Schluter'],
+  [/\boh\s+wins?\s+corn(?:ing|y|ey)\b|\bowens?\s+corny\b/gi,'Owens Corning'],
+  [/\bcab\s+it(?=\s+(?:in|semi|solid|stain|transparent|oil|deck|australian)\b)/gi,'Cabot'],
+  [/\b(semi[\s-]?(?:transparent|solid)\s+)cab\s+it\b/gi,'$1Cabot'],
+  [/\b((?:prime|primed|primer|spot\s+prime)\b[^,.;]{0,40}?\bwith\s+)sticks\b/gi,'$1Stix'],
+  [/\btimber\s+line\b/gi,'Timberline'],
+  [/\bhome\s+line\b/gi,'Homeline'],
+  [/\blime\s+light\b/gi,'Limelight'],
+  [/\bsick\s*a\s*flex\b|\bsika\s+flex\b/gi,'Sikaflex'],
+  [/\bamery\s+star\b/gi,'Ameristar'],
+  [/\bdog\s+year\b/gi,'dog ear'],
+  [/\bfor\s+tress(?=\s+(?:black|aluminum|railing|rail|evolution|steel|fe26|vinyl)\b)/gi,'Fortress'],
+  [/\bpost\s+master\b/gi,'Postmaster'],
+  [/\btie\s+vek\b|\btyvec\b|\bty\s+vek\b/gi,'Tyvek'],
+  [/\bmust\s+kit\b/gi,'musket'],
+  [/\brap\s+tor(?=\s+(?:stainless|mesh|guards?|gutter)\b)/gi,'Raptor'],
+  [/\bscreen\s+tight\b/gi,'Screen Tight'],
+  [/\bjeld\s+win\b/gi,'JELD-WEN'],
+  [/\bcarved\s+wood(?=\s+\d)/gi,'Carvedwood'],
+  [/\byou\s+poner\b/gi,'Uponor'],
+  [/\bfuji\s+(?:sue|sou|zoo|two|2|too|to)\b/gi,'Fujitsu'],
+  [/\b(?:one|1)\s+by\s+(three|four|six|eight|ten|twelve|3|4|6|8|10|12)\b/gi,(m,n)=>'1x'+({three:3,four:4,six:6,eight:8,ten:10,twelve:12}[String(n).toLowerCase()]||n)],
+  [/\b(?:four|4)\s+by\s+(?:four|4)\b/gi,'4x4'],
+  [/\b((?:with|a|an|new|the)\s+)(?:brone|brawn)\b/gi,'$1Broan'],
+  [/\b(Mapei\s+)aqua\s+defen[cs]e\b/gi,'$1AquaDefense'],
+  [/\b(Pergo\s+)outlast\s+plus\b/gi,'$1Outlast+'],
   [/\bcaesar\s+stone\b/gi,'Caesarstone'],
   [/\bquick\s+set(?=\s+(?:smart|locks?|deadbolts?|handles?|levers?|knobs?|keyed|entry|door|signature|halo|smartcode|aura)\b)/gi,'Kwikset'],
   [/\b(?:sure|shore)(?=\s+(?:lvp|lvt|carpet|floor|flooring|vinyl|plank|laminate|hardwood|floorte)\b)/gi,'Shaw'],
@@ -1023,7 +1137,7 @@ const _TIMK_HEARD=[
   // "two by fours", "2 by 6s": lumber, written the way it is on a cut list.
   [/\b(?:two|2)\s+by\s+(four|six|eight|ten|twelve|4|6|8|10|12)(s)?\b/gi,(m,n,s)=>'2x'+({four:4,six:6,eight:8,ten:10,twelve:12}[String(n).toLowerCase()]||n)+(s||'')],
   [/\b(?:two|2)\s+by\s+(fours|sixes|eights|tens|twelves)\b/gi,(m,n)=>'2x'+({fours:4,sixes:6,eights:8,tens:10,twelves:12}[n.toLowerCase()])+'s'],
-  [/\b(?:four|4)\s+by\s+(fours|4s)\b/gi,'4x4s'],
+  [/\b(?:four|4)\s+by\s+(?:fours|4s)\b/gi,'4x4s'],
   [/\b(?:six|6)\s+by\s+(sixes|6s)\b/gi,'6x6s'],
 ];
 // ── BRANDS BY SOUND (2026-09-28) ─────────────────────────────────────────
@@ -1184,7 +1298,7 @@ function _timkHeard(seg){
 // starts on the right and the left already names something: "set the heater
 // also run the pex" is two steps, "paint the walls and also the ceiling" is one.
 // "I" and "we" starting a new clause are a seam the same way.
-const _TIMK_SOFT=/\s+(?:and\s+also|and\s+so|and\s+now|also|so|now|okay|ok|alright|plus)\s+|\s+(?=(?:i|we|i'll|we'll|we're|i'm|we've|i've|then\s+we|then\s+i)\s)/gi;
+const _TIMK_SOFT=/\s+(?:and\s+also|and\s+so|and\s+now|also|so|now|okay|ok|alright|plus)\s+|\s+(?=(?:(?:uh|um)\s+)?(?:she|he|they|the\s+customer|the\s+neighbor's|the\s+neighbor)\s+(?:said|says|mentioned|wants|asked|will|'ll|is|decides?|decided)\s)|\s+(?=(?:she'll|he'll|they'll)\s)|\s+(?=we're\s+not\s)|\s+(?=(?:i|we|i'll|we'll|we're|i'm|we've|i've|then\s+we|then\s+i)\s)/gi;
 function _timkSoftSplit(s){
   const str=String(s||'');
   const bits=[];let last=0,m;
@@ -1229,7 +1343,7 @@ function _timkPriceSaid(t){
   const n=parseFloat(m[3].replace(/,/g,'')+(m[4]?'.'+m[4]:''));
   if(!(n>0))return null;
   const before=t.slice(0,m.index).trim();
-  const strong0=dollar||money||per||!!tail||/\b(?:for|another|plus|figure|say|runs?|costs?|call\s+it|thinking|total|that's|it's|its)\b/.test(lead);
+  const strong0=dollar||money||per||!!tail||/\b(?:for|another|plus|figure|say|runs?|costs?|call\s+it|thinking|total|that's|it's|its)\b/.test(lead)||/\b(?:about|around)\b/.test(lead)&&n>=100;
   const prevRaw=(before.split(/\s+/).pop()||'');
   const prev=prevRaw.toLowerCase().replace(/[^a-z0-9/]/g,'');
   // "for the cap" is money only when the cap is already on the line, or the
@@ -1250,7 +1364,7 @@ function _timkPriceSaid(t){
   // "About 700." on its own, after the work: a price said the way it is
   // thought, never a size, because a size has its unit with it.
   const aboutOnly=/\b(?:about|around)\b/.test(lead)&&before.replace(/[^a-z]/gi,'').length<3&&n>=100;
-  const strong=dollar||money||per||tail||aboutOnly||/\b(?:for|another|plus|runs?|costs?|call\s+it|thinking|total|that's|it's|its)\b/.test(lead);
+  const strong=dollar||money||per||tail||aboutOnly||/\b(?:for|another|plus|runs?|costs?|call\s+it|thinking|total|that's|it's|its|figure|say)\b/.test(lead)||/\b(?:about|around)\b/.test(lead)&&n>=100&&!/^(?:\d|x|by)/.test(prev);
   // A bare trailing number with nothing around it is only money when it is a
   // money-sized number at the end of a step that already says what the work is.
   if(!strong&&!(n>=20&&before.replace(/[^a-z]/gi,'').length>=3&&(!/\d$/.test(before)||/^\s*,/.test(m[0]))))return null;
@@ -1311,6 +1425,12 @@ function _timkTidy(t){
   // "basement finish we're gonna frame": the same, for any room heading.
   {const m=v.match(/^((?:\S+\s+){1,4}?)(?=(?:we're|we'll|we|i'm|i'll)\s+(?:are\s+)?(?:gonna|going\s+to|will|need\s+to|have\s+to|just)\b)/i);
    if(m&&_timkIsHeading(m[1]))v=v.slice(m[1].length);}
+  v=v.replace(/[,\s]+(?:figure|about|around|call\s+it)\s+(?:\d+(?:\.\d+)?|an?|half\s+an?)\s+(?:hours?|days?)(?:\s+at\s+\$?\d+(?:\s+an?\s+hour)?)?$/i,'');
+  // "pull out the old boxwoods there's 6 of them", "pull the damaged vinyl,
+  // it's the hail", "check the balances it drops", "rods and 3 posts but not the
+  // lattice": the count, the cause, the symptom and the exclusion go.
+  v=v.replace(/[,\s]+(?:there's|there\s+are)\s+\d+(?:\s+of\s+them)?$/i,'').replace(/[,\s]+it's\s+the\s+[a-z]+$/i,'').replace(/[,\s]+(?:it|they)\s+(?:drops?|sticks?|leaks?|rubs?|squeaks?|runs?|wobbles?)$/i,'').replace(/[,\s]+but\s+not\s+(?:the\s+)?[a-z]+(?:\s+[a-z]+){0,3}$/i,'');
+  v=v.replace(/[,\s]+(?:it's|its|it\s+is|they're|theyre|it\s+was)\s+(?:leaking|dripping|rusted|rotted|cracked|sagging|failing)(?:\s+(?:at|from|on|in|by)\s+(?:the\s+)?[a-z]+(?:\s+[a-z]+)?)?$/i,'');
   // "replace the gutter on the west side it's dented": how it looks now is
   // why, not what.
   v=v.replace(/[,\s]+(?:it's|its|it\s+is|they're|theyre|they\s+are)\s+(?:all\s+|pretty\s+|really\s+)?(?:dented|rotted|rotten|cracked|shot|broken|broke|leaking|bad|damaged|rusted|loose|gone|toast|crushed|bent|sagging|failing|warped)$/i,'');
@@ -1336,7 +1456,7 @@ function _timkTidy(t){
 // when the one before it stops on a word that cannot end a thought ("the",
 // "with", "and"), when the one before it is a bare verb with nothing to act
 // on, or when it is itself a short piece that is not a new action.
-const _TIMK_OPEN_END=/\b(?:the|a|an|with|to|of|for|and|or|in|on|at|from|by|into|onto|your|their|his|her|my|our|this|that|these|those|some|all|existing|whole|entire|main)[,]?$/i;
+const _TIMK_OPEN_END=/\b(?:the|a|an|with|to|of|for|and|or|in|on|at|from|by|into|onto|your|their|his|her|my|our|this|that|these|those|some|all|existing|whole|entire|(?<!the\s)main)[,]?$/i;
 const _TIMK_PREP_START=/^(?!in\s+use\b)(?:for|in|on|at|from|to|with|by|into|under|over|behind|around|through|inside|outside|along|across)\s/i;
 // Lower-case the phone's sentence capital when joining, unless it is a name.
 function _timkJoinCase(t){
@@ -1375,12 +1495,13 @@ function _timkMendSentences(list){
       if(/^(?:\d+\s+[a-z]+\s*){2,3}$/i.test(tidy)&&pTidy.length>=2&&_timkVerbLike(pTidy[0])){out[out.length-1]=p+' '+tt;return;}
       if(/^[A-Z][a-z]+\s+\S*\d/.test(tt)&&!w.some(x=>_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x))&&pTidy.length>=2&&pTidy.length<=6&&_timkVerbLike(pTidy[0])&&!/\d/.test(p)){out[out.length-1]=p+' '+tt;return;}
       const shortPiece=w.length>0&&!_timkVerbLike(w[0])&&(w.length===1&&!/^\d/.test(w[0])||w.length<=3&&w.some(x=>/^(?:only|all|coats?|each|every|both|sides?|too|again|included|also|feet|foot|ft|inch|inches|squares?|sq|sf|lf|linear|yards?|gallons?|tons?|amps?|zones?)$/.test(x)));
-      if(_TIMK_OPEN_END.test(p)||pBareVerb&&!_timkVerbLike(w[0]||'')){out[out.length-1]=p+' '+_timkJoinCase(tt);return;}
+      if(_TIMK_OPEN_END.test(p)||pBareVerb&&(!_timkVerbLike(w[0]||'')||_TIMK_NOUNISH.has(w[0]||''))){out[out.length-1]=p+' '+_timkJoinCase(tt);return;}
       if(andPiece){out[out.length-1]=p+' '+_timkJoinCase(tt);return;}
       if(shortPiece){out[out.length-1]=p+', '+_timkJoinCase(tt);return;}
       // "Thaw the frozen line. In the crawl, find the split": the place goes
       // back on the step before; what follows the comma is its own.
-      if(_TIMK_PREP_START.test(tt)&&!_timkNewAction(tidy)&&!/\s(?:we're|we\s+are|we'll|i'm|we|they're)\s/i.test(tt)){
+      const prepAct=(()=>{const ww=tidy.split(',')[0].split(/\s+/);for(let q=2;q<Math.min(ww.length-1,6);q++){if(_timkVerbLike(ww[q])&&!_TIMK_NOUNISH.has(ww[q])&&!/(?:ed|s)$/.test(ww[q])&&_timkNewAction(ww.slice(q).join(' ')))return true;}return false;})();
+      if(_TIMK_PREP_START.test(tt)&&!prepAct&&!_timkNewAction(tidy)&&!/\s(?:we're|we\s+are|we'll|i'm|we|they're)\s/i.test(tt)){
         const c=tt.indexOf(',');
         if(c<0){out[out.length-1]=p+' '+_timkJoinCase(tt);return;}
         out[out.length-1]=p+' '+tt.charAt(0).toLowerCase()+tt.slice(1,c);
@@ -1428,18 +1549,73 @@ function _timkIsHeading(sent){
   if(w.length>5)return false;
   return w.some(x=>_TIMK_AREA.test(x))&&w.every(x=>_TIMK_AREA.test(x)||_TIMK_PROJECT.test(x));
 }
+// ── THE TITLE HE SAYS BEFORE THE WORK (set C, 2026-09-28) ─────────────────
+// "Panel upgrade." "Water heater swap." "Deck refresh." "Garage, um, install a
+// mini split." Before any work has been said, a short phrase with no work verb
+// in it (a verb as its last word is a noun: "swap", "upgrade", "repair") is the
+// name of the job, not a line. Only BEFORE the first step: after it, the same
+// shape is an item ("Synthetic underlayment", "Well cover").
+function _timkIsTitle(sent){
+  const t=_timkTidy(String(sent||'').replace(/[.;!?]+$/,'')).toLowerCase().replace(/[,]+/g,' ').replace(/\s+(?:okay|ok|alright|here)$/,'').trim();
+  if(!t)return false;
+  const w=t.split(/\s+/);
+  if(w.length>6)return false;
+  if(/^(?:new|a|an|\d|one|two|three|four|five|six|seven|eight|nine|ten|twelve|about|around|figure|total)/.test(w[0]))return false;
+  if(_TIMK_TERMS.test(t)||/\$|\d{3,}|\bbucks\b/.test(t))return false;
+  // A name in it ("Belgard Catalina in the toscana blend") makes it an item.
+  if(/\s[A-Z][a-z]/.test(String(sent).trim().replace(/^(?:okay|ok|alright|so)[,.]?\s+/i,'')))return false;
+  if(w.slice(0,-1).some(x=>_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x)&&!/^(?:cleanup|start|stain|trim|repair|finish|install|drain|heat|air|water|light|floor|roof|deck|fence|screen|power|pressure|frame|wall|seal)$/.test(x)))return false;
+  if(_timkVerbLike(w[0])&&!_TIMK_AREA.test(w[0])&&!/^(?:deck|fence|roof|floor|screen|water|air|heat|power)$/.test(w[0]))return false;
+  if(w.some(x=>/^(?:is|are|was|has|have|it's|there's|that's|we're|i'm)$/.test(x)))return false;
+  return true;
+}
+// "okay so hall bath gut it down to the studs", "alright garage subpanel run a
+// 60 amp feeder": the same title, said with no full stop after it. The work
+// starts at the first verb that has something to act on.
+function _timkDropLeadTitle(sent){
+  const words=String(sent||'').trim().split(/\s+/);
+  const lw=words.map(x=>x.toLowerCase().replace(/[^a-z']/g,''));
+  let i0=0;
+  while(i0<lw.length&&/^(?:okay|ok|so|alright|um|uh|and|well|yeah|right)$/.test(lw[i0]))i0++;
+  const strongAt=k=>_TIMK_STRONG.has(lw[k])||/^(?:power|pressure|tear|pull|gut|run|install|replace|frame|route|turn|excavate|remove|rip|demo|camera|wet|hang|build|move|fix|clean|take|cut|add|put)$/.test(lw[k]);
+  for(let k=i0+1;k<=Math.min(i0+7,lw.length-2);k++){
+    if(!strongAt(k)||_TIMK_NOUNISH.has(lw[k]))continue;
+    const pre=lw.slice(i0,k);
+    // "In the kitchen we're gonna install": a place, which stays on the step.
+    if(/^(?:in|on|at|down|up|out|over|inside|outside|upstairs|downstairs|around|behind|under|along)$/.test(pre[0]||''))return sent;
+    if(pre.length>6)return sent;
+    if(pre.some(x=>_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x)&&!/^(?:cleanup|stain|repair|repairs|finish|start|install|floor|roof|deck|fence|screen|power|pressure|wall|seal|swap|upgrade|repipe|refresh|conversion|drainage)$/.test(x)&&!/(?:ing)$/.test(x)))return sent;
+    if(!pre.some(x=>_TIMK_AREA.test(x)||/^(?:fence|deck|slab|pad|beds?|gutters?|guards?|job|list|conversion|repipe|swap|upgrade|repair|repairs|cleanup|drainage|subpanel|stain|refresh|patio|walk|driveway|porch|siding|windows?|roof|chimney|furnace|heater|panel|charger|irrigation|lawn|yard|mount|door|downstairs|upstairs|side|shed|pool)$/.test(x)))return sent;
+    if(!_timkNewAction(lw.slice(k).join(' ')))continue;
+    return words.slice(k).join(' ');
+  }
+  return sent;
+}
 const _TIMK_TERMS=/\b(?:homeowner|customer|owner|included|not\s+included|excluded|by\s+others|warranty|permit)\b/i;
 function _timkIsRemark(sent){
   const t=_timkTidy(String(sent||'').replace(/[.;!?]+$/,'')).toLowerCase();
   if(!t)return false;
   if(/^(?:done|that's\s+it|that's\s+all|that's\s+everything|that\s+should\s+do\s+it)$/.test(t))return true;
+  if(/^(?:the\s+)?(?:customer|homeowner|owner|client)s?\s+(?:wants|wanted|said|says|asked|mentioned|would\s+like|thinks)\b/.test(t)&&!/,/.test(String(sent)))return true;
+  // What the customer decided or thinks is not a line; what the customer
+  // supplies or does to get ready for us is a term and stays.
+  if(/^(?:the\s+)?(?:customer|homeowner|owner|client)(?:'s|\s+is)?\s+(?:okay|ok|fine|happy|declined|decided|doing\s+.*\bnext\s+(?:year|week|month|spring|summer|fall)|wants?\s+(?:it|this|them)\s+done|wants\s+to\s+keep|changed|paying\s+the\s+deductible)\b/.test(t))return true;
+  // Another trade, or someone else, doing their part: "electrician's running
+  // the circuit", "the shed company's building the shed", "paint is by the
+  // painter". "By others" is a term and stays.
+  if(!/,/.test(String(sent))&&!/\bby\s+others\b|\bincluded\b/.test(t)&&/^(?:the\s+)?(?:[a-z]+\s+)?(?:electrician|plumber|roofer|painter|guy|company|neighbor|neighbors|utility|city|sub|gc|builder|landlord|insurance|adjuster|inspector|hoa)(?:'s|s'|\s+is|\s+are|\s+will|'ll|\s+does|\s+do|\s+handles?|\s+approved)\b/.test(t))return true;
+  if(/\bby\s+the\s+(?:painter|electrician|plumber|roofer|city|utility|homeowner|customer|owner|drywall\s+guy|gutter\s+guy|gc|builder)$/.test(t))return true;
+  // What is NOT being done: "not touching the ceiling", "we're not doing the
+  // deck", "keeping the wallpaper", "leave the closets carpeted".
+  if(/^(?:not|never|no\s+longer)\s+[a-z]+ing\b/.test(t)||/^keeping\s+(?:the|it|them|all)\b/.test(t)||/^(?:just\s+)?leave\s+the\s+[a-z]+(?:\s+[a-z]+){0,3}$/.test(t))return true;
+  // "doing the kick-out ourselves": confirming it is his, which it already is.
+  if(/\bourselves$/.test(t)&&t.split(/\s+/).length<=6)return true;
   if(_TIMK_TERMS.test(t))return false;
   // A condition is the front of a step, not a description.
   if(/^if\s/.test(t))return false;
   // "She mentioned the attic stairs", "he wants it by Friday": who asked is
   // not the work. "Keep the framing", "leave the utility room open", "nothing
   // there": what is NOT being done is not a line either.
-  if(/^(?:the\s+)?(?:customer|homeowner|owner|client)s?\s+(?:wants|wanted|said|says|asked|mentioned|would\s+like|thinks)\b/.test(t)&&!/,/.test(String(sent)))return true;
   // "There's a water stain on the ceiling from the old leak": what he found.
   if(/^there(?:'s|\s+is|\s+are|'re)\s/.test(t)&&!/,/.test(String(sent))&&!/\b(?:so|then)\s+(?:we|i)\b/.test(t))return true;
   // "Ceiling stays", "treads stay natural": what is left alone.
@@ -1449,7 +1625,7 @@ function _timkIsRemark(sent){
   if(/^(?:just\s+)?(?:keep|keeping|leave|leaving)\s+(?:the|it|that|all|everything)\b.*\b(?:open|alone|as\s+is|in\s+place|the\s+way\s+it\s+is|there|how\s+it\s+is)$/.test(t)||/^(?:just\s+)?(?:keep|keeping)\s+the\s+[a-z]+(?:\s+[a-z]+)?$/.test(t))return true;
   if(/\b(?:so\s+)?nothing\s+(?:there|on\s+that|to\s+do\s+there|in\s+there)$/.test(t))return true;
   // "the plumber's running the gas": another trade's work is not his line.
-  if(/^the\s+(?:plumber|electrician|hvac\s+(?:guy|company)|roofer|painter|gc|general\s+contractor|builder|gas\s+company|power\s+company|utility)(?:'s|\s+is|\s+will|'ll|\s+(?:does|do|handles?|takes?))\b/.test(t))return true;
+  if(!/,/.test(String(sent))&&/^the\s+(?:plumber|electrician|hvac\s+(?:guy|company)|roofer|painter|gc|general\s+contractor|builder|gas\s+company|power\s+company|utility)(?:'s|\s+is|\s+will|'ll|\s+(?:does|do|handles?|takes?))\b/.test(t))return true;
   // "About an hour", "maybe two days": how long, which is the rate sheet's.
   if(/^(?:about|around|maybe|probably|roughly|like)\s+(?:an?|half\s+an?|\d+(?:\.\d+)?|a\s+couple|a\s+few)\s+(?:hours?|days?|minutes?|weeks?)(?:\s+(?:of\s+work|or\s+so|tops|total))?$/.test(t))return true;
   const w=t.split(/\s+/);
@@ -1502,10 +1678,17 @@ function timScopeFrom(text){
   raw.split(/[\r\n]+/).forEach(line=>{
     if(!line.trim())return;
     // Sentence enders, then the joining words, both of which always split.
-    _timkMendSentences(line.split(/(?<=[.;!?])\s+|\s*;\s*/)).map(_timkDropReason).forEach(sent=>{
+    _timkMendSentences(line.split(/(?<=[.;!?])\s+|\s*;\s*/)).map(_timkDropReason).forEach((sent,si,arr)=>{
       if(!sent||!sent.trim())return;
       if(_timkIsRemark(sent))return;
       if(_timkIsHeading(sent))return;
+      if(!out.length&&!held&&si<arr.length-1&&_timkIsTitle(sent))return;
+      if(!out.length&&!held){
+        // "Garage, um, install a mini split": the title before the first comma.
+        const c=sent.indexOf(',');
+        if(c>0&&_timkIsTitle(sent.slice(0,c))&&_timkNewAction(_timkTidy(sent.slice(c+1).replace(/^[\s,]*(?:(?:um|uh|okay|ok)[\s,]+)*/i,'')).toLowerCase()))sent=sent.slice(c+1);
+        else sent=_timkDropLeadTitle(sent);
+      }
       sent.split(_TIMK_JOIN).reduce((a,p)=>a.concat(_timkSoftSplit(p)),[]).forEach(part0=>{
         if(!part0||!part0.trim())return;
         // Bare "and", before the commas, because a dictated sentence often has
@@ -1539,12 +1722,25 @@ function timScopeFrom(text){
           // "new meter main combo on the outside, Square D": a name after a
           // comma is which one, not a new step. "Reshingle it, match the
           // existing": how, not what.
-          if(/^[A-Z][a-z]*(?:\s+[A-Z][\w-]*)*(?:\s|$)/.test(next.trim())&&!/^(?:I|I'm|I'll)\b/.test(next.trim())&&_TIMK_BRAND_KEYS.get(_timkSoundKey(next.trim().split(/\s+/)[0]))){buf=buf+', '+bit;return;}
+          if(/^[A-Z][a-z]*(?:\s+[A-Z][\w-]*)*(?:\s|$)/.test(next.trim())&&!/^(?:I|I'm|I'll)\b/.test(next.trim())&&next.trim().split(/\s+/).length<4&&(_TIMK_BRAND_KEYS.get(_timkSoundKey(next.trim().split(/\s+/)[0]))||_TIMK_BRAND_KEYS.get(_timkSoundKey(next.trim().replace(/\s+/g,'')))||/^[A-Z][a-z]+\s+[A-Z]$/.test(next.trim()))){buf=buf+', '+bit;return;}
           if(/^match\s+(?:the\s+)?(?:existing|what's\s+there|the\s+house|it)\b/i.test(next.trim())){buf=buf+', '+bit;return;}
           const bufT=_timkTidy(buf).toLowerCase().split(/\s+/).filter(Boolean);
           const shared=bufT.length===1&&_timkVerbLike(bufT[0])&&/^\S+\s+and\s+\S+/i.test(next)&&_timkVerbLike(next.split(/\s+/)[2]||'');
+          // "tape, mud, and texture": bare verbs listed together are one step.
+          {const nt=_timkTidy(next).toLowerCase().split(/\s+/).filter(Boolean);const bt=_timkTidy(buf).toLowerCase().split(/[\s,]+/).filter(Boolean);
+           const fin=x=>x==='and'||/^(?:tape|mud|sand|texture|float|prime|paint|caulk|finish|skim|spackle|patch|feather)$/.test(x);
+           if(nt.length&&nt.length<=3&&nt.every(fin)&&bt.length<=4&&bt.every(fin)&&(bt.length===1||/^\s*and\s/i.test(bit))){buf=buf+', '+bit;return;}}
+          // "540 square feet, over 15 pound felt, nail down": how it goes down.
+          if(/^(?:and\s+)?(?:nail|nailed|glue|glued|staple|stapled|float|floating|click|clicked)\s+(?:down|it\s+down|together|in)$/i.test(next.trim())){buf=buf+', '+bit;return;}
+          // "in use covers on the outside ones", "and new Kwikset levers".
+          if(/^in\s+use\s+\S+/i.test(next.trim())||/^and\s+(?:(?:a|an)\s+)?new\s+\S+/i.test(bit.trim())&&(_timkVerbLike((_timkTidy(buf).toLowerCase().split(/\s+/)[0]||''))||/^(?:a\s+|an\s+)?new\s/i.test(_timkTidy(buf)))||/^\d+x\d+\s+\S+\s+\S+/i.test(next.trim())){push(buf);buf=next.replace(/^and\s+/i,'');return;}
+          // "in the color, um, slate gray": the pause did not finish anything.
+          if(/\b(?:color|colour|colou?r\s+is|of|with|the|a|an|called|named|style|pattern)$/i.test(buf.trim())){buf=buf+' '+bit.trim();return;}
           const bufW=_timkTidy(buf).toLowerCase().split(/\s+/).filter(Boolean);
           if(!shared&&!/^\s*and\s/i.test(bit)&&bufW.length>=3&&(_timkVerbLike(bufW[0])||/^(?:a|an|new)$/.test(bufW[0])||_timkItemPiece(buf))&&_timkItemPiece(next)){push(buf);buf=next;return;}
+          if(!shared&&/^(?:and\s+)?(?:spot|wet|scuff|dry|hand|power|pressure|heat|hot)\s+(?:prime|scrape|sand|wash|weld|mop|clean|seal)\b/i.test(next.trim())){push(buf);buf=next.replace(/^and\s+/i,'');return;}
+          // "we'll need a curb adapter": an item he has to bring.
+          if(!shared&&/^(?:we'll|we\s+will|we're\s+gonna|we|i'll)\s+(?:need|want)\s+(?:a|an|to\s+(?:get|add)\s+(?:a|an))\s+\S+/i.test(next.trim())){push(buf);buf=next.trim().replace(/^(?:we'll|we\s+will|we're\s+gonna|we|i'll)\s+(?:need|want)\s+(?:to\s+(?:get|add)\s+)?(?:a|an)\s+/i,'');return;}
           if(!shared&&(_timkNewAction(next)||_timkNewAction(next.replace(_TIMK_SUBJECT,'').replace(/^be\s+/i,''))||/^(?:a\s+)?new\s+[a-z]/i.test(next)&&_timkNewAction(_timkTidy(buf).toLowerCase()))){push(buf);buf=next;}
           else buf=buf+', '+bit;
         });
