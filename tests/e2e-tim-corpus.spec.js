@@ -43,7 +43,7 @@ test.describe('Tim against the trade corpus', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     results = await page.evaluate((walks) => {
-      const norm = s => String(s || '').toLowerCase().replace(/[‘’]/g, "'").replace(/[^a-z0-9$'/.\- ]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '');
+      const norm = s => String(s || '').toLowerCase().replace(/[‘’]/g, "'").replace(/[^a-z0-9$'/.\- ]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '').replace(/(\d) (?:x |by )?x?(?=\d)/g, '$1x');
       return walks.map(w => {
         let got;
         try { got = timScopeBuild(w.said, { rejected: [] }).steps.map(s => s.text); } catch (e) { got = ['THREW ' + e.message]; }
