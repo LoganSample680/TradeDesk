@@ -428,6 +428,7 @@ function _renderWhBoard(){
         '<div class="td-wh-who">'+
           '<div class="td-wh-name">'+escHtml(c.name||'Customer')+'</div>'+
           '<div class="td-wh-sub">'+escHtml(t.name)+', due '+_whFmt(_svcDueKey(e))+'</div>'+
+          _whAddrBtn(e,c)+
           status+
         '</div>'+
         '<button class="btn td-wh-txt" onclick="event.stopPropagation();whTextFlush(\''+eid+'\')"'+(c.phone?'':' disabled title="No phone on file"')+'>'+svgIcon('💬',{size:14})+'<span>Text</span></button>'+
@@ -447,7 +448,7 @@ function _renderWhBoard(){
           '<div class="td-wh-title">Service due'+(due.length?'<span class="td-wh-count">'+due.length+'</span>':'')+'</div>'+
           '<div class="td-wh-hd-sub">'+escHtml(what)+' · '+sub+'</div>'+
         '</div>'+
-        '<button class="td-wh-add" onclick="openWhAdd()" aria-label="Add a service customer">'+svgIcon('➕',{size:16})+'</button>'+
+        '<button class="td-wh-add" onclick="openWhAdd(\'client\')" aria-label="Add a service customer">'+svgIcon('➕',{size:16})+'</button>'+
       '</div>'+
       _svcFilterBar(inUse,dueBy)+
       (finds.length?
@@ -481,6 +482,93 @@ function _svcUndatedLine(undated){
 function _whClient(id){
   if(id==null)return null;
   return (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).find(c=>c&&String(c.id)===String(id))||null;
+}
+// Which house the unit is at (owner 2026-09-28, from Jack: "tag an address
+// on the water heater service card" even for a customer with one address).
+// The unit's own tag wins; an untagged unit is at the customer's address.
+// A customer with several houses and a unit never tagged is NOT assumed to be
+// at the primary (owner 2026-09-28: "if you add other addresses it doesn't
+// default to the right address"): it reads empty, and the row asks.
+function _whMulti(c){return !!c&&typeof clientAddresses==='function'&&clientAddresses(c).length>1;}
+function _whAddrOf(e,c){
+  const own=String((e&&e.addr)||'').trim();
+  if(own)return own;
+  return _whMulti(c)?'':String((c&&c.addr)||'').trim();
+}
+function _whStreet(e,c){return _whAddrOf(e,c).split(',')[0].trim();}
+// The address line on a board or list row: the street, tap to change it with
+// the shared "Which property?" sheet; "Which house?" when it is not known.
+function _whAddrBtn(e,c){
+  const st=_whStreet(e,c);
+  if(!st&&!_whMulti(c))return '';
+  return '<button type="button" class="td-wh-addr'+(st?'':' td-wh-addr-ask')+'" onclick="event.stopPropagation();whPickAddr(\''+escHtml(String(e.id))+'\')">'+escHtml(st||'Which house?')+'</button>';
+}
+function whPickAddr(id,then){
+  const e=_whFind(id);const c=e?_whClient(e.clientId):null;
+  if(!e||!c||typeof pickClientAddress!=='function')return;
+  pickClientAddress(c.id,a=>{
+    if(a){e.addr=a;e.updatedAt=new Date().toISOString();if(typeof saveAll==='function')saveAll();}
+    _whRefresh();
+    if(a&&typeof then==='function')then();
+  });
+}
+// The existing-client half of the add form uses the app's ONE customer search
+// and ONE property picker (owner 2026-09-28: "address picker should follow the
+// TrueShot search"), never a dropdown of its own (CLAUDE.md 7.3):
+//   - Client opens showQuickPicker (js/finance.js), which searches name, any
+//     of their houses and phone (clientMatches, js/data.js). A search that
+//     names one house picks that house too.
+//   - Address opens pickClientAddress (js/clients.js), the "Which property?"
+//     sheet TrueShot, the estimate and the quick invoice share, with its "New
+//     address" row. One address is filled in already; several are asked.
+function _svcFormKeep(){
+  const val=id=>{const x=document.getElementById(id);return x?x.value:'';};
+  return {client:val('_wh-client'),addr:val('_wh-addr'),date:val('_wh-date'),custom:val('_svc-custom-name'),months:val('_svc-months')};
+}
+function _svcPickList(){
+  const have=new Set(_whUnits().map(e=>String(e.clientId)));
+  return (typeof clients!=='undefined'?clients:[]).filter(c=>c&&c.name&&!c.archived)
+    .slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)))
+    .map(c=>({label:c.name,sub:clientAddrSub(c)+(have.has(String(c.id))?' · on the board':''),subTail:have.has(String(c.id))?' · on the board':'',
+      clientId:c.id,icon:'📍',find:clientSearchText(c)}));
+}
+function svcPickClient(){
+  if(typeof showQuickPicker!=='function')return;
+  showQuickPicker('Service customer','Who is it for?',_svcPickList(),'service',true,'Your customers',{searchFirst:true});
+}
+// "+ New client" from that search (owner 2026-09-28: every picker offers it):
+// the service form's own short new-customer rows, the typed name filled in,
+// so he never leaves the dashboard for the full client form.
+function svcAddNewNamed(name){
+  const k=_svcFormKeep();
+  k.name=String(name||'').trim();k.client='';k.addr='';
+  openWhAdd('new',k);
+}
+// Back from the search with a customer (and the house, when the search named
+// one). Several houses and none named: ask which, with the shared sheet.
+function svcAddSetClient(cid,addr){
+  const c=_whClient(cid);if(!c)return;
+  const k=_svcFormKeep();
+  const addrs=typeof clientAddresses==='function'?clientAddresses(c):[];
+  k.client=String(c.id);
+  k.addr=addr||(addrs.length===1?addrs[0].addr:'');
+  openWhAdd('client',k);
+  if(!k.addr&&addrs.length>1)svcPickAddr();
+}
+function svcPickAddr(){
+  const cid=(document.getElementById('_wh-client')||{}).value;
+  if(!cid){svcPickClient();return;}
+  if(typeof pickClientAddress!=='function')return;
+  pickClientAddress(_whClient(cid)?_whClient(cid).id:cid,a=>{
+    const k=_svcFormKeep();k.addr=a||'';openWhAdd('client',k);
+  });
+}
+// A picked house, said the way the picker says it: street, then its label.
+function _svcAddrLine(cid,addr){
+  const c=cid?_whClient(cid):null;
+  if(!addr)return '';
+  const hit=(c&&typeof clientAddresses==='function'?clientAddresses(c):[]).find(a=>a.addr===addr);
+  return String(addr).split(',')[0]+(hit&&clientAddresses(c).length>1?' · '+hit.label:'');
 }
 // Snoozed until the 1st of next month by "No answer yet". A snooze from an
 // earlier cycle (before the last service) is ignored, so it can never hide the
@@ -574,6 +662,7 @@ function renderWhList(){
           '<button type="button" class="td-svc-every" aria-label="Change how often" onclick="event.stopPropagation();svcEditEvery(\''+eid+'\')"><span>every '+_svcMonths(e)+' mo</span></button>'+
         '</div>'+
         '<div class="td-wh-sub">'+escHtml(ev.txt)+'</div>'+
+        _whAddrBtn(e,c)+
       '</div>'+
       '<div class="td-wh-list-r">'+right+'<span class="td-wh-chev">'+svgIcon('▸',{size:14})+'</span></div>'+
     '</div>';
@@ -806,13 +895,15 @@ function whScheduleFlush(id){
   const c=_whClient(e.clientId);
   if(!c)return;
   const t=_svcTypeOf(e);
+  // Several houses and this one never said: which one first, then book it.
+  if(!_whAddrOf(e,c)&&_whMulti(c)){whPickAddr(id,()=>whScheduleFlush(id));return;}
   goPg('pg-schedule');
   setTimeout(()=>{
     if(typeof setSchedType==='function')setSchedType('job',document.getElementById('sched-tab-job'));
     window._schedPrefill={clientId:c.id,whEqId:e.id};
     const set=(k,val)=>{const f=document.getElementById(k);if(f)f.value=val;};
     set('s-name',(c.name||'Customer')+', '+t.name.toLowerCase());
-    set('s-addr',c.addr||'');
+    set('s-addr',_whAddrOf(e,c));
     set('s-days',1);
     set('s-buf','0');
     const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display='';
@@ -983,10 +1074,6 @@ function openWhAdd(mode,keep){
   const kind=_svcAddKind===_SVC_CUSTOM||types.some(t=>t.key===_svcAddKind)?_svcAddKind:(types[0]?types[0].key:_SVC_CUSTOM);
   const t=kind===_SVC_CUSTOM?null:_svcType(kind);
   const months=_svcValidMonths(k.months)||(t?t.months:12);
-  const have=new Set(_whUnits().filter(e=>_svcKindOf(e)===kind).map(e=>String(e.clientId)));
-  const opts=(typeof clients!=='undefined'?clients:[]).filter(c=>c&&c.name)
-    .slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)))
-    .map(c=>'<option value="'+escHtml(String(c.id))+'"'+(String(k.client||'')===String(c.id)?' selected':'')+'>'+escHtml(c.name)+(have.has(String(c.id))?' (on board)':'')+'</option>').join('');
   // The app's own grouped form (.sf-card / .sf-row, the scheduler's shape):
   // label over value, rows in one rounded group, the way iOS Settings reads.
   // Each row is a <label>, so a tap anywhere on it lands in its field. That
@@ -1003,10 +1090,7 @@ function openWhAdd(mode,keep){
     '<div class="td-svc-chips" role="group" aria-label="Service">'+
       types.map(x=>chip(x.key,x.short||x.name)).join('')+chip(_SVC_CUSTOM,'Custom')+
     '</div>'+
-    '<div class="sf-seg" style="margin-top:12px">'+
-      '<button type="button" class="sf-seg-btn'+(md==='new'?' active':'')+'" onclick="openWhAdd(\'new\')">New customer</button>'+
-      '<button type="button" class="sf-seg-btn'+(md==='client'?' active':'')+'" onclick="openWhAdd(\'client\')">Existing client</button>'+
-    '</div>'+
+
     '<div class="sf-card td-wh-form-card"><div class="sf-list">'+
       (kind===_SVC_CUSTOM?row('Service','<input id="_svc-custom-name" autocapitalize="sentences" placeholder="Dryer vent cleaning" value="'+v(k.custom)+'">'):'')+
       (md==='new'?
@@ -1014,13 +1098,22 @@ function openWhAdd(mode,keep){
         row('Phone','<input id="_wh-phone" type="tel" inputmode="tel" placeholder="(555) 555-5555" value="'+v(k.phone)+'">')+
         row('Address','<input id="_wh-addr" placeholder="Optional" value="'+v(k.addr)+'">')
       :
-        row('Client','<select id="_wh-client"><option value="">Pick a client</option>'+opts+'</select>')
+        (()=>{
+          const pc=k.client?_whClient(k.client):null;
+          const tapRow=(id,lbl,shown,ph,fn)=>'<button type="button" class="sf-row td-svc-tap" id="'+id+'" onclick="'+fn+'()">'+
+            '<div class="sf-body"><span class="sf-lbl">'+lbl+'</span><span class="td-svc-tap-v'+(shown?'':' td-svc-tap-ph')+'">'+escHtml(shown||ph)+'</span></div>'+
+            '<span class="td-svc-tap-chev">'+svgIcon('▸',{size:14})+'</span></button>';
+          return '<input type="hidden" id="_wh-client" value="'+v(pc?pc.id:'')+'"><input type="hidden" id="_wh-addr" value="'+v(pc?k.addr:'')+'">'+
+            tapRow('_svc-client-row','Client',pc?pc.name:'','Search by name, phone or address','svcPickClient')+
+            tapRow('_svc-addr-row','Address',pc?_svcAddrLine(pc.id,k.addr):'',pc?'Which house?':'Pick a client first','svcPickAddr');
+        })()
       )+
       row(t?t.dateLbl:_SVC_WORDS.dateLbl,'<input id="_wh-date" type="date" value="'+v(k.date)+'">')+
       '<div class="sf-row"><div class="sf-body"><span class="sf-lbl">Every</span>'+_svcEveryField('_svc-months',months)+'</div></div>'+
     '</div></div>'+
     '<div id="_wh-err" style="display:none;color:var(--c-red);font-size:12.5px;font-weight:600;margin:-2px 2px 8px"></div>'+
     '<button id="_wh-add-save" class="btn btn-g sf-cta">Add to board</button>'+
+    (md==='new'?'<button type="button" id="_wh-add-search" class="sf-clear" onclick="openWhAdd(\'client\',_svcFormKeep())">Search your customers instead</button>':'')+
     '<button id="_wh-add-types" class="sf-clear">Change default intervals</button>'+
     '<button id="_wh-add-done" class="sf-clear">Done</button>';
   ov.appendChild(m);document.body.appendChild(ov);
@@ -1045,7 +1138,7 @@ function openWhAdd(mode,keep){
       customName=document.getElementById('_svc-custom-name').value.trim();
       if(!customName){err('Name the service.');return;}
     }
-    let cid=null,who='';
+    let cid=null,who='',unitAddr='';
     if(md==='new'){
       const name=document.getElementById('_wh-name').value.trim();
       if(!name){err('Enter a name.');return;}
@@ -1054,12 +1147,15 @@ function openWhAdd(mode,keep){
         addr,street:addr,city:'',state:'',zip:'',source:'Existing Contact',ref:'',notes:'',
         created:todayKey(),ptype:'',extraAddresses:[],clientToken:'',clientHubKey:''};
       _clientCommitNew(c);
-      cid=c.id;who=name;
+      cid=c.id;who=name;unitAddr=addr;
     }else{
       const raw=document.getElementById('_wh-client').value;
       const c=raw?_whClient(raw):null;
       if(!c){err('Pick a client.');return;}
       cid=c.id;who=c.name||'';
+      unitAddr=((document.getElementById('_wh-addr')||{}).value||'').trim();
+      // A customer with no address on file gets this one: it is where they live.
+      if(unitAddr&&!String(c.addr||'').trim()){c.addr=unitAddr;c.street=c.street||unitAddr;}
     }
     const type=kind===_SVC_CUSTOM?svcAddCustomType(customName,n):t;
     if(!type){err('Name the service.');return;}
@@ -1069,6 +1165,7 @@ function openWhAdd(mode,keep){
       row.serviceKind=type.key;
       if(type.custom)row.serviceName=type.name;
       if(n!==type.months)row.serviceMonths=n;
+      if(unitAddr)row.addr=unitAddr;
     }
     if(typeof saveAll==='function')saveAll();
     if(typeof showToast==='function')showToast(who+' added','✓');
