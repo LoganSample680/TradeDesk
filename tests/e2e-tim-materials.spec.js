@@ -144,6 +144,9 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
     expect(r.chips).toEqual(['Pour the pad', 'Broom finish']);
     expect(r.rows).toEqual([{ label: 'Quikrete', qty: 40, unit: 'bag', price: 260 }]);
     expect(r.list).toEqual(['6 stick Rebar']);
+    // T&M's Materials section is one he turns on: what Tim added turns it on.
+    const shown = await page.evaluate(() => { const el = document.getElementById('tm-blk-mat'); return !!el && el.style.display !== 'none' && _tmLayers.has('mat'); });
+    expect(shown).toBe(true);
   });
 
   test('T&M: saying it twice does not add it twice', async () => {

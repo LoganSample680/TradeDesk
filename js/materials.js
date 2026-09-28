@@ -180,6 +180,9 @@ function timAddMaterials(mats){
     h._supply.items=(h._supply.items||[]).concat(toList);
     if(typeof _supSync==='function')_supSync();
   }
+  // On T&M, Materials is a section he turns on; what Tim added turns it on,
+  // or the items would sit on the estimate out of sight.
+  if((rows||listed)&&_matIsTM()&&typeof _tmLayers!=='undefined'&&!_tmLayers.has('mat')&&typeof _tmAddLayer==='function')_tmAddLayer('mat');
   if(rows||listed)_matRefresh();
   return {rows,listed};
 }
