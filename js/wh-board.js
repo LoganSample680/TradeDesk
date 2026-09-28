@@ -428,7 +428,7 @@ function _renderWhBoard(){
         '<div class="td-wh-who">'+
           '<div class="td-wh-name">'+escHtml(c.name||'Customer')+'</div>'+
           '<div class="td-wh-sub">'+escHtml(t.name)+', due '+_whFmt(_svcDueKey(e))+'</div>'+
-          (_whStreet(e,c)?'<div class="td-wh-sub td-wh-addr">'+escHtml(_whStreet(e,c))+'</div>':'')+
+          _whAddrBtn(e,c)+
           status+
         '</div>'+
         '<button class="btn td-wh-txt" onclick="event.stopPropagation();whTextFlush(\''+eid+'\')"'+(c.phone?'':' disabled title="No phone on file"')+'>'+svgIcon('💬',{size:14})+'<span>Text</span></button>'+
@@ -486,8 +486,32 @@ function _whClient(id){
 // Which house the unit is at (owner 2026-09-28, from Jack: "tag an address
 // on the water heater service card" even for a customer with one address).
 // The unit's own tag wins; an untagged unit is at the customer's address.
-function _whAddrOf(e,c){return String((e&&e.addr)||(c&&c.addr)||'').trim();}
+// A customer with several houses and a unit never tagged is NOT assumed to be
+// at the primary (owner 2026-09-28: "if you add other addresses it doesn't
+// default to the right address"): it reads empty, and the row asks.
+function _whMulti(c){return !!c&&typeof clientAddresses==='function'&&clientAddresses(c).length>1;}
+function _whAddrOf(e,c){
+  const own=String((e&&e.addr)||'').trim();
+  if(own)return own;
+  return _whMulti(c)?'':String((c&&c.addr)||'').trim();
+}
 function _whStreet(e,c){return _whAddrOf(e,c).split(',')[0].trim();}
+// The address line on a board or list row: the street, tap to change it with
+// the shared "Which property?" sheet; "Which house?" when it is not known.
+function _whAddrBtn(e,c){
+  const st=_whStreet(e,c);
+  if(!st&&!_whMulti(c))return '';
+  return '<button type="button" class="td-wh-addr'+(st?'':' td-wh-addr-ask')+'" onclick="event.stopPropagation();whPickAddr(\''+escHtml(String(e.id))+'\')">'+escHtml(st||'Which house?')+'</button>';
+}
+function whPickAddr(id,then){
+  const e=_whFind(id);const c=e?_whClient(e.clientId):null;
+  if(!e||!c||typeof pickClientAddress!=='function')return;
+  pickClientAddress(c.id,a=>{
+    if(a){e.addr=a;e.updatedAt=new Date().toISOString();if(typeof saveAll==='function')saveAll();}
+    _whRefresh();
+    if(a&&typeof then==='function')then();
+  });
+}
 // The existing-client half of the add form uses the app's ONE customer search
 // and ONE property picker (owner 2026-09-28: "address picker should follow the
 // TrueShot search"), never a dropdown of its own (CLAUDE.md 7.3):
@@ -630,7 +654,7 @@ function renderWhList(){
           '<button type="button" class="td-svc-every" aria-label="Change how often" onclick="event.stopPropagation();svcEditEvery(\''+eid+'\')"><span>every '+_svcMonths(e)+' mo</span></button>'+
         '</div>'+
         '<div class="td-wh-sub">'+escHtml(ev.txt)+'</div>'+
-        (_whStreet(e,c)?'<div class="td-wh-sub td-wh-addr">'+escHtml(_whStreet(e,c))+'</div>':'')+
+        _whAddrBtn(e,c)+
       '</div>'+
       '<div class="td-wh-list-r">'+right+'<span class="td-wh-chev">'+svgIcon('▸',{size:14})+'</span></div>'+
     '</div>';
@@ -863,6 +887,8 @@ function whScheduleFlush(id){
   const c=_whClient(e.clientId);
   if(!c)return;
   const t=_svcTypeOf(e);
+  // Several houses and this one never said: which one first, then book it.
+  if(!_whAddrOf(e,c)&&_whMulti(c)){whPickAddr(id,()=>whScheduleFlush(id));return;}
   goPg('pg-schedule');
   setTimeout(()=>{
     if(typeof setSchedType==='function')setSchedType('job',document.getElementById('sched-tab-job'));

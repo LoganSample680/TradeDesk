@@ -419,6 +419,51 @@ test.describe('Water heater flush board', () => {
     expect(r.helpers).toEqual(['', '1 Oak St, Topeka', '5 Ash Ct']);
   });
 
+  // Owner, same day: "if you add other addresses it doesn't default to the
+  // right address so a picker on the address would be correct". A unit that
+  // was never tagged, at a customer who now has several houses, asks; and the
+  // address on any row is a tap into the same "Which property?" sheet.
+  test('address: the row asks which house once a customer has several, and a tap changes it', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      const dana = clients.find(c => c.id === 501);
+      const unit = equipment.find(x => x.clientId === 501 && _svcKindOf(x) === _SVC_WH);
+      _renderWhBoard();
+      const btn = () => [...document.querySelectorAll('#dash-wh-board .td-wh-row')].find(x => x.textContent.includes('Dana Due')).querySelector('.td-wh-addr');
+      const single = { text: btn().textContent, ask: btn().classList.contains('td-wh-addr-ask') };
+      dana.extraAddresses = [{ label: 'Rental', addr: '88 Cedar Ct' }];
+      _renderWhBoard();
+      const multi = { text: btn().textContent, ask: btn().classList.contains('td-wh-addr-ask'), schedAddr: _whAddrOf(unit, dana) };
+      btn().click();
+      const sheet = !!document.getElementById('_addrpick-ov');
+      const asked = !!document.getElementById('_wh-text-ov') || !!document.querySelector('.zmodal-overlay:not(#_addrpick-ov) .td-wh-ask');
+      _addrPickChoose(1);
+      return { single, multi, sheet, asked, tagged: unit.addr, after: btn().textContent };
+    });
+    expect(r.single).toEqual({ text: '1 Oak St', ask: false });
+    expect(r.multi, 'never guesses the primary once there are several').toEqual({ text: 'Which house?', ask: true, schedAddr: '' });
+    expect(r.sheet).toBe(true);
+    expect(r.asked, 'tapping the address does not open the answer sheet').toBe(false);
+    expect(r.tagged).toBe('88 Cedar Ct');
+    expect(r.after).toBe('88 Cedar Ct');
+  });
+
+  test('address: scheduling a unit whose house is not known asks first, then books that house', async () => {
+    await seed();
+    const id = await page.evaluate(() => {
+      clients.find(c => c.id === 501).extraAddresses = [{ label: 'Rental', addr: '88 Cedar Ct' }];
+      const unit = equipment.find(x => x.clientId === 501 && _svcKindOf(x) === _SVC_WH);
+      whScheduleFlush(unit.id);
+      return unit.id;
+    });
+    expect(await page.evaluate(() => !!document.getElementById('_addrpick-ov'))).toBe(true);
+    await page.evaluate(() => _addrPickChoose(1));
+    await page.waitForFunction(() => window._schedPrefill && document.getElementById('s-name').value.includes('Dana Due'));
+    expect(await page.evaluate(() => document.getElementById('s-addr').value)).toBe('88 Cedar Ct');
+    expect(await page.evaluate(i => equipment.find(x => x.id === i).addr, id)).toBe('88 Cedar Ct');
+    await page.evaluate(() => { window._schedPrefill = null; goPg('pg-dash'); });
+  });
+
   test('hidden for crew, and for a trade no service fits with nothing on the board', async () => {
     await seed();
     const r = await page.evaluate(() => {
