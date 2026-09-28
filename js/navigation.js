@@ -94,7 +94,7 @@ function goPg(id){
   if(id==='pg-licensing')renderLicensing();
   if(id==='pg-wh-list'&&typeof renderWhList==='function')renderWhList();
   if(id==='pg-contracts'){renderContracts();if(typeof refreshAgreementSignatures==='function')refreshAgreementSignatures();}
-  if(id==='pg-timelog')renderTimeLog();
+  if(id==='pg-timelog'){if(typeof _tlMotion==='function')_tlMotion();renderTimeLog();}
   if(id==='pg-photos'&&typeof renderPhotosPage==='function')renderPhotosPage();
   if(id==='pg-checklist')renderChecklist();
   if(id==='pg-leads')renderLeadsPage();
