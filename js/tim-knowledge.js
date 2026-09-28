@@ -599,7 +599,17 @@ function _timkUnfill(text){
 // supply list and wrong in a sentence; this one only converts what is plainly
 // a number. A lone "one" stays a word ("haul the old one away"), and a bare
 // "half" or "quarter" stays a word ("half the wall", "quarter round").
+// Pure, and called on the same words by the scope and the materials: once.
+const _timkNumbersSeen=new Map();
 function _timkNumbers(text){
+  const key=String(text||'');
+  if(_timkNumbersSeen.has(key))return _timkNumbersSeen.get(key);
+  const out=_timkNumbers1(key);
+  if(_timkNumbersSeen.size>400)_timkNumbersSeen.clear();
+  _timkNumbersSeen.set(key,out);
+  return out;
+}
+function _timkNumbers1(text){
   text=String(text||'').replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-(one|two|three|four|five|six|seven|eight|nine)\b/gi,'$1 $2');
   const toks=_timkTok(text);
   const kind=c=>{const k=_timNumKind(c);return k==='pack'?null:k;};
@@ -909,7 +919,9 @@ function _timkReachBack(text){
     w=w.slice(0,at)+n2+w.slice(at+n1.length);
     v=w.replace(/\s+([.!?])/g,'$1').replace(/[.!?]\s*$/,m=>m).trim();
   }
-  v=v.replace(/([^.!?]*?)(\b(?:flat|matte|eggshell|satin|pearl|low\s+sheen|semi[\s-]?gloss|high[\s-]?gloss|gloss)\b)([^.!?]*)[.!?]\s+(?:no[,]?\s+|actually[,]?\s+|wait[,]?\s+)*make\s+(?:that|it)\s+((?:flat|matte|eggshell|satin|pearl|low\s+sheen|semi[\s-]?gloss|high[\s-]?gloss|gloss)(?:\s+(?:finish|sheen))?)\s*([.!?]|$)/gi,
+  // Only when a sheen fix was said: this pattern scans back over the whole
+  // sentence, and a long pasted walk with no full stops made it crawl.
+  if(/make\s+(?:that|it)\s+(?:flat|matte|eggshell|satin|pearl|low|semi|high|gloss)/i.test(v))v=v.replace(/([^.!?]*?)(\b(?:flat|matte|eggshell|satin|pearl|low\s+sheen|semi[\s-]?gloss|high[\s-]?gloss|gloss)\b)([^.!?]*)[.!?]\s+(?:no[,]?\s+|actually[,]?\s+|wait[,]?\s+)*make\s+(?:that|it)\s+((?:flat|matte|eggshell|satin|pearl|low\s+sheen|semi[\s-]?gloss|high[\s-]?gloss|gloss)(?:\s+(?:finish|sheen))?)\s*([.!?]|$)/gi,
     (m,a,old,b,nu,end)=>a+nu.replace(/\s+(?:finish|sheen)$/i,'')+b+(end||''));
   return v;
 }
@@ -1403,7 +1415,18 @@ function _timkSoundBrands(text){
   }
   return out.join(' ');
 }
+// The same words are heard several times in one build (the scope, the
+// materials, each line's shopping-list check): hear them once.
+const _timkHeardSeen=new Map();
 function _timkHeard(seg){
+  const key=String(seg||'');
+  if(_timkHeardSeen.has(key))return _timkHeardSeen.get(key);
+  const out=_timkHeard1(key);
+  if(_timkHeardSeen.size>400)_timkHeardSeen.clear();
+  _timkHeardSeen.set(key,out);
+  return out;
+}
+function _timkHeard1(seg){
   let v=String(seg||'');
   // Thinking out loud is not scope: "let me think", "what was it", "I think".
   v=v.replace(/[,\s]+(?:(?:uh|um)[,\s]+)?(?:let\s+me\s+think|what\s+was\s+it|what's\s+it\s+called|how\s+do\s+you\s+say\s+it)[,.]?(?=\s)/gi,'');
@@ -3431,6 +3454,12 @@ function _timkMatGood(item){
 // left is filler.
 function _timkOnlyMaterials(line){
   const t=String(line||'');
+  // Nothing counted, nothing to buy.
+  if(!/\d|\b(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple|dozen|half|few)\b/i.test(t))return false;
+  // A line that starts with work is a step with materials in it: "Load 4 bags
+  // of salt", "Bring in a yard of topsoil", "Run a dedicated 20 with 12/2".
+  {const w0=_timkTidy(t).toLowerCase().split(/\s+/)[0]||'';
+   if(_timkVerbLike(w0)&&!/^(?:grab|get|need|order|buy|pick|use|used|figure|figuring)$/.test(w0))return false;}
   let m;try{m=timSaidMaterials(t);}catch(_e){m=[];}
   // A part named in the work ("add a Watts expansion tank", "new supply
   // lines") is a line on the proposal AND a material; only a list is not.
@@ -3439,10 +3468,6 @@ function _timkOnlyMaterials(line){
   // a time with "a" are the lines he sells, unless he said it as a list.
   const shopLead=/^\s*(?:(?:okay|ok|so|and|plus|also|then|um|uh)[,\s]+)*(?:figure|figuring|grab|get|pick\s+up|buy|order|we\s+need|i\s+need|need|we'll\s+need|materials?|parts?|supplies|used|we\s+used|i\s+used|went\s+through)\b/i.test(t);
   if(!shopLead&&m.every(r=>r.unit==='ea'&&Number(r.qty)===1))return false;
-  // A line that starts with work is a step with materials in it: "Load 4 bags
-  // of salt", "Bring in a yard of topsoil", "Run a dedicated 20 with 12/2".
-  {const w0=_timkTidy(t).toLowerCase().split(/\s+/)[0]||'';
-   if(_timkVerbLike(w0)&&!/^(?:grab|get|need|order|buy|pick|use|used|figure|figuring)$/.test(w0))return false;}
   // Take out every material he said, and the words a supply run is wrapped in
   // ("order", "for the Johnson job", "drop at the Miller house", "supply house
   // run", a price). What is left decides: a work verb means it is a step with
@@ -3621,13 +3646,14 @@ function _timkMatFix2(t){
 // puts one in: "replace the flange" is a part, "paint the walls" is not.
 const _TIMK_PART=/\b(wax\s+ring|toilet\s+flange|flange\s+(?:repair\s+)?ring|fill\s+valve|flapper|flush\s+valve|supply\s+lines?|angle\s+stops?|shut\s?offs?|ball\s+valves?|drain\s+valves?|t\s*&\s*p\s+valve|relief\s+valve|prv|pressure\s+reducing\s+valve|expansion\s+tank|p-?traps?|trap\s+kits?|air\s+gap|cartridge|anode\s+rod|thermocouple|flame\s+sensor|igniter|ignitor|capacitor|contactor|blower\s+motor|inducer\s+motor|limit\s+switch|pressure\s+switch|gas\s+valve|control\s+board|thermostat|filter|txv|condensate\s+pump|float\s+switch|disconnect|whip|gfcis?|gfci\s+outlets?|outlets?|receptacles?|switch(?:es)?|dimmers?|breakers?|smoke\s+(?:detectors?|alarms?)|co\s+detectors?|ceiling\s+fans?|exhaust\s+fans?|bath\s+fans?|light\s+fixtures?|fixtures?|can\s+lights?|recessed\s+lights?|pipe\s+boots?|vent\s+boots?|drip\s+edge|ridge\s+vent|turtle\s+vents?|gooseneck(?:\s+vent)?|downspouts?|gutter\s+guards?|splash\s+blocks?|pickets?|posts?|gate\s+latch|latch|hinges?|anti-?sag\s+kit|balusters?|post\s+caps?|stair\s+treads?|treads?|joists?|ledger(?:\s+board)?|window\s+sills?|sills?|thresholds?|door\s+sweeps?|weather\s*strip(?:ping)?|lockset|deadbolts?|door\s+knobs?|knobs?|levers?|door\s+stops?|towel\s+bars?|grab\s+bars?|mirror|vanity|faucet|disposal|garbage\s+disposal|toilet|sump\s+pump|check\s+valve|water\s+heater|screens?|spline|shutters?|j\s*channel|outside\s+corners?|soffit\s+vents?|gable\s+vents?|dryer\s+vent|flanges?|belts?|photocells?|flood\s+lamps?|basket\s+strainers?|unions?|male\s+adapters?|female\s+adapters?|overflow(?:\s+assembly)?|wall\s+plates?|cover\s+plates?|fan\s+brace(?:\s+box)?|brace\s+box|in[\s-]use\s+covers?|hidden\s+hangers?|egress\s+well|storm\s+doors?|attic\s+ladder|door\s+closers?|mixing\s+valve|trim\s+kit|wax\s+rings|shutoff\s+valves?|hose\s+bibb?s?|sillcocks?|door\s+springs?|springs?)\b/i;
 const _TIMK_PUT_IN=/\b(?:replac(?:e|ed|ing)|chang(?:e|ed|ing)|install(?:ed|ing)?|put(?:ting)?\s+in|swap(?:ped|ping)?(?:\s+(?:out|in))?|add(?:ed|ing)?|hung|hang|mount(?:ed)?|set|used|new)\b/i;
+const _TIMK_PART_RE=new RegExp('(?:^|\\s)(?:(\\d+|an?|one|two|three|four|five|six|the|new|a\\s+new|the\\s+old|the\\s+broken|the\\s+bad|the\\s+busted)\\s+|(?<=\\b(?:replace|replaced|swap|swapped|change|changed)\\s))((?:[A-Za-z0-9/\\-]+\\s+){0,4}?)'+_TIMK_PART.source,'gi');
 function _timkPartsInWork(clause){
   const t=String(clause||'');
   if(!_TIMK_PUT_IN.test(t))return [];
   const out=[];
   // After its count or "the", or straight after the verb in notes: "Replace
   // flange", "Swap flapper", "replace photocell".
-  const re=new RegExp('(?:^|\\s)(?:(\\d+|an?|one|two|three|four|five|six|the|new|a\\s+new|the\\s+old|the\\s+broken|the\\s+bad|the\\s+busted)\\s+|(?<=\\b(?:replace|replaced|swap|swapped|change|changed)\\s))((?:[A-Za-z0-9/\\-]+\\s+){0,4}?)'+_TIMK_PART.source,'gi');
+  const re=_TIMK_PART_RE;re.lastIndex=0;
   let m;
   while((m=re.exec(t))){
     const det=(m[1]||'').toLowerCase();
