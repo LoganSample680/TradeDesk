@@ -1,0 +1,1701 @@
+[
+  {
+    "id": "blindD-001",
+    "trade": "plumbing",
+    "said": "Swap the wax ring. Reset the toilet. Caulk the base. Two hours.",
+    "expect": [
+      "Swap the wax ring",
+      "Reset the toilet",
+      "Caulk the base"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-002",
+    "trade": "plumbing",
+    "said": "okay so kitchen, um, we're gonna pull out the old faucet it's a Delta and it's been dripping forever, and we're putting in a moan Arbor pull down. customer supplies the faucet. new supply lines, new shutoffs, quarter turn. Oh and she wants the disposal looked at but honestly that's the electrician's call, not doing that. figure about 425",
+    "expect": [
+      "Pull out the old faucet",
+      "Putting in a Moen Arbor pull down",
+      "Customer supplies the faucet",
+      "New supply lines",
+      "New shutoffs, quarter turn"
+    ],
+    "heard": [
+      {
+        "said": "moan",
+        "means": "Moen"
+      }
+    ]
+  },
+  {
+    "id": "blindD-003",
+    "trade": "plumbing",
+    "said": "water heater swap pulling the old 40 gallon gas unit hauling it away installing a new ream performance plus 40 gallon gas new expansion tank new three quarter ball valve on the cold side new flex connectors bring the venting up to code permit included customer wants it done by friday about 1850 total",
+    "expect": [
+      "Pulling the old 40 gallon gas unit",
+      "Hauling it away",
+      "Installing a new Rheem performance plus 40 gallon gas",
+      "New expansion tank",
+      "New three quarter ball valve on the cold side",
+      "New flex connectors",
+      "Bring the venting up to code",
+      "Permit included"
+    ],
+    "heard": [
+      {
+        "said": "ream",
+        "means": "Rheem"
+      }
+    ]
+  },
+  {
+    "id": "blindD-004",
+    "trade": "plumbing",
+    "said": "Hall bath. Replace the fill valve, Fluidmaster. Kitchen. Tighten the P-trap, it's weeping. Laundry. new washer box, Oatey. hose bibs out back, replace both. hour and a half total.",
+    "expect": [
+      "Replace the fill valve, Fluidmaster",
+      "Tighten the P-trap",
+      "New washer box, Oatey",
+      "Hose bibs out back, replace both"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-005",
+    "trade": "plumbing",
+    "said": "Master shower. We're replacing the shower valve with a Moen Posi-Temp. No wait, make that a Delta Monitor, they already have Delta trim. Open the wall from the closet side. Actually, open it from the bedroom side, the closet's got built-ins. Run new half inch pecks to the valve. Drywall patch by others. About six hours.",
+    "expect": [
+      "Replacing the shower valve with a Delta Monitor",
+      "Open it from the bedroom side",
+      "Run new half inch PEX to the valve",
+      "Drywall patch by others"
+    ],
+    "heard": [
+      {
+        "said": "pecks",
+        "means": "PEX"
+      }
+    ],
+    "note": "Both corrections replace the earlier version: the valve becomes a Delta Monitor and the wall opens from the bedroom side."
+  },
+  {
+    "id": "blindD-006",
+    "trade": "plumbing",
+    "said": "so basically the main line is backing up we ran a camera and theres a belly about 30 feet out and roots at the cleanout so first thing were gonna hydro jet the main then install a new outdoor cleanout two way and replace about 12 feet of four inch PVC at the belly the homeowner is gonna do the landscaping repair himself and the city handles anything past the property line so were not touching that ballpark 3200 to 3600 probably two days",
+    "expect": [
+      "Hydro jet the main",
+      "Install a new outdoor cleanout two way",
+      "Replace about 12 feet of four inch PVC at the belly"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-007",
+    "trade": "plumbing",
+    "said": "Notes from the Johnson basement. item one, replace sump pump, zoller M53. item two, new check valve. item three, reroute discharge out the side wall, 1-1/2 PVC. Item four: install battery backup, Basement Watchdog. the floor drain is slow, customer said leave it. Price 1,275.",
+    "expect": [
+      "Replace sump pump, Zoeller M53",
+      "New check valve",
+      "Reroute discharge out the side wall, 1-1/2 PVC",
+      "Install battery backup, Basement Watchdog"
+    ],
+    "heard": [
+      {
+        "said": "zoller",
+        "means": "Zoeller"
+      }
+    ]
+  },
+  {
+    "id": "blindD-008",
+    "trade": "hvac",
+    "said": "Change the capacitor, 45/5. Clean the condenser coil. Check charge. Hour.",
+    "expect": [
+      "Change the capacitor, 45/5",
+      "Clean the condenser coil",
+      "Check charge"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-009",
+    "trade": "hvac",
+    "said": "Alright so this is the Hendersons, super nice people, they've got a 20 year old system that's just done, so we're gonna rip out the old furnace and the AC, and put in a rude 3 ton 16 SEER2 condenser with a matching coil. Then a rude 80 percent furnace, 80,000 BTU. um new line set, new pad, new disconnect, new whip. customer bought an ecobee already so customer supplies the thermostat, we'll install the ecobee. permit included. oh and the ductwork's a mess but we're not touching the ducts this time. like 11,500 give or take",
+    "expect": [
+      "Rip out the old furnace and the AC",
+      "Put in a Ruud 3 ton 16 SEER2 condenser with a matching coil",
+      "A Ruud 80 percent furnace, 80,000 BTU",
+      "New line set",
+      "New pad",
+      "New disconnect",
+      "New whip",
+      "Customer supplies the thermostat",
+      "Install the ecobee",
+      "Permit included"
+    ],
+    "heard": [
+      {
+        "said": "rude",
+        "means": "Ruud"
+      }
+    ],
+    "note": "Rip out the old furnace and the AC is one verb on two objects; kept as one line."
+  },
+  {
+    "id": "blindD-010",
+    "trade": "hvac",
+    "said": "garage mini split install a few jitsu 12000 BTU single zone wall mount mount the condenser on a wall bracket run the line set about 25 feet through the attic line hide on the outside wall condensate pump electrician is running the dedicated circuit that's not us the customer's dog kept barking at us the whole time were looking at about 4200",
+    "expect": [
+      "Install a Fujitsu 12000 BTU single zone wall mount",
+      "Mount the condenser on a wall bracket",
+      "Run the line set about 25 feet through the attic",
+      "Line hide on the outside wall",
+      "Condensate pump"
+    ],
+    "heard": [
+      {
+        "said": "few jitsu",
+        "means": "Fujitsu"
+      }
+    ]
+  },
+  {
+    "id": "blindD-011",
+    "trade": "hvac",
+    "said": "Maintenance visit, per my notes. Replace the filter, 16x25x1, MERV 8. Flush the condensate line. Tighten electrical connections. Check refrigerant pressures. Lube the blower motor. Customer supplies filters going forward. Standard tune-up price, 129.",
+    "expect": [
+      "Replace the filter, 16x25x1, MERV 8",
+      "Flush the condensate line",
+      "Tighten electrical connections",
+      "Check refrigerant pressures",
+      "Lube the blower motor",
+      "Customer supplies filters going forward"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-012",
+    "trade": "hvac",
+    "said": "ok so the blower motor is shot. replace the blower motor on the train XR80, it's a half horse, no sorry, three quarter horse. and the capacitor with it, 10 microfarad. scratch that, 7.5. Also the flame sensor is dirty so clean the flame sensor. diagnostic fee waived. about two hours, 685",
+    "expect": [
+      "Replace the blower motor on the Trane XR80, three quarter horse",
+      "The capacitor with it, 7.5 microfarad",
+      "Clean the flame sensor",
+      "Diagnostic fee waived"
+    ],
+    "heard": [
+      {
+        "said": "train",
+        "means": "Trane"
+      }
+    ],
+    "note": "Corrections: half horse becomes three quarter horse (kept as said, like a pipe size), 10 microfarad becomes 7.5 microfarad."
+  },
+  {
+    "id": "blindD-013",
+    "trade": "hvac",
+    "said": "bedroom two add a six inch supply run off the trunk and a new register bedroom three add a six inch supply run and a new register living room swap the return grille for a 20 by 25 hallway seal the boot with mastic about 900 all in",
+    "expect": [
+      "Add a six inch supply run off the trunk",
+      "A new register",
+      "Add a six inch supply run",
+      "A new register",
+      "Swap the return grille for a 20 by 25",
+      "Seal the boot with mastic"
+    ],
+    "heard": [],
+    "note": "Bare room names are titles and dropped; six inch is a duct size kept as said."
+  },
+  {
+    "id": "blindD-014",
+    "trade": "hvac",
+    "said": "Coil's leaking. Replace the Lenox evaporator coil, 3 ton. Recover the charge, vacuum, recharge with R-410A. Warranty part, labor only. Nitrogen purge while brazing. Customer's got a cat, keep the door shut.",
+    "expect": [
+      "Replace the Lennox evaporator coil, 3 ton",
+      "Recover the charge",
+      "Vacuum",
+      "Recharge with R-410A",
+      "Warranty part, labor only",
+      "Nitrogen purge while brazing"
+    ],
+    "heard": [
+      {
+        "said": "Lenox",
+        "means": "Lennox"
+      }
+    ]
+  },
+  {
+    "id": "blindD-015",
+    "trade": "electrical",
+    "said": "Swap the panel to a 200 amp Square D home line. Pull permit. Coordinate with the power company. Full day.",
+    "expect": [
+      "Swap the panel to a 200 amp Square D Homeline",
+      "Pull permit",
+      "Coordinate with the power company"
+    ],
+    "heard": [
+      {
+        "said": "home line",
+        "means": "Homeline"
+      }
+    ]
+  },
+  {
+    "id": "blindD-016",
+    "trade": "electrical",
+    "said": "so in the kitchen, um, we're adding under cabinet lights with a Lutron casita dimmer. and uh add four recessed cans, 6 inch, no wait 4 inch, the wafer kind, Halo. Also move the one outlet by the fridge about a foot left. the backsplash tile is by others so we'll set boxes flush for the tile guy. figure 1,600, maybe a day and a half.",
+    "expect": [
+      "In the kitchen adding under cabinet lights with a Lutron Caseta dimmer",
+      "Add 4 recessed cans, 4 inch, the wafer kind, Halo",
+      "Move the one outlet by the fridge about a foot left",
+      "The backsplash tile is by others",
+      "Set boxes flush for the tile guy"
+    ],
+    "heard": [
+      {
+        "said": "casita",
+        "means": "Caseta"
+      }
+    ]
+  },
+  {
+    "id": "blindD-017",
+    "trade": "electrical",
+    "said": "EV charger in the garage install a Tesla wall connector customer supplies the charger run 6 gauge copper about 40 feet from the panel in EMT along the garage wall new 60 amp breaker the panel has room so no subpanel load calc included permit included the car isn't delivered till next month so no rush roughly 1400",
+    "expect": [
+      "Install a Tesla wall connector",
+      "Customer supplies the charger",
+      "Run 6 gauge copper about 40 feet from the panel in EMT along the garage wall",
+      "New 60 amp breaker",
+      "Load calc included",
+      "Permit included"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-018",
+    "trade": "electrical",
+    "said": "Dead outlets in the bathroom. Replace the GFCI, 20 amp Leviton. Check the downstream outlets, bedroom 2 and the hall. Tighten the backstabs, move them to the screws. 175 bucks.",
+    "expect": [
+      "Replace the GFCI, 20 amp Leviton",
+      "Check the downstream outlets, bedroom 2 and the hall",
+      "Tighten the backstabs",
+      "Move them to the screws"
+    ],
+    "heard": [],
+    "note": "Tighten the backstabs / move them to the screws could be read as one job; split because they are two verbs with separate actions."
+  },
+  {
+    "id": "blindD-019",
+    "trade": "electrical",
+    "said": "Okay, generator job. We're installing a Jenna rack 22 kilowatt. Actually, make that the 24. Pour a pad. Scratch that, it comes with a composite pad, so set it on the supplied pad. Install a 200 amp automatic transfer switch. Run the gas line, no, the plumber's running the gas. We just do the electrical hookup. Permit included. Around 13 grand.",
+    "expect": [
+      "Installing a Generac 24 kilowatt",
+      "Set it on the supplied pad",
+      "Install a 200 amp automatic transfer switch",
+      "Do the electrical hookup",
+      "Permit included"
+    ],
+    "heard": [
+      {
+        "said": "Jenna rack",
+        "means": "Generac"
+      }
+    ],
+    "note": "make that the 24 replaces 22; pour a pad and run the gas line are both cancelled."
+  },
+  {
+    "id": "blindD-020",
+    "trade": "electrical",
+    "said": "living room add a ceiling fan box fan rated and hang the customers fan master bedroom swap the switch for a dimmer hallway two new smoke detectors hardwired interconnected basement replace the fluorescent fixtures with LED shop lights 4 of them",
+    "expect": [
+      "Add a ceiling fan box fan rated",
+      "Hang the customers fan",
+      "Swap the switch for a dimmer",
+      "2 new smoke detectors hardwired interconnected",
+      "Replace the fluorescent fixtures with LED shop lights 4 of them"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-021",
+    "trade": "electrical",
+    "said": "notes. sub panel in the detached garage. 100 amp eaten sub panel. homeowner's digging the trench himself. trenching not included. run 2 inch conduit, no, inch and a quarter, from the house. 4 wire feeder. ground rods, 2 of them. price 3,900",
+    "expect": [
+      "100 amp Eaton sub panel",
+      "Trenching not included",
+      "Run inch and a quarter conduit from the house",
+      "4 wire feeder",
+      "Ground rods, 2 of them"
+    ],
+    "heard": [
+      {
+        "said": "eaten",
+        "means": "Eaton"
+      }
+    ],
+    "note": "Correction replaces 2 inch with inch and a quarter; conduit size kept as said."
+  },
+  {
+    "id": "blindD-022",
+    "trade": "roofing",
+    "said": "so yeah this roof is pretty much toast theres granule loss everywhere and a couple soft spots by the chimney were gonna tear off down to the deck 1 layer replace any rotted decking at 85 a sheet install ice and water shield at the eaves and valleys synthetic underlayment the rest gaff timberline HDZ in charcoal new drip edge new pipe boots reflash the chimney ridge vent the whole length dumpster included and the gutters are staying were not touching those about 16 grand for 28 squares",
+    "expect": [
+      "Tear off down to the deck 1 layer",
+      "Replace any rotted decking",
+      "Install ice and water shield at the eaves and valleys",
+      "Synthetic underlayment the rest",
+      "GAF timberline HDZ in charcoal",
+      "New drip edge",
+      "New pipe boots",
+      "Reflash the chimney",
+      "Ridge vent the whole length",
+      "Dumpster included"
+    ],
+    "heard": [
+      {
+        "said": "gaff",
+        "means": "GAF"
+      }
+    ],
+    "note": "28 squares is said inside the price phrase; treated as part of the price and dropped."
+  },
+  {
+    "id": "blindD-023",
+    "trade": "roofing",
+    "said": "Leak at the skylight. Pull the flashing. New step flashing. Velux flashing kit. Reseal. Two hours. Four hundred.",
+    "expect": [
+      "Pull the flashing",
+      "New step flashing",
+      "Velux flashing kit",
+      "Reseal"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-024",
+    "trade": "roofing",
+    "said": "Alright, rear slope only. Tear off the back slope, 12 squares. uh, install Owens Corning Duration, driftwood, no wait she changed it, estate gray. new starter strip. new ridge cap to match. actually scratch that, leave the ridge, it's fine. Fix the fascia board by the gutter, just the one board. Like 6,800",
+    "expect": [
+      "Tear off the back slope, 12 squares",
+      "Install Owens Corning Duration, estate gray",
+      "New starter strip",
+      "Fix the fascia board by the gutter, just the one board"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-025",
+    "trade": "roofing",
+    "said": "garage flat roof tear off the old rolled roofing install half inch polyiso new EPDM 60 mil fully adhered fire stone new termination bar on the parapet wall edge metal on the three sides customer wants to keep the old satellite dish so remount the dish 5200 about 2 days",
+    "expect": [
+      "Tear off the old rolled roofing",
+      "Install half inch polyiso",
+      "New EPDM 60 mil fully adhered Firestone",
+      "New termination bar on the parapet wall",
+      "Edge metal on the 3 sides",
+      "Remount the dish"
+    ],
+    "heard": [
+      {
+        "said": "fire stone",
+        "means": "Firestone"
+      }
+    ]
+  },
+  {
+    "id": "blindD-026",
+    "trade": "roofing",
+    "said": "Repair list from the inspection. Replace 15 missing shingles on the north side. Seal the exposed nail heads. Replace 2 pipe boots. Clear the valley debris. Replace the damaged vent, Lowe Manco 750. Insurance claim, customer pays the deductible. Total 1,150.",
+    "expect": [
+      "Replace 15 missing shingles on the north side",
+      "Seal the exposed nail heads",
+      "Replace 2 pipe boots",
+      "Clear the valley debris",
+      "Replace the damaged vent, Lomanco 750",
+      "Insurance claim, customer pays the deductible"
+    ],
+    "heard": [
+      {
+        "said": "Lowe Manco",
+        "means": "Lomanco"
+      }
+    ]
+  },
+  {
+    "id": "blindD-027",
+    "trade": "roofing",
+    "said": "okay so metal over the porch. remove the old shingles on the porch roof. synthetic underlayment. 24 gauge standing seam, galvalume, uh, color is charcoal gray, snow guards on the lower edge, gutters by others. we're also doing the main house next spring, not this contract. around 7 grand, three days",
+    "expect": [
+      "Remove the old shingles on the porch roof",
+      "Synthetic underlayment",
+      "24 gauge standing seam, galvalume, color is charcoal gray",
+      "Snow guards on the lower edge",
+      "Gutters by others"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-028",
+    "trade": "roofing",
+    "said": "so we're doing the detached shed roof just a quick one tear off one layer install tam co heritage in weathered wood new drip edge and I think that's it oh and replace the one rotted rafter tail on the left corner I mean two rotted rafter tails the dog was going nuts the whole time were thinking 2100",
+    "expect": [
+      "Tear off 1 layer",
+      "Install Tamko Heritage in weathered wood",
+      "New drip edge",
+      "Replace the 2 rotted rafter tails on the left corner"
+    ],
+    "heard": [
+      {
+        "said": "tam co heritage",
+        "means": "Tamko Heritage"
+      }
+    ],
+    "note": "I mean two rotted rafter tails corrects the count; the one meant a count there, so it becomes 2."
+  },
+  {
+    "id": "blindD-029",
+    "trade": "painting",
+    "said": "okay so living room and dining room. we're doing the walls, two coats of sure win Williams Duration in agreeable gray, eggshell. patch the nail holes first. ceilings are fine they said, so ceilings not included. caulk the baseboards. oh and paint the one accent wall behind the TV naval, same sheen. figure about 1,400, two days, they have a big dog named Bruno so keep the gate shut",
+    "expect": [
+      "Doing the walls, 2 coats of Sherwin-Williams Duration in agreeable gray, eggshell",
+      "Patch the nail holes first",
+      "Ceilings not included",
+      "Caulk the baseboards",
+      "Paint the one accent wall behind the TV naval, same sheen"
+    ],
+    "heard": [
+      {
+        "said": "sure win Williams",
+        "means": "Sherwin-Williams"
+      }
+    ]
+  },
+  {
+    "id": "blindD-030",
+    "trade": "painting",
+    "said": "Scrape. Prime bare wood. Two coats on the trim, Benjamin Moore Aura, white dove, satin. Three days.",
+    "expect": [
+      "Scrape",
+      "Prime bare wood",
+      "2 coats on the trim, Benjamin Moore Aura, white dove, satin"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-031",
+    "trade": "painting",
+    "said": "master bedroom repaint walls and ceiling same color flat on the ceiling eggshell on the walls hall bath walls semi gloss fix the peeling spot over the shower first kids room two tone walls customer is picking colors later closet interiors not included about 2800",
+    "expect": [
+      "Repaint walls and ceiling same color flat on the ceiling eggshell on the walls",
+      "Walls semi gloss",
+      "Fix the peeling spot over the shower first",
+      "2 tone walls",
+      "Closet interiors not included"
+    ],
+    "heard": [],
+    "note": "two tone becomes 2 tone under the digits rule; arguably an idiom that should stay as said."
+  },
+  {
+    "id": "blindD-032",
+    "trade": "painting",
+    "said": "Kitchen cabinets. remove doors and hardware, label everything. degrease and scuff sand. prime with, uh, zin sir BIN, no actually the zim you ma, it's better on the laminate. spray two coats, Sherwin Emerald Urethane, pure white, satin, sorry, I mean semi gloss. Reinstall doors and hardware. customer supplies new hinges. 4,200, a week",
+    "expect": [
+      "Remove doors and hardware",
+      "Label everything",
+      "Degrease and scuff sand",
+      "Prime with the XIM UMA",
+      "Spray 2 coats, Sherwin Emerald Urethane, pure white, semi gloss",
+      "Reinstall doors and hardware",
+      "Customer supplies new hinges"
+    ],
+    "heard": [
+      {
+        "said": "zin sir BIN",
+        "means": "Zinsser BIN"
+      },
+      {
+        "said": "zim you ma",
+        "means": "XIM UMA"
+      }
+    ]
+  },
+  {
+    "id": "blindD-033",
+    "trade": "painting",
+    "said": "From my notes on the Garcia house. Pressure wash the whole exterior. Scrape and sand loose paint. Replace rotted trim at the garage, about 12 feet. Prime all bare wood. Two coats of bear Marquee exterior, flat on the body, satin on the trim. Customer supplies the paint. Shutters not included. Total 5,600.",
+    "expect": [
+      "Pressure wash the whole exterior",
+      "Scrape and sand loose paint",
+      "Replace rotted trim at the garage, about 12 feet",
+      "Prime all bare wood",
+      "2 coats of Behr Marquee exterior, flat on the body, satin on the trim",
+      "Customer supplies the paint",
+      "Shutters not included"
+    ],
+    "heard": [
+      {
+        "said": "bear",
+        "means": "Behr"
+      }
+    ]
+  },
+  {
+    "id": "blindD-034",
+    "trade": "painting",
+    "said": "so the fence is 180 feet of cedar and its pretty gray so were gonna pressure wash it let it dry 48 hours then brightener then two coats of sick ends cetol in natural oak the homeowner already stained the gate himself so skip the gate and the neighbors side we cant get to so only the customers side and I told her probably 1,900",
+    "expect": [
+      "Pressure wash it",
+      "Let it dry 48 hours",
+      "Brightener",
+      "2 coats of Sikkens Cetol in natural oak",
+      "Only the customers side"
+    ],
+    "heard": [
+      {
+        "said": "sick ends cetol",
+        "means": "Sikkens Cetol"
+      }
+    ],
+    "note": "Let it dry 48 hours is a process step, not a job time estimate; Only the customers side kept as a scope term."
+  },
+  {
+    "id": "blindD-035",
+    "trade": "painting",
+    "said": "Paint twelve doors, both sides. Sand. One coat primer, two coats semi gloss. Frames too. Pull hardware, put it back. Customer's moving out Friday, has to be done by then.",
+    "expect": [
+      "Paint 12 doors, both sides",
+      "Sand",
+      "1 coat primer",
+      "2 coats semi gloss",
+      "Frames too",
+      "Pull hardware, put it back"
+    ],
+    "heard": [],
+    "note": "Pull hardware, put it back: two verbs on one object (hardware), kept as one line."
+  },
+  {
+    "id": "blindD-036",
+    "trade": "landscaping",
+    "said": "so backyard, um, we're gonna rip out the old hedges along the fence line, like 8 boxwoods, grind the stumps. then put in 6 green giant arborvitae, 6 foot, spaced about 8 feet apart. new mulch bed, brown hardwood mulch, about 5 yards. oh and edging, steel edging, no wait, she wants the black plastic. the irrigation guy's handling the drip line, not us. roughly 3,200, customer's cat got out twice lol",
+    "expect": [
+      "Rip out the old hedges along the fence line, like 8 boxwoods",
+      "Grind the stumps",
+      "Put in 6 green giant arborvitae, 6 foot, spaced about 8 feet apart",
+      "New mulch bed, brown hardwood mulch, about 5 yards",
+      "Edging, the black plastic"
+    ],
+    "heard": [],
+    "note": "Correction: steel edging replaced by black plastic; she wants is dropped as intent words."
+  },
+  {
+    "id": "blindD-037",
+    "trade": "landscaping",
+    "said": "Aerate the half acre. Overseed, tall fescue. Starter fertilizer. Lime.",
+    "expect": [
+      "Aerate the half acre",
+      "Overseed, tall fescue",
+      "Starter fertilizer",
+      "Lime"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-038",
+    "trade": "landscaping",
+    "said": "paver patio off the back door excavate a 12 by 16 area 8 inches deep 6 inches of compacted base 1 inch of sand bell guard Holland stone in the toscana blend soldier course border polymeric sand seal it no scratch that dont seal it customer doesnt want the wet look haul away the dirt about 9500 figure 4 days",
+    "expect": [
+      "Excavate a 12 by 16 area 8 inches deep",
+      "6 inches of compacted base",
+      "1 inch of sand",
+      "Belgard Holland stone in the toscana blend",
+      "Soldier course border",
+      "Polymeric sand",
+      "Haul away the dirt"
+    ],
+    "heard": [
+      {
+        "said": "bell guard",
+        "means": "Belgard"
+      }
+    ]
+  },
+  {
+    "id": "blindD-039",
+    "trade": "landscaping",
+    "said": "Spring cleanup list. Cut back perennials. Prune the crape myrtles, not topping them. Edge all beds. Pre-emergent in the beds. Fresh mulch, 8 yards, black. Haul debris. Gutters not included.",
+    "expect": [
+      "Cut back perennials",
+      "Prune the crape myrtles",
+      "Edge all beds",
+      "Pre-emergent in the beds",
+      "Fresh mulch, 8 yards, black",
+      "Haul debris",
+      "Gutters not included"
+    ],
+    "heard": [],
+    "note": "not topping them is a thing not being done, dropped from the prune line."
+  },
+  {
+    "id": "blindD-040",
+    "trade": "landscaping",
+    "said": "Okay irrigation. Add a zone for the side yard. Eight Rain Bird 1800 pop ups, sorry, ten pop ups. Replace the controller with a rash yo 8 zone. Actually make it the 16 zone, they want room to grow. Fix the broken head by the driveway. Backflow test by others. About 1,300.",
+    "expect": [
+      "Add a zone for the side yard",
+      "10 Rain Bird 1800 pop ups",
+      "Replace the controller with a Rachio 16 zone",
+      "Fix the broken head by the driveway",
+      "Backflow test by others"
+    ],
+    "heard": [
+      {
+        "said": "rash yo",
+        "means": "Rachio"
+      }
+    ]
+  },
+  {
+    "id": "blindD-041",
+    "trade": "landscaping",
+    "said": "build a retaining wall along the driveway about 40 feet long 3 feet tall versa lock standard in gray gravel base 4 inch perforated drain pipe behind the wall with fabric backfill with clean stone cap it with the matching caps engineer not needed under 4 feet so no engineering the owner's paying the excavator separately around 14000",
+    "expect": [
+      "Build a retaining wall along the driveway about 40 feet long 3 feet tall",
+      "Versa-Lok standard in gray",
+      "Gravel base",
+      "4 inch perforated drain pipe behind the wall with fabric",
+      "Backfill with clean stone",
+      "Cap it with the matching caps"
+    ],
+    "heard": [
+      {
+        "said": "versa lock",
+        "means": "Versa-Lok"
+      }
+    ]
+  },
+  {
+    "id": "blindD-042",
+    "trade": "landscaping",
+    "said": "Oak by the garage. Drop it in sections. Chip the brush. Grind the stump, 12 inches down. Leave the wood, he wants it for firewood. Stihl saw's in the truck. 1,800.",
+    "expect": [
+      "Drop it in sections",
+      "Chip the brush",
+      "Grind the stump, 12 inches down",
+      "Leave the wood"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-043",
+    "trade": "remodel",
+    "said": "okay so full gut on the hall bath. demo down to the studs, tub, tile, vanity, all of it. the subfloor's soft by the toilet so replace the subfloor by the toilet, probably a 3 by 4 section. new 60 inch alcove tub, American Standard. shooter curdy on the walls. customer supplies tile. we set the tile. new 36 inch vanity. plumber's doing the rough in, that's not us. figure 14,500, three weeks",
+    "expect": [
+      "Demo down to the studs, tub, tile, vanity, all of it",
+      "Replace the subfloor by the toilet, probably a 3 by 4 section",
+      "New 60 inch alcove tub, American Standard",
+      "Schluter Kerdi on the walls",
+      "Customer supplies tile",
+      "Set the tile",
+      "New 36 inch vanity"
+    ],
+    "heard": [
+      {
+        "said": "shooter curdy",
+        "means": "Schluter Kerdi"
+      }
+    ],
+    "note": "tub, tile, vanity are what the demo covers, not new items, so they stay on the demo line."
+  },
+  {
+    "id": "blindD-044",
+    "trade": "remodel",
+    "said": "kitchen remodel we'll be removing the old cabinets and countertops saving the upper cabinets on the fridge wall install new shaker cabinets customer supplies cabinets quartz countertops by others we template for them new sink base new undermount sink crows 32 inch hook up the dishwasher electrical by others the old fridge goes to the garage figure 8 grand labor",
+    "expect": [
+      "Removing the old cabinets and countertops",
+      "Saving the upper cabinets on the fridge wall",
+      "Install new shaker cabinets",
+      "Customer supplies cabinets",
+      "Quartz countertops by others",
+      "Template for them",
+      "New sink base",
+      "New undermount sink Kraus 32 inch",
+      "Hook up the dishwasher",
+      "Electrical by others",
+      "The old fridge goes to the garage"
+    ],
+    "heard": [
+      {
+        "said": "crows",
+        "means": "Kraus"
+      }
+    ],
+    "note": "The old fridge goes to the garage is read as moving it (work); could be read as an aside."
+  },
+  {
+    "id": "blindD-045",
+    "trade": "remodel",
+    "said": "Basement finish. Frame the exterior walls with two by fours. No, make that two by threes, we're saving space. Insulate with Owens Corning R-13. Actually, put rigid foam on the concrete first. Hang drywall, half inch. Tape and mud, level 4 finish. Drop ceiling, Armstrong. Electrician and plumber are separate contracts. Egress window not included. About 28,000.",
+    "expect": [
+      "Frame the exterior walls with 2x3s",
+      "Insulate with Owens Corning R-13",
+      "Put rigid foam on the concrete first",
+      "Hang drywall, half inch",
+      "Tape and mud, level 4 finish",
+      "Drop ceiling, Armstrong",
+      "Electrician and plumber are separate contracts",
+      "Egress window not included"
+    ],
+    "heard": [],
+    "note": "The rigid foam correction adds a step rather than replacing R-13; kept in said order. Separate contracts line kept as an exclusion term."
+  },
+  {
+    "id": "blindD-046",
+    "trade": "remodel",
+    "said": "Kitchen. take down the wall between the kitchen and dining, it's non load bearing, we checked. Dining room. patch the ceiling where the wall was, patch the floor. Living room. widen the opening to 6 feet, needs a header, LVL. structural engineer letter included. Hallway. new closet door, 30 inch prehung. about 9 grand",
+    "expect": [
+      "Take down the wall between the kitchen and dining",
+      "Patch the ceiling where the wall was",
+      "Patch the floor",
+      "Widen the opening to 6 feet",
+      "Needs a header, LVL",
+      "Structural engineer letter included",
+      "New closet door, 30 inch prehung"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-047",
+    "trade": "remodel",
+    "said": "tub to shower conversion pull the tub new 60 inch swan stone base new swan stone walls glass door by others new valve Delta 17 series grab bar 4 days 9800",
+    "expect": [
+      "Pull the tub",
+      "New 60 inch Swanstone base",
+      "New Swanstone walls",
+      "Glass door by others",
+      "New valve Delta 17 series",
+      "Grab bar"
+    ],
+    "heard": [
+      {
+        "said": "swan stone",
+        "means": "Swanstone"
+      }
+    ]
+  },
+  {
+    "id": "blindD-048",
+    "trade": "remodel",
+    "said": "So this is a fun one. They want to turn the old pantry into a laundry room. First we'll relocate the washer and dryer from the garage. The plumber's running the supply and drain, and the electrician's running the 30 amp dryer circuit, so neither of those is us. We'll frame a new wall with a pocket door, 28 inch, Johnson Hardware kit. We're adding upper cabinets and a folding counter, butcher block. Vent the dryer out the exterior wall. The owner's mom lives with them, so we'll keep noise down before nine. I'm thinking 6,500 for our part.",
+    "expect": [
+      "Relocate the washer and dryer from the garage",
+      "Frame a new wall with a pocket door, 28 inch, Johnson Hardware kit",
+      "Adding upper cabinets",
+      "A folding counter, butcher block",
+      "Vent the dryer out the exterior wall"
+    ],
+    "heard": [],
+    "note": "They want to turn the old pantry into a laundry room is the job description, dropped as a title."
+  },
+  {
+    "id": "blindD-049",
+    "trade": "remodel",
+    "said": "master bath refresh. keep the layout. swap the vanity for a 60 inch double, the customer supplies the vanity. new cooler Memoirs toilet, no wait, the Highline, she didn't like the price. new mirrors, 2 of them. replace the exhaust fan with a Panasonic whisper ceiling, 80 CFM, no I mean 110. regrout the shower floor. paint by others. like 5 grand",
+    "expect": [
+      "Swap the vanity for a 60 inch double",
+      "The customer supplies the vanity",
+      "New Kohler Highline toilet",
+      "New mirrors, 2 of them",
+      "Replace the exhaust fan with a Panasonic WhisperCeiling, 110 CFM",
+      "Regrout the shower floor",
+      "Paint by others"
+    ],
+    "heard": [
+      {
+        "said": "cooler",
+        "means": "Kohler"
+      },
+      {
+        "said": "whisper ceiling",
+        "means": "WhisperCeiling"
+      }
+    ],
+    "note": "keep the layout is not a work item; dropped. Memoirs corrected to Highline."
+  },
+  {
+    "id": "blindD-050",
+    "trade": "handyman",
+    "said": "Hang the 65 inch TV. Customer's mount. Hide the wires in the wall. Hour and a half.",
+    "expect": [
+      "Hang the 65 inch TV",
+      "Customer's mount",
+      "Hide the wires in the wall"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-051",
+    "trade": "handyman",
+    "said": "okay so honey do list for Mrs Patel she's super sweet by the way first the garbage disposal is jammed so reset the disposal and if that doesnt work replace it with an in sink erator badger 5 then the closet door in the guest room is off the track so rehang the bifold door then caulk the tub in the kids bath and replace the toilet seat in there too and then hang 3 pictures in the hallway she already has the hooks oh and the smoke detector chirping just needs a battery so swap the battery about 3 hours 285",
+    "expect": [
+      "Reset the disposal",
+      "If that doesnt work replace it with an InSinkErator Badger 5",
+      "Rehang the bifold door",
+      "Caulk the tub in the kids bath",
+      "Replace the toilet seat in there too",
+      "Hang 3 pictures in the hallway",
+      "Swap the battery"
+    ],
+    "heard": [
+      {
+        "said": "in sink erator badger",
+        "means": "InSinkErator Badger"
+      }
+    ],
+    "note": "The conditional replacement is kept as its own line; an estimator might price it as an option."
+  },
+  {
+    "id": "blindD-052",
+    "trade": "handyman",
+    "said": "list. 1, patch the doorknob hole in the hall, about 6 inch. 2, adjust the front door strike, it won't latch. 3, replace the weatherstrip on the front door. 4, new door sweep. 5, tighten the stair railing. 6, rekey the schlog deadbolt. that's it. 2 hours min charge 195.",
+    "expect": [
+      "Patch the doorknob hole in the hall, about 6 inch",
+      "Adjust the front door strike",
+      "Replace the weatherstrip on the front door",
+      "New door sweep",
+      "Tighten the stair railing",
+      "Rekey the Schlage deadbolt"
+    ],
+    "heard": [
+      {
+        "said": "schlog",
+        "means": "Schlage"
+      }
+    ]
+  },
+  {
+    "id": "blindD-053",
+    "trade": "handyman",
+    "said": "Okay, fence gate is sagging. Replace the hinges, heavy duty. Add an anti-sag kit. Actually, no, the post is leaning, so reset the gate post in concrete. Then rehang the gate. Sorry, one more, replace the latch too, a D and D magna latch. About 350.",
+    "expect": [
+      "Replace the hinges, heavy duty",
+      "Reset the gate post in concrete",
+      "Rehang the gate",
+      "Replace the latch too, a D&D Magna-Latch"
+    ],
+    "heard": [
+      {
+        "said": "D and D magna latch",
+        "means": "D&D Magna-Latch"
+      }
+    ],
+    "note": "Actually, no cancels the anti-sag kit; the hinges stay."
+  },
+  {
+    "id": "blindD-054",
+    "trade": "handyman",
+    "said": "kitchen replace the cabinet hinge on the corner cabinet soft close bloom bathroom recaulk the tub replace the towel bar with the one she bought garage install the wall shelving 2 units customer supplies the shelving back porch replace 3 rotted deck boards",
+    "expect": [
+      "Replace the cabinet hinge on the corner cabinet soft close Blum",
+      "Recaulk the tub",
+      "Replace the towel bar with the one she bought",
+      "Install the wall shelving 2 units",
+      "Customer supplies the shelving",
+      "Replace 3 rotted deck boards"
+    ],
+    "heard": [
+      {
+        "said": "bloom",
+        "means": "Blum"
+      }
+    ]
+  },
+  {
+    "id": "blindD-055",
+    "trade": "handyman",
+    "said": "Ceiling fan's wobbling. Balance it. Swap the pull chain. Hunter fan. New light kit, customer's. 1 hour.",
+    "expect": [
+      "Balance it",
+      "Swap the pull chain",
+      "New light kit, customer's"
+    ],
+    "heard": [],
+    "note": "Hunter fan identifies the existing fan, not work; dropped."
+  },
+  {
+    "id": "blindD-056",
+    "trade": "handyman",
+    "said": "so real quick, um, swap all the interior knobs, 9 doors, no 11, I missed the closets, quick set Tylo in satin nickel, she's got them already so customer supplies hardware. also install a quick set smart lock on the front door, the Halo one. and fix the squeaky stair, third step. she's got a parrot that talks, super weird. call it 450",
+    "expect": [
+      "Swap all the interior knobs, 11 doors, Kwikset Tylo in satin nickel",
+      "Customer supplies hardware",
+      "Install a Kwikset smart lock on the front door, the Halo one",
+      "Fix the squeaky stair, third step"
+    ],
+    "heard": [
+      {
+        "said": "quick set",
+        "means": "Kwikset"
+      }
+    ]
+  },
+  {
+    "id": "blindD-057",
+    "trade": "flooring",
+    "said": "alright so main floor LVP, living room, dining, hallway, about 750 square feet. we'll be pulling up the old carpet and pad and hauling it off. there's some squeaks by the stairs so we'll screw down the subfloor there. then install core tech Plus Enhanced in the Calypso Oak color, floating. new quarter round, painted white. transitions at the kitchen tile. furniture moving not included, they'll clear the rooms. figure 5,800, three days",
+    "expect": [
+      "Pulling up the old carpet and pad",
+      "Hauling it off",
+      "Screw down the subfloor there",
+      "Install COREtec Plus Enhanced in the Calypso Oak color, floating",
+      "New quarter round, painted white",
+      "Transitions at the kitchen tile",
+      "Furniture moving not included"
+    ],
+    "heard": [
+      {
+        "said": "core tech",
+        "means": "COREtec"
+      }
+    ],
+    "note": "The opening line (main floor LVP, rooms, about 750 square feet) is a job title and dropped, though the square footage is useful."
+  },
+  {
+    "id": "blindD-058",
+    "trade": "flooring",
+    "said": "Pull the vinyl. Detra down. Set 12 by 24 porcelain. Grout, Mapei, warm gray. Customer supplies tile. Two days.",
+    "expect": [
+      "Pull the vinyl",
+      "Ditra down",
+      "Set 12 by 24 porcelain",
+      "Grout, Mapei, warm gray",
+      "Customer supplies tile"
+    ],
+    "heard": [
+      {
+        "said": "Detra",
+        "means": "Ditra"
+      }
+    ]
+  },
+  {
+    "id": "blindD-059",
+    "trade": "flooring",
+    "said": "refinish the oak floors in the living room and hall about 600 square feet sand to bare wood fill the gaps stain men wax special walnut three coats of Bona Traffic HD satin the stair treads not included the dog has to be boarded for 3 days because of the fumes 2700",
+    "expect": [
+      "Refinish the oak floors in the living room and hall about 600 square feet",
+      "Sand to bare wood",
+      "Fill the gaps",
+      "Stain Minwax special walnut",
+      "3 coats of Bona Traffic HD satin",
+      "The stair treads not included"
+    ],
+    "heard": [
+      {
+        "said": "men wax",
+        "means": "Minwax"
+      }
+    ]
+  },
+  {
+    "id": "blindD-060",
+    "trade": "flooring",
+    "said": "bedrooms 2 and 3 carpet. pull the old carpet, keep the pad, no scratch that, new pad, 8 pound rebond. install show Floors carpet, Anso nylon, color Sandcastle. new tack strip where needed. the closets too. 2,400",
+    "expect": [
+      "Pull the old carpet",
+      "New pad, 8 pound rebond",
+      "Install Shaw Floors carpet, Anso nylon, color Sandcastle",
+      "New tack strip where needed",
+      "The closets too"
+    ],
+    "heard": [
+      {
+        "said": "show",
+        "means": "Shaw"
+      }
+    ]
+  },
+  {
+    "id": "blindD-061",
+    "trade": "flooring",
+    "said": "Kitchen. Level the subfloor with self-leveler. Install sheet vinyl, Armstrong. Laundry room. Same sheet vinyl. New shoe molding. Half bath. Add a flange extender after the floor goes down. Pull and reset the toilet. About eleven hundred.",
+    "expect": [
+      "Level the subfloor with self-leveler",
+      "Install sheet vinyl, Armstrong",
+      "Same sheet vinyl",
+      "New shoe molding",
+      "Add a flange extender after the floor goes down",
+      "Pull and reset the toilet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-062",
+    "trade": "flooring",
+    "said": "per the measure sheet 420 square feet glue down LVT carn dean Van Gogh in Rustic Barn Oak remove existing ceramic tile and thinset grind the slab smooth moisture test included skim coat where needed baseboards reinstall existing customer handles the appliance disconnect",
+    "expect": [
+      "420 square feet glue down LVT Karndean Van Gogh in Rustic Barn Oak",
+      "Remove existing ceramic tile and thinset",
+      "Grind the slab smooth",
+      "Moisture test included",
+      "Skim coat where needed",
+      "Baseboards reinstall existing"
+    ],
+    "heard": [
+      {
+        "said": "carn dean",
+        "means": "Karndean"
+      }
+    ]
+  },
+  {
+    "id": "blindD-063",
+    "trade": "flooring",
+    "said": "Stairs. 13 treads, red oak, prefinished. Risers painted white. New nosing on the landing. Pull the carpet first. Week out on material.",
+    "expect": [
+      "13 treads, red oak, prefinished",
+      "Risers painted white",
+      "New nosing on the landing",
+      "Pull the carpet first"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-064",
+    "trade": "concrete",
+    "said": "okay so the driveway is cracked all to hell and heaving by the garage, so we're gonna tear out the whole driveway, about 900 square feet, and haul it off. regrade and compact 4 inches of crusher run. pour 4 inch, no, make it 5 inch, 4000 PSI with fiber mesh. rebar at the apron, number 4 on 18 inch centers. broom finish. saw cut control joints. sealer's not included, they can do that themselves next year. we're thinking 11,200, and they need the cars out for a week",
+    "expect": [
+      "Tear out the whole driveway, about 900 square feet",
+      "Haul it off",
+      "Regrade and compact 4 inches of crusher run",
+      "Pour 5 inch, 4000 PSI with fiber mesh",
+      "Rebar at the apron, number 4 on 18 inch centers",
+      "Broom finish",
+      "Saw cut control joints",
+      "Sealer's not included"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-065",
+    "trade": "concrete",
+    "said": "Break out the old step. Form. Pour two steps, 48 wide. Broom finish. Handrail by others.",
+    "expect": [
+      "Break out the old step",
+      "Form",
+      "Pour 2 steps, 48 wide",
+      "Broom finish",
+      "Handrail by others"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-066",
+    "trade": "concrete",
+    "said": "pour a 14 by 20 back patio stamped concrete ashlar slate pattern charcoal release color integral color is sandstone 4 inch slab over 4 inches of gravel wire mesh expansion joint against the house seal it with two coats the pergola footings are included three footings 12 inch sono tubes customer wants to be there when we pour about 7800",
+    "expect": [
+      "Pour a 14 by 20 back patio stamped concrete ashlar slate pattern",
+      "Charcoal release color",
+      "Integral color is sandstone",
+      "4 inch slab over 4 inches of gravel",
+      "Wire mesh",
+      "Expansion joint against the house",
+      "Seal it with 2 coats",
+      "The pergola footings are included",
+      "3 footings 12 inch Sonotubes"
+    ],
+    "heard": [
+      {
+        "said": "sono tubes",
+        "means": "Sonotubes"
+      }
+    ],
+    "note": "The pergola footings are included and 3 footings 12 inch Sonotubes could be merged into one line."
+  },
+  {
+    "id": "blindD-067",
+    "trade": "concrete",
+    "said": "Sidewalk replacement, front of the house. Remove four sections of sidewalk, the ones the tree roots lifted. Actually, it's five sections. Cut the roots back, but only the small ones, the arborist is handling the big root. Pour new sections to match the existing, 4 inch. City permit included. Sorry, not included, the city issues it to the homeowner. Around 2,600.",
+    "expect": [
+      "Remove 5 sections of sidewalk, the ones the tree roots lifted",
+      "Cut the roots back, but only the small ones",
+      "Pour new sections to match the existing, 4 inch",
+      "City permit not included"
+    ],
+    "heard": [],
+    "note": "Two corrections: four becomes five sections, permit included becomes not included."
+  },
+  {
+    "id": "blindD-068",
+    "trade": "concrete",
+    "said": "garage floor coating. notes: grind the slab. patch cracks with epoxy filler. 1 coat 100 percent solids epoxy, gray. full broadcast flake, tour genal. polyaspartic top coat. 2 car garage, about 480 sq ft. price 3,100, customer has to clear the garage",
+    "expect": [
+      "Grind the slab",
+      "Patch cracks with epoxy filler",
+      "1 coat 100 percent solids epoxy, gray",
+      "Full broadcast flake, Torginol",
+      "Polyaspartic top coat"
+    ],
+    "heard": [
+      {
+        "said": "tour genal",
+        "means": "Torginol"
+      }
+    ],
+    "note": "2 car garage, about 480 sq ft describes the job size, not a work line; dropped."
+  },
+  {
+    "id": "blindD-069",
+    "trade": "concrete",
+    "said": "foundation crack in the basement east wall inject it with polyurethane both cracks carbon fiber straps 3 of them lifetime warranty transferable 1450 done in a day",
+    "expect": [
+      "Inject it with polyurethane both cracks",
+      "Carbon fiber straps 3 of them",
+      "Lifetime warranty transferable"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-070",
+    "trade": "concrete",
+    "said": "So we met with the builder today, super organized guy. We're doing the footings and the stem wall for the addition, that's our whole scope. Dig footings 24 inches wide, 12 deep. Wait, no, the plans say 16 deep. Two runs of number 5 rebar. Pour the footings, then form and pour an 8 inch stem wall, 3 feet tall. Set Simpson strong tie anchor bolts every 6 feet. Framing is by the builder's crew. Inspection fees are on the builder. I'm at about 19 grand for that.",
+    "expect": [
+      "Dig footings 24 inches wide, 16 deep",
+      "2 runs of number 5 rebar",
+      "Pour the footings",
+      "Form and pour an 8 inch stem wall, 3 feet tall",
+      "Set Simpson Strong-Tie anchor bolts every 6 feet",
+      "Framing is by the builder's crew",
+      "Inspection fees are on the builder"
+    ],
+    "heard": [
+      {
+        "said": "strong tie",
+        "means": "Strong-Tie"
+      }
+    ],
+    "note": "The scope summary sentence is dropped as a title; its items are said again below."
+  },
+  {
+    "id": "blindD-071",
+    "trade": "fencing",
+    "said": "okay so 120 feet of 6 foot cedar, board on board, along the back. we're gonna tear out the old chain link and haul it. set four by four posts, no, six by six posts at the corners and four by fours in between, 8 foot on center, in concrete. 2 walk gates, 4 foot wide. utility locate is on us. the dog needs to stay in during the install obviously. like 7,400",
+    "expect": [
+      "120 feet of 6 foot cedar, board on board, along the back",
+      "Tear out the old chain link",
+      "Haul it",
+      "Set 6x6 posts at the corners and 4x4s in between, 8 foot on center, in concrete",
+      "2 walk gates, 4 foot wide",
+      "Utility locate is on us"
+    ],
+    "heard": [],
+    "note": "The correction only changes the corner posts to 6x6; lumber names follow the 2x4 rule."
+  },
+  {
+    "id": "blindD-072",
+    "trade": "fencing",
+    "said": "Repair the chain link. Replace 2 line posts. New top rail, 20 feet. Restretch. New tension bands. Hour and a half.",
+    "expect": [
+      "Repair the chain link",
+      "Replace 2 line posts",
+      "New top rail, 20 feet",
+      "Restretch",
+      "New tension bands"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-073",
+    "trade": "fencing",
+    "said": "vinyl fence front yard 4 foot picket style white buff tech Chesterfield about 80 feet plus a 10 foot double drive gate remove the old wood fence and dispose customer marked the property pins survey not included post holes 30 inches with concrete 6800",
+    "expect": [
+      "4 foot picket style white Bufftech Chesterfield about 80 feet",
+      "A 10 foot double drive gate",
+      "Remove the old wood fence and dispose",
+      "Survey not included",
+      "Post holes 30 inches with concrete"
+    ],
+    "heard": [
+      {
+        "said": "buff tech",
+        "means": "Bufftech"
+      }
+    ]
+  },
+  {
+    "id": "blindD-074",
+    "trade": "fencing",
+    "said": "Pool fence. Install 60 feet of black aluminum, 4 foot, Jarrett. Correction, 5 foot, code says 5 here in the county. One self-closing gate with a magnetic latch. Core drill into the pool deck for the posts. Actually, surface mount the posts on the deck, no core drilling. Permit included. Pool inspection is the homeowner's to schedule. Roughly 5,900.",
+    "expect": [
+      "Install 60 feet of black aluminum, 5 foot, Jerith",
+      "1 self-closing gate with a magnetic latch",
+      "Surface mount the posts on the deck",
+      "Permit included"
+    ],
+    "heard": [
+      {
+        "said": "Jarrett",
+        "means": "Jerith"
+      }
+    ],
+    "note": "Pool inspection is the homeowner's own task, dropped; could be kept as an exclusion term."
+  },
+  {
+    "id": "blindD-075",
+    "trade": "fencing",
+    "said": "Along the driveway, replace 6 split rails, 10 foot. By the barn reset the leaning posts, 2 of them. back pasture: add a run of 3 rail, about 200 feet, locust posts. horse fence wire on the pasture run, no climb, Red Brand. they've got 2 horses and a goat lol. around 4,500",
+    "expect": [
+      "Along the driveway, replace 6 split rails, 10 foot",
+      "By the barn reset the leaning posts, 2 of them",
+      "Add a run of 3 rail, about 200 feet, locust posts",
+      "Horse fence wire on the pasture run, no climb, Red Brand"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-076",
+    "trade": "fencing",
+    "said": "gate's dragging rehang it new hinges adams rite no wait Nationwide heavy duty new cane bolt 1 hour",
+    "expect": [
+      "Rehang it",
+      "New hinges Nationwide heavy duty",
+      "New cane bolt"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-077",
+    "trade": "decking",
+    "said": "so we're building a new deck off the back slider, 16 by 20, about 3 feet off the ground. pressure treated framing, two by tens at 12 inches on center. decking is tracks Enhance Naturals in Toasted Sand. picture frame border in a contrasting color, Rocky Harbor. no railing needed under 30 inches, oh wait, it's 3 feet, so yeah we need railing, black aluminum. one set of stairs, 4 steps. footings, 6 of them, helical piles. permit included. figure 24 grand, two weeks",
+    "expect": [
+      "Building a new deck off the back slider, 16 by 20, about 3 feet off the ground",
+      "Pressure treated framing, 2x10s at 12 inches on center",
+      "Decking is Trex Enhance Naturals in Toasted Sand",
+      "Picture frame border in a contrasting color, Rocky Harbor",
+      "Railing, black aluminum",
+      "1 set of stairs, 4 steps",
+      "Footings, 6 of them, helical piles",
+      "Permit included"
+    ],
+    "heard": [
+      {
+        "said": "tracks",
+        "means": "Trex"
+      }
+    ],
+    "note": "Railing: the correction reverses no railing into we need railing; line written as the item."
+  },
+  {
+    "id": "blindD-078",
+    "trade": "decking",
+    "said": "Pull 14 boards. Replace with 5/4 treated. Resecure the stringers. Power wash. Seal with Thompson's. Day and a half.",
+    "expect": [
+      "Pull 14 boards",
+      "Replace with 5/4 treated",
+      "Resecure the stringers",
+      "Power wash",
+      "Seal with Thompson's"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-079",
+    "trade": "decking",
+    "said": "second story deck resurface keep the framing it's solid remove the old wood decking and railing sister any joists that need it probably 3 or 4 new decking fiber on no wait timber tech AZEK Vintage in Dark Hickory hidden fasteners Camo new railing timber tech Radiance rail white stairs not included theyre fine about 18500",
+    "expect": [
+      "Remove the old wood decking and railing",
+      "Sister any joists that need it probably 3 or 4",
+      "New decking TimberTech AZEK Vintage in Dark Hickory",
+      "Hidden fasteners Camo",
+      "New railing TimberTech Radiance rail white",
+      "Stairs not included"
+    ],
+    "heard": [
+      {
+        "said": "fiber on",
+        "means": "Fiberon"
+      },
+      {
+        "said": "timber tech",
+        "means": "TimberTech"
+      }
+    ]
+  },
+  {
+    "id": "blindD-080",
+    "trade": "decking",
+    "said": "Deck inspection repairs, from my list. Replace the ledger flashing. Add lateral load connectors, 2 of them, Simpson DTT2Z. Replace 3 rotted joist hangers. Add blocking at mid-span. Replace the loose balusters on the stairs, about 8. Owner will paint the new balusters. Total 1,650.",
+    "expect": [
+      "Replace the ledger flashing",
+      "Add lateral load connectors, 2 of them, Simpson DTT2Z",
+      "Replace 3 rotted joist hangers",
+      "Add blocking at mid-span",
+      "Replace the loose balusters on the stairs, about 8"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-081",
+    "trade": "decking",
+    "said": "okay the upper deck, sand the deck boards, they're gray and splintery. um, replace the top rail on the east side, it's cracked. then stain everything, cabbit semi solid, in cordovan brown, 2 coats. lower deck, clean and brighten, no stain this year. the Browns are nice, gave us lemonade. 1,850",
+    "expect": [
+      "Sand the deck boards",
+      "Replace the top rail on the east side",
+      "Stain everything, Cabot semi solid, in cordovan brown, 2 coats",
+      "Clean and brighten"
+    ],
+    "heard": [
+      {
+        "said": "cabbit",
+        "means": "Cabot"
+      }
+    ]
+  },
+  {
+    "id": "blindD-082",
+    "trade": "decking",
+    "said": "screen porch on the existing deck frame the walls 2x4 pressure treated screen fife er tough screen pet resistant screen door with closer roof ties into the house shingles to match gutters by others 3 weeks 21000",
+    "expect": [
+      "Frame the walls 2x4 pressure treated",
+      "Screen Phifer TuffScreen pet resistant",
+      "Screen door with closer",
+      "Roof ties into the house",
+      "Shingles to match",
+      "Gutters by others"
+    ],
+    "heard": [
+      {
+        "said": "fife er tough screen",
+        "means": "Phifer TuffScreen"
+      }
+    ]
+  },
+  {
+    "id": "blindD-083",
+    "trade": "siding",
+    "said": "so we're residing the whole house, about 32 squares. tearing off the old vinyl and the fan fold underneath. new house wrap, Tyvek, taped seams. install hardy plank lap siding, 7 inch exposure, color plus in Arctic White, oh no wait, she said Iron Gray, Arctic White's for the trim. hardy trim boards around the windows and corners, Arctic White. new J channel's not needed with Hardie. caulk and touch up. dumpster included. painting not included since it's pre-finished. we're at about 38k, customer's out of town till the 15th",
+    "expect": [
+      "Residing the whole house, about 32 squares",
+      "Tearing off the old vinyl and the fan fold underneath",
+      "New house wrap, Tyvek, taped seams",
+      "Install HardiePlank lap siding, 7 inch exposure, ColorPlus in Iron Gray",
+      "HardieTrim boards around the windows and corners, Arctic White",
+      "Caulk and touch up",
+      "Dumpster included",
+      "Painting not included"
+    ],
+    "heard": [
+      {
+        "said": "hardy plank",
+        "means": "HardiePlank"
+      },
+      {
+        "said": "color plus",
+        "means": "ColorPlus"
+      },
+      {
+        "said": "hardy trim",
+        "means": "HardieTrim"
+      }
+    ],
+    "note": "Residing the whole house could be read as a job title; kept because it carries the square count. since it's pre-finished is a reason, dropped."
+  },
+  {
+    "id": "blindD-084",
+    "trade": "siding",
+    "said": "Replace 4 damaged vinyl panels on the back wall. Match color best we can. mass tick carved wood, Pebblestone Clay. Hour.",
+    "expect": [
+      "Replace 4 damaged vinyl panels on the back wall",
+      "Match color best we can",
+      "Mastic Carvedwood, Pebblestone Clay"
+    ],
+    "heard": [
+      {
+        "said": "mass tick carved wood",
+        "means": "Mastic Carvedwood"
+      }
+    ]
+  },
+  {
+    "id": "blindD-085",
+    "trade": "siding",
+    "said": "front and garage walls only remove the cedar shakes install LP smart side lap 8 inch primed replace rotted sheathing as needed at 95 a sheet aluminum wrap on the fascia vented vinyl soffit painter is doing the smart side after us about 21000 dont park on the lawn",
+    "expect": [
+      "Remove the cedar shakes",
+      "Install LP SmartSide lap 8 inch primed",
+      "Replace rotted sheathing as needed",
+      "Aluminum wrap on the fascia",
+      "Vented vinyl soffit"
+    ],
+    "heard": [
+      {
+        "said": "smart side",
+        "means": "SmartSide"
+      }
+    ],
+    "note": "front and garage walls only is a scope limit said as a title; dropped, though an estimator might keep it as a term."
+  },
+  {
+    "id": "blindD-086",
+    "trade": "siding",
+    "said": "Stone veneer on the front porch columns, four columns. Wait, it's three, the fourth is inside the screen room. Scratch coat and lath first. Install El Dorado stone, Stacked Stone in Nantucket. Actually, the customer switched to Cypress Ridge. Limestone sill caps on top. Weep screed at the bottom. Around 7,200.",
+    "expect": [
+      "Stone veneer on the front porch columns, 3 columns",
+      "Scratch coat and lath first",
+      "Install Eldorado Stone, Stacked Stone in Cypress Ridge",
+      "Limestone sill caps on top",
+      "Weep screed at the bottom"
+    ],
+    "heard": [
+      {
+        "said": "El Dorado stone",
+        "means": "Eldorado Stone"
+      }
+    ],
+    "note": "Color corrected from Nantucket to Cypress Ridge by a sentence that does not repeat the product."
+  },
+  {
+    "id": "blindD-087",
+    "trade": "siding",
+    "said": "notes, south side. replace the rotted trim at the bottom of the corner board. replace 3 courses of cedar clapboard under the kitchen window. prime all 6 sides. back side: replace the dryer vent hood, it's cracked. north side, nothing. paint by others. price 1,400",
+    "expect": [
+      "Replace the rotted trim at the bottom of the corner board",
+      "Replace 3 courses of cedar clapboard under the kitchen window",
+      "Prime all 6 sides",
+      "Replace the dryer vent hood",
+      "Paint by others"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-088",
+    "trade": "siding",
+    "said": "garage siding vinyl all side charter oak double 4 in sandstone new starter strip new J channel around the door house wrap first 2 days 5800",
+    "expect": [
+      "Vinyl Alside charter oak double 4 in sandstone",
+      "New starter strip",
+      "New J channel around the door",
+      "House wrap first"
+    ],
+    "heard": [
+      {
+        "said": "all side",
+        "means": "Alside"
+      }
+    ]
+  },
+  {
+    "id": "blindD-089",
+    "trade": "windows and doors",
+    "said": "okay so we're replacing 8 windows on the second floor, all double hungs, going with Anderson 400 series, full frame, no wait, insert, she doesn't want the interior trim disturbed. white interior, Sandtone exterior. low E4 glass. new exterior aluminum capping on the brick mold. haul away the old sashes. the bathroom window is getting obscure glass. interior trim painting not included. about 11 grand, lead time 6 weeks",
+    "expect": [
+      "Replacing 8 windows on the second floor, all double hungs",
+      "Going with Andersen 400 series, insert",
+      "White interior, Sandtone exterior",
+      "Low-E4 glass",
+      "New exterior aluminum capping on the brick mold",
+      "Haul away the old sashes",
+      "The bathroom window is getting obscure glass",
+      "Interior trim painting not included"
+    ],
+    "heard": [
+      {
+        "said": "Anderson",
+        "means": "Andersen"
+      },
+      {
+        "said": "low E4",
+        "means": "Low-E4"
+      }
+    ],
+    "note": "going with could be treated as intent words and removed."
+  },
+  {
+    "id": "blindD-090",
+    "trade": "windows and doors",
+    "said": "Pull the front door. Set a thermo true fiberglass prehung, 36 inch, left hand inswing. New threshold. Foam and trim. Customer paints. Day.",
+    "expect": [
+      "Pull the front door",
+      "Set a Therma-Tru fiberglass prehung, 36 inch, left hand inswing",
+      "New threshold",
+      "Foam and trim"
+    ],
+    "heard": [
+      {
+        "said": "thermo true",
+        "means": "Therma-Tru"
+      }
+    ],
+    "note": "Customer paints is the homeowner's own work, dropped; could be kept as an exclusion term."
+  },
+  {
+    "id": "blindD-091",
+    "trade": "windows and doors",
+    "said": "patio door swap remove the old aluminum slider its 6 foot install a Pella Lifestyle sliding patio door 6 foot white with grilles between the glass new sill pan flashing tape the whole perimeter interior casing to match existing the customer's hanging the blinds herself 4200",
+    "expect": [
+      "Remove the old aluminum slider",
+      "Install a Pella Lifestyle sliding patio door 6 foot white with grilles between the glass",
+      "New sill pan",
+      "Flashing tape the whole perimeter",
+      "Interior casing to match existing"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-092",
+    "trade": "windows and doors",
+    "said": "Kitchen. Replace the window over the sink with a casement, 36 by 48. Living room. Replace the picture window with a single fixed unit, no wait, with a fixed unit and two flanking casements. Master bedroom. Egress window. No, sorry, that one's staying. Basement. Two new hopper windows, jelled when. Wrap all exterior trim in aluminum. About 9,600.",
+    "expect": [
+      "Replace the window over the sink with a casement, 36 by 48",
+      "Replace the picture window with a fixed unit and 2 flanking casements",
+      "2 new hopper windows, JELD-WEN",
+      "Wrap all exterior trim in aluminum"
+    ],
+    "heard": [
+      {
+        "said": "jelled when",
+        "means": "JELD-WEN"
+      }
+    ]
+  },
+  {
+    "id": "blindD-093",
+    "trade": "windows and doors",
+    "said": "per my notes: 1. install Larsen storm door on the back door, 32 inch. customer supplies the storm door. 2. adjust the pocket door in the hall, it's off track. 3. replace the garage entry door, 20 minute fire rated, required by code. 4. new deadbolt on the garage door. 5. the attic hatch, insulate and weatherstrip it. 750 total",
+    "expect": [
+      "Install Larson storm door on the back door, 32 inch",
+      "Customer supplies the storm door",
+      "Adjust the pocket door in the hall",
+      "Replace the garage entry door, 20 minute fire rated, required by code",
+      "New deadbolt on the garage door",
+      "The attic hatch, insulate and weatherstrip it"
+    ],
+    "heard": [
+      {
+        "said": "Larsen",
+        "means": "Larson"
+      }
+    ],
+    "note": "required by code is a reason; kept as a qualifier because it justifies the fire rating on the proposal."
+  },
+  {
+    "id": "blindD-094",
+    "trade": "windows and doors",
+    "said": "basement window rotted out cut it out frame the opening with pressure treated set a glass block no scratch that a mill guard vinyl slider 32 by 14 foam it caulk it 2 hours",
+    "expect": [
+      "Cut it out",
+      "Frame the opening with pressure treated",
+      "Set a Milgard vinyl slider 32 by 14",
+      "Foam it",
+      "Caulk it"
+    ],
+    "heard": [
+      {
+        "said": "mill guard",
+        "means": "Milgard"
+      }
+    ]
+  },
+  {
+    "id": "blindD-095",
+    "trade": "insulation and drywall",
+    "said": "so attic's got maybe 4 inches of old fiberglass, it's like R-11, super low. we'll air seal the top plates and penetrations first with foam. install baffles at every rafter bay along the eaves. then blow in Owens Corning attic cat to R-49, about 16 inches. insulate and weatherstrip the attic hatch. there's a bunch of old boxes up there, homeowner's gonna clear those before we come. figure 2,900, one day",
+    "expect": [
+      "Air seal the top plates and penetrations first with foam",
+      "Install baffles at every rafter bay along the eaves",
+      "Blow in Owens Corning AtticCat to R-49, about 16 inches",
+      "Insulate and weatherstrip the attic hatch"
+    ],
+    "heard": [
+      {
+        "said": "attic cat",
+        "means": "AtticCat"
+      }
+    ]
+  },
+  {
+    "id": "blindD-096",
+    "trade": "insulation and drywall",
+    "said": "Cut out the water damage, two by two. New half inch. Tape. Three coats mud. Sand. Prime. Match knockdown.",
+    "expect": [
+      "Cut out the water damage, 2 by 2",
+      "New half inch",
+      "Tape",
+      "3 coats mud",
+      "Sand",
+      "Prime",
+      "Match knockdown"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindD-097",
+    "trade": "insulation and drywall",
+    "said": "crawlspace encapsulation remove the old fiberglass batts from the floor joists theyre falling down anyway and bag it out 12 mil vapor barrier up the walls and seams taped 2 inch closed cell spray foam on the rim joist and walls install a dehumidifier april air E070 plumbing leak under the kitchen is the plumbers problem not ours about 8,700",
+    "expect": [
+      "Remove the old fiberglass batts from the floor joists",
+      "Bag it out",
+      "12 mil vapor barrier up the walls and seams taped",
+      "2 inch closed cell spray foam on the rim joist and walls",
+      "Install a dehumidifier Aprilaire E070"
+    ],
+    "heard": [
+      {
+        "said": "april air",
+        "means": "Aprilaire"
+      }
+    ]
+  },
+  {
+    "id": "blindD-098",
+    "trade": "insulation and drywall",
+    "said": "Hang drywall in the new bonus room. Half inch on the walls, five eighths on the ceiling, no wait, half inch sag resistant on the ceiling, USG sheet rock. Tape and mud, level 4. Actually bump the ceiling to a level 5, they've got a big window that'll show everything. Corner bead on all the outside corners. Painting's by others. Around 5,400, about a week.",
+    "expect": [
+      "Hang drywall in the new bonus room",
+      "Half inch on the walls",
+      "Half inch sag resistant on the ceiling, USG Sheetrock",
+      "Tape and mud, level 4",
+      "Bump the ceiling to a level 5",
+      "Corner bead on all the outside corners",
+      "Painting's by others"
+    ],
+    "heard": [
+      {
+        "said": "sheet rock",
+        "means": "Sheetrock"
+      }
+    ],
+    "note": "The level 5 correction applies only to the ceiling, so level 4 stays for the walls."
+  },
+  {
+    "id": "blindD-099",
+    "trade": "insulation and drywall",
+    "said": "Home office. dense pack cellulose in the walls for sound, drill and patch from inside. Media room. rock wool safe and sound in the ceiling joists, then resilient channel, then 2 layers of 5/8 with Green Glue between. Guest bath. just the exhaust fan duct, wrap it with R-8 duct insulation. figure 6,200",
+    "expect": [
+      "Dense pack cellulose in the walls for sound",
+      "Drill and patch from inside",
+      "Rockwool Safe'n'Sound in the ceiling joists",
+      "Resilient channel",
+      "2 layers of 5/8 with Green Glue between",
+      "The exhaust fan duct, wrap it with R-8 duct insulation"
+    ],
+    "heard": [
+      {
+        "said": "rock wool safe and sound",
+        "means": "Rockwool Safe'n'Sound"
+      }
+    ]
+  },
+  {
+    "id": "blindD-100",
+    "trade": "insulation and drywall",
+    "said": "garage hang 5/8 type X on the ceiling and the house side wall fire tape only no finish inspection included 1 day",
+    "expect": [
+      "Hang 5/8 type X on the ceiling and the house side wall",
+      "Fire tape only",
+      "Inspection included"
+    ],
+    "heard": []
+  }
+]
