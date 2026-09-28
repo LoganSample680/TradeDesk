@@ -37,6 +37,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { centralDayKey, daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
 import { railCardFor } from "../_shared/live-card.mjs";
 import { pushLiveCard } from "../_shared/live-push.ts";
+import { sendSilentWake } from "../_shared/silent-push.ts";
+import { terminateWakeDue, workHoursFromSettings } from "../_shared/terminate-wake.mjs";
+import { apnsConfigured } from "../_shared/apns.ts";
 import { makeRoute } from "../_shared/route-cache.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -122,6 +125,17 @@ type RadioDetail = { on: boolean; accuracy: string | null; reason: string; trigg
 // live stream handed the flip over, and `hist` marks one the backfill
 // recovered. Both were dropped here, so every late flip looked the same. Kept
 // now, bounded, and nothing reads them but the measurement.
+// Why an app closed, and how much memory it held (TdGeoPlugin.appTerminate,
+// memoryWarning). A swipe and iOS reclaiming the app look identical without
+// these three numbers, and they call for different fixes.
+function lifecycleDetail(e: any): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  if (typeof e.state === "string" && e.state) out.state = e.state.slice(0, 12);
+  if (typeof e.bgSec === "number" && isFinite(e.bgSec) && e.bgSec >= 0) out.bgSec = Math.round(e.bgSec);
+  if (typeof e.mb === "number" && isFinite(e.mb) && e.mb >= 0) out.mb = Math.round(e.mb);
+  return Object.keys(out).length ? out : null;
+}
+
 function motionDetail(e: any): Record<string, unknown> | null {
   const out: Record<string, unknown> = {};
   if (e.hist === true) out.hist = true;
@@ -236,6 +250,8 @@ Deno.serve(async (req) => {
           ? radioDetail(e)
           : e.type === "motion"
           ? motionDetail(e)
+          : e.type === "app-terminate" || e.type === "memory-warning"
+          ? lifecycleDetail(e)
           : (typeof e.staleMs === "number" || e.blind === true
             ? {
               ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
@@ -656,7 +672,34 @@ Deno.serve(async (req) => {
       }).eq("user_id", uid).eq("device_id", deviceId).then(() => {}, () => {});
     }
 
-    return json({ ok: true, stored: evs.length, derived, days: derivedDays });
+    // ── A CLOSE EARNS ONE WAKE (owner 2026-09-28: "do the swipe fix") ─────
+    // The phone now sends its close as it dies. If that close is fresh and
+    // inside the working day, one silent push brings the app straight back
+    // instead of leaving it dark until the half-hour ping or a fence exit.
+    // The rules are in _shared/terminate-wake.mjs; this is only the plumbing.
+    let woke = 0;
+    try {
+      if (evs.some((e) => e.type === "app-terminate") && apnsConfigured()) {
+        const key = "wake:" + uid;
+        const [{ data: cfgRow }, { data: wm }] = await Promise.all([
+          svc.from("zj_data").select("settings").eq("user_id", cid).maybeSingle(),
+          svc.from("cron_watermarks").select("ran_at").eq("name", key).maybeSingle(),
+        ]);
+        const lastWake = wm?.ran_at ? Date.parse(wm.ran_at) : NaN;
+        if (terminateWakeDue(evs, Date.now(), workHoursFromSettings(cfgRow?.settings), lastWake)) {
+          await svc.from("cron_watermarks").upsert({ name: key, ran_at: new Date().toISOString() });
+          const { data: toks } = await svc.from("device_tokens")
+            .select("token").eq("user_id", uid).is("invalid_at", null);
+          // Short expiry: a wake that arrives ten minutes late is no longer
+          // the one this close asked for.
+          const out = await sendSilentWake(svc, (toks || []).map((t: { token: string }) => t.token), "geo-wake", 300);
+          woke = out.sent;
+          console.log("[terminate-wake]", { uid, sent: out.sent, pruned: out.pruned });
+        }
+      }
+    } catch (e) { console.error("[terminate-wake] " + String(e).slice(0, 200)); }
+
+    return json({ ok: true, stored: evs.length, derived, days: derivedDays, woke });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }

@@ -921,9 +921,14 @@ test.describe('Remote push: token handling and tap routing', () => {
     const deadIdx = apns.indexOf('return { ok: false, dead: true }');
     expect(badIdx).toBeGreaterThan(-1);
     expect(deadIdx).toBeGreaterThan(badIdx);
+    // push-geo-ping reaches apnsSend through _shared/silent-push.ts now
+    // (2026-09-28), the one silent sender it shares with the terminate wake.
+    const silent = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'silent-push.ts'), 'utf8');
+    expect(silent.includes('apnsSend('), 'the silent sender goes through the shared sender').toBe(true);
+    expect(silent.includes('APNS_HOST')).toBe(false);
     for (const fn of ['send-push', 'push-geo-ping']) {
       const src = fs.readFileSync(path.join(root, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
-      expect(src.includes('apnsSend('), `${fn} must send through the shared sender`).toBe(true);
+      expect(src.includes('apnsSend(') || src.includes('sendSilentWake('), `${fn} must send through the shared sender`).toBe(true);
       expect(src.includes('APNS_HOST'), `${fn} must not pin itself to one gateway`).toBe(false);
     }
   });

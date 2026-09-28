@@ -19,7 +19,8 @@
 // bounds abuse at worst-case 3 wakes/hour, the same order as organic wakes.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { apnsConfigured, apnsJwt, apnsSend } from "../_shared/apns.ts";
+import { apnsConfigured } from "../_shared/apns.ts";
+import { sendSilentWake } from "../_shared/silent-push.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -48,32 +49,10 @@ serve(async (req) => {
     if (qerr) return json({ ok: false, error: qerr.message }, 500);
     if (!rows?.length) return json({ ok: true, sent: 0, note: "no devices" });
 
-    const jwt = await apnsJwt();
-    // aps is Apple's namespace; td is ours, read by the AppDelegate forward.
-    const payload = JSON.stringify({ aps: { "content-available": 1 }, td: "geo-ping" });
-    const dead: string[] = [];
-    let sent = 0;
-    await Promise.all(rows.map(async (r) => {
-      try {
-        // Background pushes MUST be priority 5; Apple rejects 10 for
-        // content-available-only payloads. Expire before the next tick: a
-        // nudge delivered 40 minutes late is the next nudge's job.
-        const out = await apnsSend(jwt, r.token, payload, {
-          "apns-push-type": "background",
-          "apns-priority": "5",
-          "apns-expiration": String(Math.floor(Date.now() / 1000) + 1500),
-        });
-        if (out.ok) sent++;
-        else if (out.dead) dead.push(r.token);
-      } catch (e) {
-        console.error(`[push-geo-ping] ${String(e).slice(0, 200)}`);
-      }
-    }));
-    if (dead.length) {
-      await svc.from("device_tokens")
-        .update({ invalid_at: new Date().toISOString() }).in("token", dead);
-    }
-    return json({ ok: true, sent, pruned: dead.length });
+    // Expire before the next tick: a nudge delivered 40 minutes late is the
+    // next nudge's job.
+    const { sent, pruned } = await sendSilentWake(svc, rows.map((r) => r.token), "geo-ping", 1500);
+    return json({ ok: true, sent, pruned });
   } catch (e) {
     console.error(`[push-geo-ping] ${String(e).slice(0, 300)}`);
     return json({ ok: false, error: "failed" }, 500);
