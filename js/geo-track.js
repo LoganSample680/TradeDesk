@@ -3831,6 +3831,37 @@ async function _geoRefreshBattery(){
     return _geoBatt;
   }catch(_e){_geoBatt=null;_geoTherm=null;return null;}
 }
+// ── THE BATTERY, ON THE RECORD (owner 2026-09-28) ────────────────────────────
+// "What time did we go from 100 percent off the charger?" Nothing could say.
+// The battery was read only when the app was opened, and every location ping
+// after that repeated the same cached number: Jack's phone reported 95% from
+// 4:30pm to 9:35am, and 30% to 95% inside one minute the afternoon before.
+//
+// So the reading is refreshed on every wake JS gets (the 30-minute ping and
+// every open, close and relaunch), which also makes location_pings.battery
+// current, and a `battery` row goes to geo_events whenever the level or the
+// charger changes. Its kind reads "charging 100" or "battery 95", so "off the
+// charger" is the first battery row after a charging one. Change-only on
+// purpose: an unchanged reading is not news, and the last one written is kept
+// on the device so a reload does not repeat it.
+const _GEO_BATT_LAST_KEY='td_geo_batt_last';
+function _geoBatteryTick(){
+  try{
+    return Promise.resolve(_geoRefreshBattery()).then((b)=>{
+      if(!b||!(b.level>=0))return null;
+      const pct=Math.round(b.level*100);
+      const charging=!!b.charging;
+      let last=null;
+      try{last=JSON.parse(localStorage.getItem(_GEO_BATT_LAST_KEY)||'null');}catch(_e){}
+      if(last&&last.pct===pct&&last.charging===charging)return null;
+      try{localStorage.setItem(_GEO_BATT_LAST_KEY,JSON.stringify({pct,charging}));}catch(_e){}
+      if(typeof supaEnabled==='function'&&!supaEnabled())return null;
+      const row={type:'battery',ts:Date.now(),kind:(charging?'charging ':'battery ')+pct};
+      _geoIngestPost([row]);
+      return row;
+    }).catch(()=>null);
+  }catch(_e){return Promise.resolve(null);}
+}
 function _geoReportPermission(state){
   if(!_supa||!_supaUser)return;
   const now=new Date().toISOString();
@@ -5450,6 +5481,8 @@ async function _geoTdEvent(ev,replay){
   // where a fixless or 3km-cached event could false-exit a fence.
   if(ev.type==='push-ping'||/^app-/.test(String(ev.type||''))){
     if(!replay)_geoParkNote(String(ev.type),ev.acc!=null?Math.round(ev.acc)+'m':'');
+    // Every wake reads the battery fresh (see _geoBatteryTick).
+    if(!replay)_geoBatteryTick();
     // ── THE 30-MINUTE CONFIRMER (owner 2026-09-01) ────────────────────────
     // "then the 30 minute cron job keeps confirming and checking the
     // location." This push IS that cron (geo-ping-cron.yml -> push-geo-ping),
@@ -8110,6 +8143,29 @@ function _geoTapeKindKey(k){
   if(s==='still'||s==='stationary')return 'still';
   return s;
 }
+// Rule 15's crossings as the server holds them, for the same reason the tape
+// is fetched every time (see _geoDeriveServerTape): the server derives from
+// every crossing that was uploaded, and a phone that derives from fewer draws
+// a different day.
+//
+// Jack, 2026-09-28. His phone entered Treyton Schafer's circle at 9:21:49 and
+// the crossing went straight up to the server; this install never had it in
+// its own log. The server dated his arrival 9:21:49, the phone dated it to
+// the 9:28:33 walk, and the Time log drew the seven minutes between the two
+// as unaccounted time and asked him about it. Seeded into the local log so a
+// derive that cannot reach the server still has what the last one learned.
+async function _geoDeriveServerRegions(fromMs,toMs){
+  const out=[];
+  out.complete=false;
+  try{
+    if(!_supa||!_supaUser)return out;
+    const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
+    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
+    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
+    out.complete=!!rg.complete;
+  }catch(_e){}
+  return out;
+}
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
@@ -8126,8 +8182,8 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     // Rule 15's evidence. A crossing the phone saw while this install was not
     // the one holding the tape is still a crossing, so it is fetched on the
     // same trip as the lifecycle edges and folded into the same local log.
-    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
-    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.regions.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
+    const rg=await _geoDeriveServerRegions(fromMs,toMs);
+    out.regions=rg;
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
@@ -8647,9 +8703,14 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // not only when the fix log is thin: a phone with a healthy local log is
     // exactly the phone that never asked and so never agreed.
     const tape=_geoTapeMerge(localTape,await _geoDeriveServerTape(b.start-2*3600000,b.end));
+    // The crossings too, every time, and for the same reason (see
+    // _geoDeriveServerRegions): the thin-log fetch above already seeded them.
+    if(!fetched)_geoRegLogSeed(await _geoDeriveServerRegions(b.start-2*3600000,b.end));
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
-    const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
+    // One copy of each crossing: the seed above dedupes the server's against
+    // this phone's own, so the log alone is the whole record.
+    const regions=_geoRegLogRead();
     const _fences=_geoDeriveFences(dayKey);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
