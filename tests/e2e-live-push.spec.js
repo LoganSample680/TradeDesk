@@ -921,8 +921,15 @@ test.describe('Remote push: token handling and tap routing', () => {
     const deadIdx = apns.indexOf('return { ok: false, dead: true }');
     expect(badIdx).toBeGreaterThan(-1);
     expect(deadIdx).toBeGreaterThan(badIdx);
-    for (const fn of ['send-push', 'push-geo-ping']) {
-      const src = fs.readFileSync(path.join(root, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
+    // The Live Activity senders too (owner 2026-09-28: the lock screen said
+    // John Doe from the shop). They hand-rolled a fetch to one gateway, read
+    // the wrong-gateway answer as "card gone", and deleted every card's token
+    // on its first push, so the server could never move a card again.
+    const files = ['send-push', 'push-geo-ping', 'rebuild-day', 'update-live-activity']
+      .map(fn => path.join('supabase', 'functions', fn, 'index.ts'))
+      .concat([path.join('supabase', 'functions', '_shared', 'live-push.ts')]);
+    for (const fn of files) {
+      const src = fs.readFileSync(path.join(root, fn), 'utf8');
       expect(src.includes('apnsSend('), `${fn} must send through the shared sender`).toBe(true);
       expect(src.includes('APNS_HOST'), `${fn} must not pin itself to one gateway`).toBe(false);
     }

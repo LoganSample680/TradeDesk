@@ -11,7 +11,7 @@
 // authorise and no JWT to check: uid is who the events came from. Both build
 // the content-state with the same liveContentState() so the field list cannot
 // drift between them, which is the part that actually matters.
-import { APNS_HOST, APNS_TOPIC, apnsConfigured, apnsJwt } from "./apns.ts";
+import { APNS_TOPIC, apnsConfigured, apnsJwt, apnsSend } from "./apns.ts";
 import { liveCardSig, liveContentState } from "./live-card.mjs";
 
 type Card = { channel: string; event: string; state: Record<string, unknown> };
@@ -60,32 +60,35 @@ export async function pushLiveCard(
       },
     };
 
+    // THROUGH apnsSend, NOT A FETCH OF ITS OWN (owner 2026-09-28: "still
+    // seeing the iOS banners reporting time at John Doe but I'm at the shop").
+    // This used to POST to one fixed gateway and read BadDeviceToken as "the card
+    // is gone". A TestFlight build's token belongs to whichever gateway its
+    // signing says, and apns.ts already knows that one static host is wrong
+    // for half the fleet: it tries the other before condemning a token. This
+    // file skipped that, so every card on the wrong side was declared gone on
+    // its first push and its token deleted, while the card itself sat on the
+    // lock screen frozen at the last place the open app had seen. Every
+    // live-push line in the function log that day read "card already gone".
     const jwt = await apnsJwt();
-    const res = await fetch(`${APNS_HOST}/3/device/${row.token}`, {
-      method: "POST",
-      headers: {
-        authorization: `bearer ${jwt}`,
-        // Live Activity pushes have their own topic suffix and push type; the
-        // plain bundle-id topic silently does nothing.
-        "apns-topic": `${APNS_TOPIC}.push-type.liveactivity`,
-        "apns-push-type": "liveactivity",
-        "apns-priority": "10",
-      },
-      body: JSON.stringify(payload),
+    const out = await apnsSend(jwt, row.token, JSON.stringify(payload), {
+      // Live Activity pushes have their own topic suffix and push type; the
+      // plain bundle-id topic silently does nothing.
+      "apns-topic": `${APNS_TOPIC}.push-type.liveactivity`,
+      "apns-push-type": "liveactivity",
+      "apns-priority": "10",
     });
 
-    if (!res.ok) {
-      const txt = await res.text();
-      if (res.status === 410 || /BadDeviceToken|Unregistered/i.test(txt)) {
-        // The card is already gone: swiped away, or iOS ended it. Drop the row
-        // so every later flush short-circuits on "no live card" instead of
-        // calling Apple to be told the same thing again.
+    if (!out.ok) {
+      if (out.dead) {
+        // Gone from BOTH gateways (or 410): the card really is gone, swiped
+        // away or ended by iOS. Drop the row so every later flush
+        // short-circuits on "no live card".
         await svc.from("live_activity_tokens")
           .delete().eq("user_id", uid).eq("channel", card.channel);
         return "card already gone";
       }
-      console.error(`[live-push] ${res.status} ${txt.slice(0, 200)}`);
-      return "apns " + res.status;
+      return "apns failed";
     }
 
     if (card.event === "end") {
