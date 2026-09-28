@@ -453,7 +453,8 @@ test.describe('the wiring, read off the source', () => {
 
   test('the signature is stored only after APNs accepted the push', () => {
     const src = read('supabase/functions/_shared/live-push.ts');
-    const send = src.indexOf('await fetch(');
+    // The send is the shared sender now (2026-09-28), not a fetch of its own.
+    const send = src.indexOf('await apnsSend(');
     const store = src.indexOf('last_sig: sig');
     expect(send, 'both were found').toBeGreaterThan(0);
     expect(store, 'a failed push must be retried, not remembered as done').toBeGreaterThan(send);
