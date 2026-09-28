@@ -70,3 +70,29 @@ export function terminateWakeDue(evs, nowMs, workHours, lastWakeMs) {
   if (Number.isFinite(lastWakeMs) && nowMs - lastWakeMs < WAKE_GAP_MS) return false;
   return inWorkHours(last, workHours);
 }
+
+// ── AND A PHONE THAT WENT QUIET WITHOUT SAYING SO (owner 2026-09-28) ──────
+// The close above needs the phone's new build to reach the server as it dies.
+// Until then, and for any close iOS does without a word, the server can still
+// see the shape: the last thing it heard from a phone was "backgrounded", and
+// then nothing. A running app under keep-awake usually says something within
+// minutes; one iOS has closed says nothing until it is woken. One silent push
+// answers both cases: a closed app is relaunched, a running one logs a
+// position and goes quiet again with a non-background row as its last word,
+// so it is never pinged twice for the same quiet stretch.
+export const QUIET_MIN_MS = 3 * 60000;
+// Past this the half-hour ping is the nearer wake anyway, and a phone that
+// went quiet an hour ago is most likely in a drawer for the night.
+export const QUIET_MAX_MS = 20 * 60000;
+
+// last: the newest row the server holds for this person, { type, created_at }
+// (created_at is when the server heard it, which is the question here).
+export function quietWakeDue(last, nowMs, workHours, lastWakeMs) {
+  if (!last || last.type !== "app-background" || !Number.isFinite(nowMs)) return false;
+  const heard = typeof last.created_at === "number" ? last.created_at : Date.parse(last.created_at);
+  if (!Number.isFinite(heard)) return false;
+  const quiet = nowMs - heard;
+  if (quiet < QUIET_MIN_MS || quiet > QUIET_MAX_MS) return false;
+  if (Number.isFinite(lastWakeMs) && nowMs - lastWakeMs < WAKE_GAP_MS) return false;
+  return inWorkHours(nowMs, workHours);
+}

@@ -90,6 +90,53 @@ test.describe('terminate wake: the rules', () => {
   });
 });
 
+test.describe('quiet wake: a phone whose last word was "backgrounded"', () => {
+  const bg = (ms) => ({ type: 'app-background', created_at: new Date(ms).toISOString() });
+
+  test('Jack at 8:12: backgrounded, then nothing for three minutes, earns a wake', async () => {
+    const { quietWakeDue, QUIET_MIN_MS } = await import(MOD);
+    const heard = ct(8, 12);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MIN_MS - 1000, null, NaN), 'two minutes is not quiet yet').toBe(false);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MIN_MS, null, NaN)).toBe(true);
+    expect(quietWakeDue({ type: 'app-background', created_at: heard + QUIET_MIN_MS * 2 - QUIET_MIN_MS }, heard + QUIET_MIN_MS * 2, null, NaN),
+      'a numeric arrival time reads the same as a string').toBe(true);
+  });
+
+  test('anything after the background means it is alive: no wake', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const heard = ct(10, 0);
+    for (const type of ['push-ping', 'motion', 'fix', 'app-active', 'app-terminate', 'heartbeat']) {
+      expect(quietWakeDue({ type, created_at: new Date(heard).toISOString() }, heard + 5 * 60000, null, NaN), type).toBe(false);
+    }
+  });
+
+  test('past twenty minutes the half-hour ping is the nearer wake', async () => {
+    const { quietWakeDue, QUIET_MAX_MS } = await import(MOD);
+    const heard = ct(11, 0);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MAX_MS, null, NaN)).toBe(true);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MAX_MS + 1, null, NaN)).toBe(false);
+  });
+
+  test('one wake per ten minutes, shared with the close wake, and only in working hours', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const heard = ct(12, 30);
+    const now = heard + 4 * 60000;
+    expect(quietWakeDue(bg(heard), now, null, now - 5 * 60000), 'woken five minutes ago').toBe(false);
+    const night = ct(21, 0);
+    expect(quietWakeDue(bg(night), night + 4 * 60000, null, NaN), 'after hours').toBe(false);
+  });
+
+  test('junk never wakes and never throws', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const t = ct(9, 0);
+    expect(quietWakeDue(null, t, null, NaN)).toBe(false);
+    expect(quietWakeDue({}, t, null, NaN)).toBe(false);
+    expect(quietWakeDue({ type: 'app-background', created_at: 'nope' }, t, null, NaN)).toBe(false);
+    expect(quietWakeDue(bg(t), NaN, null, NaN)).toBe(false);
+    expect(quietWakeDue(bg(t + 10 * 60000), t, null, NaN), 'heard in the future').toBe(false);
+  });
+});
+
 test.describe('terminate wake: the wiring, read off the source', () => {
   test('ingest-geo keeps why the app closed', () => {
     const src = read('supabase/functions/ingest-geo/index.ts');
@@ -105,6 +152,19 @@ test.describe('terminate wake: the wiring, read off the source', () => {
     expect(src, 'only a batch holding a close pays for the lookup').toContain('evs.some((e) => e.type === "app-terminate")');
     const ping = read('supabase/functions/push-geo-ping/index.ts');
     expect(ping).toContain('sendSilentWake(');
+  });
+
+  test('wake-quiet runs every two minutes through the same rules and sender', () => {
+    const fn = read('supabase/functions/wake-quiet/index.ts');
+    expect(fn).toContain('quietWakeDue(last, now, workHoursFromSettings(');
+    expect(fn).toContain('sendSilentWake(svc, tokens, "geo-wake"');
+    expect(fn, 'rate-gated like the half-hour ping').toContain('"wake-quiet"');
+    expect(fn, 'shares the per-person wake gap with the close wake').toContain('"wake:" + uid');
+    const mig = read('supabase/migrations/20261052_wake_quiet_cron.sql');
+    expect(mig).toContain("'*/2 * * * *'");
+    expect(mig).toContain('/functions/v1/wake-quiet');
+    expect(mig).toContain('on public.geo_events (employee_user_id, created_at desc)');
+    expect(mig, 'no create extension, so the lint runner skips the schedule').not.toMatch(/^\s*create extension/im);
   });
 
   test('working hours are read in one place, for the deriver and the wake', () => {
