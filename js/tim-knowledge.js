@@ -521,6 +521,11 @@ const _TIMK_HEARD=[
   [/\b(?:core|chorro|coro|cora|corrow|corro)[\s-]*(?:protect|protec|protech|pro\s+tech|pro\s+tec)\b/gi,'Corro-Protec'],
   [/\bpower(?:ed)?\s+(?:and\s+load|an\s+old|and\s+old|an\s+ode|and\s+owed|a\s+node)(?=\s+rods?\b)/gi,'powered anode'],
   [/\b(?:and\s+load|an\s+old|and\s+owed|a\s+node)(?=\s+rods?\b)/gi,'anode'],
+  // Blake Sample, second try (logged 2026-09-28): "Adding in A protect powered
+  // rod". The brand lost its first half and "anode" was never heard at all.
+  // Only in front of "powered rod", where "protect" cannot mean anything else.
+  [/\b(?:a|the)\s+(?:protect|protec|protech|pro\s+tech)(?=\s+power(?:ed)?\s+(?:anode\s+)?rods?\b)/gi,'a Corro-Protec'],
+  [/\bpower(?:ed)?\s+(rods?)\b/gi,'powered anode $1'],
 ];
 function _timkHeard(seg){
   let v=String(seg||'');
