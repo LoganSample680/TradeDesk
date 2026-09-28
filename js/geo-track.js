@@ -9044,6 +9044,8 @@ function _geoOpenDwellPublish(dayKey,res){
 let _geoOnsiteTickT=null;
 function _geoOnsiteTick(){
   try{
+    // Display only, recomputed from each stamp: nothing to do in a pocket.
+    if(document.hidden)return;
     const now=Date.now();
     document.querySelectorAll('[data-onsite-since]').forEach(n=>{
       const t=Number(n.getAttribute('data-onsite-since'));

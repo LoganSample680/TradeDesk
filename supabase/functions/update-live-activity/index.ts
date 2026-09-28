@@ -18,7 +18,7 @@
 // field makes iOS drop the push silently, so defaults are filled server-side.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { APNS_HOST, APNS_TOPIC, apnsConfigured, apnsJwt } from "../_shared/apns.ts";
+import { APNS_TOPIC, apnsConfigured, apnsJwt, apnsSend } from "../_shared/apns.ts";
 // ONE FIELD LIST, NOT THREE (2026-09-16). ActivityKit drops a push silently
 // when one content-state key is missing, so the list was copied here, into
 // js/live-activity.js and into live-push.ts: three places to forget the next
@@ -86,31 +86,26 @@ serve(async (req) => {
       },
     };
 
+    // Through apnsSend and its other-gateway retry, the same as every other
+    // push (see _shared/live-push.ts for what skipping it cost, 2026-09-28).
     const jwt = await apnsJwt();
-    const res = await fetch(`${APNS_HOST}/3/device/${row.token}`, {
-      method: "POST",
-      headers: {
-        authorization: `bearer ${jwt}`,
-        // Live Activity pushes use their own topic suffix and push type; the
-        // plain bundle-id topic silently does nothing.
-        "apns-topic": `${APNS_TOPIC}.push-type.liveactivity`,
-        "apns-push-type": "liveactivity",
-        "apns-priority": "10",
-      },
-      body: JSON.stringify(payload),
+    const out = await apnsSend(jwt, row.token, JSON.stringify(payload), {
+      // Live Activity pushes use their own topic suffix and push type; the
+      // plain bundle-id topic silently does nothing.
+      "apns-topic": `${APNS_TOPIC}.push-type.liveactivity`,
+      "apns-push-type": "liveactivity",
+      "apns-priority": "10",
     });
 
-    if (!res.ok) {
-      const txt = await res.text();
+    if (!out.ok) {
       // A dead activity token means the card is already gone (swiped away, or
       // iOS ended it). Delete the row so the next attempt short-circuits.
-      if (res.status === 410 || /BadDeviceToken|Unregistered/i.test(txt)) {
+      if (out.dead) {
         await admin.from("live_activity_tokens")
           .delete().eq("user_id", targetUser).eq("channel", channel);
         return json({ ok: true, sent: 0, note: "card already gone" });
       }
-      console.error(`[update-live-activity] ${res.status} ${txt.slice(0, 200)}`);
-      return json({ ok: false, error: "apns " + res.status }, 502);
+      return json({ ok: false, error: "apns failed" }, 502);
     }
 
     // An ended card's token is dead by definition; forget it now.

@@ -3420,10 +3420,14 @@ function _tlStartOpenRefresh(){
   // changes (somebody else clocks in or out).
   _tlOpenTickTimer=setInterval(()=>{
     if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
+    if(document.hidden)return;   // a page nobody can see needs no ticking (battery)
     _tlTickOpenElapsed();
   },1000);
   _tlOpenRefreshTimer=setInterval(()=>{
     if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
+    // Not while hidden: _tlLiveRefresh can go to the network, and keep-awake
+    // keeps this page alive in a pocket all shift (owner 2026-09-28).
+    if(document.hidden)return;
     _tlRenderOpenBanner();
     // ...and the CHART, not just the banner. The banner has always ticked
     // while the page sat open, which made the staleness worse rather than

@@ -409,6 +409,7 @@ function saveEndDriveModal(){
 }
 function updateDriveTimer(){
   if(!gps.startTime)return;
+  if(document.hidden)return;   // display only; recomputed from start every tick
   const elapsed=Math.floor((Date.now()-gps.startTime)/1000);
   const m=Math.floor(elapsed/60),s=elapsed%60;
   const timeStr=m+':'+(s<10?'0':'')+s;
