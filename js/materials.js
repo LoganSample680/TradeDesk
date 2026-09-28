@@ -133,3 +133,56 @@ function _matClaim(host){
   if(!host)return;
   document.querySelectorAll('#mat-card').forEach(el=>{if(!host.contains(el))el.remove();});
 }
+
+// ── WHAT HE SAID HE IS BUYING, INTO THIS SECTION (owner 2026-09-28) ─────────
+//
+// "Talk to Tim stays in the material section as well, in the proposals and the
+// invoices." Tim reads the materials out of what he said (timSaidMaterials in
+// js/tim-knowledge.js); this puts them here, the one Materials section T&M and
+// Build Your Own share, so it lands the same on both.
+//
+// Two places in the section, and the price decides which:
+//   - a thing his price book already prices becomes a Materials row at HIS
+//     price, count times rate, like one he added by hand;
+//   - a thing with no price yet goes on the supply house list in this same
+//     card (js/supply-list.js), which is where an unpriced item already lives
+//     ("waiting on their quote"). A $0 row on a proposal would read as free.
+// Said twice, it is not added twice: a row or list item with the same name is
+// left as it is.
+function timAddMaterials(mats){
+  const list=Array.isArray(mats)?mats.filter(m=>m&&m.item):[];
+  if(!list.length||!_supMode())return {rows:0,listed:0};
+  const trade=(typeof _pbTrade==='function')?_pbTrade():'general';
+  const key=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const haveRows=new Set(_matIdx().map(i=>key((_matView(i)||{}).label)));
+  const host=_supHost(false);
+  const haveList=new Set(((host&&host._supply&&host._supply.items)||[]).map(it=>key(it.desc)));
+  let rows=0,listed=0;
+  const toList=[];
+  list.forEach(m=>{
+    const label=String(m.item).trim();
+    const k=key(label);
+    if(haveRows.has(k)||haveList.has(k))return;
+    const qty=Number(m.qty)>0?Number(m.qty):1;
+    const unit=m.unit||'ea';
+    const own=(typeof _pbFind==='function')?_pbFind(label,trade):null;
+    const rate=own&&Number(own.rate)>0?Number(own.rate):0;
+    if(rate>0){
+      _matPut(_MAT_SEC,{label,qty,unit:own.unit||unit,rate,notes:''});
+      haveRows.add(k);rows++;
+    }else{
+      toList.push({qty,unit,desc:label,cost:0,on:true});
+      haveList.add(k);listed++;
+    }
+  });
+  if(toList.length){
+    const h=_supHost(true);
+    h._supply.items=(h._supply.items||[]).concat(toList);
+    if(typeof _supSync==='function')_supSync();
+  }
+  // On T&M, Materials is a section he turns on; what Tim added turns it on,
+  // or the items would sit on the estimate out of sight.
+  if((rows||listed)&&_matIsTM()&&typeof _tmLayers!=='undefined'&&!_tmLayers.has('mat')&&typeof _tmAddLayer==='function')_tmAddLayer('mat');
+  if(rows||listed)_matRefresh();
+  return {rows,listed};
+}
