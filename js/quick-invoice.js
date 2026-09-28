@@ -424,6 +424,7 @@ function _qiSayBuild(){
   if(!said)return;
   const lines=timSayLines(said);
   const steps=lines.map(l=>l.text);
+  if(typeof timLogScope==='function')timLogScope(said,steps,'qi',null);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));
     steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);have.add(st.toLowerCase());}});
