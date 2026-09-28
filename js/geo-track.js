@@ -8143,6 +8143,29 @@ function _geoTapeKindKey(k){
   if(s==='still'||s==='stationary')return 'still';
   return s;
 }
+// Rule 15's crossings as the server holds them, for the same reason the tape
+// is fetched every time (see _geoDeriveServerTape): the server derives from
+// every crossing that was uploaded, and a phone that derives from fewer draws
+// a different day.
+//
+// Jack, 2026-09-28. His phone entered Treyton Schafer's circle at 9:21:49 and
+// the crossing went straight up to the server; this install never had it in
+// its own log. The server dated his arrival 9:21:49, the phone dated it to
+// the 9:28:33 walk, and the Time log drew the seven minutes between the two
+// as unaccounted time and asked him about it. Seeded into the local log so a
+// derive that cannot reach the server still has what the last one learned.
+async function _geoDeriveServerRegions(fromMs,toMs){
+  const out=[];
+  out.complete=false;
+  try{
+    if(!_supa||!_supaUser)return out;
+    const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
+    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
+    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
+    out.complete=!!rg.complete;
+  }catch(_e){}
+  return out;
+}
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
@@ -8159,8 +8182,8 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     // Rule 15's evidence. A crossing the phone saw while this install was not
     // the one holding the tape is still a crossing, so it is fetched on the
     // same trip as the lifecycle edges and folded into the same local log.
-    const rg=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type,region_id').eq('employee_user_id',me).in('type',['regionEnter','regionExit']).gte('ts',a).lt('ts',b).not('region_id','is',null));
-    rg.forEach(e=>{const t=Date.parse(e.ts);if(t>0&&e.region_id)out.regions.push({ts:t,id:String(e.region_id),enter:e.type==='regionEnter'});});
+    const rg=await _geoDeriveServerRegions(fromMs,toMs);
+    out.regions=rg;
     // Only rows whose position is FRESH. A fence or motion row carries the
     // last-known position, which after a wake can be a mile stale, and one
     // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
@@ -8680,9 +8703,14 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // not only when the fix log is thin: a phone with a healthy local log is
     // exactly the phone that never asked and so never agreed.
     const tape=_geoTapeMerge(localTape,await _geoDeriveServerTape(b.start-2*3600000,b.end));
+    // The crossings too, every time, and for the same reason (see
+    // _geoDeriveServerRegions): the thin-log fetch above already seeded them.
+    if(!fetched)_geoRegLogSeed(await _geoDeriveServerRegions(b.start-2*3600000,b.end));
     const fixes=_geoFixLogRead().concat(server||[]);
     const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
-    const regions=_geoRegLogRead().concat((server&&Array.isArray(server.regions))?server.regions:[]);
+    // One copy of each crossing: the seed above dedupes the server's against
+    // this phone's own, so the log alone is the whole record.
+    const regions=_geoRegLogRead();
     const _fences=_geoDeriveFences(dayKey);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
