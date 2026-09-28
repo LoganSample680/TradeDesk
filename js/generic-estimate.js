@@ -4955,13 +4955,28 @@ function _tmInputChange(){
   const _tmCrewCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
   // Getting there is a cost too, and on a short job it can be most of it.
   const _tmDrive=(typeof _geiDriveCost==='function')?_geiDriveCost():null;
-  const _tmTrueCost=Math.round(matRaw+_tmCrewCost+((_tmDrive&&_tmDrive.cost)||0));
+  // What the materials COST him, not what they bill. A supply house line
+  // carries his marked-up client price in its total; its cost is the quote
+  // (js/supply-list.js _supCost). Costing it at the client price is what made
+  // "You keep" read zero on a quote with 20% on it (owner 2026-09-27).
+  const _tmMatCost=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+
+    ((l&&l._supply&&typeof l._supply==='object'&&typeof _supCost==='function')?_supCost(l._supply):(l.total||(l.qty||0)*(l.rate||0))),0);
+  const _tmTrueCost=Math.round(_tmMatCost+_tmCrewCost+((_tmDrive&&_tmDrive.cost)||0));
+  // His cost for one hour of the crew on this job: the same loaded rates
+  // _estLaborCost multiplies by the hours.
+  const _tmHourCost=(_estCrew.length&&typeof _hasEmployees==='function'&&_hasEmployees())
+    ?_estCrew.reduce((s,e)=>s+_empLoadedFor(e),0)
+    :(typeof _ownerLoadedHourly==='function'?_ownerLoadedHourly()*Math.max(1,_tmCrewCount||1):0);
   _geiRenderDriveLine('tm',_tmDrive);
   const _tmCostEl=document.getElementById('tm-expected-cost');
   if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
   _tmRenderMoneyRows({bill:total,hours:_tmEstHours,perHour,crewRates,
-    pay:_tmCrewCost,materials:matRaw,drive:(_tmDrive&&_tmDrive.cost)||0,cost:_tmTrueCost});
-  _updateMarginGauge('tm',total);
+    pay:_tmCrewCost,materials:_tmMatCost,matBill:matRaw,hourCost:_tmHourCost,
+    drive:(_tmDrive&&_tmDrive.cost)||0,cost:_tmTrueCost});
+  // A rate sheet has no job total, so a job margin is parts markup read as
+  // profit and a verdict on a rate it never measured. The per-hour rows above
+  // say what the hour keeps; the gauge stands down (Blake Sample, 2026-09-28).
+  _updateMarginGauge('tm',_tmEstHours>0?total:0);
   // The rail says what is still missing, and he just typed one of the things it
   // was asking for. It has to move on the keystroke, not on the next redraw.
   if(typeof _tmRenderAddRow==='function'){try{_tmRenderAddRow(_tmStateRule(),_tmLockedLayers());}catch(_e){}}
@@ -4985,6 +5000,14 @@ function _tmInputChange(){
 function _tmRenderMoneyRows(n){
   const el=document.getElementById('tm-money-rows');
   if(!el)return;
+  // A RATE SHEET HAS NO TOTAL (owner 2026-09-27: "the profit down at the
+  // bottom is showing as zero and says to raise my rates"). With no hours
+  // estimated, labor bills nothing, so the three rows compared materials
+  // against materials plus driving and told him his rate was the problem. On
+  // a job billed by the hour the honest answer is per hour: what the hour
+  // sells for, what it costs him, what he keeps. The parts markup is its own
+  // line, because it is money he keeps whatever the hours come to.
+  if(!(Number(n&&n.hours)>0)&&Number(n&&n.perHour)>0){el.innerHTML=_tmMoneyPerHourHtml(n);return;}
   const bill=Math.round(Number(n&&n.bill)||0);
   const cost=Math.round(Number(n&&n.cost)||0);
   // Nothing to say until both halves exist. A "you keep" figure computed
@@ -5035,6 +5058,37 @@ function _tmRenderMoneyRows(n){
         : ('Under your '+target+' percent target by '+(target-share)+' points. Raising the rate is the only lever on a job billed by the hour.'))+
     '</div>'+
     '<div class="summary-divider"></div>';
+}
+// The rate-sheet version of the rows above: one hour, and the parts.
+function _tmMoneyPerHourHtml(n){
+  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const perHour=Number(n.perHour)||0,hourCost=Number(n.hourCost)||0;
+  const matBill=Number(n.matBill)||0,matCost=Number(n.materials)||0,markup=Math.round(matBill-matCost);
+  const row=(label,sub,value,strong,colour)=>
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
+      '<span style="min-width:0">'+
+        '<span style="display:block;font-size:12.5px;font-weight:'+(strong?'700':'600')+';color:var(--text)">'+label+'</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub)+'</span>'+
+      '</span>'+
+      '<span style="font-size:'+(strong?'17px':'15px')+';font-weight:700;color:'+(colour||'var(--text)')+';font-variant-numeric:tabular-nums;letter-spacing:-.2px;flex-shrink:0">'+value+'</span>'+
+    '</div>';
+  let rows='';
+  if(hourCost>0){
+    const keep=perHour-hourCost;
+    const share=Math.round(keep/perHour*100);
+    const target=_MARGIN_BANDS.target;
+    const colour=share>=target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
+    rows+=row('You bill an hour',n.crewRates?'the crew\'s rates on this job':'your rate on this job',money(perHour),false)+
+      row('It costs you an hour',n.crewRates?'what the crew costs you':'what your own hour costs you',money(hourCost),false)+
+      row('You keep an hour',Math.max(0,share)+' cents on the dollar',money(keep),true,colour);
+  }else{
+    rows+=row('You bill an hour','your rate on this job',money(perHour),false)+
+      '<div style="font-size:11px;line-height:1.5;color:var(--text3);padding:0 0 9px">Put your own pay in Settings to see what you keep an hour.</div>';
+  }
+  if(markup>0)rows+=row('On the parts','your markup on '+money(matCost)+' of materials',money(markup),true,'var(--c-green)');
+  return '<div style="display:flex;align-items:center;gap:7px;padding:0 0 10px">'+
+      '<span style="font-size:11.5px;font-weight:600;color:var(--text2)">Your figures. Not on the proposal.</span>'+
+    '</div>'+rows+'<div class="summary-divider"></div>';
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
