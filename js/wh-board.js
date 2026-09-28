@@ -448,7 +448,7 @@ function _renderWhBoard(){
           '<div class="td-wh-title">Service due'+(due.length?'<span class="td-wh-count">'+due.length+'</span>':'')+'</div>'+
           '<div class="td-wh-hd-sub">'+escHtml(what)+' · '+sub+'</div>'+
         '</div>'+
-        '<button class="td-wh-add" onclick="openWhAdd()" aria-label="Add a service customer">'+svgIcon('➕',{size:16})+'</button>'+
+        '<button class="td-wh-add" onclick="openWhAdd(\'client\')" aria-label="Add a service customer">'+svgIcon('➕',{size:16})+'</button>'+
       '</div>'+
       _svcFilterBar(inUse,dueBy)+
       (finds.length?
@@ -534,7 +534,15 @@ function _svcPickList(){
 }
 function svcPickClient(){
   if(typeof showQuickPicker!=='function')return;
-  showQuickPicker('Service customer','Who is it for?',_svcPickList(),'service',false,'Your customers',{searchFirst:true});
+  showQuickPicker('Service customer','Who is it for?',_svcPickList(),'service',true,'Your customers',{searchFirst:true});
+}
+// "+ New client" from that search (owner 2026-09-28: every picker offers it):
+// the service form's own short new-customer rows, the typed name filled in,
+// so he never leaves the dashboard for the full client form.
+function svcAddNewNamed(name){
+  const k=_svcFormKeep();
+  k.name=String(name||'').trim();k.client='';k.addr='';
+  openWhAdd('new',k);
 }
 // Back from the search with a customer (and the house, when the search named
 // one). Several houses and none named: ask which, with the shared sheet.
@@ -1082,10 +1090,7 @@ function openWhAdd(mode,keep){
     '<div class="td-svc-chips" role="group" aria-label="Service">'+
       types.map(x=>chip(x.key,x.short||x.name)).join('')+chip(_SVC_CUSTOM,'Custom')+
     '</div>'+
-    '<div class="sf-seg" style="margin-top:12px">'+
-      '<button type="button" class="sf-seg-btn'+(md==='new'?' active':'')+'" onclick="openWhAdd(\'new\')">New customer</button>'+
-      '<button type="button" class="sf-seg-btn'+(md==='client'?' active':'')+'" onclick="openWhAdd(\'client\')">Existing client</button>'+
-    '</div>'+
+
     '<div class="sf-card td-wh-form-card"><div class="sf-list">'+
       (kind===_SVC_CUSTOM?row('Service','<input id="_svc-custom-name" autocapitalize="sentences" placeholder="Dryer vent cleaning" value="'+v(k.custom)+'">'):'')+
       (md==='new'?
@@ -1108,6 +1113,7 @@ function openWhAdd(mode,keep){
     '</div></div>'+
     '<div id="_wh-err" style="display:none;color:var(--c-red);font-size:12.5px;font-weight:600;margin:-2px 2px 8px"></div>'+
     '<button id="_wh-add-save" class="btn btn-g sf-cta">Add to board</button>'+
+    (md==='new'?'<button type="button" id="_wh-add-search" class="sf-clear" onclick="openWhAdd(\'client\',_svcFormKeep())">Search your customers instead</button>':'')+
     '<button id="_wh-add-types" class="sf-clear">Change default intervals</button>'+
     '<button id="_wh-add-done" class="sf-clear">Done</button>';
   ov.appendChild(m);document.body.appendChild(ov);

@@ -354,6 +354,39 @@ test.describe('Water heater flush board', () => {
     await page.evaluate(() => document.getElementById('_wh-add-done').click());
   });
 
+  // Owner 2026-09-28: every picker offers "New client". Here it opens the
+  // form's own short new-customer rows with the typed name, over the service
+  // form, never the full client page; and the old New/Existing tabs are gone.
+  test('new client: the shared search offers it, and it lands on the short form with the name typed', async () => {
+    await seed();
+    const r = await page.evaluate(() => {
+      openWhAdd('client');
+      const tabs = document.querySelectorAll('#_wh-add-ov .sf-seg-btn').length;
+      document.getElementById('_wh-date').value = _whAddMonths(todayKey(), -12);
+      document.getElementById('_svc-client-row').click();
+      const q = document.getElementById('qp-search');
+      q.value = 'Zed Brandnew'; q.dispatchEvent(new Event('input'));
+      const offered = document.getElementById('qp-new-wrap').style.display !== 'none';
+      document.querySelector('#qp-new-wrap button').click();
+      const onPage = document.querySelector('.pg.active')?.id;
+      const r1 = { tabs, offered, onPage, name: document.getElementById('_wh-name')?.value, picker: !!document.getElementById('qp-search'),
+        dateKept: document.getElementById('_wh-date').value === _whAddMonths(todayKey(), -12), back: !!document.getElementById('_wh-add-search') };
+      document.getElementById('_wh-add-save').click();
+      document.getElementById('_wh-add-done').click();
+      r1.created = clients.some(c => c.name === 'Zed Brandnew');
+      return r1;
+    });
+    expect(r.tabs, 'no New/Existing tabs').toBe(0);
+    expect(r.offered).toBe(true);
+    expect(r.onPage, 'stays on the dashboard').toBe('pg-dash');
+    expect(r.name).toBe('Zed Brandnew');
+    expect(r.picker).toBe(false);
+    expect(r.dateKept).toBe(true);
+    expect(r.back, 'a way back to the search').toBe(true);
+    expect(r.created).toBe(true);
+    expect(await boardNames()).toContain('Zed Brandnew');
+  });
+
   test('address: several houses are asked with the shared sheet, and the unit, board and schedule use the one picked', async () => {
     await seed();
     const r = await page.evaluate(() => {
