@@ -144,6 +144,45 @@ test.describe('the T&M screen, as an iPhone app', () => {
   });
 
   // A thing that is on or off is a switch on an iPhone.
+  // Owner 2026-09-27: "the circle itself isn't perfectly centered". The global
+  // input rule leaked a 1px border and padding onto the switch, and the knob
+  // sits inside the border, so it rode 1px low and right.
+  test('the switch knob sits dead centre in its track, off and on', async () => {
+    await open('Pull the old water heater');
+    const r = await page.evaluate(async () => {
+      _tmMoreOpen = true; _tmApplyLayers();
+      // "Not included" starts off, so the first reading really is the off knob.
+      const sw = document.querySelector('#tm-more-row input.ios-switch[data-layer="excl"]');
+      const gaps = () => {
+        const t = getComputedStyle(sw), k = getComputedStyle(sw, '::before');
+        const n = v => parseFloat(v) || 0;
+        const H = n(t.height) - n(t.borderTopWidth) - n(t.borderBottomWidth);
+        const W = n(t.width) - n(t.borderLeftWidth) - n(t.borderRightWidth);
+        const m = new DOMMatrix(k.transform === 'none' ? undefined : k.transform);
+        const top = n(k.top) + n(t.borderTopWidth), left = n(k.left) + n(t.borderLeftWidth) + m.m41;
+        return { border: t.borderTopWidth, above: top, below: n(t.height) - top - n(k.height),
+                 leftGap: left, rightGap: n(t.width) - left - n(k.width), H, W };
+      };
+      const off = gaps();
+      // Measure where the knob RESTS, not mid-slide: a loaded WebKit runner
+      // was still 1px short of the end 350ms in. With the slide off, the
+      // on position is exact the moment it is set.
+      const st = document.createElement('style');
+      st.textContent = '.ios-switch::before{transition:none!important}';
+      document.head.appendChild(st);
+      sw.checked = true;
+      await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const on = gaps();
+      st.remove();
+      sw.checked = false; _tmMoreOpen = false; _tmApplyLayers();
+      return { off, on };
+    });
+    expect(r.off.border).toBe('0px');
+    expect(r.off.above).toBe(r.off.below);
+    expect(r.off.leftGap).toBe(r.off.above);
+    expect(r.on.rightGap).toBe(r.on.above);
+  });
+
   test('More options are switches, and a switch turns its part on', async () => {
     await open('Pull the old water heater');
     const r = await page.evaluate(() => {

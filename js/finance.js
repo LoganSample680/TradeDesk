@@ -1449,12 +1449,16 @@ function executeQuickAction(actionType,clientId,bidId,jobId,addr){
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='invoice'){
     if(typeof openQuickInvoice==='function')openQuickInvoice(clientId,addr);
+  } else if(actionType==='service'){
+    // The service board's add form (js/wh-board.js): the customer, and the
+    // house when the search named one.
+    if(typeof svcAddSetClient==='function')svcAddSetClient(clientId,addr);
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){
     closeTopModal();
     currentClientId=clientId;
-    openEstimateForClient();
+    openEstimateForClient(addr);
   } else if(actionType==='schedule'){
     closeTopModal();
     if(bidId){schedFromBid(bidId);}
@@ -1596,8 +1600,13 @@ function _expRefreshWhereHeIs(){
 }
 
 function quickCreateClient(actionType){
-  const overlay=document.querySelector('.zmodal-overlay');
+  // The picker's own overlay, not whichever overlay happens to be first: the
+  // service form sits under this picker and must survive it.
+  const qs=document.getElementById('qp-search');
+  const typed=qs?String(qs.value||'').trim():'';
+  const overlay=(qs&&qs.closest('.zmodal-overlay'))||document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
+  if(actionType==='service'&&typeof svcAddNewNamed==='function'){svcAddNewNamed(typed);return;}
   window._pendingQuickAction=actionType;
   goPg('pg-clients');
   openNewClient();

@@ -1,0 +1,740 @@
+[
+  {
+    "id": "elec-01",
+    "trade": "electrical",
+    "said": "Okay so we're gonna upgrade the panel from 100 to 200 amp. Swap the meter base and then pull a new permit with the city.",
+    "expect": [
+      "Upgrade the panel from 100 to 200 amp",
+      "Swap the meter base",
+      "Pull a new permit with the city"
+    ],
+    "heard": [],
+    "note": "Clean baseline: sentence end plus 'and then' seam."
+  },
+  {
+    "id": "elec-02",
+    "trade": "electrical",
+    "said": "replace the federal pacific panel with a square dee 200 amp panel move all the circuits over and label everything",
+    "expect": [
+      "Replace the federal pacific panel with a Square D 200 amp panel",
+      "Move all the circuits over",
+      "Label everything"
+    ],
+    "heard": [
+      {"said": "square dee", "means": "Square D"}
+    ],
+    "note": "No punctuation at all; two run-on verb seams (move, label)."
+  },
+  {
+    "id": "elec-03",
+    "trade": "electrical",
+    "said": "Um so where running 2 new 20 amp circuits for the kitchen counters with 12/2 roam ex, add GFCI protection on both and then patch the drywall where we open up.",
+    "expect": [
+      "Running 2 new 20 amp circuits for the kitchen counters with 12/2 Romex",
+      "Add GFCI protection on both",
+      "Patch the drywall where we open up"
+    ],
+    "heard": [
+      {"said": "where running", "means": "we're running"},
+      {"said": "roam ex", "means": "Romex"}
+    ],
+    "note": "Misheard subject 'where' must still be dropped; the gerund stays as said. 'we' inside the last line is not a leading subject."
+  },
+  {
+    "id": "elec-04",
+    "trade": "electrical",
+    "said": "Install a Tesla wall connector in the garage on a 60 amp breaker with 6 gauge wire about 40 feet from the panel, $1,450 for that.",
+    "expect": [
+      "Install a Tesla wall connector in the garage on a 60 amp breaker with 6 gauge wire about 40 feet from the panel"
+    ],
+    "heard": [],
+    "note": "Trailing price clause goes to the line price, not a new line."
+  },
+  {
+    "id": "elec-05",
+    "trade": "electrical",
+    "said": "we're gonna mount the charge point on the outside wall run a 50 amp circuit in PVC conduit along the siding and set a disconnect next to it",
+    "expect": [
+      "Mount the ChargePoint on the outside wall",
+      "Run a 50 amp circuit in PVC conduit along the siding",
+      "Set a disconnect next to it"
+    ],
+    "heard": [
+      {"said": "charge point", "means": "ChargePoint"}
+    ],
+    "note": "Run-on seams at 'run' and 'and set'."
+  },
+  {
+    "id": "elec-06",
+    "trade": "electrical",
+    "said": "Replace the bathroom outlets with GFCI, 3 of them. Swap the bedroom breakers to AFCI.",
+    "expect": [
+      "Replace the bathroom outlets with GFCI, 3 of them",
+      "Swap the bedroom breakers to AFCI"
+    ],
+    "heard": [],
+    "note": "', 3 of them' is a quantity, not a new action: no split at that comma."
+  },
+  {
+    "id": "elec-07",
+    "trade": "electrical",
+    "said": "Okay put in six, no wait eight recessed lights in the living room, 6 inch LED wafers, tie them to one switch by the front door and then add a Lou Tron dimmer.",
+    "expect": [
+      "Put in 8 recessed lights in the living room, 6 inch LED wafers",
+      "Tie them to one switch by the front door",
+      "Add a Lutron dimmer"
+    ],
+    "heard": [
+      {"said": "Lou Tron", "means": "Lutron"}
+    ],
+    "note": "Self-correction 'six, no wait eight' resolves to 8. '6 inch LED wafers' is a spec on the same line."
+  },
+  {
+    "id": "elec-08",
+    "trade": "electrical",
+    "said": "hang 3 ceiling fans in the bedrooms swap the old boxes for fan rated boxes and run 14/3 so they get separate light and fan control",
+    "expect": [
+      "Hang 3 ceiling fans in the bedrooms",
+      "Swap the old boxes for fan rated boxes",
+      "Run 14/3 so they get separate light and fan control"
+    ],
+    "heard": [],
+    "note": "'fan rated boxes and run' is the seam; 'light and fan control' must not split."
+  },
+  {
+    "id": "elec-09",
+    "trade": "electrical",
+    "said": "Dimmers in the dining room and kitchen, uh, Lutron cassette.",
+    "expect": [
+      "Dimmers in the dining room and kitchen, Lutron Caseta"
+    ],
+    "heard": [
+      {"said": "Lutron cassette", "means": "Lutron Caseta"}
+    ],
+    "note": "Product name after a comma is a spec of the same line, not a new action. Filler 'uh' dropped mid-line."
+  },
+  {
+    "id": "elec-10",
+    "trade": "electrical",
+    "said": "Install an Eaton whole house surge protector at the main panel, 385 installed.",
+    "expect": [
+      "Install an Eaton whole house surge protector at the main panel"
+    ],
+    "heard": [],
+    "note": "'385 installed' is a price phrase; the word 'installed' goes with it."
+  },
+  {
+    "id": "elec-11",
+    "trade": "electrical",
+    "said": "Install an interlock kit on the Seaman's panel, mount a 50 amp power inlet box outside by the AC unit, run 6/3 to it and then add a 50 amp breaker.",
+    "expect": [
+      "Install an interlock kit on the Siemens panel",
+      "Mount a 50 amp power inlet box outside by the AC unit",
+      "Run 6/3 to it",
+      "Add a 50 amp breaker"
+    ],
+    "heard": [
+      {"said": "Seaman's", "means": "Siemens"}
+    ],
+    "note": "Generator interlock, four actions across commas and 'and then'."
+  },
+  {
+    "id": "elec-12",
+    "trade": "electrical",
+    "said": "set a 22 kW generic on a pad next to the house, install a 200 amp automatic transfer switch and then run the gas line, no scratch that, the plumber's running the gas, we just land the wiring at the generator",
+    "expect": [
+      "Set a 22 kW Generac on a pad next to the house",
+      "Install a 200 amp automatic transfer switch",
+      "Land the wiring at the generator"
+    ],
+    "heard": [
+      {"said": "generic", "means": "Generac"}
+    ],
+    "note": "'scratch that' retracts the gas line; the plumber clause is not crew work. 'generic' is only unambiguous because of '22 kW ... on a pad'."
+  },
+  {
+    "id": "elec-13",
+    "trade": "electrical",
+    "said": "we'll pull out the old Briggs generator and haul it off, set a new coaler 20 kW in the same spot",
+    "expect": [
+      "Pull out the old Briggs generator",
+      "Haul it off",
+      "Set a new Kohler 20 kW in the same spot"
+    ],
+    "heard": [
+      {"said": "coaler", "means": "Kohler"}
+    ],
+    "note": "Two actions on one object split at 'and haul'."
+  },
+  {
+    "id": "elec-14",
+    "trade": "electrical",
+    "said": "So this whole house is still nob and tube upstairs, uh, we're gonna rewire the second floor, all the bedrooms and the hall, pull out whatever nob and tube we can get to in the attic and abandon the rest in place, and you know fish new 14/2 down the walls to every outlet.",
+    "expect": [
+      "Rewire the second floor, all the bedrooms and the hall",
+      "Pull out whatever knob and tube we can get to in the attic",
+      "Abandon the rest in place",
+      "Fish new 14/2 down the walls to every outlet"
+    ],
+    "heard": [
+      {"said": "nob and tube", "means": "knob and tube"}
+    ],
+    "note": "Opening observation is not work. 'all the bedrooms and the hall' scopes the rewire and must not split. 'knob and tube' contains 'and' but is one noun."
+  },
+  {
+    "id": "elec-15",
+    "trade": "electrical",
+    "said": "pigtail all the aluminum branch circuits with Al you mi con connectors every outlet and switch in the house $3200",
+    "expect": [
+      "Pigtail all the aluminum branch circuits with AlumiConn connectors every outlet and switch in the house"
+    ],
+    "heard": [
+      {"said": "Al you mi con", "means": "AlumiConn"}
+    ],
+    "note": "Unpunctuated trailing price. 'outlet and switch' is not a seam."
+  },
+  {
+    "id": "elec-16",
+    "trade": "electrical",
+    "said": "Drive 2 ground rods 6 feet apart. Bond the water line and the gas line. New grounding electrode conductor, number 4 copper.",
+    "expect": [
+      "Drive 2 ground rods 6 feet apart",
+      "Bond the water line and the gas line",
+      "New grounding electrode conductor, number 4 copper"
+    ],
+    "heard": [],
+    "note": "Short and punchy. One verb, two objects stays one line."
+  },
+  {
+    "id": "elec-17",
+    "trade": "electrical",
+    "said": "trench from the house out to the shop about 120 feet 24 inches deep lay 2 inch PVC run 2/0 aluminum for a 100 amp subpanel set the subpanel in the shop",
+    "expect": [
+      "Trench from the house out to the shop about 120 feet 24 inches deep",
+      "Lay 2 inch PVC",
+      "Run 2/0 aluminum for a 100 amp subpanel",
+      "Set the subpanel in the shop"
+    ],
+    "heard": [],
+    "note": "No punctuation; four verb seams with numbers packed between them."
+  },
+  {
+    "id": "elec-18",
+    "trade": "electrical",
+    "said": "Mount a 50 amp GFCI spa disconnect on the post by the hot tub at least 5 feet away. Run 6/3 with ground in liquid tight from the main panel. Hook up the tub.",
+    "expect": [
+      "Mount a 50 amp GFCI spa disconnect on the post by the hot tub at least 5 feet away",
+      "Run 6/3 with ground in liquid tight from the main panel",
+      "Hook up the tub"
+    ],
+    "heard": []
+  },
+  {
+    "id": "elec-19",
+    "trade": "electrical",
+    "said": "Replace all 7 smoke detectors with hardwired combo smoke and CO, interconnected, Kidde.",
+    "expect": [
+      "Replace all 7 smoke detectors with hardwired combo smoke and CO, interconnected, Kidde"
+    ],
+    "heard": [],
+    "note": "Two trailing comma specs, neither is an action."
+  },
+  {
+    "id": "elec-20",
+    "trade": "electrical",
+    "said": "okay so coordinate the disconnect with Ameren for the service change, replace the mast with 2 inch rigid and a new weatherhead, then reconnect and get the inspection",
+    "expect": [
+      "Coordinate the disconnect with Ameren for the service change",
+      "Replace the mast with 2 inch rigid and a new weatherhead",
+      "Reconnect",
+      "Get the inspection"
+    ],
+    "heard": [],
+    "note": "'and a new weatherhead' is a second object, not an action; 'reconnect and get' is a seam."
+  },
+  {
+    "id": "elec-21",
+    "trade": "electrical",
+    "said": "Schedule the meter pull with the power company. Replace the rusted meter base with a new 200 amp ringless. Reseal the siding around it.",
+    "expect": [
+      "Schedule the meter pull with the power company",
+      "Replace the rusted meter base with a new 200 amp ringless",
+      "Reseal the siding around it"
+    ],
+    "heard": []
+  },
+  {
+    "id": "elec-22",
+    "trade": "electrical",
+    "said": "put a 60 amp Square D subpanel in the garage fed off a 60 amp 2 pole in the main, run 6/3 and then add 4 outlets on 2 20 amp circuits",
+    "expect": [
+      "Put a 60 amp Square D subpanel in the garage fed off a 60 amp 2 pole in the main",
+      "Run 6/3",
+      "Add 4 outlets on 2 20 amp circuits"
+    ],
+    "heard": [],
+    "note": "'2 20 amp circuits' is two numbers back to back; do not merge or reformat them."
+  },
+  {
+    "id": "elec-23",
+    "trade": "electrical",
+    "said": "rip out the zinc CO panel replace it with a Siemens 200 amp 40 space new breakers throughout 2800 for the panel swap permit and inspection another 250",
+    "expect": [
+      "Rip out the Zinsco panel",
+      "Replace it with a Siemens 200 amp 40 space new breakers throughout",
+      "Permit and inspection"
+    ],
+    "heard": [
+      {"said": "zinc CO", "means": "Zinsco"}
+    ],
+    "note": "Two unpunctuated prices: 2800 belongs to the replace line, 250 to permit and inspection. 'another' is part of the price phrase. 'Permit and inspection' is one item."
+  },
+  {
+    "id": "elec-24",
+    "trade": "electrical",
+    "said": "Add 4 duplex outlets along the basement wall and 2 more by the workbench, all 20 amp, tamper resistant.",
+    "expect": [
+      "Add 4 duplex outlets along the basement wall and 2 more by the workbench, all 20 amp, tamper resistant"
+    ],
+    "heard": [],
+    "note": "'and 2 more' shares the verb; one action, do not split."
+  },
+  {
+    "id": "elec-25",
+    "trade": "electrical",
+    "said": "Swap every switch in the house to Leviathan decora, 32 of them, white",
+    "expect": [
+      "Swap every switch in the house to Leviton decora, 32 of them, white"
+    ],
+    "heard": [
+      {"said": "Leviathan", "means": "Leviton"}
+    ],
+    "note": "Only the brand is corrected; 'decora' casing is left as dictated."
+  },
+  {
+    "id": "elec-26",
+    "trade": "electrical",
+    "said": "Replace. The kitchen light fixture with. The one the customer bought, and add a junction box? For the island pendant.",
+    "expect": [
+      "Replace the kitchen light fixture with the one the customer bought",
+      "Add a junction box for the island pendant"
+    ],
+    "heard": [],
+    "note": "Phone dropped periods and a question mark mid-phrase on pauses. A sentence end followed by a lowercase-worthy continuation is not a real break."
+  },
+  {
+    "id": "elec-27",
+    "trade": "electrical",
+    "said": "replace the 2 melted double pole 30s in the Cutler Hammer panel, check every lug with a torque screwdriver and IR scan the panel after",
+    "expect": [
+      "Replace the 2 melted double pole 30s in the Cutler Hammer panel",
+      "Check every lug with a torque screwdriver",
+      "IR scan the panel after"
+    ],
+    "heard": [],
+    "note": "Line starting with an acronym keeps its casing."
+  },
+  {
+    "id": "elec-28",
+    "trade": "electrical",
+    "said": "um okay so, you know, we're gonna bump the service from 100 to 200 amp, uh, new meter main combo on the outside, Square D, and then the old panel inside becomes a subpanel, separate the grounds and neutrals in it, and um, like, run 4/0 aluminum SER between the two, about 15 feet, no more like 20 feet",
+    "expect": [
+      "Bump the service from 100 to 200 amp",
+      "New meter main combo on the outside, Square D",
+      "The old panel inside becomes a subpanel",
+      "Separate the grounds and neutrals in it",
+      "Run 4/0 aluminum SER between the two, about 20 feet"
+    ],
+    "heard": [],
+    "note": "Heavy filler (um, you know, uh, like). 'Square D' after a comma is a spec. Self-correction '15 feet, no more like 20 feet' resolves to 20."
+  },
+  {
+    "id": "elec-29",
+    "trade": "electrical",
+    "said": "Cut in 12 can lights in the basement, 4 inch, then wire them on 2 switches, 3 way at the stairs.",
+    "expect": [
+      "Cut in 12 can lights in the basement, 4 inch",
+      "Wire them on 2 switches, 3 way at the stairs"
+    ],
+    "heard": []
+  },
+  {
+    "id": "elec-30",
+    "trade": "electrical",
+    "said": "Put GF see eye outlets on the back patio and in the garage, in use covers on the outside ones.",
+    "expect": [
+      "Put GFCI outlets on the back patio and in the garage",
+      "In use covers on the outside ones"
+    ],
+    "heard": [
+      {"said": "GF see eye", "means": "GFCI"}
+    ],
+    "note": "'and in the garage' is a second location, not a seam. The comma starts a new item."
+  },
+  {
+    "id": "elec-31",
+    "trade": "electrical",
+    "said": "Do a load calc first. If it passes install a 48 amp ChargePoint Home Flex on a 60 amp circuit.",
+    "expect": [
+      "Do a load calc first",
+      "If it passes install a 48 amp ChargePoint Home Flex on a 60 amp circuit"
+    ],
+    "heard": [],
+    "note": "Conditional line keeps its 'If it passes' opener."
+  },
+  {
+    "id": "elec-32",
+    "trade": "electrical",
+    "said": "Install the customer's ceiling fan in the master bedroom 175 and swap the switch for a fan speed control another 60",
+    "expect": [
+      "Install the customer's ceiling fan in the master bedroom",
+      "Swap the switch for a fan speed control"
+    ],
+    "heard": [],
+    "note": "Each line carries its own bare price (175, 60) with no dollar sign."
+  },
+  {
+    "id": "elec-33",
+    "trade": "electrical",
+    "said": "Smokes. Every bedroom. Hardwire. Interconnect.",
+    "expect": [
+      "Smokes, every bedroom, hardwire, interconnect"
+    ],
+    "heard": [],
+    "note": "Telegraphic: four one-word sentences describe ONE item. Splitting on every period gives four junk lines. Joined with commas, no words added."
+  },
+  {
+    "id": "elec-34",
+    "trade": "electrical",
+    "said": "run a dedicated 20 amp for the microwave with 12/2 Rome X and a dedicated 20 for the dishwasher",
+    "expect": [
+      "Run a dedicated 20 amp for the microwave with 12/2 Romex and a dedicated 20 for the dishwasher"
+    ],
+    "heard": [
+      {"said": "Rome X", "means": "Romex"}
+    ],
+    "note": "Shared verb, two circuits: one line, same as elec-24."
+  },
+  {
+    "id": "elec-35",
+    "trade": "electrical",
+    "said": "cut in a brawn exhaust fan in the hall bath vent it out through the roof with a roof jack wire it to the light switch",
+    "expect": [
+      "Cut in a Broan exhaust fan in the hall bath",
+      "Vent it out through the roof with a roof jack",
+      "Wire it to the light switch"
+    ],
+    "heard": [
+      {"said": "brawn", "means": "Broan"}
+    ],
+    "note": "Pronoun-led seams 'vent it', 'wire it' with no punctuation."
+  },
+  {
+    "id": "roof-01",
+    "trade": "roofing",
+    "said": "Tear off 1 layer and reroof with gee af Timberline HDZ, 28 squares, charcoal.",
+    "expect": [
+      "Tear off 1 layer",
+      "Reroof with GAF Timberline HDZ, 28 squares, charcoal"
+    ],
+    "heard": [
+      {"said": "gee af", "means": "GAF"}
+    ]
+  },
+  {
+    "id": "roof-02",
+    "trade": "roofing",
+    "said": "okay we're gonna strip it to the deck, replace any rotted decking, figure about 6 sheets of 7/16 OSB at 85 a sheet, then synthetic underlayment over the whole thing",
+    "expect": [
+      "Strip it to the deck",
+      "Replace any rotted decking",
+      "Synthetic underlayment over the whole thing"
+    ],
+    "heard": [],
+    "note": "'figure about 6 sheets' is a verb after a comma but it is a quantity, not crew work. 'at 85 a sheet' is a unit price."
+  },
+  {
+    "id": "roof-03",
+    "trade": "roofing",
+    "said": "ice and water field on the eaves 2 courses and in all the valleys",
+    "expect": [
+      "Ice and water shield on the eaves 2 courses and in all the valleys"
+    ],
+    "heard": [
+      {"said": "ice and water field", "means": "ice and water shield"}
+    ],
+    "note": "Product name contains 'and' twice; one line."
+  },
+  {
+    "id": "roof-04",
+    "trade": "roofing",
+    "said": "new white aluminum drip edge all the way around then starter strip at the eaves and rakes",
+    "expect": [
+      "New white aluminum drip edge all the way around",
+      "Starter strip at the eaves and rakes"
+    ],
+    "heard": []
+  },
+  {
+    "id": "roof-05",
+    "trade": "roofing",
+    "said": "Replace all the step fashion along the sidewall where it meets the siding, pull the siding back, and new counter flashing on the chimney.",
+    "expect": [
+      "Replace all the step flashing along the sidewall where it meets the siding",
+      "Pull the siding back",
+      "New counter flashing on the chimney"
+    ],
+    "heard": [
+      {"said": "step fashion", "means": "step flashing"}
+    ],
+    "note": "Same word dictated right once and wrong once in one breath."
+  },
+  {
+    "id": "roof-06",
+    "trade": "roofing",
+    "said": "Rebuild the chimney cricket, reflash the chimney with new step and counter flashing cut into the mortar joints, and uh, cap the chimney with a stainless cap, 450 for the cap.",
+    "expect": [
+      "Rebuild the chimney cricket",
+      "Reflash the chimney with new step and counter flashing cut into the mortar joints",
+      "Cap the chimney with a stainless cap"
+    ],
+    "heard": [],
+    "note": "'step and counter flashing' is one noun phrase. Price goes to the cap line."
+  },
+  {
+    "id": "roof-07",
+    "trade": "roofing",
+    "said": "Closed cut valleys on the front, open metal valleys on the back where it dumps the water.",
+    "expect": [
+      "Closed cut valleys on the front",
+      "Open metal valleys on the back where it dumps the water"
+    ],
+    "heard": [],
+    "note": "Two noun-phrase items, no verbs; the comma is the split."
+  },
+  {
+    "id": "roof-08",
+    "trade": "roofing",
+    "said": "cut in ridge vent the full length, 42 feet, Cobra ridge, and close off the 4 box vents and then patch em with shingles",
+    "expect": [
+      "Cut in ridge vent the full length, 42 feet, Cobra ridge",
+      "Close off the 4 box vents",
+      "Patch em with shingles"
+    ],
+    "heard": [],
+    "note": "Keeps 'em' as said."
+  },
+  {
+    "id": "roof-09",
+    "trade": "roofing",
+    "said": "Reset the loose ridge cap on the back slope and seal all exposed nail heads, then replace the missing shingles by the chimney, looks like 8 or 10.",
+    "expect": [
+      "Reset the loose ridge cap on the back slope",
+      "Seal all exposed nail heads",
+      "Replace the missing shingles by the chimney, looks like 8 or 10"
+    ],
+    "heard": [],
+    "note": "'looks like 8 or 10' is a count estimate, stays on its line."
+  },
+  {
+    "id": "roof-10",
+    "trade": "roofing",
+    "said": "So this is a hail claim with State Farm, adjuster already approved it, um, we're gonna tear off and replace the whole roof, both layers, Owens corny Duration in estate gray, replace the gutters on the front and the downspouts, and then uh we'll do the window wraps on the 2 dented ones too",
+    "expect": [
+      "Tear off and replace the whole roof, both layers",
+      "Owens Corning Duration in estate gray",
+      "Replace the gutters on the front and the downspouts",
+      "Do the window wraps on the 2 dented ones too"
+    ],
+    "heard": [
+      {"said": "Owens corny", "means": "Owens Corning"}
+    ],
+    "note": "Rambling insurance walk. Claim and adjuster context is not work. 'tear off and replace' is one reroof action. Mid-sentence 'we'll' dropped."
+  },
+  {
+    "id": "roof-11",
+    "trade": "roofing",
+    "said": "install about 4 squares of 26 gauge standing seam galvalume on the porch roof, screw it down over pearlings, new trim at the eaves and gable",
+    "expect": [
+      "Install about 4 squares of 26 gauge standing seam galvalume on the porch roof",
+      "Screw it down over purlins",
+      "New trim at the eaves and gable"
+    ],
+    "heard": [
+      {"said": "pearlings", "means": "purlins"}
+    ]
+  },
+  {
+    "id": "roof-12",
+    "trade": "roofing",
+    "said": "Tear off the flat section over the garage down to the deck, put down half inch ISO board, fully adhered 60 mil TPO, new termination bar at the wall, and heat weld all the seams.",
+    "expect": [
+      "Tear off the flat section over the garage down to the deck",
+      "Put down half inch ISO board",
+      "Fully adhered 60 mil TPO",
+      "New termination bar at the wall",
+      "Heat weld all the seams"
+    ],
+    "heard": [],
+    "note": "Five items, mix of verb lines and noun-phrase lines."
+  },
+  {
+    "id": "roof-13",
+    "trade": "roofing",
+    "said": "6 inch seamless gutters around the whole house 180 feet with 3 by 4 downspouts and leaf guards and hang them with hidden hangers every 2 feet",
+    "expect": [
+      "6 inch seamless gutters around the whole house 180 feet with 3 by 4 downspouts and leaf guards",
+      "Hang them with hidden hangers every 2 feet"
+    ],
+    "heard": [],
+    "note": "Line starts with a digit. First 'and' joins objects; second 'and' is the verb seam."
+  },
+  {
+    "id": "roof-14",
+    "trade": "roofing",
+    "said": "remove the skylight over the kitchen and deck over it, replace the one in the hall with a new V Lux, flash it with the V Lux kit",
+    "expect": [
+      "Remove the skylight over the kitchen",
+      "Deck over it",
+      "Replace the one in the hall with a new Velux",
+      "Flash it with the Velux kit"
+    ],
+    "heard": [
+      {"said": "V Lux", "means": "Velux"}
+    ]
+  },
+  {
+    "id": "roof-15",
+    "trade": "roofing",
+    "said": "Replace 10 sheets of decking with 1/2 inch CDX. $65 a sheet.",
+    "expect": [
+      "Replace 10 sheets of decking with 1/2 inch CDX"
+    ],
+    "heard": [],
+    "note": "A price alone in its own sentence is not a line."
+  },
+  {
+    "id": "roof-16",
+    "trade": "roofing",
+    "said": "tear off 2 layers haul it all off in a dumpster ice and water on the eaves certain teed Landmark in weathered wood 32 squares new ridge cap",
+    "expect": [
+      "Tear off 2 layers",
+      "Haul it all off in a dumpster",
+      "Ice and water on the eaves",
+      "CertainTeed Landmark in weathered wood 32 squares",
+      "New ridge cap"
+    ],
+    "heard": [
+      {"said": "certain teed", "means": "CertainTeed"}
+    ],
+    "note": "No punctuation and three of the five items have no verb; seams are at noun-phrase starts."
+  },
+  {
+    "id": "roof-17",
+    "trade": "roofing",
+    "said": "Shingle it in Tamko Heritage rustic black, 22 squares, over 15 pound felt.",
+    "expect": [
+      "Shingle it in Tamko Heritage rustic black, 22 squares, over 15 pound felt"
+    ],
+    "heard": []
+  },
+  {
+    "id": "roof-18",
+    "trade": "roofing",
+    "said": "grays ice and water on every valley and around the chimney and skylight, then Grace Tri-Flex synthetic on the rest",
+    "expect": [
+      "Grace ice and water on every valley and around the chimney and skylight",
+      "Grace Tri-Flex synthetic on the rest"
+    ],
+    "heard": [
+      {"said": "grays", "means": "Grace"}
+    ],
+    "note": "Three 'and's in the first line, none is a seam."
+  },
+  {
+    "id": "roof-19",
+    "trade": "roofing",
+    "said": "Replace the sofit, and fascia on the back side? 30 feet. Paint to match.",
+    "expect": [
+      "Replace the soffit and fascia on the back side, 30 feet",
+      "Paint to match"
+    ],
+    "heard": [
+      {"said": "sofit", "means": "soffit"}
+    ],
+    "note": "Stray comma inside 'soffit, and fascia' is not a new action. The '30 feet' fragment sentence belongs to the line before it."
+  },
+  {
+    "id": "roof-20",
+    "trade": "roofing",
+    "said": "It's a 6/12 so no steep charge. 24 squares architectural, 385 a square installed. Plus 1200 for the dumpster and disposal.",
+    "expect": [
+      "24 squares architectural",
+      "Dumpster and disposal"
+    ],
+    "heard": [],
+    "note": "Pitch remark is not work. Unit price '385 a square installed' and 'Plus 1200 for the' are price phrasing, leaving only the item."
+  },
+  {
+    "id": "roof-21",
+    "trade": "roofing",
+    "said": "uh yeah so at the valley by the dormer we're gonna um pull the shingles back about 3 feet on each side, put down ice and water, new W valley metal, and then reshingle it, you know, match the existing as close as we can",
+    "expect": [
+      "At the valley by the dormer pull the shingles back about 3 feet on each side",
+      "Put down ice and water",
+      "New W valley metal",
+      "Reshingle it, match the existing as close as we can"
+    ],
+    "heard": [],
+    "note": "Leading location phrase stays with the first action while the subject in the middle of it is removed. 'match the existing' qualifies the reshingle."
+  },
+  {
+    "id": "roof-22",
+    "trade": "roofing",
+    "said": "replace the hale damaged north and west slopes and match the existing Owens Corning Oakridge in driftwood",
+    "expect": [
+      "Replace the hail damaged north and west slopes",
+      "Match the existing Owens Corning Oakridge in driftwood"
+    ],
+    "heard": [
+      {"said": "hale", "means": "hail"}
+    ],
+    "note": "'north and west' is not a seam; 'and match' is."
+  },
+  {
+    "id": "roof-23",
+    "trade": "roofing",
+    "said": "clean out all the gutters, re pitch the back run, it's holding water, and add 2 down spots on the garage",
+    "expect": [
+      "Clean out all the gutters",
+      "Re pitch the back run",
+      "Add 2 downspouts on the garage"
+    ],
+    "heard": [
+      {"said": "down spots", "means": "downspouts"}
+    ],
+    "note": "The reason clause stays with its line; it is not a new action."
+  },
+  {
+    "id": "roof-24",
+    "trade": "roofing",
+    "said": "we'll tear off the garage roof only, 8 squares, Owens Corning Duration to match the house, new drip edge and ridge vent",
+    "expect": [
+      "Tear off the garage roof only, 8 squares",
+      "Owens Corning Duration to match the house",
+      "New drip edge and ridge vent"
+    ],
+    "heard": []
+  },
+  {
+    "id": "roof-25",
+    "trade": "roofing",
+    "said": "Two new pipe boots. No three. And a new exhaust vent for the bath fan.",
+    "expect": [
+      "3 new pipe boots",
+      "A new exhaust vent for the bath fan"
+    ],
+    "heard": [],
+    "note": "Self-correction spans a sentence end ('No three.'). Leading 'And' is dropped. Spoken number becomes a digit."
+  }
+]

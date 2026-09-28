@@ -283,6 +283,9 @@ test.describe('supply list: on a BYO estimate', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The cloud load lands later on WebKit and would swap the estimate out from
+    // under the tests (the same race e2e-attach-suggestions waits out).
+    await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 15000 }).catch(() => {});
     await openEstimate(page, 'byo');
   });
   test.afterAll(async () => { await page.context().close(); });
@@ -291,7 +294,9 @@ test.describe('supply list: on a BYO estimate', () => {
     await expect(page.locator('#sup-card')).toBeVisible();
     await expect(page.locator('#sup-markup')).toHaveAttribute('type', 'number');
     await expect(page.locator('#sup-card button', { hasText: 'Send to supply house' })).toBeDisabled();
-    await expect(page.locator('#sup-card button', { hasText: 'Load their quote' })).toBeEnabled();
+    // With no list typed: a quote he already has for the parts loads straight in.
+    await expect(page.locator('#sup-card button', { hasText: 'Load a quote' })).toBeEnabled();
+    await expect(page.locator('#sup-card')).toContainText('Already have a quote for the parts? Load it and the list fills itself.');
   });
 
   test('typing the list adds lines with no prices yet', async () => {
@@ -326,7 +331,14 @@ test.describe('supply list: on a BYO estimate', () => {
 
   test('markup goes on top, and sales tax is figured on the marked-up price', async () => {
     await page.locator('#sup-markup').fill('20');
-    await page.waitForTimeout(500);
+    // The card redraws 350ms after the last keystroke (_supSetMarkup). A fixed
+    // 500ms wait raced that timer on a loaded WebKit runner and read the price
+    // before the markup landed, so wait for the redraw itself.
+    const cost0 = 1356.43 - 497.15;
+    await page.waitForFunction((want) => {
+      const it = _byoItems.find(x => x._supply);
+      return !!it && Math.abs(it.price - want) < 0.01;
+    }, Math.round(cost0 * 1.2 * 100) / 100, { timeout: 5000 });
     const r = await page.evaluate(() => {
       _geiClientTaxRate = { rate: 10, source: 'db_zip' };
       _byoUpdateRail();

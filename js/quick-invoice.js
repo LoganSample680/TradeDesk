@@ -424,6 +424,10 @@ function _qiSayBuild(){
   if(!said)return;
   const lines=timSayLines(said);
   const steps=lines.map(l=>l.text);
+  // Parts he said he used are lines on the bill too: "2 supply lines", "a
+  // Fluidmaster fill valve". Priced from his book when it knows them, blank
+  // when it does not, the same rule as every other line here.
+  const mats=(typeof timSaidMaterials==='function')?timSaidMaterials(said):[];
   if(typeof timLogScope==='function')timLogScope(said,steps,'qi',null);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));
@@ -439,10 +443,36 @@ function _qiSayBuild(){
       const own=(typeof _pbFind==='function')?_pbFind(st,trade):null;
       _qi.typed.push({desc:st,amount:l.price>0?l.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
     });
-    if(!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   }
+  if(mats.length){
+    const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
+    _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
+    const have=new Set(_qi.typed.map(l=>String(l.desc).toLowerCase()));
+    mats.forEach(m=>{
+      const desc=_qiMatDesc(m);
+      if(have.has(desc.toLowerCase()))return;have.add(desc.toLowerCase());
+      const own=(typeof _pbFind==='function')?_pbFind(m.item,trade):null;
+      const rate=own&&Number(own.rate)>0?Number(own.rate):0;
+      _qi.typed.push({desc,amount:rate>0?Math.round(rate*(Number(m.qty)||1)*100)/100:''});
+    });
+  }
+  if(_qi.mode!=='hourly'&&!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   renderQuickInvoice();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+// "2 supply lines", "40 bags Quikrete", "1 Fluidmaster fill valve": the count,
+// the unit it is sold in when it is not each, and the thing.
+function _qiMatDesc(m){
+  const n=Math.round((Number(m&&m.qty)||1)*100)/100;
+  const u=m&&m.unit&&m.unit!=='ea'?m.unit:'';
+  const unit=u?' '+(n===1?u:(u==='box'?'boxes':u==='foot'?'feet':u==='sq ft'?'sq ft':u+'s')):'';
+  let item=String(m&&m.item||'').trim();
+  // "Supply lines" reads as "2 supply lines"; a name ("Quikrete", "PEX") keeps
+  // its capital.
+  const w0=item.split(/\s+/)[0]||'';
+  const name=/^[A-Z]{2}/.test(w0)||(typeof _TIMK_BRAND_KEYS!=='undefined'&&typeof _timkSoundKey==='function'&&_TIMK_BRAND_KEYS.get(_timkSoundKey(w0)));
+  if(!name)item=item.charAt(0).toLowerCase()+item.slice(1);
+  return n+unit+' '+item;
 }
 function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);renderQuickInvoice();}
 

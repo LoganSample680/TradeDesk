@@ -1296,6 +1296,13 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .td-wh-form-sub{font-size:13px;color:var(--text3);margin-top:3px}
 .td-wh-form-card{background:var(--cream);box-shadow:none}
 .td-wh-form label.sf-row{cursor:pointer}
+.td-wh-form .td-svc-tap{width:100%;box-sizing:border-box;background:none;border:none;border-bottom:1px solid var(--line);font:inherit;color:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.td-wh-form .td-svc-tap .sf-body{min-width:0}
+.td-svc-tap-v{display:block;font-size:15px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.td-svc-tap-ph{color:var(--text-3);font-weight:500}
+.td-svc-tap-chev{flex-shrink:0;color:var(--text-3);display:flex}
+.td-wh-addr{display:block;max-width:100%;padding:0;margin:1px 0 0;border:none;background:none;font:inherit;font-size:13px;color:var(--text-2);text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:3px}
+.td-wh-addr-ask{color:var(--blue);font-weight:700;text-decoration:none}
 .td-wh-form .sf-row input[type=date]{display:block;min-height:26px;line-height:26px;text-align:left;cursor:pointer}
 .td-wh-form .sf-row input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:26px}
 .td-wh-form .sf-row input[type=date]:invalid,.td-wh-form .sf-row input[type=date][value=""]{color:var(--text-3)}
@@ -1637,7 +1644,11 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-step button{width:44px;height:32px;border:0;background:none;color:var(--text);font-size:20px;font-family:inherit;cursor:pointer;line-height:1}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-step button+span,:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-step span+button{border-left:1px solid var(--ios-sep)}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-step span{min-width:34px;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
-:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;position:relative;width:51px;height:31px;margin:0;border-radius:31px;background:var(--line-2);cursor:pointer;transition:background-color .2s ease}
+/* border:0 and padding:0 are load-bearing (owner 2026-09-27: "the circle isn't
+   perfectly centered"). The global input rule gave the switch a 1px border and
+   10px/12px padding; the knob is positioned inside the border, so it sat 1px
+   low and right: 3px of track above it, 1px below. */
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;position:relative;width:51px;height:31px;margin:0;border:0;padding:0;box-sizing:border-box;border-radius:31px;background:var(--line-2);cursor:pointer;transition:background-color .2s ease}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-switch::before{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.16);transition:transform .2s ease}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-switch:checked{background:var(--ios-tint)}
 :is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-switch:checked::before{transform:translateX(20px)}

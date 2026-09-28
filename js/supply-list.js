@@ -172,7 +172,7 @@ function _supCardHTML(){
       (d&&d.vendor?'<div style="font-size:11px;color:var(--text3)">'+escHtml(d.vendor)+'</div>':'')+
     '</div>'+
     '<div style="padding:4px 0 12px">'+
-      (rows?'<div class="sup-list">'+rows+'</div>':'<div style="padding:10px 0;font-size:12px;color:var(--text-3)">Type what you need, one item per line. Prices come from their quote.</div>')+
+      (rows?'<div class="sup-list">'+rows+'</div>':'<div style="padding:10px 0;font-size:12px;color:var(--text-3);line-height:1.45">Type what you need, one item per line, and send it to your supply house. Already have a quote for the parts? Load it and the list fills itself.</div>')+
       '<textarea id="sup-add" rows="2" placeholder="3 ea 3/4 ball valve&#10;20 ft 2in PVC" style="width:100%;margin-top:8px;padding:9px 11px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box"></textarea>'+
       '<button type="button" class="btn btn-sm" style="margin-top:6px" onclick="_supAddFromBox()">+ Add to list</button>'+
       '<div class="sup-markup">'+
@@ -188,7 +188,10 @@ function _supCardHTML(){
       (taxNote?'<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">'+escHtml(taxNote)+'</div>':'')+
       '<div class="sup-actions">'+
         '<button type="button" class="btn" onclick="_supOpenSend()"'+(items.length?'':' disabled')+'>Send to supply house</button>'+
-        '<button type="button" class="btn btn-p" onclick="_supPickQuote()">Load their quote</button>'+
+        // "Load a quote", not "Load their quote" (owner 2026-09-27): it takes the
+        // quote they sent back AND one he already has for the parts, list or no
+        // list. With nothing typed, the quote's lines become the list.
+        '<button type="button" class="btn btn-p" onclick="_supPickQuote()">Load a quote</button>'+
       '</div>'+
       '<input type="file" id="sup-quote-file" accept="application/pdf,image/*" style="display:none" onchange="_supQuoteChosen(this)">'+
     '</div>'+

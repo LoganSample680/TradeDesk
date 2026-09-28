@@ -2503,6 +2503,11 @@ test.describe('clients.js: exhaustive coverage', () => {
 
     // A landlord with four rentals must never have a proposal land on the wrong
     // house because the app used whichever address it happened to store first.
+    // Changed 2026-09-28 (owner: "TrueShot, invoice, proposal, service should
+    // all follow the same client picker then address confirm step"). This row
+    // used to unfold its own list of the customer's houses; it now asks on the
+    // shared "Which property?" sheet (pickClientAddress) every other picker
+    // uses, and its line reads the shared way (clientAddrSub: "3 addresses").
     test('a customer with several properties opens instead of guessing, and the pick rides through', async () => {
       await page.evaluate(() => {
         clients = clients.filter(c => !/^GateLandlord/.test(c.name || ''));
@@ -2516,26 +2521,36 @@ test.describe('clients.js: exhaustive coverage', () => {
         const hits = document.getElementById('_newc-gate-hits');
         return { sub: hits.textContent, subRows: hits.querySelectorAll('button').length };
       });
-      expect(collapsed.sub).toContain('3 properties');   // counted, not guessed
-      expect(collapsed.subRows).toBe(1);                 // still one row until opened
+      expect(collapsed.sub).toContain('3 addresses');    // counted, not guessed
+      expect(collapsed.subRows).toBe(1);
 
       const opened = await page.evaluate(() => {
         document.getElementById('_newc-gate-hits').querySelector('button').click();
-        const btns = [...document.getElementById('_newc-gate-hits').querySelectorAll('button')];
-        return { count: btns.length, text: document.getElementById('_newc-gate-hits').textContent };
+        const sheet = document.getElementById('_addrpick-sheet');
+        return { sheet: !!sheet, text: sheet ? sheet.textContent : '', inline: document.getElementById('_newc-gate-hits').querySelectorAll('button').length };
       });
-      expect(opened.count).toBe(4);                      // the row plus its three properties
+      expect(opened.sheet, 'the shared Which property sheet, not a list of its own').toBe(true);
+      expect(opened.inline).toBe(1);
       expect(opened.text).toContain('Duplex');
       expect(opened.text).toContain('77 Third Rd');
 
       const picked = await page.evaluate(() => {
-        const btns = [...document.getElementById('_newc-gate-hits').querySelectorAll('button')];
-        btns[3].click();                                 // the Triplex
-        return { opened: window.__opened[window.__opened.length - 1], closed: !document.getElementById('_newc-gate-overlay') };
+        _addrPickChoose(2);                               // the Triplex
+        return { opened: window.__opened[window.__opened.length - 1], closed: !document.getElementById('_newc-gate-overlay') && !document.getElementById('_addrpick-ov') };
       });
       expect(picked.opened[0]).toBe(55510003);
       expect(picked.opened[1]).toBe('77 Third Rd, Derby, KS 67037');
       expect(picked.closed).toBe(true);
+
+      // A search that names one of the houses goes straight to it.
+      await armReal();
+      await typeName('Third Rd');
+      const named = await page.evaluate(() => {
+        document.getElementById('_newc-gate-hits').querySelector('button').click();
+        return { sheet: !!document.getElementById('_addrpick-ov'), opened: window.__opened[window.__opened.length - 1] };
+      });
+      expect(named.sheet).toBe(false);
+      expect(named.opened[1]).toBe('77 Third Rd, Derby, KS 67037');
       await page.evaluate(() => { clients = clients.filter(c => !/^GateLandlord/.test(c.name || '')); });
     });
 

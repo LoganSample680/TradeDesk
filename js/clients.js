@@ -20,7 +20,9 @@ function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRec
 // (td_jobs is never redacted) and the property value can't leak to field crew.
 function _canSeeFinancials(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.financials); }
 
-function openEstimateForClient(){
+// pickedAddr: the house the customer search already named (clientMatchedAddr),
+// so a search for "Lake Rd" starts the proposal at Lake Rd with no question.
+function openEstimateForClient(pickedAddr){
   // Permission gate FIRST, covers both entry points (dashboard quick action and
   // the client-record buttons both funnel here). A non-estimate employee gets the
   // request-access popup, never the estimator.
@@ -33,10 +35,10 @@ function openEstimateForClient(){
   if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked',html:true});return;}
   if(r==='high_risk'){
     zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with proposal?',
-      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true,html:true});
+      ()=>_rrpGateThenEstimate(c,pickedAddr||''),{title:'High risk client',yes:'Proceed',danger:true,html:true});
     return;
   }
-  _rrpGateThenEstimate(c);
+  _rrpGateThenEstimate(c,pickedAddr||'');
 }
 
 // Client-record action menus. The header keeps only Call/Text/+New/More; these
@@ -360,7 +362,6 @@ function _clientCommitNew(c){
 // chooser, TrueBid's measuring tools) still receives a real client, which is
 // why this is one screen rather than a null-client mode threaded through all
 // of it. Same shell as the address gate directly below, on purpose (7.3).
-let _newcGateOpenId=null;
 function _newcGateMatches(q){
   const ql=(q||'').trim().toLowerCase();
   if(!ql)return (clients||[]).slice(-5).reverse();
@@ -379,29 +380,26 @@ function _newcGateRender(){
   const label=document.getElementById('_newc-gate-newlbl');
   if(!hits||!block)return;
   const rows=_newcGateMatches(q);
+  // One step for every picker (owner 2026-09-28: "TrueShot, invoice,
+  // proposal, service should all follow the same client picker then address
+  // confirm step"): pick the customer here, and a customer with several houses
+  // is asked which one on the shared "Which property?" sheet (pickClientAddress)
+  // rather than a list of its own. A search that named one house goes straight
+  // to it. One house is still one tap.
   const row=c=>{
     const props=_newcGateProps(c);
     const multi=props.length>1;
+    const hit=(multi&&q&&typeof clientMatchedAddr==='function')?clientMatchedAddr(c,q):null;
     const av='<span class="cc-avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0;'+(typeof stageAvatar==='function'?stageAvatar(getClientStage(c.id).stage):'')+'">'+initials(c.name)+'</span>';
-    // One property is one tap. Several, and the row opens instead of guessing:
-    // a landlord with four rentals should never have a proposal land on the
-    // wrong house because the app picked the first address it had.
-    const sub=multi?props.length+' properties':(props[0]?props[0].addr:'No address yet');
-    return '<button onclick="'+(multi?'_newcGateToggle('+c.id+')':'_newcGatePick('+c.id+')')+'" '+
+    const sub=typeof clientAddrSub==='function'?clientAddrSub(c,q):(multi?props.length+' properties':(props[0]?props[0].addr:'No address yet'));
+    return '<button onclick="_newcGatePick('+c.id+(hit?','+JSON.stringify(hit.addr).replace(/"/g,'&quot;'):'')+')" '+
       'style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">'+
       av+
       '<span style="flex:1;min-width:0">'+
         '<span style="display:block;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</span>'+
         '<span style="display:block;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>'+
       '</span>'+
-      (multi?'<span id="_newc-chev-'+c.id+'" style="font-size:11px;color:var(--text3);flex-shrink:0">'+(_newcGateOpenId===c.id?'⌄':'›')+'</span>':'')+
-    '</button>'+
-    (multi&&_newcGateOpenId===c.id?
-      '<div style="margin:-2px 0 8px 12px;padding-left:10px;border-left:2px solid var(--border2)">'+
-        props.map((a,i)=>'<button onclick="_newcGatePick('+c.id+','+i+')" style="width:100%;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:5px">'+
-          '<span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(a.label||'Property')+'</span>'+
-          '<span style="display:block;font-size:12px;color:var(--text)">'+escHtml(a.addr)+'</span></button>').join('')+
-      '</div>':'');
+    '</button>';
   };
   hits.innerHTML=rows.length?
     (q?'':'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin:2px 0 6px">Recent</div>')+
@@ -413,24 +411,21 @@ function _newcGateRender(){
   block.style.display=show?'':'none';
   if(show&&label)label.textContent=rows.length?'Nobody above? Add '+q+' as new':'Add '+q+' as a new customer';
 }
-function _newcGateToggle(id){
-  _newcGateOpenId=_newcGateOpenId===id?null:id;
-  _newcGateRender();
-}
-function _newcGatePick(id,propIdx){
+function _newcGatePick(id,addr){
   const c=getClientById(id);if(!c)return;
-  const props=_newcGateProps(c);
-  // Index 0 is the primary address, which _doOpenEstimate would have used
-  // anyway, so only a deliberate pick of another property overrides anything.
-  const picked=(propIdx!=null&&props[propIdx]&&propIdx>0)?props[propIdx].addr:'';
-  document.getElementById('_newc-gate-overlay')?.remove();
-  _newcGateOpenId=null;
-  currentClientId=c.id;
-  _rrpGateThenEstimate(c,picked);
+  const go=a=>{
+    document.getElementById('_newc-gate-overlay')?.remove();
+    currentClientId=c.id;
+    // The primary is what the estimator uses anyway, so only another house
+    // overrides anything.
+    _rrpGateThenEstimate(c,(a&&a!==c.addr)?a:'');
+  };
+  if(addr){go(addr);return;}
+  if(_newcGateProps(c).length>1&&typeof pickClientAddress==='function'){pickClientAddress(c.id,go);return;}
+  go('');
 }
 function _newClientQuickGate(){
   document.getElementById('_newc-gate-overlay')?.remove();
-  _newcGateOpenId=null;
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_newc-gate-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.style.animation='td-pg-enter .22s cubic-bezier(.22,1,.36,1) both';
