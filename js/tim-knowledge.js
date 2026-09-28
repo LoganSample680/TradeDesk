@@ -330,11 +330,15 @@ function _timkVerbSplit(frag){
     if(!_timkVerbLike(w))continue;
     // "pressure test", "power wash": one verb in two words.
     if(/^(?:pressure|leak|power|flow|smoke)$/.test(prev)&&/^(?:test|tested|testing|wash|washed|washing|check)$/.test(w))continue;
+    // "anode rod", "curtain rod": the thing, not a drain being rodded.
+    if(/^rods?$/.test(w)&&/^(?:anode|curtain|ground|threaded|sacrificial|magnesium|aluminum|closet)$/.test(prev))continue;
     const stem=w.replace(/ing$/,'');
     const strong=_TIMK_STRONG.has(w)||_TIMK_STRONG.has(stem)||_TIMK_STRONG.has(stem+'e');
     // "fifteen years old haul the heater": "old" before a strong verb that
     // opens an object is the end of the last clause, not an adjective.
-    if(_TIMK_NOT_BEFORE.test(prev)&&!(strong&&/^(?:old|new)$/.test(prev)&&_TIMK_STARTER.test(next)))continue;
+    // "removing the old putting in the new" is the same seam with a plain verb,
+    // when the verb is followed by its particle ("putting IN", "taking OUT").
+    if(_TIMK_NOT_BEFORE.test(prev)&&!((strong||/^(?:in|out|up|down|off)$/.test(next))&&/^(?:old|new)$/.test(prev)&&_TIMK_STARTER.test(next)))continue;
     if(!strong&&!_TIMK_STARTER.test(next))continue;
     const left=words.slice(start,i).join(' ');
     if(i-start<2||!_timkHasObject(left))continue;
@@ -497,7 +501,53 @@ function _timkCorrect(text){
 // Line by line: a list he typed keeps its lines, and a correction on one line
 // never reaches into the line above it.
 function _timkClean(text){
-  return String(text||'').split(/(\r?\n+)/).map((seg,i)=>(i%2)?seg:_timkCorrect(_timkNumbers(_timkUnfill(seg)))).join('');
+  return String(text||'').split(/(\r?\n+)/).map((seg,i)=>(i%2)?seg:_timkCorrect(_timkNumbers(_timkUnfill(_timkHeard(seg))))).join('');
+}
+
+// ── WHAT THE PHONE HEARD WRONG (Blake Sample, 2026-09-28) ───────────────────
+//
+// Said: "Bradford White install, we're putting a Corro-Protec powered anode rod
+// in, we'll be removing the old, putting in the new." Heard: "Bradford White.
+// Install where putting a core protect powered and load rod in will be removing
+// the old, putting in the new." Tim then split it into "Install where" and "Rod
+// in will be", which went on a proposal.
+//
+// Two kinds of fix, both narrow:
+//   1. Trade words the recognizer has no idea exist. Only whole phrases that
+//      mean nothing else on a job ("powered and load rod" is never English).
+//   2. "we're" and "we'll" heard as "where", "were" and "will". Only in front
+//      of a work verb ending in -ing, which "where" never is in a scope.
+const _TIMK_HEARD=[
+  [/\b(?:core|chorro|coro|cora|corrow|corro)[\s-]*(?:protect|protec|protech|pro\s+tech|pro\s+tec)\b/gi,'Corro-Protec'],
+  [/\bpower(?:ed)?\s+(?:and\s+load|an\s+old|and\s+old|an\s+ode|and\s+owed|a\s+node)(?=\s+rods?\b)/gi,'powered anode'],
+  [/\b(?:and\s+load|an\s+old|and\s+owed|a\s+node)(?=\s+rods?\b)/gi,'anode'],
+];
+function _timkHeard(seg){
+  let v=String(seg||'');
+  _TIMK_HEARD.forEach(([re,to])=>{v=v.replace(re,to);});
+  // "where putting" / "were putting" -> "we're putting".
+  // Never after a subject: "we were testing it" is already right.
+  v=v.replace(/(^|\S+\s+)(where|were|wear)(\s+)([a-z]+ing)\b/gi,(m,pre,w,sp,g)=>{
+    if(!_timkVerbLike(g))return m;
+    if(/^(?:we|they|you|i|who|that|which|it|he|she)\W*\s+$/i.test(pre))return m;
+    return pre+"we're"+sp+g;
+  });
+  // "rod in will be removing" -> "rod in, we'll be removing". Mid-sentence only:
+  // a sentence that opens "Will be" has lost its subject the same way.
+  v=v.replace(/(^|[^\s,.;!?]\s+|[.;!?]\s+)(will|well)(\s+be\s+)([a-z]+ing)\b/gi,(m,pre,w,mid,g)=>{
+    if(!_timkVerbLike(g))return m;
+    const lead=/[.;!?]\s+$|^$/.test(pre)?pre:pre.replace(/\s+$/,'')+', ';
+    const we=/^[A-Z]/.test(w)||/[.;!?]\s+$|^$/.test(pre)?"We'll":"we'll";
+    return lead+we+mid+g;
+  });
+  // A lone verb the phone put a full stop BEFORE: "Bradford White. Install,
+  // we're putting" is "Bradford White install. We're putting". A bare verb
+  // with nothing to act on is the tail of the sentence before it.
+  v=v.replace(/([^.!?;\s])[.!?]\s+([A-Za-z]+)[,.]?\s+(?=(?:we're|we'll|we|i'm|i'll|i)\s)/g,(m,end,word,off,str)=>{
+    if(!_timkVerbLike(word))return m;
+    return end+' '+word.toLowerCase()+'. ';
+  });
+  return v;
 }
 
 // ── RUN-ON TALK, NO PUNCTUATION (2026-09-27) ──────────────────────────────
@@ -609,7 +659,9 @@ function timScopeFrom(text){
         bits.forEach((bit,i)=>{
           if(i===0){buf=bit;return;}
           const next=bit.replace(/^and\s+/i,'');
-          if(_timkNewAction(next)){push(buf);buf=next;}
+          // "we'll be removing the old" starts a step as surely as "removing the
+          // old" does: the subject is looked past, and _timkTidy drops it.
+          if(_timkNewAction(next)||_timkNewAction(next.replace(_TIMK_SUBJECT,'').replace(/^be\s+/i,''))){push(buf);buf=next;}
           else buf=buf+', '+bit;
         });
         push(buf);
