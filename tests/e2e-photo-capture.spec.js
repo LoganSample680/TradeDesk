@@ -2522,7 +2522,10 @@ test.describe('TrueShot: every control, and no dead ones', () => {
         const openOn = label === 'Before' ? 'after' : label === 'Ghost' ? 'after' : 'before';
         tdCaptureForBid(901, openOn);
         const btns = [...document.querySelectorAll('#pc-sheet button')];
-        const btn = btns.find(b => (b.textContent || '').trim().toLowerCase().startsWith(label.toLowerCase()));
+        // Ghost and Stamp read in plain words since the Earl audit (2026-09-27):
+        // "Show/Hide Before" and "Date on photo / No date on photo".
+        const words = { Ghost: /^(show|hide) before/i, Stamp: /date on photo/i }[label];
+        const btn = btns.find(b => words ? words.test((b.textContent || '').trim()) : (b.textContent || '').trim().toLowerCase().startsWith(label.toLowerCase()));
         if (!btn) { dead.push(label + ' (missing)'); return; }
         const before = snap();
         btn.click();
@@ -2690,6 +2693,11 @@ test.describe('TrueShot: the photos come back', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Diagnostic (2026-09-27): the midnight-clock job has twice seen this page
+    // navigate away mid-test ("Execution context was destroyed") and it does
+    // not reproduce locally. Name where it went, so the next occurrence says
+    // what did it instead of leaving a guess.
+    page.on('framenavigated', f => { if (f === page.mainFrame()) console.log('[photos-come-back] main frame navigated to ' + f.url()); });
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => { await page.evaluate(seed()); });
@@ -3015,7 +3023,9 @@ test.describe('TrueShot: the uploaded file carries its GPS', () => {
 
   test('the shutter fires at the capture, before the slow encode', async () => {
     const order = await page.evaluate(() => {
-      const src = String(tdCaptureShoot || '');
+      // The shutter body is _pcShootNow; tdCaptureShoot only registers it as
+      // in flight so Done waits for it (Earl audit 2026-09-27).
+      const src = String(_pcShootNow || '');
       return { flashAt: src.indexOf('_pcFlash()'), encodeAt: src.indexOf('toBlob') };
     });
     expect(order.flashAt, 'the flash is in the shutter path').toBeGreaterThan(-1);
@@ -4520,6 +4530,11 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
         }) } };
       };
       window.__reset = async () => {
+        // An offline save arms the 60s retry (_pcFlushSoon). On a slow runner the
+        // one an earlier test armed fires mid-test and sends photos before the
+        // test's own flush, so that flush counts only the leftovers. Start clean.
+        if (_pcFlushTimer) { clearTimeout(_pcFlushTimer); _pcFlushTimer = null; }
+        if (_pcFlushing) { try { await _pcFlushing; } catch (e) { } }
         window.supaEnabled = window.__saved.en; window._supa = window.__saved.supa; window._supaUser = { id: 'acct-me' };
         for (const r of await _pcOutboxAll()) await _pcOutboxDel(r.id);
         photos.length = 0; jobs.length = 0; clients.length = 0;
@@ -4569,6 +4584,24 @@ test.describe('TrueShot: offline first, the photo outbox', () => {
     expect(r.n).toBe(3);
     expect(r.back).toEqual(r.ids);
     expect(r.filed).toBe(true);
+  });
+
+  // The midnight-clock run caught one photo coming back twice: the relaunch
+  // restore and tdPhotoFlush's restore overlapped, and both passed the "already
+  // there?" check before either pushed (2026-09-26).
+  test('two restores at once bring every photo back once, not twice', async () => {
+    const r = await page.evaluate(async () => {
+      await window.__reset(); window.__offline();
+      for (let i = 0; i < 3; i++) await tdSavePhoto({ file: await window.__big(800, 600), type: 'after', clientId: 501, addr: '4835 NE Kincaid Rd, Topeka, KS 66617', stamp: false });
+      const ids = photos.map(p => String(p.id)).sort();
+      photos.length = 0; localStorage.removeItem('zp3_photos');
+      const counts = await Promise.all([_pcOutboxRestore(), _pcOutboxRestore(), _pcOutboxRestore()]);
+      const again = await _pcOutboxRestore();
+      return { ids, counts, again, back: photos.map(p => String(p.id)).sort() };
+    });
+    expect(r.back).toEqual(r.ids);
+    expect(r.counts).toEqual([3, 3, 3]);
+    expect(r.again).toBe(0);
   });
 
   test('signal comes back: every photo goes up full size, filed right, and leaves the outbox', async () => {

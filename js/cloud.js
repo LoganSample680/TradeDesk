@@ -118,8 +118,22 @@ async function loadStripeConnectStatus(){
   if(el)_renderStripeConnectUI(el,data);
 }
 
+// A co-owner sees the business's card payments but never starts, resumes or
+// unlinks them: onboarding and disconnect act on the SIGNED-IN login, so from
+// a co-owner they would open a second Stripe account under the wrong person.
+const _STRIPE_CO_OWNER_NOTE='Card payments are set up from the login that created this business.';
+function _stripeCoOwnerBlocked(){
+  if(typeof _coOwner!=='undefined'&&_coOwner){zAlert(_STRIPE_CO_OWNER_NOTE,{title:'Card payments'});return true;}
+  return false;
+}
 function _renderStripeConnectUI(el,data){
   if(!el)return;
+  if(typeof _coOwner!=='undefined'&&_coOwner){
+    const on=!!(data&&data.connected&&data.charges_enabled);
+    el.innerHTML='<div style="font-size:13px;font-weight:700;color:'+(on?'var(--green-mid)':'var(--text2)')+'">'+(on?'Stripe connected, payments active':'Card payments are not on yet')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5">'+escHtml(_STRIPE_CO_OWNER_NOTE)+'</div>';
+    return;
+  }
   if(!data||!data.connected){
     // A stored account the backend couldn't verify in THIS environment (e.g. a
     // live account viewed from a test-mode preview, or a deleted account). Offer
@@ -169,6 +183,7 @@ function _renderStripeConnectUI(el,data){
 }
 
 async function startStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
   try{
@@ -198,6 +213,7 @@ function openStripeConnect(){
 // (it may be the owner's real account). Replaces the manual Supabase clear we
 // used to run before reconnecting a test account.
 async function disconnectStripeConnect(){
+  if(_stripeCoOwnerBlocked())return;
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   zConfirm(
     'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted, you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
@@ -276,7 +292,7 @@ async function sendPaymentLink(bidId){
         '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' · '+fmt(balance)+' due</div>'+
         '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
         '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+', Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Open in Messages</button>':'')+
+        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+'+_jsArg(c.phone.replace(/\D/g,''))+'+\'?body=\'+encodeURIComponent('+_jsArg('Hi '+String(c.name||'there').split(' ')[0]+', here\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+', Thank you!')+')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Open in Messages</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
       ov.appendChild(box);document.body.appendChild(ov);
       ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -303,14 +319,45 @@ function _restoreIdentityFromCache(){
     const _ac=_uid?JSON.parse(localStorage.getItem('zp3_acct_'+_uid)||'null'):null;
     if(!_ac||!_ac.user)return false;
     _user=_ac.user;
-    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
     _activeTrade=_ac.activeTrade||'general';
     if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;}
     if(_ac.config)_config=_ac.config;
     _renderNavTradeSwitcher();applyPermissions();
     return true;
   }catch(_e){return false;}
+}
+// The server's answer to "is this login an owner of that business"
+// (is_co_owner, migration 20261048). A no takes the owner screens away and
+// rewrites the offline cache; a network failure changes nothing (the server
+// refuses anything the login may not do whatever the screens show).
+async function _verifyCoOwner(boss){
+  try{
+    if(!_supa||!boss)return;
+    const{data,error}=await _supa.rpc('is_co_owner',{boss});
+    if(error)return;
+    if(data===true){
+      // THE BUSINESS'S OWN ROWS: its name, trade lines (the trade pills up top)
+      // and config. Crew never load these; an owner membership can read them
+      // ("Account members can read" / "Account members read config").
+      if(String(_contractorUserId)!==String(boss))return;
+      const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
+      if(!a||String(_contractorUserId)!==String(boss))return;
+      const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
+      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+      if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
+      applyPermissions();
+      return;
+    }
+    if(data!==false)return;
+    if(String(_contractorUserId)!==String(boss))return;
+    _coOwner=false;
+    try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c){c.coOwner=false;localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
+    applyPermissions();
+    if(typeof _ownerUI==='function'&&!_ownerUI()){const a=document.querySelector('.pg.active');if(a&&typeof goPg==='function'&&['pg-taxes','pg-settings','pg-team','pg-money','pg-tracker'].includes(a.id))goPg('pg-dash');}
+  }catch(_e){}
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
@@ -350,14 +397,11 @@ async function loadAccountData(){
       // and stay unlinked forever, which is 9.10's entire case, and it landed
       // on the first real one we had.
       //
-      // Both claim paths, in the order the crew block already uses them: the
-      // forge-proof token while the invite link is still stashed, then the
-      // email match. The email match is what makes this RETROACTIVE and is the
-      // reason it is not gated on a stash: Blake has none left, and
-      // claim_crew_by_email reads his address off auth.users rather than from
-      // the client, so every invite sitting unclaimed against a login that
-      // owns a business links itself on that login's next boot with nothing
-      // for the contractor to re-send.
+      // The claim is the forge-proof token while the invite link is still
+      // stashed. There is no email-only claim any more (20261049, H4): email
+      // confirmation is off, so an address proves nothing, and a stranger who
+      // signed up as the invited address could take the seat. An owner who
+      // lost the stash opens the invite link again.
       //
       // Claiming is not switching. The hat still has to be chosen below, and
       // an unchosen hat still lands them in their own business exactly as
@@ -369,7 +413,6 @@ async function loadAccountData(){
           const{data:_ct}=await _supa.rpc('claim_crew_invite',{tok:_tok});
           if(_ct&&_ct.ok){try{localStorage.removeItem('_pendingEmpInvite');}catch(_e2){}}
         }
-        await _supa.rpc('claim_crew_by_email');
       }catch(_e){}
       // NAMED, not just counted. The plain select below can only ever return
       // team_members.name, which is the CREW MEMBER's name and not the
@@ -410,7 +453,7 @@ async function loadAccountData(){
       // this tab (switching accounts doesn't reload the page), so without this an owner
       // signing in right after an employee session inherits the employee's nav gating,
       // Settings, Team, Tracker, etc. all vanish even though this account is a full owner.
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user=u;
       const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
       _account=a;
@@ -438,6 +481,12 @@ async function loadAccountData(){
     const _linkAsCrew=(row,welcome)=>{
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
+      // CO-OWNER: Owner / Admin on the Team page. Only the business's owners can
+      // set that role (team_members_guard), so the row is enough to draw the
+      // owner screens now; the server check below confirms it and takes them
+      // away if the membership is gone. Every data path stays crew either way.
+      _coOwner=row.role==='owner';
+      if(_coOwner)_verifyCoOwner(row.contractor_user_id);
       applyPermissions();
       // Owner report 2026-07-17: a returning already-linked crew member landed
       // in a stale test account with zero indication anything had happened,
@@ -445,9 +494,9 @@ async function loadAccountData(){
       // auto-link now shows SOMETHING, first-join keeps its warmer welcome,
       // a returning session gets a plain factual toast, so a wrong link is
       // never silent, the signed-in person always has a signal to notice.
-      if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
-      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
-      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+      if(welcome)showToast('Welcome to the team, '+(row.name||'there')+'! 👋','✅');
+      else if(!_coOwner)showToast('Signed in as crew ('+(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId,coOwner:_coOwner}));}catch(_e){}
       return true;
     };
     const _pend=(()=>{try{return JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');}catch(_e){return null;}})();
@@ -479,42 +528,10 @@ async function loadAccountData(){
       }
       return _linkAsCrew(empRow,false);
     }
-    // (2) Pending invite by EMAIL MATCH, server-side (SECURITY DEFINER). Under strict
-    // RLS the employee can't even SEE their unlinked roster row (employee_user_id null
-    // → no policy grants it), so the legacy client-side select+update silently linked
-    // NOTHING on a from-migrations stack, hosted only worked via dashboard-era
-    // permissive policies (same drift family as the missing columns, caught live by
-    // the crew certification). The RPC links the most recent unlinked row for this
-    // login's email atomically; the email comes from auth.users, never the client.
-    try{
-      const{data:_em,error:_emErr}=await _supa.rpc('claim_crew_by_email');
-      if(!_emErr&&_em?.ok){
-        localStorage.removeItem('_pendingEmpInvite');
-        return _linkAsCrew({id:_em.team_member_id,contractor_user_id:_em.contractor_user_id,employee_user_id:_supaUser.id,name:_em.name||'',role:_em.role||'tech',permissions:_em.permissions||{},active:true},true);
-      }
-    }catch(_e){} // RPC not deployed → legacy path below (hosted-compat)
-    const{data:inviteRows}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).order('invited_at',{ascending:false});
-    const inviteRow=inviteRows&&inviteRows[0];
-    if(inviteRow){
-      await _supa.from('team_members').update({employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()}).eq('id',inviteRow.id);
-      localStorage.removeItem('_pendingEmpInvite');
-      return _linkAsCrew({...inviteRow,employee_user_id:_supaUser.id,active:true},true);
-    }
-    // (3) Legacy fallback: unsigned _pendingEmpInvite payload (pre-token links).
-    const _pi=_pend;
-    if(_pi?.cid){
-      const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
-      if(!_piErr){
-        _isEmployee=true;_contractorUserId=_pi.cid;
-        _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
-        _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
-        applyPermissions();
-        localStorage.removeItem('_pendingEmpInvite');
-        showToast('Welcome to the crew! 👋','✅');
-        try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'general',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
-        return true;
-      }
-    }
+    // (2) There is no email-match or unsigned-payload join any more (20261049,
+    // H4). Both trusted something a stranger can type: an address (email
+    // confirmation is off) or a base64 payload anyone can forge. The seat is
+    // claimed with the invite token above, or not at all.
     // (4) A crew invite is pending but NOTHING linked: the crew member almost
     // certainly signed up with a different email than the boss put on the roster.
     // This used to dead-end SILENTLY into a brand-new empty owner account, the
@@ -522,12 +539,12 @@ async function loadAccountData(){
     // legitimately also be an owner).
     if(_pend&&(_pend.cid||_pend.tok)){
       localStorage.removeItem('_pendingEmpInvite');
-      try{zAlert('Your crew invite from '+escHtml(_pend.bname||'your contractor')+' couldn’t be linked to this login ('+escHtml(_supaUser.email||'')+').\n\nIf you signed up with a different email than the invite was sent to, ask '+escHtml(_pend.bname||'them')+' to re-send the invite to this address. Continuing as a new business account for now.',{title:'Invite not linked'});}catch(_e){}
+      try{zAlert('Your crew invite from '+(_pend.bname||'your contractor')+' couldn’t be linked to this login ('+(_supaUser.email||'')+').\n\nIf you signed up with a different email than the invite was sent to, ask '+(_pend.bname||'them')+' to re-send the invite to this address. Continuing as a new business account for now.',{title:'Invite not linked'});}catch(_e){}
     }
     // No users row, check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
-      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
       _user={id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
       applyPermissions();
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:_activeTrade||'general',isEmployee:false}));}catch(_e){}
@@ -543,8 +560,8 @@ async function loadAccountData(){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
         // Explicit both ways, _isEmployee is a shared global that may already be true
         // from a different account earlier in this tab (see _applyEmployeeNavGating).
-        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
-        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;_coOwner=!!_ac.coOwner;}
+        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;_coOwner=false;}
         _activeTrade=_ac.activeTrade||'general';
         if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
@@ -711,8 +728,35 @@ const _SUPA_PROXY_URL = location.origin + '/api';
 const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e){return null;}})();
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
+// ONE login, whichever road the requests take (owner report 2026-09-26: Jack on
+// a slow Wi-Fi force-closed over and over and only ever got the login screen).
+// supabase-js names its saved session after the URL's host, sb-<first label>-
+// auth-token, so the direct client kept it under sb-mwtsmctajhrrybblgorf-... and
+// the /api fallback went looking under sb-uat-... (or sb-tradedeskpro-...),
+// found nothing, and signed him out of a session that was perfectly good. The
+// key is pinned to the direct host so both roads read the same login.
+const _SUPA_AUTH_KEY = 'sb-' + new URL(_SUPA_DIRECT_URL).hostname.split('.')[0] + '-auth-token';
+// A login made while a session ran on the fallback was saved under the fallback's
+// own name. Move it onto the pinned key once, so nobody who signed in that way is
+// signed out by this fix.
+function _supaAdoptAuthKey(){
+  try{
+    if(localStorage.getItem(_SUPA_AUTH_KEY))return false;
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||k===_SUPA_AUTH_KEY||!/^sb-.+-auth-token$/.test(k))continue;
+      const raw=localStorage.getItem(k);
+      const v=JSON.parse(raw||'null');
+      if(!v||!(v.refresh_token||(v.currentSession&&v.currentSession.refresh_token)))continue;
+      localStorage.setItem(_SUPA_AUTH_KEY,raw);
+      localStorage.removeItem(k);
+      return true;
+    }
+  }catch(_e){}
+  return false;
+}
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.26.26.9';
+const APP_VERSION='09.28.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -949,7 +993,7 @@ function _opOwner(){
   try{if(_mergeOnSignIn&&_loadedDataOwner)return _loadedDataOwner;}catch(_e){}
   return null;
 }
-function _opRebaseline(){
+function _opRebaseline(knownIds){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
@@ -961,10 +1005,32 @@ function _opRebaseline(){
     _opPrevPayload={};
     for(const tdef of _TD_TABLES){
       const m=new Map();
-      for(const r of _opCanonicalRows(tdef))m.set(String(r.id),_opClone(r));
+      const _known=knownIds?(knownIds[tdef.t]||new Set()):null;
+      for(const r of _opCanonicalRows(tdef)){if(_known&&!_known.has(String(r.id)))continue;m.set(String(r.id),_opClone(r));}
       _opPrevPayload[tdef.t]=m;
     }
   }catch(_e){}
+}
+// The rows this device had already PERSISTED for this login, per table, read from
+// zp3_cloud_cache. The first derive of a session baselines against these instead of
+// against live memory. Live memory can already hold an edit made in the seconds
+// before the first cloud load lands (a payment, an income row); baselining it as
+// "already known" meant no CREATE op, so the load's array replace, which only
+// re-appends rows with a pending create, dropped it for good. No cache at all means
+// nothing in memory came from the server. Another login's cache means we cannot
+// tell, so the caller keeps the old whole-memory baseline.
+function _opKnownIdsFromCache(owner){
+  try{
+    const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
+    if(!cc)return {};
+    if(cc._owner&&owner&&cc._owner!==owner)return null;
+    const out={};
+    for(const{t}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      out[t]=new Set((Array.isArray(cc[key])?cc[key]:[]).filter(r=>r&&r.id!=null).map(r=>String(r.id)));
+    }
+    return out;
+  }catch(_e){return null;}
 }
 // SHADOW derive, called at the save choke-point. Emits the create/update ops the diff
 // implies (vs the baseline) and COUNTS would-be absence-deletes without acting on them.
@@ -974,7 +1040,10 @@ function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
     const owner=_opOwner();
-    if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
+    // Account switched → fresh baseline, no bleed. The FIRST derive of a session
+    // (no previous owner) baselines only what this device had persisted, so an edit
+    // made before the first cloud load finished is still a create (_opKnownIdsFromCache).
+    if(owner!==_opPrevOwner){_opRebaseline(_opPrevOwner===null?(_opKnownIdsFromCache(owner)||undefined):undefined);}
     // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
     // uses). supaSaveToCloud's _saveSkip correctly stops the redacted zero from reaching
@@ -2032,14 +2101,29 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  // Render the real content underneath the shimmer, then let each card swap
+  // over (js/dashboard.js _dashRevealSkeletons).
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   // Pour only if the boot overlay already lifted. A fast sync that settles
   // while the overlay is still up must leave the pour to _removeBootOverlay
   // (skel mode is off now, so the lift arms it), or the once-guard would burn
   // the cascade invisibly behind the overlay.
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
+  // A logo with no brand colour yet: take it from the logo, read at boot by
+  // tdBootFill and cached as zp3_boot_look. Only once the cloud settings are in,
+  // so a colour picked on another device is never overwritten.
+  try{
+    // Cache the logo's look and boot-sized copy (js/brand-look.js), so the next
+    // boot paints the real logo even when it is too big for the settings cache.
+    // An account with a logo but no brand colour takes it from the logo.
+    if(_authSettingsLoaded&&S.logoData&&typeof tdBootCacheLogo==='function'){
+      tdBootCacheLogo(S.logoData,'zp3_boot_look',lk=>{
+        if(!S.brandColor&&typeof _tdBrandFromLogo==='function')_tdBrandFromLogo(lk);
+      });
+    }
+  }catch(_e){}
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
   // Well after the pour so it never competes with the boot render.
   try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
@@ -2078,9 +2162,15 @@ function _removeBootOverlay(immediate){
     // Slow loads are unaffected, real loading always governs.
     try{
       const _t0=window._sboT0||0;
-      if(_t0&&!o._minWaited){
-        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
-        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      // EVERY call inside the hold waits for the same lift time. It used to
+      // flag the overlay as "waited" on the first call, so a second boot step
+      // calling in during the hold skipped it and cut the logo short.
+      if(_t0){
+        const _left=2150-(Date.now()-_t0);   // the approved beat (owner 2026-09-24): fade in, hold, fade out at ~2.15s
+        if(_left>60){
+          if(!o._liftTimer)o._liftTimer=setTimeout(()=>{o._liftTimer=null;_removeBootOverlay();},_left);
+          return;
+        }
       }
     }catch(_e){}
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
@@ -2090,15 +2180,17 @@ function _removeBootOverlay(immediate){
     // _bootSyncSettled pours the cascade then. Everything else pours now.
     // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
     // if no render has run yet this boot.
+    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
+    // EVEN while the first sync is in flight, as shimmer cards; the data then
+    // lands in place (_bootSyncSettled). One pour either way.
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
-    }else{
-      try{_armBootCascade();}catch(_e){}
     }
+    try{_armBootCascade();}catch(_e){}
   }
   o.classList.add('td-fadeout');
+  setTimeout(()=>{try{o.remove();}catch(_e){}},640);
   setTimeout(()=>{
-    o.remove();
     const resumeBid=localStorage.getItem('_sw_resume_bid');
     if(resumeBid){
       localStorage.removeItem('_sw_resume_bid');
@@ -2238,9 +2330,10 @@ async function supaInit(){
     }catch(_e){_directOk=false;}
     if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
   }
+  _supaAdoptAuthKey();
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage},
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage,storageKey:_SUPA_AUTH_KEY},
       // HARD FETCH TIMEOUT (30s): supabase-js has none, so a single stalled request left a
       // save pending FOREVER, _pendingSavePromise never settled, every reconcile reload
       // deferred behind it, and the device stopped converging until a page reload (observed
@@ -2455,7 +2548,7 @@ async function supaInit(){
           // loadAccountData() re-derives this from the incoming account's own row, but reset
           // it here too as the single foundational cross-account boundary (belt-and-suspenders
           // with the per-branch resets in loadAccountData).
-          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
+          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;_coOwner=false;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
@@ -2910,7 +3003,6 @@ const _EMP_PERM_LABELS={
   financials:'View financials',team:'Manage team',payroll:'Pay & profit'
 };
 const _EMP_CLASSIFICATIONS=['','Apprentice','Journeyman','Master','Foreman / Lead','Helper','Subcontractor'];
-function _togglePermInfo(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==='block'?'none':'block';}
 // Collapsible Permissions block in the team-member modal (default closed). max-height
 // transition (not display) so it animates per the app's motion standard (§8.4).
 function _togglePermsAccordion(hdr){
@@ -2928,55 +3020,6 @@ function _setEmpRolePreset(role){
     if(el)el.checked=!!preset[p];
   });
 }
-function openInviteEmployeeModal(){
-  document.getElementById('_emp-invite-ov')?.remove();
-  const ov=document.createElement('div');ov.id='_emp-invite-ov';ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  const permRows=Object.keys(_EMP_PERM_LABELS).map(p=>{
-    const label=escHtml(_EMP_PERM_LABELS[p]);
-    const info=escHtml(_EMP_PERM_INFO[p]);
-    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'+
-      '<input type="checkbox" id="_perm-'+p+'" style="width:20px;height:20px;margin-top:1px;flex-shrink:0;accent-color:var(--blue);cursor:pointer">'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-          '<label for="_perm-'+p+'" style="font-size:14px;font-weight:600;cursor:pointer">'+label+'</label>'+
-          '<button onclick="_togglePermInfo(\'_pi-'+p+'\')" style="width:18px;height:18px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-family:inherit;line-height:1">i</button>'+
-        '</div>'+
-        '<div id="_pi-'+p+'" style="display:none;font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5">'+info+'</div>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Add Team Member</div>'+
-    '<div class="fg fg2" style="margin-bottom:10px">'+
-      '<div class="f"><label>Full name <span style="color:var(--c-red)">*</span></label>'+
-        '<input id="_inv-name" placeholder="Blake Sample" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-      '<div class="f"><label>Phone</label>'+
-        '<input id="_inv-phone" placeholder="785-555-5250" type="tel" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-    '</div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Email <span style="font-size:10px;font-weight:400;color:var(--text3)">(for app access)</span></label>'+
-      '<input id="_inv-email" placeholder="blake@email.com" type="email" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.4">Enter their email then tap "Add &amp; Invite", they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Access role</label>'+
-      '<select id="_inv-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
-        '<option value="tech">Field Tech</option>'+
-        '<option value="office">Office / CSR</option>'+
-        '<option value="manager">Manager</option>'+
-        '<option value="owner">Owner / Admin</option>'+
-      '</select></div>'+
-    '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
-      '<select id="_inv-class" style="font-size:14px;padding:10px">'+
-        _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'">'+escHtml(c||'- None -')+'</option>').join('')+
-      '</select></div>'+
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Permissions</div>'+
-    permRows+
-    '<div style="height:14px"></div>'+
-    '<button onclick="_submitInviteEmployee()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Add &amp; Invite</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>{document.getElementById('_inv-name')?.focus();_setEmpRolePreset('tech');},80);
-}
 // Mint a SERVER-VERIFIED single-use invite token (crew_invites row) for a roster
 // entry. The legacy ?emp_invite= payload is forgeable base64 that only ever linked
 // via email-match; the token links regardless of sign-up email and can't be forged
@@ -2993,63 +3036,6 @@ async function _mintCrewInviteToken(cid,email){
     return inv.token;
   }catch(_e){return null;}
 }
-async function _submitInviteEmployee(){
-  const name=(document.getElementById('_inv-name')?.value||'').trim();
-  if(!name){zAlert('Enter a name.');return;}
-  const phone=(document.getElementById('_inv-phone')?.value||'').trim();
-  const email=(document.getElementById('_inv-email')?.value||'').trim();
-  const role=document.getElementById('_inv-role')?.value||'tech';
-  const classification=(document.getElementById('_inv-class')?.value||'').trim();
-  const permissions={};
-  Object.keys(_EMP_PERM_LABELS).forEach(p=>{permissions[p]=!!(document.getElementById('_perm-'+p)?.checked);});
-  const newEmp={id:_newId(),name,phone,email,role,classification,permissions};
-  if(!S.employees)S.employees=[];
-  S.employees.push(newEmp);
-  _settingsChanged();saveAll();
-  // Build invite link. Sync team_members FIRST (awaited) so the server-minted token
-  // can reference the roster row; the link then carries `tok`, the forge-proof,
-  // single-use claim path that links even if the crew member signs up with a
-  // different email. Email-match remains the fallback when minting is unavailable.
-  const cid=_contractorUserId||_supaUser?.id||'';
-  let _invTok=null;
-  if(email&&supaEnabled()&&_supaUser){
-    const{error}=await _supa.from('team_members').upsert({contractor_user_id:cid,email,name,role:newEmp.role,permissions:permissions||{},active:false,invited_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
-    if(error)console.warn('team_members upsert:',error);
-    else _invTok=await _mintCrewInviteToken(cid,email);
-  }
-  const inviteLink=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:newEmp.id,email:email||'',bname:S.bname||'',ename:name||'',tok:_invTok||undefined}));
-  // Send branded invite email if address provided
-  if(email&&supaEnabled()&&_supaUser){
-    const{data:{session:_invSess}}=await _supa.auth.getSession();
-    const _invToken=_invSess?.access_token;
-    if(_invToken)fetch(SUPA_URL+'/functions/v1/send-invite-email',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_invToken},
-      body:JSON.stringify({to:email,empName:name,businessName:S.bname||'Your Contractor',inviteUrl:inviteLink,replyTo:_supaUser?.email||''})
-    }).catch(()=>{});
-  }
-  // Show step 2 in same modal
-  const box=document.getElementById('_emp-invite-ov')?.querySelector('.zmodal');
-  if(!box)return;
-  const _emailSentLine=email?'<div style="font-size:13px;color:var(--green-mid);margin-bottom:10px">'+svgIcon('📧')+' Invite sent to '+escHtml(email)+'</div>':'';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Invite Link Ready</div>'+
-    _emailSentLine+
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:14px">Share this link with <strong>'+escHtml(name)+'</strong>:</div>'+
-    '<div id="_inv-link-box" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:12px;line-height:1.5">'+escHtml(inviteLink)+'</div>'+
-    '<button id="_inv-copy-btn" onclick="_copyInviteLink(\''+escHtml(inviteLink)+'\')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px;margin-bottom:8px">Copy Link</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove();renderTeam()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-}
-function _copyInviteLink(link){
-  if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>{
-    const btn=document.getElementById('_inv-copy-btn');
-    if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}
-  }).catch(()=>{});}else{
-    try{const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
-    const btn=document.getElementById('_inv-copy-btn');if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}}catch(_e){}
-  }
-}
-
 // ── Dispatch Board ───────────────────────────────────────────────────────────
 // ── What is actually happening out there, right now ─────────────────────────
 // Every competitor sells "real-time status from the field" and on every one of
@@ -3737,7 +3723,7 @@ function _checkEmployeeVehiclePicker(){
   const vehList=ordered.map(v=>{
     const isDef=defId&&String(v.id)===String(defId);
     return _vehPickRow({
-      on:'onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(getVehiclePickName(v))+'\')"',
+      on:'onclick="_pickVehicle('+_jsArg(v.id)+','+_jsArg(getVehiclePickName(v))+')"',
       title:getVehiclePickName(v),
       sub:(v.plate||'').trim(),
       badge:isDef?'USUAL':'',
@@ -3965,10 +3951,10 @@ let _pendingPermReqs=[];
 let _permReqsLoaded=false;
 
 async function _loadPendingPermRequests(){
-  if(_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  if(!_ownerUI()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   try{
     const{data,error}=await _supa.from('td_permission_requests').select('*')
-      .eq('contractor_user_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:true});
+      .eq('contractor_user_id',_effectiveUid()).eq('status','pending').order('created_at',{ascending:true});
     if(error){if(_isMissingTableErr(error))return;throw error;}
     _pendingPermReqs=data||[];
     if(typeof renderTeam==='function')renderTeam();
@@ -3996,7 +3982,7 @@ async function _approvePermissionRequest(reqId){
     const emp=(S.employees||[]).find(e=>(e.email||'').toLowerCase()===(req.employee_email||'').toLowerCase());
     if(emp){emp.permissions=emp.permissions||{};emp.permissions.estimate=true;_settingsChanged();}
     await _supa.from('team_members').update({permissions:emp?emp.permissions:{estimate:true}})
-      .eq('contractor_user_id',_supaUser.id).eq('email',req.employee_email);
+      .eq('contractor_user_id',_effectiveUid()).eq('email',req.employee_email);
     await _supa.from('td_permission_requests').update({status:'approved',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
     _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
     if(typeof showToast==='function')showToast('Estimate access granted to '+(req.employee_name||req.employee_email||'employee'),'✅');
@@ -4020,8 +4006,8 @@ function renderTeam(){
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
   // Owner: lazy-load pending estimate-access requests once, then re-render.
-  if(!_isEmployee&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
-  const _reqHtml=(!_isEmployee&&_pendingPermReqs.length)
+  if(_ownerUI()&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
+  const _reqHtml=(_ownerUI()&&_pendingPermReqs.length)
     ?'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Pending access requests</div>'+
       _pendingPermReqs.map(r=>
         '<div style="padding:10px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:var(--r);margin-bottom:8px">'+
@@ -4047,7 +4033,7 @@ function renderTeam(){
   //
   // 20s floor so flipping between the Fleet and Team tabs does not re-query on
   // every tap, while any real trip back to this screen gets fresh rows.
-  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser){
+  if(_ownerUI()&&S.teamTracking&&supaEnabled()&&_supaUser){
     const _age=_teamGeoAt?Date.now()-_teamGeoAt:Infinity;
     if(!_teamGeoLoaded||_age>_TEAM_GEO_MIN_GAP_MS){
       _teamGeoLoaded=true;_teamGeoAt=Date.now();
@@ -4110,10 +4096,17 @@ function renderTeam(){
             '<div><div style="font-size:13px;font-weight:700">'+escHtml(e.name||'')+'</div>'+
             '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px">'+escHtml(_roleLabel)+'</span>'+_classTag+_payTag+'</div>'+
           '</div>'+
-          (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
+          (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:13px;min-height:44px;min-width:44px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
-        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
+        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+'</div>':'')+
+        (e.role!=='owner'?(function(){
+          const st=_crewInviteStatus(e);
+          return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">'+
+            '<span class="td-crew-status" data-st="'+st.key+'" style="font-size:11px;font-weight:700;background:'+st.bg+';color:'+st.fg+';padding:2px 8px;border-radius:8px">'+escHtml(st.label)+'</span>'+
+            (st.key!=='joined'?'<button type="button" class="td-crew-text" onclick="_crewTextInvite('+i+')" style="min-height:44px;padding:0 14px;border-radius:var(--r);border:1px solid var(--blue);background:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Text invite</button>':'')+
+          '</div>';
+        })():'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
         (function(){
           // The owner's own row shows too now (owner ask 2026-08-26: "should
@@ -4155,7 +4148,7 @@ function renderTeam(){
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
-    if(!_isEmployee&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
+    if(_ownerUI()&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
     else _psCard.style.display='none';
   }
   // Devices
@@ -4272,10 +4265,11 @@ function renameDevice(id){
 // employee modal can pre-fill without a per-open round trip. Populated by
 // _loadTeamComp() on team-page render.
 let _teamComp={};
+let _teamJoined={};
 let _teamCompLoaded=false;
 // Only the account owner or a payroll-permitted manager may see/edit pay.
 function _canViewComp(){
-  if(!_isEmployee)return true;                       // contractor/owner
+  if(_ownerUI())return true;                         // contractor/owner/co-owner
   return !!_employeeRecord?.permissions?.payroll;    // manager with payroll perm
 }
 // Effective hourly rate for job costing: salary ÷ 2080 work-hours, else the rate as-is.
@@ -4323,7 +4317,7 @@ const _GEO_PING_LOOKBACK_MS=30*86400000;
 // (20260828_device_status_manager_read.sql). All three have to agree, or a
 // manager is notified about something they cannot then look at.
 function _teamGeoAllowed(){
-  if(typeof _isEmployee==='undefined'||!_isEmployee)return true;
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
   const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
   return !!(p.payroll||p.team);
 }
@@ -4641,11 +4635,16 @@ async function _loadTeamComp(){
   const cid=_contractorUserId||_supaUser.id;
   try{
     const{data,error}=await _supa.from('team_members')
-      .select('email,pay_type,pay_rate').eq('contractor_user_id',cid);
+      .select('email,pay_type,pay_rate,employee_user_id,active').eq('contractor_user_id',cid);
     if(error||!data)return;
-    const next={};
-    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};});
-    _teamComp=next;
+    const next={},joined={};
+    data.forEach(r=>{
+      if(!r.email)return;
+      next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};
+      // A roster row a login has claimed is a person who JOINED.
+      if(r.employee_user_id&&r.active!==false)joined[r.email.toLowerCase()]=true;
+    });
+    _teamComp=next;_teamJoined=joined;
   }catch(_e){}
 }
 function _empPayTypeSync(){
@@ -4677,14 +4676,14 @@ function _employeeModalHTML(emp,idx){
       '<div style="font-size:10px;color:var(--text3);margin-top:4px">They\'ll receive an employment agreement to sign, then get their account setup link.</div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
-      '<div class="f" style="margin:0"><label>Access role</label>'+
+      '<div class="f" style="margin:0"><label>What they can see</label>'+
         '<select id="emp-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
           '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
           '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
-          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
+          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner (sees and runs everything)</option>'+
         '</select></div>'+
-      '<div class="f" style="margin:0"><label>Classification</label>'+
+      '<div class="f" style="margin:0"><label>Skill level</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'- None -')+'</option>').join('')+
         '</select></div>'+
@@ -4707,7 +4706,7 @@ function _employeeModalHTML(emp,idx){
     (_canViewComp()?
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Pay</div>'+
-        '<button type="button" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--text3);background:none;color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;line-height:16px;text-align:center;flex-shrink:0">?</button>'+
+        '<button type="button" class="td-hit44" aria-label="What is this?" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:44px;height:44px;margin:-12px 0 -12px -8px;border:none;background:none;cursor:pointer;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid var(--text3);color:var(--text3);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">?</span></button>'+
       '</div>'+
       '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
         'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this, not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
@@ -4723,7 +4722,7 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
-    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
+    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
       '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">'+svgIcon('▶',{size:11})+'</span>'+
@@ -4734,10 +4733,12 @@ function _employeeModalHTML(emp,idx){
         const checked=e.permissions&&e.permissions[k];
         const info=_EMP_PERM_INFO[k]||'';
         return '<div style="background:var(--bg2);border-radius:var(--r)">'+
-          '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px 10px">'+
-            '<input type="checkbox" id="_perm-'+k+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)">'+
+          // The whole row is the label, 44px tall, so a thumb anywhere on
+          // it flips the box (Earl audit 2026-09-27: 16px boxes, 18px "?").
+          '<label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;padding:0 0 0 10px;min-height:44px">'+
+            '<input type="checkbox" id="_perm-'+k+'"'+(checked?' checked':'')+' style="width:22px;height:22px;cursor:pointer;flex-shrink:0;accent-color:var(--blue);margin:0">'+
             '<span style="flex:1">'+escHtml(lbl)+'</span>'+
-            (info?'<button type="button" onclick="event.preventDefault();event.stopPropagation();var d=this.parentElement.parentElement.querySelector(\'.perm-info\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:18px;height:18px;border-radius:50%;border:1.5px solid var(--text3);background:none;color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit;line-height:18px;text-align:center">?</button>':'')+
+            (info?'<button type="button" class="td-hit44" aria-label="What does this allow?" onclick="event.preventDefault();event.stopPropagation();var d=this.parentElement.parentElement.querySelector(\'.perm-info\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:44px;height:44px;border:none;background:none;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit;display:flex;align-items:center;justify-content:center"><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid var(--text3);color:var(--text3);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">?</span></button>':'')+
           '</label>'+
           (info?'<div class="perm-info" style="display:none;font-size:12px;color:var(--text3);padding:0 10px 10px 34px;line-height:1.45">'+escHtml(info)+'</div>':'')+
         '</div>';
@@ -4745,10 +4746,42 @@ function _employeeModalHTML(emp,idx){
     '</div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
-      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add & Invite':'Save')+'</button>'+
+      (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
+      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add & Invite':'Save')+'</button>'+
     '</div>'+
-    '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+    '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;min-height:44px;padding:8px;border:none;background:none;color:var(--text2);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+}
+// The crew invite link: ?emp_invite= with the server-minted claim token when
+// there is one (email-match fallback when not). One builder, used by the save
+// and by Text invite, so the two can never hand out different links.
+function _crewInviteUrl(emp,tok){
+  const cid=(typeof _effectiveUid==='function'&&_effectiveUid())||_contractorUserId||(_supaUser&&_supaUser.id)||'';
+  return window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp&&emp.id,email:(emp&&emp.email)||'',bname:S.bname||'',ename:(emp&&emp.name)||'',tok:tok||undefined}));
+}
+// Where this person really stands, never a guess dressed up as green.
+function _crewInviteStatus(e){
+  const em=String((e&&e.email)||'').toLowerCase();
+  if((em&&_teamJoined[em])||(e&&e.joined))return{key:'joined',label:'Joined',bg:'#dcfce7',fg:'#15803d'};
+  if(!em)return{key:'none',label:'Not sent: no email',bg:'#FEF3C7',fg:'#92400E'};
+  const st=e.inviteState;
+  if(st==='sent')return{key:'sent',label:'Invite sent',bg:'var(--blue-lt,#E8EEF8)',fg:'var(--blue-dk,#1E3F73)'};
+  if(st==='sending')return{key:'sending',label:'Sending invite',bg:'var(--bg3,#f1f5f9)',fg:'var(--text2)'};
+  if(st==='failed')return{key:'failed',label:'Invite not sent',bg:'#FEE2E2',fg:'#991B1B'};
+  // Added before this was tracked: nobody knows if it went, so say that.
+  return{key:'unknown',label:'Not joined yet',bg:'var(--bg3,#f1f5f9)',fg:'var(--text2)'};
+}
+// Text invite: opens HIS Messages with the link filled in, the same sms:
+// hand-off the sub invite uses (_subInviteNavigate), so he is the sender.
+function _crewTextInvite(idx){
+  const e=(S.employees||[])[idx];
+  if(!e)return false;
+  const first=String(e.name||'').split(/\s+/)[0];
+  const biz=S.bname||(typeof getBusinessName==='function'&&getBusinessName())||'';
+  const link=e.inviteUrl||_crewInviteUrl(e,null);
+  const msg='Hi'+(first?' '+first:'')+', '+(biz?'it\'s '+biz+'. ':'')+'Here is your link to join the crew on TradeDesk: '+link;
+  _subInviteNavigate('sms:'+String(e.phone||'').replace(/\D/g,'')+'&body='+encodeURIComponent(msg));
+  if(!e.inviteState||e.inviteState==='none'||e.inviteState==='failed'){e.invitedByTextAt=new Date().toISOString();_settingsChanged();}
+  return true;
 }
 function openAddEmployeeModal(){
   _openEmpModal(null,null);
@@ -4757,7 +4790,19 @@ function openEditEmployeeModal(idx){
   const e=(S.employees||[])[idx];
   _openEmpModal(e,idx);
 }
+// Set by the dashboard's "Add your crew" (_setupTeamRoute): a SAVE from that
+// trip lands on Fleet & Team, Team tab, so he sees who he just added. Opening
+// either form clears it, so no other add inherits the trip.
+let _crewAddFromSetup=false;
+function _crewAddLand(){
+  if(!_crewAddFromSetup)return false;
+  _crewAddFromSetup=false;
+  if(typeof goPg==='function')goPg('pg-team');
+  if(typeof setFleetTab==='function')setFleetTab('team');
+  return true;
+}
 function _openEmpModal(emp,idx){
+  _crewAddFromSetup=false;
   document.getElementById('emp-modal-overlay')?.remove();
   const ov=document.createElement('div');ov.id='emp-modal-overlay';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -4808,9 +4853,33 @@ async function _saveEmployee(idx){
   // picks the prompt's framing: first-ever hire gets full business setup,
   // every later hire leads with that person's own W-4/I-9/new-hire paperwork.
   const _priorNonOwnerCount=S.employees.filter(e=>e.role!=='owner').length;
+  // What actually happened to the invite, kept on the row so the Team list
+  // can say it honestly (Earl audit 2026-09-27: every row with an email read
+  // a green "Invite sent", including the ones whose send failed). 'none' is
+  // no email, 'sending' is in flight, then 'sent' or 'failed'.
+  if(isNew){emp.inviteState=email?'sending':'none';delete emp.inviteUrl;}
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
-  if(isNew&&_empRole!=='owner'&&typeof _showPayrollSetupPrompt==='function')_showPayrollSetupPrompt(_empId,_priorNonOwnerCount===0);
+  if(isNew)_crewAddLand();
+  const _inviteDone=(state,url)=>{
+    emp.inviteState=state;if(url)emp.inviteUrl=url;
+    _settingsChanged();renderTeam();
+  };
+  if(isNew&&!email){
+    showToast('No email: '+(name.split(/\s+/)[0]||'they')+' can\'t log in until you add one or text them the invite','⚠️');
+  }
+  // The W-2 paperwork checklist opens ONCE per business, on the first hire
+  // (Earl audit 2026-09-27: three hires was three full-screen popups). It
+  // lives on the Team page permanently, so every later hire gets a one-line
+  // pointer to it instead. Reverses the 2026-07-12 every-hire prompt.
+  if(isNew&&_empRole!=='owner'){
+    if(!S.payrollPromptSeen&&typeof _showPayrollSetupPrompt==='function'){
+      S.payrollPromptSeen=true;_settingsChanged();
+      _showPayrollSetupPrompt(_empId,_priorNonOwnerCount===0);
+    }else if(email)showToast('Hiring paperwork for '+name+' is on your Team page','📋');
+  }
+  // Nothing to send it through: say "not sent" rather than pretend.
+  if(isNew&&email&&!(_supa&&_supaUser))_inviteDone('failed');
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
     // permissions MUST ride along: has_team_perm() and the load_account_data RPC
@@ -4818,17 +4887,24 @@ async function _saveEmployee(idx){
     // '{}' forever, so every employee perm reads false, locking employees out of
     // everything (a collect tech wouldn't even see payment amounts). This is the
     // authoritative write the owner's permission checkboxes depend on.
-    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
+    // The BUSINESS's roster, not the signed-in login's: a co-owner edits the team too.
+    const tmRow={contractor_user_id:_effectiveUid(),email,name,role:emp.role,permissions:emp.permissions||{}};
+    // ONLY A NEW INVITE STARTS INACTIVE (2026-09-26). This upsert sent
+    // active:false on every save, so editing anybody who had already joined,
+    // down to fixing a phone number, switched them off the business: making
+    // Blake an owner locked him out of it. An existing row keeps its status
+    // and its invite date; joining is what turns a row on.
+    if(isNew){tmRow.active=false;tmRow.invited_at=new Date().toISOString();}
     // Pay is written ONLY when the editor can view comp, otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
     const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
-    if(error){console.warn('team_members upsert failed:',error);return;}
+    if(error){console.warn('team_members upsert failed:',error);if(isNew)_inviteDone('failed');return;}
     // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
-      const cid=_supaUser.id;
+      const cid=_effectiveUid();
       const _tok2=await _mintCrewInviteToken(cid,emp.email); // server-verified claim token (null → legacy email-match link)
-      const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
+      const inviteUrl=_crewInviteUrl(emp,_tok2);
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
       const _saveToken=_saveSess?.access_token;
       // Build the signing link, embed inviteUrl in the contract snapshot so
@@ -4867,17 +4943,49 @@ async function _saveEmployee(idx){
             headers:{'Content-Type':'application/json','Authorization':'Bearer '+_saveToken},
             body:JSON.stringify({to:email,empName:emp.name,businessName:S.bname||'Your Contractor',inviteUrl:signUrl,replyTo:_supaUser.email||''})
           });
-          if(_invRes.ok)showToast('Agreement sent to '+email,'📝');
-          else showToast('Saved: email failed','⚠️');
-        }catch(_e){showToast('Saved: email failed','⚠️');}
-      }
+          if(_invRes.ok){_inviteDone('sent',signUrl);showToast('Agreement sent to '+email,'📝');}
+          else{_inviteDone('failed',signUrl);showToast('Saved: email failed','⚠️');}
+        }catch(_e){_inviteDone('failed',signUrl);showToast('Saved: email failed','⚠️');}
+      }else _inviteDone('failed',signUrl);
     }
   }
 }
 function removeEmployee(idx){
   if(!S.employees)return;
+  const emp=S.employees[idx];
   S.employees.splice(idx,1);
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+  // Removing someone has to cut their ACCESS, not just their row on this
+  // phone. Before this, the team_members row stayed active on the server, so a
+  // fired crew member kept signing in and reading the business.
+  if(emp)return _removeCrewServerSide(emp).catch(()=>false);
+}
+// Deactivate the crew member's team_members row on the server. Prefers the
+// remove_crew_member RPC (it also ends their session-side access); falls back
+// to active=false through the normal client while that RPC is not deployed, so
+// this works before AND after the migration lands. Resolves true when the
+// server confirmed one of the two.
+async function _removeCrewServerSide(emp){
+  if(!emp||!emp.email||typeof _supa==='undefined'||!_supa||!_supaUser)return false;
+  const cid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser.id;
+  let memberId=emp.memberId||null;
+  if(!memberId){
+    try{
+      const{data}=await _supa.from('team_members').select('id').eq('contractor_user_id',cid).eq('email',emp.email).maybeSingle();
+      memberId=data&&data.id;
+    }catch(_e){}
+  }
+  if(!memberId)return false;
+  try{
+    const{error}=await _supa.rpc('remove_crew_member',{p_team_member_id:memberId,p_email:emp.email,p_contractor:cid});
+    if(!error)return true;
+    console.warn('remove_crew_member failed, deactivating directly:',error.message||error);
+  }catch(_e){}
+  try{
+    const{error}=await _supa.from('team_members').update({active:false}).eq('id',memberId);
+    if(error){console.warn('team_members deactivate failed:',error);return false;}
+    return true;
+  }catch(_e){return false;}
 }
 
 // ── Subcontractor management ─────────────────────────────────────────────────
@@ -4910,13 +5018,14 @@ function _subModalHTML(sub,idx){
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="_removeSub('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
-      '<button onclick="_saveSub('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
+      '<button onclick="_saveSub('+(isNew?'null':idx)+')" style="padding:10px;min-height:44px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
     '</div>'+
-    '<button onclick="document.getElementById(\'_sub-modal-ov\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+    '<button onclick="document.getElementById(\'_sub-modal-ov\').remove()" style="width:100%;min-height:44px;padding:8px;border:none;background:none;color:var(--text2);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
 }
 function openAddSubModal(){_openSubModal(null,null);}
 function openEditSubModal(idx){_openSubModal((S.subcontractors||[])[idx],idx);}
 function _openSubModal(sub,idx){
+  _crewAddFromSetup=false;
   document.getElementById('_sub-modal-ov')?.remove();
   const ov=document.createElement('div');ov.id='_sub-modal-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -4945,6 +5054,7 @@ function _saveSub(idx){
   if(!S.subcontractors)S.subcontractors=[];
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+  if(idx==null)_crewAddLand();
   showToast(idx==null?'Subcontractor added':'Saved','✓');
   // The invite moment: a brand-new sub with a phone or email is a warm
   // referral: they run a trade business too. One tap sends it: email goes
@@ -5103,11 +5213,11 @@ async function _redeemSubInviteGrantForExisting(){
       const tot=pays.reduce((s,p)=>s+Number(p.amount),0);
       const totStr=(typeof fmt==='function')?fmt(tot):('$'+tot);
       // OFFER: never force. escHtml the business name: zConfirm renders via innerHTML.
-      zConfirm('You\'re linked with '+escHtml(bn)+', anything they pay you now lands here on its own.\n\nThey\'ve already paid you '+totStr+' across '+pays.length+' job'+(pays.length!==1?'s':'')+'. Want that added to your income too? Skip it if it\'s already on your books.',
+      zConfirm('You\'re linked with '+bn+', anything they pay you now lands here on its own.\n\nThey\'ve already paid you '+totStr+' across '+pays.length+' job'+(pays.length!==1?'s':'')+'. Want that added to your income too? Skip it if it\'s already on your books.',
         ()=>_importPipeHistory(bn,c.id,pays),
         {title:'Add your history with '+bn+'?',yes:'Add '+totStr+' to my books',no:'No, just link us',danger:false});
     }else{
-      showToast('Linked with '+escHtml(bn)+', their payments now land here automatically','🔗');
+      showToast('Linked with '+(bn)+', their payments now land here automatically','🔗');
     }
     return true;
   }catch(_e){return false;}
@@ -5129,7 +5239,7 @@ function _importPipeHistory(bizName,clientId,pays){
   saveAll();
   if(typeof renderTrackerTab==='function')renderTrackerTab();
   if(typeof renderDash==='function')renderDash();
-  showToast(pays.length+' payment'+(pays.length!==1?'s':'')+' from '+escHtml(bizName)+' added to your books','💵');
+  showToast(pays.length+' payment'+(pays.length!==1?'s':'')+' from '+(bizName)+' added to your books','💵');
 }
 // Fires the invite email behind the scenes via the send-sub-invite-email edge
 // function (Resend). Server enforces the CAN-SPAM guardrails: suppression
@@ -5295,7 +5405,7 @@ async function _offerPaymentToLinkedSub(rosterId,pay){
     });
     // escHtml: showToast renders via innerHTML and the sub controls their
     // business name, cross-ACCOUNT strings never enter the DOM raw.
-    if(!error)showToast('Payment lands in '+escHtml(link.sub_business_name||'their')+' TradeDesk books automatically','🔗');
+    if(!error)showToast('Payment lands in '+(link.sub_business_name||'their')+' TradeDesk books automatically','🔗');
     return !error;
   }catch(_e){return false;}
 }
@@ -5314,7 +5424,7 @@ async function _offerJobToLinkedSub(rosterId,info){
       job_addr:String(info.addr||'').slice(0,200),start_date:String(info.date||'').slice(0,10),
       gc_business_name:String(S.bname||link.gc_business_name||'').slice(0,120)
     });
-    if(!error)showToast('Job address sent to '+escHtml(link.sub_business_name||'their')+' TradeDesk calendar','🔗');
+    if(!error)showToast('Job address sent to '+(link.sub_business_name||'their')+' TradeDesk calendar','🔗');
     return !error;
   }catch(_e){return false;}
 }
@@ -5354,7 +5464,7 @@ async function _sendBidToGC(info){
       sub_business_name:String(S.bname||link.sub_business_name||'').slice(0,120)
     });
     // escHtml: showToast renders via innerHTML and the GC name is cross-account.
-    if(!error)showToast('Bid sent to '+escHtml(link.gc_business_name||'the GC')+' for approval','📤');
+    if(!error)showToast('Bid sent to '+(link.gc_business_name||'the GC')+' for approval','📤');
     return !error;
   }catch(_e){return false;}
 }
@@ -5406,7 +5516,7 @@ async function _signSubBid(id,signerName){
       if(job){job.subBidAmount=Number(b.amount)||0;job.subBidBy=String(b.sub_business_name||'');job.subBidSignedBy=name;saveAll();}
     }
     if(typeof renderDash==='function')renderDash();
-    showToast('Signed: '+escHtml((b&&b.sub_business_name)||'the sub')+' is cleared to start','✍️');
+    showToast('Signed: '+((b&&b.sub_business_name)||'the sub')+' is cleared to start','✍️');
     return true;
   }catch(_e){return false;}
 }
@@ -5613,9 +5723,9 @@ async function _ingestPipeInbox(force){
         saveAll();
         const total=rows.reduce((s,r)=>s+r.amount,0);
         const amt=typeof fmt==='function'?fmt(total):'$'+total;
-        // escHtml: showToast renders via innerHTML; payer name is GC-controlled.
+        // showToast renders its message as text, so the GC-controlled payer name is inert.
         showToast(rows.length===1
-          ?amt+' from '+escHtml(rows[0].client_name||'a linked contractor')+', added to your books'
+          ?amt+' from '+(rows[0].client_name||'a linked contractor')+', added to your books'
           :rows.length+' payments ('+amt+') from linked contractors, added to your books','💵');
       }
     }catch(_e){}
@@ -5635,9 +5745,9 @@ async function _ingestPipeInbox(force){
       if(added){
         touched=true;
         saveAll(); // same crash-window rule as the payment block
-        // escHtml: the address is GC-controlled and showToast uses innerHTML.
+        // showToast renders its message as text, so the GC-controlled address is inert.
         showToast(added===1
-          ?'New job @ '+escHtml(firstAddr)+', on your calendar'
+          ?'New job @ '+(firstAddr)+', on your calendar'
           :added+' new job addresses, on your calendar','📅');
       }
     }catch(_e){}
@@ -6623,6 +6733,27 @@ function _wipeLocalAccountData(){
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
+  // Tim's conversation thread (td_tim_log). It is account data and always was:
+  // it holds the sentences a man said to Tim and what Tim answered, which means
+  // customer names, what they owe, what jobs were charged at. Since 2026-09-21
+  // it also holds a week's timesheet read out by job site, so it carries crew
+  // names and the addresses they worked at.
+  // On a shop tablet two people sign into, leaving it behind is the same
+  // cross-account bleed every line in this function is here to stop. td_tim_met
+  // is deliberately NOT cleared next to it: that one is a fact about this
+  // DEVICE having been shown the control once, not about whose books are on it.
+  try{if(typeof timLogClear==='function')timLogClear();
+      else localStorage.removeItem('td_tim_log');}catch(_e){}
+  // td_tim_said is the last thing he said out loud on the bar, and it is a
+  // finding id with a DOLLAR FIGURE on the end of it. Same reasoning, same
+  // shared tablet, and leaving it would also mean the next account's first
+  // finding was silently treated as already spoken.
+  try{localStorage.removeItem('td_tim_said');}catch(_e){}
+  // The unsent learn queue. Scrubbed of customer names, but still a record of
+  // what THIS account's owner typed, and it is stamped with their user_id when
+  // it goes up, so carrying it into the next sign-in would file one man's
+  // sentences under another man's account.
+  try{localStorage.removeItem('td_tim_send');}catch(_e){}
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // The fleet is a synced array now (td_vehicles), not a settings key, so it needs
@@ -6657,8 +6788,48 @@ function _wipeLocalAccountData(){
   // at runtime, but they stay zeroed here so the next account can never migrate this
   // account's leftover blob. vehiclesMigratedTs clears with them so the next login is
   // free to run its own one-time lift.
-  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,vehiclesMigratedTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+  // The rest of the synced record arrays, same rule as the ones above: they
+  // are this account's rows (photos, licenses, contracts, maintenance, time)
+  // and saveAll below would otherwise write them straight back to storage.
+  maintenance=[];events=[];timeEntries=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
+  // Settings go back to FACTORY, not to a blanked copy of this account's. The
+  // old partial reset kept the business address, home office location, Venmo
+  // user, Bitly key and tax setup in zp3_S, readable by whoever picked up a
+  // shared crew phone next. settingsTs is 0 in the defaults, so nothing here
+  // can beat the next account's cloud copy.
+  S=_tdSignedOutSettings();
   saveAll();
+  _tdClearAccountStorage();
+}
+// Only preferences that describe THIS DEVICE survive a sign-out: how the
+// screen looks, whether it buzzes, whether iOS already granted location.
+// Everything else in S describes a business and goes.
+const _TD_DEVICE_PREFS=['darkMode','hapticsOff','locationGranted'];
+function _tdSignedOutSettings(){
+  let base={};
+  try{base=JSON.parse(typeof _S_DEFAULTS==='string'?_S_DEFAULTS:'{}');}catch(_e){base={};}
+  const cur=(typeof S!=='undefined'&&S)||{};
+  _TD_DEVICE_PREFS.forEach(k=>{if(cur[k]!==undefined)base[k]=cur[k];});
+  base.settingsTs=0;
+  return base;
+}
+// Every per-account key this app keeps in localStorage. zp3_S is rewritten
+// with the factory settings (so a crew phone boots clean even when saveAll
+// skipped the local write for an employee session), and zp3_logo, the
+// zp3_acct_<uid> account caches, the ops cursor and every record cache go.
+// The remembered-device record (zp3_remembered_login) is deliberately NOT
+// here, see the note above about routine sign-out versus "Not you?".
+const _TD_ACCOUNT_KEYS=['zp3_logo','zp3_cloud_cache','zp3_delta_meta','zp3_offline_pending','zp3_rcpt_imgs','zp3_photos','zp3_chk','zp3_ev','zp3_lic','zp3_contracts','zp3_agreements','zp3_maint','zp3_vehicles','zp3_scans','zp3_equipment','zp3_places'];
+const _TD_ACCOUNT_PREFIXES=['zp3_acct_','zp3_ops_since_'];
+function _tdClearAccountStorage(){
+  try{
+    _TD_ACCOUNT_KEYS.forEach(k=>localStorage.removeItem(k));
+    const drop=[];
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&_TD_ACCOUNT_PREFIXES.some(p=>k.startsWith(p)))drop.push(k);}
+    drop.forEach(k=>localStorage.removeItem(k));
+    localStorage.removeItem('zp3_S');
+    localStorage.setItem('zp3_S',JSON.stringify(_tdSignedOutSettings()));
+  }catch(_e){}
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
@@ -7477,7 +7648,9 @@ async function supaSaveToCloud(){
     // a separate marker, so a peer's reload path has a single event to coalesce (no render storm).
     // Trade-off vs the old settings-first: a force-quit AFTER the tables but BEFORE this write
     // loses only the (tiny) settings delta; the bigger table data has already committed.
-    if(!_isEmployee && _authSettingsLoaded){
+    // A co-owner writes the business's Settings like the owner (zj_data policy
+    // co_owner_manages_settings); uid here is _effectiveUid, the business.
+    if(_ownerUI() && _authSettingsLoaded){
       // Strip only stateRates (anon-readable reference data, never a user setting).
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
       const{stateRates:_sr0,...sForCloud}=S;
@@ -7517,7 +7690,7 @@ async function supaSaveToCloud(){
       }
       // Catch up on the peer change our cursor overwrite just masked (see the pre-read note).
       if(_peerMovedCursor)_scheduleReconcile(800);
-    } else if(!_isEmployee && !_authSettingsLoaded){
+    } else if(_ownerUI() && !_authSettingsLoaded){
       // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
       // blob over the cloud (the boot clobber), defer to the post-load flush.
       _logSave('skip-settings','settings not hydrated, deferring to post-load flush');
@@ -7625,6 +7798,8 @@ function _applySigStatusToBid(bid,s){
     // EPA ack can land after the status flip (or the DB columns were added later).
     if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
     if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+    // Buyer said 65+ at signing (California): the hub counts five business days.
+    if(s.buyer_senior&&!bid.buyerSenior){bid.buyerSenior=true;changed=true;}
     if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
     if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
     // Audit: the signer's IP + device, stamped server-side by the log-proposal-view
@@ -8208,7 +8383,7 @@ function quickScheduleJob(bidId,startKey,clientId){
   // Offer to go to calendar, then chain to next alert either way
   setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'.'+_moreStr+'\n\nView on calendar?',
     ()=>{goPg('pg-cal');setTimeout(showScheduleAlerts,600);},
-    {title:svgIcon('✓')+' Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
+    {title:svgIcon('✓')+' Scheduled!',html:true,yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
     onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
 }
 function discardInProgressBid(bidId){
@@ -9510,24 +9685,40 @@ async function _loadPendingInbound(){
     const{data}=await _supa.from('inbound_leads').select('*').in('account_id',_ids).eq('status','pending').order('created_at',{ascending:false});
     if(_supaUser?.id!==_forUser)return; // account switched mid-request, drop this response entirely
     if(!data){_pendingInbound=[];_updateInboundBadge();return;}
-    // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
-    const toMerge=data.filter(r=>!!r.client_id);
-    const toReview=data.filter(r=>!r.client_id);
+    // Split: onboard_link rows auto-merge ONLY when they prove which client
+    // sent them (their hub token matches, _inboundTokenOk). Anything else,
+    // including a row that merely NAMES a client_id, goes to the review queue.
+    const toMerge=data.filter(r=>_inboundVerifiedClient(r));
+    const toReview=data.filter(r=>!_inboundVerifiedClient(r));
     // Update _pendingInbound BEFORE rendering so _inboundReviewHTML has correct state
     _pendingInbound=toReview;
     _updateInboundBadge();
     for(const row of toMerge){_onNewInboundLead(row);}
   }catch(e){}
 }
-function _onNewInboundLead(row){
-  // Auto-apply if we can match by client_id (onboarding link submission)
-  if(row.client_id){
-    const c=clients.find(x=>x.id===Number(row.client_id));
-    if(c){
-      // Guard: don't process the same row twice in one session (prevents forced
-      // navigation mid-tap when the 30s poll fires before Supabase update commits)
-      if(_processedInboundIds.has(row.id))return;
-      _processedInboundIds.add(row.id);
+// inbound_leads takes anonymous inserts (the public QR/intake form), so a
+// client_id on a row is only a CLAIM: anyone can type any number into it. A
+// row is merged into an existing customer without asking only when it also
+// carries that customer's hub token (hub_token, or client_token) and it
+// matches the one on the client record. No token, or a wrong one, and the row
+// is an ordinary new lead the contractor reviews by hand.
+function _inboundTokenOk(row,c){
+  if(!row||!c)return false;
+  const tok=row.hub_token||row.client_token||'';
+  return !!(tok&&c.clientToken&&String(tok)===String(c.clientToken));
+}
+function _inboundVerifiedClient(row){
+  if(!row||!row.client_id)return null;
+  const c=(typeof clients!=='undefined'?clients:[]).find(x=>x.id===Number(row.client_id));
+  return (c&&_inboundTokenOk(row,c))?c:null;
+}
+// The claimed client for a row that did NOT verify: shown on the review card
+// so the contractor can decide, never merged on its own.
+function _inboundClaimedClient(row){
+  if(!row||!row.client_id)return null;
+  return (typeof clients!=='undefined'?clients:[]).find(x=>x.id===Number(row.client_id))||null;
+}
+function _applyInboundToClient(row,c){
       if(row.addr&&!c.addr){c.addr=row.addr;}
       if(row.street&&!c.street){c.street=row.street;}
       if(row.city&&!c.city){c.city=row.city;}
@@ -9537,18 +9728,28 @@ function _onNewInboundLead(row){
       if(row.call_time){c.callTime=row.call_time;}
       saveAll();
       // Mark as applied
-      _supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id).then(()=>{});
+      try{_supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id).then(()=>{},()=>{});}catch(_e){}
       // Re-upload hub with new address so client.html shows updated info
-      _uploadClientHub(Number(row.client_id)).catch(()=>{});
+      try{_uploadClientHub(Number(c.id)).catch(()=>{});}catch(_e){}
       // Trigger property lookup now that we have the address
-      if(row.street&&row.city)_lookupPropertyData(Number(row.client_id),{street:row.street,city:row.city,state:row.state||'',zip:row.zip||''});
+      if(row.street&&row.city&&typeof _lookupPropertyData==='function')_lookupPropertyData(Number(c.id),{street:row.street,city:row.city,state:row.state||'',zip:row.zip||''});
+}
+function _onNewInboundLead(row){
+  // Auto-apply only a VERIFIED onboarding-link submission (see _inboundTokenOk)
+  const c=_inboundVerifiedClient(row);
+  if(c){
+      // Guard: don't process the same row twice in one session (prevents forced
+      // navigation mid-tap when the 30s poll fires before Supabase update commits)
+      if(_processedInboundIds.has(row.id))return;
+      _processedInboundIds.add(row.id);
+      _applyInboundToClient(row,c);
       showToast((c.name||'Lead')+' completed their onboarding, tap to view','📋');
       // Navigate directly to the client: avoids lead "disappearing" from whatever filter tab is active
-      openClientDetail(Number(row.client_id),'leads');
+      openClientDetail(Number(c.id),'leads');
       return;
-    }
   }
-  // Unknown lead (QR form), queue for review
+  // Unknown or unverified lead, queue for review
+  if(_pendingInbound.some(x=>x.id===row.id))return;
   _pendingInbound.unshift(row);
   _updateInboundBadge();
   // row.source is already the human label ("Yard sign - 123 Main St") when it
@@ -9572,20 +9773,37 @@ function _inboundReviewHTML(){
     '<div style="font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
       '<span style="background:var(--blue);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px">'+pending.length+'</span>'+
       'New leads waiting</div>'+
-    pending.map(row=>'<div style="background:var(--bg2);border:1.5px solid var(--blue);border-radius:var(--rl);padding:14px;margin-bottom:8px">'+
-      '<div style="font-size:14px;font-weight:700;margin-bottom:2px">'+(row.name||'Unknown')+'</div>'+
-      (row.phone?'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">'+row.phone+'</div>':'')+
-      (row.addr?'<div style="font-size:12px;color:var(--text2);margin-bottom:2px">'+row.addr+'</div>':'')+
-      (row.notes?'<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-style:italic">"'+row.notes+'"</div>':'<div style="margin-bottom:8px"></div>')+
+    // Every field here was typed by an anonymous stranger on the public form:
+    // all of it is escaped, and the row id travels as a data attribute, never
+    // spliced into the handler's JS.
+    pending.map(row=>{const _claim=_inboundClaimedClient(row);return '<div class="td-inbound-card" style="background:var(--bg2);border:1.5px solid var(--blue);border-radius:var(--rl);padding:14px;margin-bottom:8px">'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:2px">'+escHtml(row.name||(_claim&&_claim.name)||'Unknown')+'</div>'+
+      (_claim?'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">Says it is from '+escHtml(_claim.name||'a customer')+'. Not verified, check before adding.</div>':'')+
+      (row.phone?'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">'+escHtml(row.phone)+'</div>':'')+
+      (row.addr?'<div style="font-size:12px;color:var(--text2);margin-bottom:2px">'+escHtml(row.addr)+'</div>':'')+
+      (row.notes?'<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-style:italic">"'+escHtml(row.notes)+'"</div>':'<div style="margin-bottom:8px"></div>')+
       '<div style="display:flex;gap:8px">'+
-        '<button onclick="_promoteInbound(\''+row.id+'\')" style="flex:1;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Add to pipeline</button>'+
-        '<button onclick="_dismissInbound(\''+row.id+'\')" style="padding:10px 14px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Dismiss</button>'+
+        '<button data-inbound-id="'+escHtml(String(row.id))+'" onclick="_promoteInbound(this.dataset.inboundId)" style="flex:1;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Add to pipeline</button>'+
+        '<button data-inbound-id="'+escHtml(String(row.id))+'" onclick="_dismissInbound(this.dataset.inboundId)" style="padding:10px 14px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Dismiss</button>'+
       '</div>'+
-    '</div>').join('')+
+    '</div>';}).join('')+
   '</div>';
 }
 async function _promoteInbound(id){
-  const row=_pendingInbound.find(x=>x.id===id);if(!row)return;
+  const row=_pendingInbound.find(x=>String(x.id)===String(id));if(!row)return;
+  // An unverified onboarding row that names an existing customer: the
+  // contractor looked at the card and chose to add it, so it goes onto THAT
+  // customer instead of creating a duplicate "Unknown".
+  const _claim=_inboundClaimedClient(row);
+  if(_claim){
+    _applyInboundToClient(row,_claim);
+    _pendingInbound=_pendingInbound.filter(x=>x.id!==row.id);
+    _updateInboundBadge();
+    if(typeof renderLeadsPage==='function')renderLeadsPage();
+    currentClientId=_claim.id;renderClientDetail();goPg('pg-client-detail');
+    showToast((_claim.name||'Customer')+' updated','✓');
+    return;
+  }
   // Create client record. partyType defaults to 'homeowner': every QR
   // placement this feeds (yard sign, truck wrap, business card) is
   // consumer-facing physical marketing, a GC/builder relationship doesn't
@@ -9596,16 +9814,16 @@ async function _promoteInbound(id){
   saveAll();
   if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:newClient.id,meta:{source:newClient.source}});
   // Mark inbound as applied
-  _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
+  _pendingInbound=_pendingInbound.filter(x=>x.id!==row.id);
   _updateInboundBadge();
-  try{await _supa.from('inbound_leads').update({status:'applied'}).eq('id',id);}catch(e){}
+  try{await _supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id);}catch(e){}
   renderLeadsPage();
   // Open the new client detail
   currentClientId=newClient.id;renderClientDetail();goPg('pg-client-detail');
-  showToast(row.name+' added to pipeline','✓');
+  showToast((row.name||'Lead')+' added to pipeline','✓');
 }
 async function _dismissInbound(id){
-  _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
+  _pendingInbound=_pendingInbound.filter(x=>String(x.id)!==String(id));
   _updateInboundBadge();
   try{await _supa.from('inbound_leads').update({status:'dismissed'}).eq('id',id);}catch(e){}
   if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
@@ -9944,39 +10162,15 @@ function showDailyBriefing(){
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
   // Reload bridge, painted SYNCHRONOUSLY before the save/reload so a version
-  // update NEVER shows the dashboard flashing between the old and new build. Uses
-  // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
-  // gradient glowing bar) so old-build → reload → new-build reads as ONE
-  // continuous loading screen instead of two separate boots.
+  // update NEVER shows the dashboard flashing between the old and new build.
+  // Built by the same tdBootFill as the boot screen (js/brand-look.js), so
+  // old-build -> reload -> new-build reads as ONE continuous loading screen.
   if(document.getElementById('_update-ov'))return;
-  const logo=S?.logoData||'';
-  const bname=(S?.bname||'').trim();
-  const brand=S?.brandColor||'';
-  const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-  let r=45,g=93,b=168,lr=115,lg=163,lb=238;
-  if(brand){const h=brand.replace('#','');r=parseInt(h.substr(0,2),16)||0;g=parseInt(h.substr(2,2),16)||0;b=parseInt(h.substr(4,2),16)||0;lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);}
-  const bg='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-  const barFg='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';
-  const barGlow='0 0 12px rgba('+r+','+g+','+b+',.55)';
-  const markTile=brand?'background:linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)':'';
-  const mark=logo?'':(bname
-    ?'<div class="sbo-mark" style="'+markTile+'"><span class="sbo-monogram">'+esc((bname[0]||'').toUpperCase())+'</span></div>'
-    :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
-  const nameBlock=logo
-    ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>':'')
-    :bname
-      ?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>'
-      :'<div style="display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span></div>';
   const ov=document.createElement('div');
   ov.id='_update-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
-  ov.innerHTML=
-    '<div class="sbo-glow"'+(brand?' style="background:radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)"':'')+'></div>'+
-    '<div class="sbo-center">'+mark+nameBlock+'<div class="sbo-tag">Updating…</div></div>'+
-    '<div class="sbo-foot">'+
-      '<div class="sbo-track"><div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:1.6s"></div><div class="sbo-sheen"></div></div>'+
-      '<div class="sbo-hint">Loading the latest version…</div>'+
-    '</div>';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden';
+  if(typeof tdBootFill==='function')tdBootFill(ov,{logo:S?.logoData||'',name:S?.bname||'',brand:S?.brandColor||'',
+    status:'Updating…',cacheKey:'zp3_boot_look'});
   document.body.appendChild(ov);
 }
 let _reloadPending=false;

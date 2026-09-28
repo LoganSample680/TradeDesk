@@ -91,7 +91,10 @@ const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
 const MATMARK=()=>1+((S.mm||20)/100);
 const LABOR_RATES=()=>({walls:S.rWalls||1.30,ceiling:S.rCeil||1.00,trim:S.rTrim||4.00,doors:S.rDoor||95,windows:S.rWin||50,cabinets:S.rCabinets||38,ext_walls:S.rExt||1.10,ext_trim:S.rTrim||4.00,deck:S.rDeck||1.00,fence:S.rFence||1.25,epoxy:S.rEpoxy||1.75});
-function initials(name){const p=(name||'?').trim().split(' ');return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():(name||'?').substring(0,2).toUpperCase();}
+// Markup characters are dropped, not escaped: an avatar is two letters, and a
+// name that starts with "<" (a lead typed on the public intake form) must not
+// hand a tag opener to the innerHTML call sites that print this raw.
+function initials(name){const n=String(name||'?').replace(/[<>&"'`]/g,'').trim()||'?';const p=n.split(' ').filter(Boolean);return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():n.substring(0,2).toUpperCase();}
 function stageAvatar(stage){
   const m={
     new:'background:var(--blue-lt);color:var(--blue-dk)',
@@ -158,6 +161,20 @@ function fmtDateTimeMDY(d){
   }catch(e){return fmtDateMDY(d);}
 }
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// A value going INTO an inline handler as a JS string argument:
+//   '<button onclick="fn('+_jsArg(c.phone)+')">'
+// escHtml alone is NOT enough there: the HTML parser decodes &#39; back to a
+// quote before the handler runs, so a phone of "');alert(1)//" broke out of
+// fn('...'). JSON.stringify makes a real JS string literal first, escHtml then
+// makes that literal safe inside the double-quoted attribute. It emits its own
+// quotes, so never wrap the result in another pair.
+function _jsArg(v){return escHtml(JSON.stringify(v==null?'':String(v)));}
+// Fill a node from a message that is TEXT unless the caller opted into markup.
+// One rule for every shared prompt (toast, confirm, alert, prompt): a lead's
+// name, a crew member's name or an error string can never become HTML just by
+// being put in a message. Markup is an explicit {html:true} from a caller that
+// built it itself from app constants and escHtml'd anything user-typed.
+function _tdSetMsg(el,msg,html){if(!el)return;if(html)el.innerHTML=msg==null?'':String(msg);else el.textContent=msg==null?'':String(msg);}
 function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function zConfirm(msg, onYes, opts={}){
   const title=opts.title||'Are you sure?';
@@ -173,19 +190,23 @@ function zConfirm(msg, onYes, opts={}){
   // man's hours.
   const safeRight=opts.safeRight===true;
   const onNo=opts.onNo||null; // optional callback when user taps No/Cancel
-  const _zNo=()=>'<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">'+noLabel+'</button>';
-  const _zYes=()=>'<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'">'+yesLabel+'</button>';
+  const _zNo=()=>'<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px"></button>';
+  const _zYes=()=>'<button id="zmodal-yes" class="btn" style="font-size:14px;padding:10px 16px;background:'+(danger?'#A32D2D':'var(--blue)')+';color:#fff;border-color:'+(danger?'#A32D2D':'var(--blue)')+'"></button>';
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.innerHTML=
     '<div class="zmodal">'+
-      '<div class="zmodal-title">'+title+'</div>'+
-      '<div class="zmodal-msg">'+msg+'</div>'+
+      '<div class="zmodal-title"></div>'+
+      '<div class="zmodal-msg"></div>'+
       '<div class="zmodal-btns">'+
         (safeRight?_zYes():_zNo())+
         (safeRight?_zNo():_zYes())+
       '</div>'+
     '</div>';
+  _tdSetMsg(overlay.querySelector('.zmodal-title'),title,opts.html===true);
+  _tdSetMsg(overlay.querySelector('.zmodal-msg'),msg,opts.html===true);
+  overlay.querySelector('.zmodal-cancel').textContent=noLabel;
+  overlay.querySelector('#zmodal-yes').textContent=yesLabel;
   document.body.appendChild(overlay);
   const cancelBtns=overlay.querySelectorAll('.zmodal-cancel');
   cancelBtns.forEach(b=>b.onclick=()=>{overlay.remove();if(onNo)onNo();});
@@ -199,12 +220,14 @@ function zAlert(msg, opts={}){
   overlay.className='zmodal-overlay';
   overlay.innerHTML=
     '<div class="zmodal">'+
-      '<div class="zmodal-title">'+title+'</div>'+
-      '<div class="zmodal-msg">'+msg+'</div>'+
+      '<div class="zmodal-title"></div>'+
+      '<div class="zmodal-msg"></div>'+
       '<div class="zmodal-btns">'+
         '<button class="btn btn-p zmodal-ok" style="font-size:14px;padding:10px 20px">OK</button>'+
       '</div>'+
     '</div>';
+  _tdSetMsg(overlay.querySelector('.zmodal-title'),title,opts.html===true);
+  _tdSetMsg(overlay.querySelector('.zmodal-msg'),msg,opts.html===true);
   document.body.appendChild(overlay);
   overlay.querySelectorAll('.zmodal-ok,.zmodal-cancel').forEach(b=>b.onclick=()=>overlay.remove());
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
@@ -217,16 +240,19 @@ function zPrompt(msg, onOk, opts={}){
   overlay.className='zmodal-overlay';
   overlay.innerHTML=
     '<div class="zmodal">'+
-      '<div class="zmodal-title">'+title+'</div>'+
-      '<div class="zmodal-msg" style="margin-bottom:10px">'+msg+'</div>'+
-      '<input id="zprompt-inp" placeholder="'+placeholder+'" style="width:100%;padding:10px;font-size:14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
+      '<div class="zmodal-title"></div>'+
+      '<div class="zmodal-msg" style="margin-bottom:10px"></div>'+
+      '<input id="zprompt-inp" style="width:100%;padding:10px;font-size:14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
       '<div class="zmodal-btns">'+
         '<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">Cancel</button>'+
         '<button id="zprompt-ok" class="btn btn-p" style="font-size:14px;padding:10px 16px">OK</button>'+
       '</div>'+
     '</div>';
+  _tdSetMsg(overlay.querySelector('.zmodal-title'),title,opts.html===true);
+  _tdSetMsg(overlay.querySelector('.zmodal-msg'),msg,opts.html===true);
   document.body.appendChild(overlay);
   const inp=overlay.querySelector('#zprompt-inp');
+  inp.placeholder=placeholder;
   if(opts.value)inp.value=opts.value;
   const ok=overlay.querySelector('#zprompt-ok');
   const cancel=overlay.querySelector('.zmodal-cancel');
@@ -237,8 +263,11 @@ function zPrompt(msg, onOk, opts={}){
   setTimeout(()=>inp.focus(),100);
 }
 
-function showToast(msg,icon,duration){
-  icon=icon||'✓';duration=duration||3500;
+// msg is TEXT. Pass opts {html:true} only for markup the caller built itself
+// (the Undo button on the warranty board), never with user data inside it
+// unless every piece of that data went through escHtml first.
+function showToast(msg,icon,duration,opts){
+  icon=icon||'✓';duration=duration||3500;opts=opts||{};
   // Haptics ride the toast, ONE hook for ~200 call sites (owner 2026-08-10:
   // "haptics everywhere"). The icon already encodes the outcome at every one
   // of those sites, so the feel follows the meaning for free: a warning
@@ -256,7 +285,8 @@ function showToast(msg,icon,duration){
   const _iconHtml=(typeof hasSvgIcon==='function'&&hasSvgIcon(icon))?svgIcon(icon,{size:15}):icon;
   const t=document.createElement('div');
   t.className='toast';
-  t.innerHTML='<span class="toast-icon">'+_iconHtml+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  t.innerHTML='<span class="toast-icon">'+_iconHtml+'</span><span class="toast-msg" style="flex:1"></span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  _tdSetMsg(t.querySelector('.toast-msg'),msg,opts.html===true);
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transform='scale(.9) translateY(8px)';t.style.transition='all .3s';setTimeout(()=>t.remove(),300);},duration);
 }
@@ -318,14 +348,53 @@ function geoIfGranted(cb, errCb, opts){
 // ── Auto-capitalize EVERY free-text field ───────────────────────────────────
 // Title-cases the first letter of every space-separated word so anything typed
 // can never be saved as "master bedroom" or "Master bedroom", it always
-// normalizes to "Master Bedroom". App-wide by default (every <textarea> and
-// text <input>), so no per-field wiring is needed. The rest of each word is left
-// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive,
-// only the word-initial letter is forced upper.
+// normalizes to "Master Bedroom" (owner rule). App-wide by default, so no
+// per-field wiring is needed. The rest of each word is left as typed, so
+// acronyms ("ABC Painting") and camelCase ("McDowell") survive. A field that
+// sets autocapitalize="sentences" itself gets sentence case instead.
+// The Earl audit (2026-09-27) saw "Replce 50 Gal Water Heter" on a proposal.
+// The capitals were the owner's rule; the typos were the bug, so the common
+// trade misspellings below are fixed as he types and when a line is saved.
 function _autoCapWords(s){
   return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
 }
-// Skip only the field types/modes where title-casing is WRONG (email, password,
+function _autoCapSentences(s){
+  return String(s==null?'':s).replace(/(^\s*|[.!?]\s+)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
+}
+// The trade words people mistype most, fixed as they are typed and when a line
+// is saved. Small on purpose: only misspellings that are never a real word, so
+// a fix can never change what he meant.
+const _TRADE_TYPOS={
+  replce:'replace',repalce:'replace',relpace:'replace',replase:'replace',
+  heter:'heater',heatr:'heater',haeter:'heater',hetaer:'heater',
+  watter:'water',wter:'water',wtaer:'water',
+  toliet:'toilet',toilit:'toilet',tiolet:'toilet',
+  faucit:'faucet',facuet:'faucet',fawcet:'faucet',fuacet:'faucet',
+  vavle:'valve',vlave:'valve',
+  instal:'install',intsall:'install',instll:'install',isntall:'install',
+  galon:'gallon',gallan:'gallon',
+  disposel:'disposal',dispoasl:'disposal',
+  guage:'gauge',
+  breakr:'breaker',braeker:'breaker',
+  outlit:'outlet',oulet:'outlet',
+  recepticle:'receptacle',receptical:'receptacle',
+  thermastat:'thermostat',thermostate:'thermostat',
+  furnance:'furnace',condensor:'condenser',
+  shingels:'shingles',
+  drian:'drain',
+  sewar:'sewer',
+  plumbng:'plumbing',electical:'electrical',elecrtical:'electrical',
+};
+function _tradeSpellFix(s){
+  return String(s==null?'':s).replace(/[A-Za-z]+/g,function(w){
+    var fix=_TRADE_TYPOS[w.toLowerCase()];
+    if(!fix)return w;
+    if(w.length>1&&w===w.toUpperCase())return fix.toUpperCase();
+    if(w.charAt(0)!==w.charAt(0).toLowerCase())return fix.charAt(0).toUpperCase()+fix.slice(1);
+    return fix;
+  });
+}
+// Skip only the field types/modes where capitalizing is WRONG (email, password,
 // phone, number, url, search). Any other field can opt out with
 // autocapitalize="none" (or "off").
 function _autoCapEligible(el){
@@ -337,19 +406,26 @@ function _autoCapEligible(el){
   if (im === 'email' || im === 'url' || im === 'numeric' || im === 'decimal' || im === 'tel' || im === 'search') return false;
   return true;
 }
-// TWO mechanisms, both triggered by the SPACEBAR (capitalize each word as you
-// type), and neither mutates a field during a programmatic value-set:
-//   1. MOBILE (primary): set autocapitalize="words" on every eligible field, so
-//      the device keyboard capitalizes each word natively as it's typed, the
-//      "hits on the spacebar" behavior, with zero value rewriting.
-//   2. DESKTOP (fallback): on a real spacebar keydown, title-case the value. A
+// Words everywhere (owner rule); a field that set its own
+// autocapitalize="sentences" keeps it.
+function _autoCapMode(el){
+  var ac = (el.getAttribute('autocapitalize') || '').toLowerCase();
+  return ac === 'sentences' ? 'sentences' : 'words';
+}
+// TWO mechanisms, both triggered by the SPACEBAR, and neither mutates a field
+// during a programmatic value-set:
+//   1. MOBILE (primary): set autocapitalize to the field's mode on every
+//      eligible field, so the device keyboard capitalizes natively as it's
+//      typed, with zero value rewriting.
+//   2. DESKTOP (fallback): on a real spacebar keydown, apply the mode (and the
+//      trade typo fixes) to the value. A
 //      keydown only fires from genuine typing, Playwright's page.fill() sets the
 //      value WITHOUT a keydown, so the offline suite is never affected.
 function _applyAutoCapAttrs(root){
   try {
     (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
       if (!_autoCapEligible(el)) return;
-      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'words');
+      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', _autoCapMode(el));
       // iOS/Safari silently disable autocorrect on fields they can't classify
       // (most of ours carry autocomplete="off"). Explicit autocorrect="on" +
       // spellcheck restore native as-you-type correction on every free-text
@@ -373,7 +449,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     if (!_autoCapEligible(el)) return;
     // Let the space land first, then normalize the words typed so far.
     setTimeout(function(){
-      var v = el.value, capped = _autoCapWords(v);
+      var v = el.value, fixed = _tradeSpellFix(v), capped = _autoCapMode(el) === 'words' ? _autoCapWords(fixed) : _autoCapSentences(fixed);
       if (capped !== v) {
         var pos = el.selectionStart;
         el.value = capped;

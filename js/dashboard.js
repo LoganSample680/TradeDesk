@@ -102,7 +102,7 @@ function _renderDashSetupTodo(){
     drive.setAttribute('aria-disabled',hasVehicle?'false':'true');
     drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
   }
-  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';_setupTodoLocSync(false);return;}
   // No flash on sign-in. renderDash() fires once the moment we land on the
   // dashboard (goPg('pg-dash')), BEFORE the account's cloud settings have loaded,
   // so S.setupDone / vehicles / logo / skipped are all still empty. Rendering the
@@ -165,6 +165,10 @@ function _renderDashSetupTodo(){
       sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
+    // Venmo (owner 2026-09-26): skippable, a business that doesn't take Venmo
+    // says so and it's gone. Per business, like everything on S.
+    {id:'venmo',done:!!(typeof _venmoUser==='function'&&_venmoUser()),icon:'💵',title:'Add your Venmo',
+      sub:'Invoices get a Pay with Venmo link with the amount already in. Don\'t take Venmo? Skip it.',cta:'Add'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
       sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
@@ -241,6 +245,7 @@ function _renderDashSetupTodo(){
   const doneCount=BASE_DONE+ALL.filter(t=>t.done||skipped.includes(t.id)).length;
 
   if(!remaining.length){
+    _setupTodoLocSync(false);
     // Everything handled, one clean, adult "done" moment, then gone for good. No
     // confetti, no mascot; just a confident seal a pro respects. Dismiss retires it.
     if(S.setupDone){el.style.display='none';el.innerHTML='';return;}
@@ -254,6 +259,8 @@ function _renderDashSetupTodo(){
     return;
   }
   const pct=Math.max(0,Math.min(100,Math.round(doneCount/total*100)));
+  const hidden=remaining.length>_SETUP_TODO_PEEK?remaining.length-_SETUP_TODO_PEEK:0;
+  const shown=(hidden&&!_setupTodoAll)?remaining.slice(0,_SETUP_TODO_PEEK):remaining;
   el.style.display='block';
   el.innerHTML=
     '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--blue);box-shadow:0 2px 12px rgba(45,93,168,.12)">'+
@@ -267,22 +274,47 @@ function _renderDashSetupTodo(){
         '<div style="height:6px;border-radius:6px;background:rgba(45,93,168,.15);margin-top:9px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--blue);border-radius:6px;transition:width .4s cubic-bezier(.22,1,.36,1)"></div></div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:6px">'+doneCount+' of '+total+' done · knock these out once and this card’s gone for good.</div>'+
       '</div>'+
-      remaining.map(it=>
-        '<div class="td-setup-row" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
+      shown.map(it=>
+        '<div class="td-setup-row" data-setup-id="'+it.id+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
           '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
           '<span style="flex:1;min-width:0">'+
             '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
-            (it.noSkip?'':'<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>')+
+            // 44px tall and pulled clear of the blue button above it: at 13px
+            // high it sat under his thumb aimed at the CTA (Earl audit 2026-09-27).
+            (it.noSkip?'':'<button class="td-setup-skip" onclick="_skipSetupTodo(\''+it.id+'\')" style="display:inline-flex;align-items:center;min-height:44px;min-width:44px;margin:4px 0 -10px -8px;background:none;border:none;padding:0 8px;font-size:12px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>')+
           '</span>'+
           '<button class="td-setup-cta" onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
         '</div>'
       ).join('')+
+      (hidden?'<button type="button" class="td-setup-more" onclick="_setupTodoAll=!_setupTodoAll;_renderDashSetupTodo()" style="display:block;width:100%;min-height:44px;border:none;border-top:1px solid var(--border);background:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+
+        (_setupTodoAll?'Show fewer':'Show all '+remaining.length)+'</button>':'')+
     '</div>';
   // Drop the trailing row's divider so the last item sits flush with the card edge.
   const rows=el.querySelectorAll('.td-setup-row');
-  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+  if(rows.length&&!hidden)rows[rows.length-1].style.borderBottom='none';
+  // Location is said ONCE on the dashboard. The red banner (js/geo-track.js
+  // _geoPermissionBanner) stands down while this card shows the location row,
+  // so when the row appears or goes away the banner has to look again.
+  _setupTodoLocSync(shown.some(it=>it.id==='location'));
 }
+function _setupTodoLocSync(locNow){
+  if(locNow===_setupTodoLocShown)return;
+  _setupTodoLocShown=locNow;
+  try{if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();}catch(_e){}
+}
+// True while the checklist is on screen WITH its location row: the banner's
+// cue to stay quiet so "Turn on location" is never said twice.
+function _setupTodoShowsLocation(){
+  const el=document.getElementById('dash-setup-todo');
+  return !!(el&&el.style.display!=='none'&&el.querySelector('[data-setup-id="location"]'));
+}
+// The checklist shows its NEXT TWO items and a Show all (Earl audit
+// 2026-09-27): eight rows pushed the money a full screen down on an iPhone SE.
+// Session-only on purpose: every boot opens short again.
+let _setupTodoAll=false;
+let _setupTodoLocShown=false;
+const _SETUP_TODO_PEEK=2;
 // HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
 // store is not business until somebody stands behind it. Pinned to the very
 // top of the dashboard, above the money tiles, exactly like the setup
@@ -1013,6 +1045,7 @@ function _setupTodoGo(id){
     return;
   }
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
+  if(id==='venmo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');setTimeout(()=>{const f=document.getElementById('set-venmo');if(f){f.scrollIntoView({block:'center'});f.focus();}},200);},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}
   if(id==='qrcode'){if(typeof goPg==='function')goPg('pg-qr-leads');setTimeout(()=>{document.getElementById('qr-new-label')?.focus();},160);return;}
@@ -1040,13 +1073,17 @@ function _setupTeamChooser(){
   document.body.appendChild(ov);
 }
 function _setupTeamRoute(kind){
-  // Both land on the team surface where you invite a person and set W-2 vs 1099;
-  // once a real member exists the item clears (skip records intent meanwhile).
-  if(typeof goPg==='function')goPg('pg-settings');
-  setTimeout(()=>{
-    if(typeof _openSetDetail==='function')_openSetDetail('team');
-    if(typeof openInviteEmployeeModal==='function')openInviteEmployeeModal();
-  },180);
+  // The form opens RIGHT WHERE HE IS (Earl audit 2026-09-27). This used to
+  // jump to Settings and open a 'team' section that does not exist, so a
+  // Cancel left a blank Settings page, and it opened the employee form for a
+  // 1099 sub too. Now W-2 opens the employee form, 1099 opens the sub form,
+  // Cancel leaves him on the dashboard, and only a SAVE takes him to Fleet &
+  // Team, on the Team tab, to see who he just added (_crewAddLand, cloud.js).
+  if(kind==='1099'){if(typeof openAddSubModal==='function')openAddSubModal();}
+  else if(typeof openAddEmployeeModal==='function')openAddEmployeeModal();
+  // Set AFTER the open: opening either form clears it, so a later add from
+  // anywhere else never inherits this trip.
+  if(typeof _crewAddFromSetup!=='undefined')_crewAddFromSetup=true;
 }
 function _skipSetupTodo(id){
   if(id==='qrcode')return; // not skippable — no UI path to this either, belt-and-suspenders
@@ -1091,9 +1128,10 @@ function renderDash(){
   const showTrends=dashPeriod==='year';
   const net=tInc-tExp-(tMi*IRS(yr));
 
-  const mileDed=Math.round(tMi*IRS(yr));
-  const netBeforeTax=Math.max(0,tInc-tExp-mileDed);
-  const ytdTaxEst=estimateTax(netBeforeTax);
+  // The same set-aside the Taxes screen and the payment banner use (taxSetAside,
+  // js/tax.js): this period's money in times the year's rate, so a full year
+  // reads exactly the Taxes screen's year to date reserve.
+  const ytdTaxEst=taxSetAside(tInc,yr);
   const ytdTrueProfit=Math.round(tInc-tExp-ytdTaxEst);
 
   const wonBidsAll=bids.filter(b=>b.status==='Closed Won').length;
@@ -1113,7 +1151,7 @@ function renderDash(){
   if(_subEl)_subEl.textContent='';
 
   const kpiEl=document.getElementById('dash-kpi');
-  if(kpiEl&&_isEmployee){
+  if(kpiEl&&!_ownerUI()){
     // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
     const empId=_employeeRecord?.id;
     const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk))
@@ -1207,7 +1245,7 @@ function renderDash(){
     }
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
-    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;
+    const prevTax=showTrends?taxSetAside(prevInc,yr-1):0;
     const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" data-kpi="revenue" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
@@ -1244,7 +1282,7 @@ function renderDash(){
 
   // Hobby loss check, 3 of last 5 years negative profit
   const _hobbyEl=document.getElementById('dash-hobby-warn');
-  if(_hobbyEl&&!_isEmployee){
+  if(_hobbyEl&&_ownerUI()){
     const _cy=new Date().getFullYear();
     let _lossYears=0;
     for(let _yi=0;_yi<5;_yi++){
@@ -1266,8 +1304,8 @@ function renderDash(){
   if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();
 
   const closeTip=document.getElementById('dash-close-tip');
-  if(_isEmployee){if(closeTip)closeTip.style.display='none';}
-  if(!_isEmployee&&closeTip){
+  if(!_ownerUI()){if(closeTip)closeTip.style.display='none';}
+  if(_ownerUI()&&closeTip){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
@@ -1292,7 +1330,7 @@ function renderDash(){
   const csub=document.getElementById('dash-collect-sub');
   if(csub){csub.innerHTML=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
-  if(!_isEmployee)renderPipeline();
+  if(_ownerUI())renderPipeline();
   else{const pe=document.getElementById('dash-pipeline');if(pe)pe.innerHTML='';}
   // Section shared styles
   const _rowStyle='display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px';
@@ -1313,6 +1351,7 @@ function renderDash(){
   renderReadyQueue();
   renderTodayFeed();
   _renderDashSetupTodo();
+  try{if(typeof _renderWhBoard==='function')_renderWhBoard();}catch(_e){}
   _renderDashSupplyHold();
   _renderDashVisitHold();
   try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
@@ -1413,7 +1452,13 @@ function renderDash(){
       // stutter the owner keeps seeing (spec 2026-08-11: one waterfall, no
       // stutters). The content still renders (hidden); the REVEAL waits out
       // the pour, then a fresh render slides it open once.
-      const _holdReveal=_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
+      // Under the boot shimmer (or about to be: skel mode on, this render ends
+      // by applying it) the banner is part of its card's reveal (it fades in
+      // with the data, into space its shimmer already holds), so it
+      // neither waits for the pour nor slides open (owner 2026-09-24: "on the
+      // road and on site banner still loads in weird and choppy").
+      const _underShimmer=!!_nearbyEl.closest('.td-boot-skel-on')||(typeof _dashSkelMode==='function'&&_dashSkelMode());
+      const _holdReveal=!_underShimmer&&_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
       if(_holdReveal&&!window._nearbyPourWait){
         window._nearbyPourWait=setInterval(()=>{
           if(document.querySelector('#pg-dash.boot-cascade'))return;
@@ -1424,7 +1469,7 @@ function renderDash(){
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
       _nearbyEl.style.animation='';
       if(!_holdReveal)_nearbyEl.style.display='block';
-      if(!_holdReveal&&_wasHidden){
+      if(!_holdReveal&&_wasHidden&&!_underShimmer){
         // The geo fix usually lands seconds AFTER the boot waterfall, and this
         // card sits at the top of the dashboard: popping in at full height
         // shoved every card below it down in one frame, which read as the
@@ -1439,7 +1484,42 @@ function renderDash(){
         _nearbyEl.style.maxHeight='560px';
         setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
       }
-      const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
+      const _enter=(_wasHidden&&!_underShimmer)?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'';
+      const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+inner+'</div>';
+      // ── The address, once ───────────────────────────────────────────────
+      // Owner, 2026-09-21, from his phone: "why is John Doe address cutoff?"
+      // The card was drawing
+      //   John Doe (2950 SW McClur...
+      //   2950 SW McClure Rd, Topeka, KS 6...
+      // The same address twice, and both clipped, because the TITLE now
+      // carries it: a geofence records the address into its own name, so
+      // _od.name arrives as "John Doe (2950 SW McClure Rd, Topeka, KS 66614)"
+      // and the addr line under it repeats what is already up there. The title
+      // is nowrap by design (a name that wraps to three lines pushes the
+      // arrival time off a phone) so the redundancy showed up as an ellipsis
+      // rather than as a long line.
+      // Stripped rather than left to the name: the line under the title is the
+      // address's proper home, it has a pin next to it, and a title is for the
+      // thing's NAME. Only a trailing parenthetical is touched, and only when
+      // it really is this card's address, so a customer genuinely called
+      // "Dana (the one on Oak)" keeps her parenthesis.
+      const _cardName=(name,addr)=>{
+        const n=String(name||'').trim(),a=String(addr||'').trim();
+        if(!n||!a)return n;
+        const m=/^([\s\S]*?)\s*\(([^()]*)\)\s*$/.exec(n);
+        if(!m)return n;
+        const norm=x=>String(x).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+        const inside=norm(m[2]),full=norm(a);
+        if(!inside||!full)return n;
+        // Either way round: the name may carry the whole address or only the
+        // front of it, and a fence's name is often truncated at the source.
+        if(full===inside||full.indexOf(inside)===0||inside.indexOf(full)===0){
+          // Unless the parenthesis was the whole of it. A card headed with
+          // nothing is worse than one headed with a repeated address.
+          return m[1].trim()||n;
+        }
+        return n;
+      };
       // badge defaults to ON SITE, the case every caller but one wants. On
       // lunch the pin is still on the job but the man is not working it, and a
       // live green ON SITE there would be the card asserting something untrue.
@@ -1452,7 +1532,7 @@ function renderDash(){
           '</div>'+
           '<div style="flex:1;min-width:0">'+
             '<span style="display:inline-flex;align-items:center;gap:6px;background:'+(badge?'#8a6d3b':'#0E6B39')+';color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px">'+(badge?'':'<span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>')+escHtml(badge||'ON SITE')+'</span>'+
-            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(name)+'</div>'+
+            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(_cardName(name,addr))+'</div>'+
             (addr?'<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgPin('#0E6B39',12)+'</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(addr)+'</span></div>':'')+
             (extra||'')+
           '</div>'+
@@ -1548,7 +1628,7 @@ function renderDash(){
         const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
           '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
           '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
-        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
           '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
             '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
               '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
@@ -1632,7 +1712,7 @@ function renderDash(){
         if(!_usedSnap){
           delete _nearbyEl.dataset.snap;
           const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
-          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
             '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
               '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
                 '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
@@ -1668,7 +1748,14 @@ function renderDash(){
         // newer than it is.
         delete _nearbyEl.dataset.snap;
         window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
-        try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+        // h: its height, so the next boot's shimmer holds the same space
+        // (_dashNearbySkelH). 0 while hidden under the shimmer; the last
+        // measured height is kept then.
+        try{
+          const _prev=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+          const _h=_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
+          localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
+        }catch(_e){}
       }
     }
   }
@@ -1733,7 +1820,12 @@ function _tdSkelShape(kind,h){
   const tile=()=>'<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px">'+band(9,'55%','margin-bottom:8px')+band(16,'70%')+'</div>';
   switch(kind){
     case 'tbar':return band(18,'52%','margin:6px 0');
-    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>';
+    // The KPI widget also carries the geo banner (On site / On the road /
+    // Not clocked in), which always renders. Its shimmer card is sized to the
+    // banner's last height, so nothing below moves when the data lands.
+    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>'+
+      '<div style="margin-top:16px;height:'+_dashNearbySkelH()+'px;border:1px solid var(--border);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 16px">'+
+        band(34,'34px','border-radius:50%;flex:none;margin-left:9px')+'<div style="flex:1">'+band(14,'52%','margin-bottom:8px')+band(10,'66%')+'</div>'+band(40,'86px','border-radius:12px;flex:none')+'</div>';
     case 'feed':return band(13,'42%','margin:2px 0 12px')+
       [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
     case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
@@ -1747,6 +1839,16 @@ function _tdSkelShape(kind,h){
     case 'goal':return band(13,'44%','margin:2px 0 10px')+band(14,'100%','border-radius:99px')+band(10,'30%','margin-top:8px');
     default:return (typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round((h||120)/46)))):'';
   }
+}
+// The geo banner's last rendered height (saved with its snapshot), so its
+// shimmer card holds exactly the space the banner will take.
+function _dashNearbySkelH(){
+  try{
+    const sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+    const h=sn&&Number(sn.h);
+    if(h>=60&&h<=400)return Math.round(h);
+  }catch(_e){}
+  return 86;
 }
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;
@@ -1765,6 +1867,7 @@ function _dashApplySkeletons(){
   // coverage: whatever they compute on their first paint (Stripe/QR caches included)
   // renders as final, bare content even while the rest of the dashboard is shimmering.
   const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
+  const _sweepPhase=-Math.round(performance.now()%1300);
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');
@@ -1775,6 +1878,36 @@ function _dashApplySkeletons(){
     sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
+    // Hold exactly the space the real card takes, so nothing below moves when
+    // the data lands (the shape is drawn from a template, the height is not).
+    if(!tbar){
+      const drift=el.offsetHeight-h;
+      if(drift){sk.style.boxSizing='border-box';sk.style.overflow='hidden';sk.style.height=Math.max(20,sk.offsetHeight-drift)+'px';}
+    }
+    if(typeof tdSkelSweep==='function')tdSkelSweep(sk,_sweepPhase);
+  });
+}
+// The boot sync landed: each card swaps its shimmer for its real content, in a
+// shuffled order across a short beat, so the page fills the way data arrives
+// rather than all at once (owner-approved 2026-09-24). The content is already
+// rendered underneath; this only chooses the moment each card shows it.
+function _dashRevealSkeletons(){
+  const els=[...document.querySelectorAll('#pg-dash .td-boot-skel-on')];
+  if(!els.length)return;
+  const order=els.map((el,i)=>({el,k:Math.random()})).sort((a,b)=>a.k-b.k);
+  const span=Math.min(420,60*els.length);
+  order.forEach(({el},i)=>{
+    // A card whose shimmer a re-render already replaced has nothing to swap:
+    // show it now rather than leave it blank until its turn.
+    const bare=!el.querySelector(':scope>.td-boot-skel');
+    const at=bare?0:(els.length>1?Math.round(i*span/(els.length-1)):0);
+    setTimeout(()=>{
+      if(!el.classList.contains('td-boot-skel-on'))return;
+      el.classList.remove('td-boot-skel-on');
+      el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
+      el.classList.add('td-data-in');
+      setTimeout(()=>el.classList.remove('td-data-in'),360);
+    },at);
   });
 }
 function _dashClearSkeletons(){
@@ -1998,11 +2131,13 @@ function _saveJobNote(jobId){
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
-  const todayJobs=jobs.filter(j=>{
-    if(j.status==='canceled')return false;
-    const d=parseInt(j.days)||1;
-    for(let i=0;i<d;i++){if(addDays(j.start,i)===tk)return true;}
-    return false;
+  // The same days the calendar grid shows (getJobWorkDays), and only the jobs
+  // this person may see (Earl audit 2026-09-27: crew saw everyone's jobs, with
+  // their prices, on Home).
+  const _money=_moneyVisible();
+  const todayJobs=_jobsForViewer(jobs).filter(j=>{
+    if(!j||j.status==='canceled'||!j.start)return false;
+    return getJobWorkDays(j).includes(tk);
   }).sort((a,b)=>{
     if(a.eventType==='estimate'&&b.eventType!=='estimate')return -1;
     if(b.eventType==='estimate'&&a.eventType!=='estimate')return 1;
@@ -2048,7 +2183,7 @@ function renderDashToday(){
       ?'<span style="margin-left:8px;padding:4px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);font-size:11px;font-weight:700;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid sent</span>'
       :'<button onclick="event.stopPropagation();typeof _openBidBuilder===\'function\'&&_openBidBuilder('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--blue);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid this job</button>'):'';
     // Quick crew assignment row (owner only, non-estimate jobs)
-    const _crewRow=(!_isEmployee&&!isEst)?(()=>{
+    const _crewRow=(_ownerUI()&&!isEst)?(()=>{
       if(_crewEmps.length>0){
         const _aId=j.assignedTo||null; // persists for the job's whole span, not just today
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
@@ -2078,7 +2213,8 @@ function renderDashToday(){
                 '<span style="color:#7F77DD;font-weight:600">Estimate visit</span>'
                 :
                 (j.addr||c&&c.addr?'<span style="font-weight:600">'+escHtml((j.addr||c.addr||'').split(',')[0])+'</span>':'No address')+
-                (j.value?' · '+fmt(j.value):'')+
+                (_money&&j.value?' · '+fmt(j.value):'')+
+                (j.time?' · '+fmtTime(j.time):'')+
                 ' · '+j.days+' day'+(parseInt(j.days)!==1?'s':'')
               )+
             '</div>'+
@@ -2089,7 +2225,7 @@ function renderDashToday(){
             '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">'+svgIcon('💬',{size:16})+'</div>'
           :'')+
           '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+(isEst?'rgba(127,119,221,.15)':'rgba(24,95,165,.12)')+';color:'+(isEst?'#7F77DD':'var(--blue)')+'">'+
-            (isEst?'Estimate':'Active')+
+            (isEst?'Estimate':(j.status==='done'||j.completion_date)?'Done':'Active')+
           '</span>'+
         '</div>'+
       '</div>'+
@@ -2143,7 +2279,7 @@ function _assignCrewToJob(jobId,empId){
     if(!Array.isArray(j.crewHistory))j.crewHistory=[];
     if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
     const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
-    showToast(escHtml(emp?.name||'Crew member')+' assigned','👤');
+    showToast((emp?.name||'Crew member')+' assigned','👤');
   }else{
     j.assignedTo=null;j.assignedDate=null;
     showToast('Assignment removed','');
@@ -2530,7 +2666,13 @@ function printNoticeOfIntent(bidId){
   const todayD=fmtD(todayKey());
   const payByD=fmtD(addDays(todayKey(),demandDays));
   const lastWork=bid.completion_date||bid.bid_date||todayKey();
-  const fileDeadline=rules?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
+  // A printed Notice of Intent is a legal document: a calendar date on it reads as
+  // a fact. In a `confirm` state the statute fixes the LENGTH of the window but not
+  // what starts it (Idaho 45-507(2): "ninety (90) days after the completion of the
+  // labor or services", never saying whose), so the date we would compute here is a
+  // guess wearing a suit. Print the window in words instead and say what to check.
+  const lienUnsure=!!(rules&&rules.confirm);
+  const fileDeadline=(rules&&!lienUnsure)?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
   const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
   // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
   // separate person (or unknown → fill-in line); on a homeowner account they're the same.
@@ -2575,7 +2717,7 @@ ${gcBlock}
 <div class="row" style="margin-top:18px"><div class="plabel">Amount Past Due</div><div class="amt">${fmt(bal)}</div></div>
 <div class="body" style="margin-top:16px">
   <p>You are hereby notified that the undersigned, <strong>${escHtml(bname)}</strong>, furnished ${escHtml(workDesc)} for the improvement of the property located at <strong>${escHtml(addr)}</strong>, with work last furnished on or about <strong>${fmtD(lastWork)}</strong>.</p>
-  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':''}.</p>
+  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':(lienUnsure?', and must do so within '+escHtml(String(rules.filing_deadline_days))+' days of the date the statutory period begins to run':'')}.</p>
 </div>
 <div class="demand"><strong>DEMAND:</strong> Unless full payment of ${fmt(bal)} is received on or before <strong>${payByD}</strong>, the undersigned intends to file a mechanic's lien against the property described above and to pursue all remedies available under law, which may include recovery of interest, costs, and attorney's fees where permitted.</div>
 <div class="body"><p>To resolve this matter, contact <strong>${escHtml(bname)}</strong>${bphone?' at '+escHtml(bphone):''} immediately.</p></div>
@@ -4108,7 +4250,10 @@ function renderEstimatesPage(){
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
 // 'crew' was deleted 2026-07-14 ("simplify before we scale"): a saved order
 // containing it is harmless: _applyDashOrder skips ids with no matching element.
-const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','readyQueue','goal','pipeline','feed','quick','calendar','sources'];
+// 'calendar' sits second (Earl audit 2026-09-27, owner "do it all"): today's
+// jobs were about five screens down on a phone, under the money feed and the
+// quick actions. A saved custom order is still honoured as the person left it.
+const _DASH_DEFAULT_ORDER = ['kpi','calendar','alerts','contracts','readyQueue','goal','pipeline','feed','quick','sources'];
 
 // FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
 // sibling from its old position to its new one, so cards GLIDE aside instead of

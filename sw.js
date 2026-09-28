@@ -1,10 +1,26 @@
-const CACHE = 'tradedesk-09.26.26.9';
+const CACHE = 'tradedesk-09.28.26.1';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
 function safeClone(r) {
   if (!r.redirected) return r.clone();
   return new Response(r.clone().body, { status: r.status, statusText: r.statusText, headers: r.headers });
+}
+
+// The allowlist. Same origin only, and only the files the app is built from.
+// /img/ and /api/ are named as never, even though neither matches a rule,
+// so a later edit to the allowlist cannot quietly let them in.
+const SHELL_PREFIXES = ['/js/', '/css/', '/icons/', '/fonts/', '/_ds/'];
+const SHELL_FILE = /^\/(manifest[\w.-]*\.json|favicon\.ico|sw-colors\.json)$/;
+const SHELL_FONT = /\.(woff2?|ttf|otf)$/i;
+function _isAppShell(url) {
+  if (url.origin !== self.location.origin) return false;
+  const p = url.pathname;
+  if (p.startsWith('/img/') || p.startsWith('/api/') || p === '/img' || p === '/api') return false;
+  if (SHELL_PREFIXES.some(pre => p.startsWith(pre))) return true;
+  if (SHELL_FILE.test(p)) return true;
+  if (SHELL_FONT.test(p)) return true;
+  return false;
 }
 
 self.addEventListener('install', e => {
@@ -92,7 +108,17 @@ self.addEventListener('fetch', e => {
   // "awaiting signature" no matter how many times the app re-checked.
   if (url.pathname.startsWith('/api/')) return;
 
-  // Static assets (JS, CSS, images), cache-first, update in background
+  // ONLY the app's own static shell is ever cached (2026-09-27 lockdown).
+  // This used to cache every successful GET that reached it, which put three
+  // kinds of thing on the phone's disk that do not belong there: other sites'
+  // responses (CDN scripts, fonts, map tiles), anything under /img/ (customer
+  // job photos served by the edge proxy, left behind after sign-out on a
+  // shared crew phone), and any same-origin path a future route might answer
+  // with account data. A request that is not the app shell goes straight to
+  // the network, untouched.
+  if (!_isAppShell(url)) return;
+
+  // Static app shell (JS, CSS, icons, manifest, fonts), cache-first, update in background
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(r => {

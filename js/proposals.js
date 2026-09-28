@@ -72,7 +72,7 @@ function _buildClientHubSnapshot(clientId){
     // same one-price rule the document follows (owner 2026-08-16). Shared with the
     // property card's Past work rows via _bidScopeLines below.
     const _hubScope=_bidScopeLines(b);
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -165,9 +165,11 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  const _snapAddrM=(c.addr||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  const _snapState=(_snapAddrM?_snapAddrM[1]:null)||S.state||'KS';
+  // stateFromAddr (js/legal.js): the state, not the first state-shaped word.
+  const _snapState=(typeof stateFromAddr==='function'?stateFromAddr(c.addr||''):null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
+  // Cal. Civ. Code §1689.6: five business days when the buyer is 65 or older.
+  const _snapSeniorDays=(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorDays)||0;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
@@ -240,6 +242,8 @@ function _buildClientHubSnapshot(clientId){
     trade:getActiveTrade(),
     state:_snapState,
     cancelDays:_snapCancelDays,
+    seniorCancelDays:_snapSeniorDays,
+    seniorCancelStatute:(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorStatute)||'',
     cancelStatute:_snapCancelStatute,
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos,
@@ -465,7 +469,7 @@ function sendClientHubLink(clientId){
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
     '<button id="_hub-copy-link-btn" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+', view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+'+_jsArg(c.phone.replace(/\D/g,''))+'+\'?body=\'+encodeURIComponent('+_jsArg('Hi '+firstName+', here\'s your project hub from '+biz+', view your proposals, pay your balance, and download invoices anytime: '+url)+')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -556,7 +560,7 @@ function _showGeiSendOverlay(){
         '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
       '</div>'+
       '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Proposal saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Nothing goes out until you pick one. Once it is sent, you\'ll get a follow-up reminder in 3 days if no response.</div>'+
     '</div>';
   document.body.appendChild(ov);
 }
@@ -983,7 +987,7 @@ function expandCalDay(key){
                 (job.time?'<span style="font-size:10px;color:#6366F1;font-weight:700;margin-right:6px">'+fmtTime(job.time)+'</span>':'')+
                 job.name+
               '</div>'+
-              (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
+              (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(job.notes)+'</div>':'')+
               (()=>{const _c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>x.id===job.client_id):null;const _sn=(_c?getSiteNote(_c,job.addr||_c.addr):'').trim();return _sn?'<div style="font-size:11px;color:var(--text2);margin-top:2px"><strong>Site:</strong> '+escHtml(_sn)+'</div>':'';})()+
             '</div>'+
             ''+
@@ -1002,8 +1006,8 @@ function expandCalDay(key){
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'+
               '<div style="flex:1;min-width:0">'+
                 '<div style="font-size:10px;font-weight:700;color:'+job.color+';text-transform:uppercase;margin-bottom:2px">'+(isEst?'Proposal':'Paint job · '+job.days+' day'+(job.days>1?'s':''))+'</div>'+
-                '<div style="font-size:14px;font-weight:700">'+job.name+'</div>'+
-                (job.addr?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+job.addr+'</div>':'')+
+                '<div style="font-size:14px;font-weight:700">'+escHtml(job.name||'')+'</div>'+
+                (job.addr?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(job.addr)+'</div>':'')+
                 (!isEst&&job.value?'<div style="font-size:12px;color:var(--green-mid);font-weight:700;margin-top:3px">'+fmt(job.value)+'</div>':'')+
               '</div>'+
               '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">'+
@@ -1034,7 +1038,7 @@ function expandCalDay(key){
               const isEst=job.eventType==='estimate';
               return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
                 '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?svgIcon('📋')+' Proposal':svgIcon('🎨')+' Paint job')+'</div>'+
-                '<div style="font-size:13px;font-weight:700">'+job.name+'</div>'+
+                '<div style="font-size:13px;font-weight:700">'+escHtml(job.name||'')+'</div>'+
                 '<div style="font-size:10px;opacity:.9;margin-top:1px">'+(job.hours?job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
                   (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>':'')+
@@ -1226,7 +1230,7 @@ function markBidHandshake(bidId){
       saveAll();renderCDBids();renderDash();
       showToast('Marked as handshake, no signed contract on file','🤝');
     },
-    {title:svgIcon('🤝')+' Handshake deal, are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
+    {title:svgIcon('🤝')+' Handshake deal, are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true,html:true}
   );
 }
 function markBidAbandoned(bidId,cid){markFUAbandoned(bidId,cid);}
@@ -1613,7 +1617,7 @@ function _showCOSignDocument(b,c,coData,clientId){
   const deltaColor=type==='add'?'var(--blue)':'#A32D2D';
 
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;box-sizing:border-box';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box';
   const doc=document.createElement('div');
   doc.style.cssText='background:#fff;border-radius:12px;width:100%;max-width:540px;margin:auto;overflow:hidden;font-family:inherit;color:#111';
   doc.innerHTML=

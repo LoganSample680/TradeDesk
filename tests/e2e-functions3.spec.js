@@ -1219,6 +1219,10 @@ test.describe('Cloud Supabase and account functions', () => {
         _bootSyncSettled();
         let waited = 0;
         while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        // The swap is card by card across a short beat now (owner-approved
+        // 2026-09-24, _dashRevealSkeletons), so give it that beat.
+        waited = 0;
+        while (document.querySelector('#pg-dash .td-boot-skel,#pg-dash .td-boot-skel-on') && waited < 3000) { await new Promise(res => setTimeout(res, 50)); waited += 50; }
         const after = {
           skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
           on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
@@ -1317,12 +1321,12 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.settledAfter, 'must settle once the pending count clears').toBe(true);
   });
 
-  // While skeletons are up the overlay lift must NOT pour the cascade over
-  // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
-  // gets a visible beat first (owner video 2026-08-11: a fast sync used to
-  // finish the whole choreography beneath the overlay, so the loader lifted
-  // onto a fully formed page with no shimmer and no waterfall).
-  test('boot cascade waits for the settle, and the settle lets the shimmer be seen', async () => {
+  // Behaviour changed on purpose (owner-approved boot redesign 2026-09-24):
+  // the overlay lift now pours the waterfall OVER the shimmer cards (it used to
+  // wait for the data), and the data then lands in place. What still holds from
+  // the 2026-08-11 rule: the settle must not swap INSTANTLY, the shimmer gets a
+  // visible beat first, so the loader never lifts onto a fully formed page.
+  test('boot cascade pours the shimmer, and the settle lets the shimmer be seen', async () => {
     const r = await page.evaluate(async () => {
       try {
         window._bootSyncPending = true; window._bootSkelDone = false;
@@ -1334,21 +1338,22 @@ test.describe('Cloud Supabase and account functions', () => {
         document.body.appendChild(o);
         document.getElementById('pg-dash').classList.add('active');
         _removeBootOverlay();
-        const heldForSync = !document.getElementById('pg-dash').classList.contains('boot-cascade');
+        const shimmerPoured = document.getElementById('pg-dash').classList.contains('boot-cascade')
+          && !!document.querySelector('#pg-dash .td-boot-skel');
         _bootSyncSettled();
-        const pouredInstantly = document.getElementById('pg-dash').classList.contains('boot-cascade');
+        const swappedInstantly = window._bootSkelDone;
         let waited = 0;
         while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
-        const poured = document.getElementById('pg-dash').classList.contains('boot-cascade') || window._bootCascadeRan;
-        return { heldForSync, pouredInstantly, poured };
+        const settled = window._bootSkelDone && window._bootCascadeRan;
+        return { shimmerPoured, swappedInstantly, settled };
       } finally {
         window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
         document.getElementById('supa-boot-overlay')?.remove();
       }
     });
-    expect(r.heldForSync).toBe(true);        // overlay lifted onto shimmer, no premature pour
-    expect(r.pouredInstantly, 'the shimmer gets its visible beat before the pour').toBe(false);
-    expect(r.poured, 'then the settle pours over the real content').toBe(true);
+    expect(r.shimmerPoured, 'the overlay lifts onto the shimmer waterfalling in').toBe(true);
+    expect(r.swappedInstantly, 'the shimmer gets its visible beat before the data lands').toBe(false);
+    expect(r.settled, 'then the data lands, with the one cascade already spent').toBe(true);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
@@ -1438,6 +1443,7 @@ test.describe('Cloud Supabase and account functions', () => {
         window._geoFixSeen = false; window._nearbyLiveRendered = false;
         window._bootSyncPending = true; window._bootSkelDone = false;
         window._bootCascadeRan = true;             // pour already spent: isolate the hold
+        window._bootShimmerT0 = Date.now() - 5000; // shimmer beat already seen: isolate the GEO hold
         window._bootGeoHoldUntil = null;
         _bootSyncSettled();
         const heldForGeo = !window._bootSkelDone;
@@ -4677,7 +4683,9 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
     const result = await page.evaluate(() => {
       if (typeof _jobActiveOn !== 'function' || typeof addDays !== 'function') return { skip: true };
       const tk = todayKey();
-      const j = { start: tk, days: 5 };
+      // allowWeekend: the span now ends on the last WORKED day, so without it a
+      // span crossing a weekend would end later than tk+4 (Earl audit 2026-09-27).
+      const j = { start: tk, days: 5, allowWeekend: true };
       const midSpan = addDays(tk, 2);
       const lastDay = addDays(tk, 4);
       const pastEnd = addDays(tk, 5);
@@ -4711,8 +4719,10 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
         // allowWeekend:true keeps this deterministic regardless of what day of
         // the week the suite happens to run on (getJobWorkDays skips weekends
         // otherwise, which would silently shift the booked day off `tk`).
-        jobs.push({ id: 88801, start: tk, days: 1, status: 'upcoming', allowWeekend: true }); // unassigned
-        jobs.push({ id: 88802, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-x' }); // assigned to someone else
+        // days: 2 because only a multi-day project holds a day now; a one-day
+        // service call never does (Earl audit 2026-09-27).
+        jobs.push({ id: 88801, start: tk, days: 2, status: 'upcoming', allowWeekend: true }); // unassigned
+        jobs.push({ id: 88802, start: tk, days: 2, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-x' }); // assigned to someone else
         const { booked } = getBookedDaysForCrew(null);
         return { ok: true, hasUnassigned: booked.has(tk) };
       } finally { jobs.length = 0; jobs.push(...origJobs); }
@@ -4727,7 +4737,8 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
       const origJobs = jobs.slice();
       try {
         jobs.length = 0;
-        jobs.push({ id: 88803, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-a' });
+        // days: 2, a project: a one-day call never holds the day (Earl audit 2026-09-27).
+        jobs.push({ id: 88803, start: tk, days: 2, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-a' });
         const crewA = getBookedDaysForCrew('crew-a');
         const crewB = getBookedDaysForCrew('crew-b');
         return { ok: true, crewABooked: crewA.booked.has(tk), crewBFree: !crewB.booked.has(tk) };
@@ -8666,28 +8677,38 @@ test.describe('Tax, legal, and template functions', () => {
 
   // Regression: the BYO price field was a native <input type="number">, which
   // rejects commas at the keystroke level (worst on iOS Safari/iPad, inconsistent
-  // elsewhere: the "won't accept comma" report). Fixed: the field is now plain
-  // text with a live comma-formatting oninput handler (_byaFormatPriceInput),
-  // and reads go through _byaPriceValue which strips commas before parsing,
-  // so typing "1500" displays as "1,500" and still stores as the number 1500.
-  test('_bya-price field auto-formats with commas and parses back to the correct number', async () => {
+  // elsewhere: the "won't accept comma" report). The field is plain text with
+  // the shared _fmtMoneyInput formatter (js/utils.js), and reads go through
+  // _byaPriceValue which strips commas before parsing, so typing "1500"
+  // displays as "1,500" and still stores as the number 1500. The cents case is
+  // new: the old BYO-only formatter (_byaFormatPriceInput, deleted 2026-09-27)
+  // stripped the decimal point, so "1289.50" saved as 128950.
+  test('_bya-price field auto-formats with commas, keeps cents, and parses back to the correct number', async () => {
     const result = await page.evaluate(() => {
-      if (typeof _byoAddItem !== 'function' || typeof _byaFormatPriceInput !== 'function') return { skip: true };
+      if (typeof _byoAddItem !== 'function') return { skip: true };
       _byoAddItem('Introduction');
       const el = document.getElementById('_bya-price');
       if (!el) return { skip: true };
-      const fieldType = el.type;
+      const fieldType = el.type, inputMode = el.getAttribute('inputmode');
       el.value = '1500';
-      _byaFormatPriceInput(el);
+      _fmtMoneyInput(el);
       const displayed = el.value;
       const parsed = (typeof _byaPriceValue === 'function') ? _byaPriceValue('_bya-price') : null;
+      el.value = '1289.50';
+      _fmtMoneyInput(el);
+      const cents = el.value;
+      const centsParsed = _byaPriceValue('_bya-price');
       document.getElementById('_byo-add-modal')?.remove();
-      return { fieldType, displayed, parsed };
+      return { fieldType, inputMode, displayed, parsed, cents, centsParsed, oldGone: typeof _byaFormatPriceInput };
     });
     if (result.skip) return;
     expect(result.fieldType, 'must not be type="number", that is what rejected commas').not.toBe('number');
+    expect(result.inputMode, 'a keypad with a decimal point').toBe('decimal');
     expect(result.displayed).toBe('1,500');
     expect(result.parsed).toBe(1500);
+    expect(result.cents).toBe('1,289.50');
+    expect(result.centsParsed).toBe(1289.5);
+    expect(result.oldGone).toBe('undefined');
   });
 
   test('_byaConfirm: calls without throwing', async () => {
@@ -10496,8 +10517,11 @@ test.describe('Version consistency', () => {
         const shape = (dw) => document.querySelector('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>.td-boot-skel');
         const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
         return {
-          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div>div').length : 0,
-          quickButtons: quick ? quick.querySelectorAll('.td-skel[style*="border-radius:14px"]').length : 0,
+          // the tile grid only: the geo banner's own shimmer card follows it (2026-09-24)
+          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div:first-child>div').length : 0,
+          // style.borderRadius, not the raw attribute: the shimmer sweep sets
+          // properties on each bar, which re-serializes the attribute text.
+          quickButtons: quick ? [...quick.querySelectorAll('.td-skel')].filter(b => b.style.borderRadius === '14px').length : 0,
           calCells: cal ? cal.querySelectorAll('div[style*="repeat(7"] .td-skel').length : 0,
           fallbackHasRows: _tdSkelShape('никто', 120).includes('td-skel'),
         };

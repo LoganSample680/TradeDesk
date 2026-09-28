@@ -404,10 +404,13 @@ test.describe('true-measure.js: exhaustive coverage', () => {
       });
       expect(r.confirmGone).toBe(true);
       expect(r.tmGone).toBe(true);
+      // A new BYO now opens straight on its page (Earl audit 2026-09-27), and
+      // there _geiLines is the page's one-line-per-item mirror, so the count
+      // and rate are asserted on the BYO item itself.
       expect(r.line).toBeTruthy();
-      expect(r.line.qty).toBe(86);
-      expect(r.line.rate).toBe(2.5);
       expect(r.line.total).toBe(215);
+      expect(r.byoItem && r.byoItem.qty).toBe(86);
+      expect(r.byoItem && r.byoItem.rate).toBe(2.5);
       // BYO mode's actual line-item page reads byoItems off the bid record,
       // never _geiLines (see the openGenericEstimate fix), so the seed has
       // to land there too or it's invisible the moment a contractor opens
@@ -626,7 +629,8 @@ test.describe('true-measure.js: exhaustive coverage', () => {
         const c = clients.find(x => x.id === 79004);
         window._trueMeasureSeed = { clientId: 79004, lines: [{ desc: 'Traced lawn', qty: 3412, unit: 'ft²', rate: 0, total: 0 }] };
         openGenericEstimate(c, null, null, { mode: 'byo' });
-        const found = _geiLines.some(l => l.desc === 'Traced lawn' && l.qty === 3412);
+        // BYO opens on its page now (Earl audit 2026-09-27): the line is a BYO item.
+        const found = _geiLines.some(l => l.desc === 'Traced lawn') && _byoItems.some(x => x.label === 'Traced lawn');
         return { found, seedCleared: window._trueMeasureSeed == null };
       });
       expect(r.found).toBe(true);

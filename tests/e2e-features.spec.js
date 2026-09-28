@@ -259,23 +259,16 @@ test.describe('Tax page, calcTax and tab rendering', () => {
     assertNoErrors(page, 'calcTax render');
   });
 
-  test('estimateTax: returns a positive number for positive net income', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(50000, new Date().getFullYear()); } catch(e) { return null; }
+  // estimateTax was a second copy of the tax math (2026-09-27); every caller
+  // reads taxYearSnapshot now, so a positive year must give a positive bill.
+  test('taxYearSnapshot: positive income gives a positive tax, estimateTax is gone', async () => {
+    const r = await page.evaluate(() => {
+      const sv = income; income = [{ date: '2025-05-01', amount: 50000 }];
+      try { return { tax: taxYearSnapshot('2025').totalOwed, old: typeof estimateTax }; }
+      finally { income = sv; }
     });
-    if (result !== null) {
-      expect(typeof result).toBe('number');
-      expect(result).toBeGreaterThan(0);
-    }
-  });
-
-  test('estimateTax: zero net income returns zero tax', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof estimateTax !== 'function') return null;
-      try { return estimateTax(0, new Date().getFullYear()); } catch(e) { return null; }
-    });
-    if (result !== null) expect(result).toBe(0);
+    expect(r.tax).toBeGreaterThan(0);
+    expect(r.old).toBe('undefined');
   });
 
   test('setTaxTab: switches between summary and payments tabs', async () => {
@@ -1280,6 +1273,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       places.length = 0;   // fresh account: no saved places either
       window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1338,6 +1334,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       // pinned.
       const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
       const _origMotionPerm = _motionPermCache; _motionPermCache = 'prompt';
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1356,7 +1355,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 8 CTAs (5 optional + QR + location + motion)').toBe(8);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 9 CTAs (6 optional incl. Venmo + QR + location + motion)').toBe(9);
     expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
@@ -1401,7 +1400,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       // nothing left. Motion is skippable like places/getpaid/logo/team, so
       // it joins the skipped list rather than needing its own cache pinned.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['places', 'getpaid', 'logo', 'team', 'motion']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'venmo', 'logo', 'team', 'motion']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();
@@ -1432,6 +1431,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
       window.saveAll = () => {};
       _setVehicles([]); S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      // The card shows its next two items until Show all (Earl audit 2026-09-27);
+      // this test is about the WHOLE list, so it reads it expanded.
+      _setupTodoAll = true;
       _renderDashSetupTodo();
       const before = document.getElementById('dash-setup-todo').querySelectorAll('.td-setup-row').length;
       _skipSetupTodo('logo');
@@ -2065,6 +2067,7 @@ function _qrIntakeShim(qrLabel) {
         auth:{ getUser:()=>noopResult({user:null}), getSession:()=>noopResult({session:null}),
           onAuthStateChange:(cb)=>{if(typeof window!=='undefined')window.__capturedAuthCallback=cb;return{data:{subscription:{unsubscribe:()=>{}}}};} },
         from:(table)=>queryBuilder(table),
+        rpc:(fn,args)=>noopResult(fn==='account_public_card'?ACCT_ROW:[]),
         storage:{from:(b)=>({upload:(p,d,o)=>noopResult({path:p}),download:(p)=>noopResult(null),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noopResult(null),list:(pr)=>noopResult([])})},
         functions:{invoke:(n,o)=>noopResult({ok:true})},
         channel:(n)=>({on:function(){return this;},subscribe:function(cb){if(cb)cb('SUBSCRIBED');return this;},unsubscribe:()=>{}}),
@@ -2623,48 +2626,25 @@ test.describe('Employee dispatch and daily view', () => {
     assertNoErrors(page, 'dispatch page navigation');
   });
 
-  test('invite employee modal opens and generates link', async () => {
-    // Set contractor mode
+  // The "Add Team Member" invite modal was a second add-crew form beside
+  // _openEmpModal; it is deleted (Earl audit 2026-09-27). Its invite link now
+  // comes from the one builder, _crewInviteUrl, which Text invite uses.
+  test('invite employee: one form, and the invite link carries the crew invite', async () => {
     await page.evaluate(() => {
       _isEmployee = false;
       _supaUser = { id: 'test-contractor-id', email: 'contractor@test.com' };
       _contractorUserId = 'test-contractor-id';
     });
-
-    // Call the function directly
-    const result = await page.evaluate(() => {
-      if (typeof openInviteEmployeeModal !== 'function') return { fnExists: false };
-      openInviteEmployeeModal();
-      const nameInput = document.getElementById('_inv-name');
-      return { fnExists: true, modalOpen: !!nameInput };
+    const r = await page.evaluate(() => {
+      const gone = typeof openInviteEmployeeModal === 'undefined' && typeof _submitInviteEmployee === 'undefined';
+      openAddEmployeeModal();
+      const form = !!document.getElementById('emp-name') && !document.getElementById('_inv-name');
+      document.getElementById('emp-modal-overlay')?.remove();
+      const link = _crewInviteUrl({ id: 42, name: 'Test Invitee', email: '' }, null);
+      return { gone, form, hasLink: link.includes('emp_invite=') };
     });
-
-    if (!result.fnExists) {
-      // Function may not be exposed; skip gracefully
-      assertNoErrors(page, 'invite employee modal, function check');
-      return;
-    }
-
-    expect(result.modalOpen).toBe(true);
-
-    // Fill in name and submit
-    const linkResult = await page.evaluate(() => {
-      const nameInput = document.getElementById('_inv-name');
-      if (nameInput) nameInput.value = 'Test Invitee';
-      const roleSelect = document.getElementById('_inv-role');
-      if (roleSelect) roleSelect.value = 'worker';
-      // Call submit
-      if (typeof _submitInviteEmployee === 'function') _submitInviteEmployee();
-      // Check for invite link box
-      const linkBox = document.getElementById('_inv-link-box');
-      const linkText = linkBox ? linkBox.textContent : '';
-      // Cleanup
-      document.getElementById('_emp-invite-ov')?.remove();
-      return { hasLink: linkText.includes('emp_invite') };
-    });
-
-    expect(linkResult.hasLink).toBe(true);
-    assertNoErrors(page, 'invite employee modal link generation');
+    expect(r).toEqual({ gone: true, form: true, hasLink: true });
+    assertNoErrors(page, 'invite employee: one form');
   });
 
   test('employee daily view shows when _isEmployee flag set', async () => {
@@ -3859,8 +3839,10 @@ test.describe('Scope-of-work chips', () => {
       if (!wrap) return null;
       return {
         text: wrap.textContent,
-        // One remove control (×) per selected item, no other buttons in the list.
-        removeCount: wrap.querySelectorAll('button').length,
+        // One remove control (×) per selected item. COUNTED ON THE ROWS as of
+        // 2026-09-22 (§10.4) rather than on the whole wrap: the card now ends
+        // with "+ Say or type more", which is a button and is not a remove.
+        removeCount: wrap.querySelectorAll('button[aria-label^="Remove"]').length,
         // Old design wrapped each chip in a rounded pill; line items must not.
         isPills: wrap.innerHTML.includes('border-radius:20px'),
       };
@@ -4061,7 +4043,11 @@ test.describe('Workforce time intelligence', () => {
       }
       const EMP = 'emp-shopoverlap-1';
       // Shop dwell: 2 real hours, T0 to T0+120m.
-      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
+      // departed_at added 2026-09-27: Crew Cost's hours now come off the Time
+      // Log rows (the one pay function), and there a stored row with no
+      // departure is someone's OPEN dwell running to now (owner 2026-09-21),
+      // which is not the closed 2h dwell this fixture always meant.
+      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString(), departed_at: new Date(T0 + 120 * 60000).toISOString() };
       // A manual job clock-in fully INSIDE that dwell: T0+30m to T0+90m (1h),
       // the crew member prefabbing for a specific job while physically there.
       timeEntries = timeEntries.filter(e => e.id !== 8970099);
@@ -4170,14 +4156,14 @@ test.describe('Workforce time intelligence', () => {
   });
 
   // ── Overtime detection logic ─────────────────────────────────────────────
-  test('otDays computed correctly for a day over 8 hours', async () => {
-    const r = await page.evaluate(() => {
-      // Simulate per-day minute accumulation > 480
-      const dayMins = { '2026-06-17': 540, '2026-06-16': 420 };
-      const otDays = Object.values(dayMins).filter(m => m > 480).length;
-      return otDays;
-    });
-    expect(r).toBe(1);
+  // AMENDED 2026-09-27 (§10.4): this used to re-implement Crew Cost's per-day
+  // "OT Nd" count (any day over 8h) inside the test and assert its own
+  // arithmetic. That flag was wrong: federal overtime is weekly over 40h, and
+  // it priced nothing. Crew Cost now takes pay from _payPersonPeriod (weekly,
+  // 1.5x), covered in e2e-pay-week.spec.js; here, the per-day count is gone.
+  test('Crew Cost no longer counts per-day OT days', async () => {
+    const r = await page.evaluate(() => String(_crewCostRender).includes('otDays'));
+    expect(r).toBe(false);
   });
 
   // ── Crew Cost: month/quarter/ytd tabs exist ──────────────────────────────
@@ -4235,9 +4221,17 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_MTB_DEFAULT_ORDER is defined with 4 tabs', async () => {
-    const r = await page.evaluate(() => typeof _MTB_DEFAULT_ORDER !== 'undefined' && _MTB_DEFAULT_ORDER.length === 4);
-    expect(r).toBe(true);
+  // ── 10.4: four became three, and the row gained a seat ──────────────────
+  // Owner, 2026-09-21: Tim "needs to be dead center on all devices, looks awful
+  // the way it is now". Centring needs an ODD number of slots and the bar had
+  // six: four tabs, Tim's seat, and More. No even row has a middle, and uneven
+  // tab widths cannot fake one, so Clients moved into the More menu.
+  // Asserting the CONTENTS rather than the count now: a length check passes
+  // just as happily on the wrong three.
+  test('_MTB_DEFAULT_ORDER is the three draggable tabs', async () => {
+    const r = await page.evaluate(() =>
+      (typeof _MTB_DEFAULT_ORDER !== 'undefined') ? _MTB_DEFAULT_ORDER.slice() : null);
+    expect(r).toEqual(['dash', 'leads', 'jobs']);
   });
 
   test('_initTabBarDrag is a function', async () => {
@@ -4255,8 +4249,22 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
       const tabs = [...document.querySelectorAll('#mtb-inner .mtb[data-tab]')];
       return tabs.map(b => b.dataset.tab);
     });
-    expect(r).toHaveLength(4);
-    expect(r).toContain('dash');
+    // Three, plus Tim's seat, plus More outside the row: five slots, and five
+    // is what has a middle for him to sit in.
+    expect(r).toEqual(['dash', 'leads', 'jobs']);
+  });
+
+  test('and Tim rides in the row without being one of them', async () => {
+    const r = await page.evaluate(() => {
+      const seat = document.querySelector('#mtb-inner > #mtb-tim-slot');
+      return seat ? { isTab: seat.hasAttribute('data-tab'),
+        classed: seat.classList.contains('mtb') } : null;
+    });
+    expect(r, 'his seat is not in the row').not.toBeNull();
+    // Not a tab and not classed as one, so the drag never picks it up and it
+    // can never be counted as a destination.
+    expect(r.isTab).toBe(false);
+    expect(r.classed).toBe(false);
   });
 
   test('dash-widget-root exists with td-dw children', async () => {
@@ -4278,10 +4286,10 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   test('_applyTabOrder reorders tab bar DOM', async () => {
     const r = await page.evaluate(() => {
       if (typeof _applyTabOrder !== 'function') return null;
-      _applyTabOrder(['jobs', 'dash', 'clients', 'leads']);
+      _applyTabOrder(['jobs', 'dash', 'leads']);
       const tabs = [...document.querySelectorAll('#mtb-inner .mtb[data-tab]')];
       const order = tabs.map(b => b.dataset.tab);
-      _applyTabOrder(['dash', 'leads', 'clients', 'jobs']); // restore
+      _applyTabOrder(['dash', 'leads', 'jobs']); // restore
       return order;
     });
     if (!r) return;
@@ -4515,13 +4523,17 @@ test.describe('Scope of work, collapsed + sheet picker', () => {
       const html = div.innerHTML;
       document.body.removeChild(div);
       return {
-        hasAddBtn: html.includes('Add scope of work'),
+        // CHANGED 2026-09-22 (§10.4): the empty scope is the box he talks into
+        // now, not a dashed button onto a picker. What this test is really
+        // holding is unchanged, that the empty state is COLLAPSED rather than a
+        // grid of tiles, and that is asserted below exactly as before.
+        hasComposer: html.includes('Tell me what you are doing'),
         noTileGrid: !html.includes('grid-template-columns'),
         noTileButtons: !html.includes('minmax(150px'),
       };
     });
     if (r === null) return;
-    expect(r.hasAddBtn).toBe(true);
+    expect(r.hasComposer).toBe(true);
     expect(r.noTileGrid).toBe(true);
     expect(r.noTileButtons).toBe(true);
   });
@@ -5139,7 +5151,10 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     await mockAllExternal(page);
     await page.goto(`/client.html?c=905&u=${FAKE_USER_ID}&t=feedtok905`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
-    expect(await page.locator('.hub-feed-hd:has-text("Daily updates")').count()).toBe(0);
+    // "Daily updates" became "Your project" in the hub redesign (2026-09-24,
+    // §10.4): the card is each job, where it stands and a tracker, and it now
+    // sits after the proposals to sign. Still hidden when there is no job.
+    expect(await page.locator('.hub-feed-hd:has-text("Your project")').count()).toBe(0);
     const mainCol = page.locator('.hub-col-main');
     const firstHd = await mainCol.locator('.hub-feed-hd').first().textContent();
     expect(firstHd).toContain('Awaiting your signature');
@@ -5157,7 +5172,7 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     await mockAllExternal(page);
     await page.goto(`/client.html?c=906&u=${FAKE_USER_ID}&t=feedtok906`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
-    const feedCard = page.locator('.hub-feed-hd:has-text("Daily updates")');
+    const feedCard = page.locator('.hub-feed-hd:has-text("Your project")');
     expect(await feedCard.count()).toBe(1);
     expect(await page.locator('.hub-feed-item').count()).toBe(1);
     assertNoErrors(page, 'populated daily updates card renders');
@@ -5395,30 +5410,25 @@ test.describe('client hub, Daily updates card hides when there is nothing to sho
     assertNoErrors(page, 'mobile contact strip');
   });
 
-  test('boot overlay shows client-facing loading copy', async ({ page }) => {
-    // Regression guard for the boot-overlay label, must read as addressed to the
-    // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
+  test('boot overlay shows the contractor, not a loading screen', async ({ page }) => {
+    // Behaviour changed on purpose (owner-approved boot redesign 2026-09-24):
+    // the hub boot is the contractor's name or logo fading in and out, like the
+    // app. The old "Loading your client hub…" copy, glow, mark and progress bar
+    // are gone, and "Powered by TradeDesk" never shows on the hub.
     const hub = { clientId: 907, contractorUserId: FAKE_USER_ID, contractorName: 'Boot Co', businessName: 'Boot Co', clientName: 'Boot Client', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
     await page.addInitScript(h => { window.__mockHubData = h; }, hub);
     await mockAllExternal(page);
     await page.goto(`/client.html?c=907&u=${FAKE_USER_ID}&t=boottok907`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const bootText = await page.locator('#boot-overlay').textContent();
-    expect(bootText).toContain('Loading your client hub');
-    // Premium treatment (owner ask): the hub boot screen carries the same
-    // glow/mark/track construction as the TradeDesk app boot overlay, not the
-    // old bare name + 2px line.
+    await page.waitForFunction(() => !!document.querySelector('#boot-overlay .bt-name'), { timeout: 8000 });
     const r = await page.evaluate(() => ({
-      glow: !!document.querySelector('#boot-overlay .cbo-glow'),
-      mark: !!document.querySelector('#boot-overlay .cbo-mark svg'),
-      track: !!document.querySelector('#boot-overlay .cbo-track .cbo-sheen'),
-      bar: !!document.querySelector('#boot-overlay #boot-bar.cbo-bar'),
-      tag: (document.querySelector('#boot-overlay .cbo-tag') || {}).textContent || '',
+      name: document.querySelector('#boot-overlay .bt-name').textContent,
+      text: document.getElementById('boot-overlay').textContent,
+      old: document.querySelectorAll('#boot-overlay .cbo-glow,#boot-overlay .cbo-track,#boot-bar').length,
     }));
-    expect(r.glow).toBe(true);
-    expect(r.mark).toBe(true);
-    expect(r.track).toBe(true);
-    expect(r.bar).toBe(true);
-    expect(r.tag).toBe('Client hub');
+    expect(r.name).toBe('Boot Co');
+    expect(r.text).not.toContain('Loading your client hub');
+    expect(r.text).not.toContain('Powered by');
+    expect(r.old).toBe(0);
   });
 });
 
@@ -7079,7 +7089,10 @@ test.describe('UI cleanup, redundant elements removed', () => {
       // statically in the HTML.
       if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('byo', 'Build Your Own proposal', '_editByoTitle');
     });
-    const backBtns = await page.locator('#gei-byo-page .tbar .link-back').count();
+    // The iOS nav bar since 2026-09-23 (§10.4), same as T&M below: Back on
+    // the left of the one bar, where the .tbar's back link used to be. Still
+    // exactly one.
+    const backBtns = await page.locator('#gei-byo-page [aria-label="Back"]').count();
     expect(backBtns).toBe(1);
   });
 
@@ -7089,7 +7102,9 @@ test.describe('UI cleanup, redundant elements removed', () => {
       if (el) el.style.display = 'block';
       if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
     });
-    const backBtns = await page.locator('#gei-tm-page .tbar .link-back').count();
+    // The iOS nav bar since 2026-09-23 (§10.4): Back on the left of the one
+    // bar, where the .tbar's "← Job type" link used to be. Still exactly one.
+    const backBtns = await page.locator('#gei-tm-page [aria-label="Back"]').count();
     expect(backBtns).toBe(1);
   });
 
@@ -8103,6 +8118,45 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     if (!r.skip) {
       expect(r.pendingCount, 'the outgoing account\'s unreviewed leads must not survive into the next login').toBe(0);
       expect(r.processedHasStale, 'the outgoing account\'s processed-id memory must not carry over either').toBe(false);
+    }
+  });
+
+  // Same class of bug, same shared device, different array. Tim's conversation
+  // thread (td_tim_log, js/tim-log.js) is account data: it holds the sentences a
+  // man said to Tim and what Tim answered back, so customer names, what they
+  // owe, what a job was charged at. Since 2026-09-21 it also holds a week's
+  // timesheet read out by job site, which puts crew names and the addresses
+  // they worked at in it too. It survived the wipe until then.
+  test('cross-account bleed guard: Tim\'s thread is cleared on account switch, his i is not', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _wipeLocalAccountData !== 'function' || typeof timLogSay !== 'function') return { skip: true };
+      timLogClear();
+      timLogSay('who owes me money', { kind: 'ask', title: '$3,500', sub: 'Dana Whitfield, 68 days' });
+      try {
+        localStorage.setItem('td_tim_met', '1');
+        // The last thing he said out loud on the bar. A finding id with a
+        // DOLLAR FIGURE on the end of it, so it leaves with the account too.
+        localStorage.setItem('td_tim_said', 'still-owes|$1,240');
+      } catch (_e) {}
+      const before = timLogEntries().length;
+      _wipeLocalAccountData();
+      return {
+        before,
+        after: timLogEntries().length,
+        said: (() => { try { return localStorage.getItem('td_tim_said'); } catch (_e) { return 'threw'; } })(),
+        raw: (() => { try { return localStorage.getItem('td_tim_log'); } catch (_e) { return 'threw'; } })(),
+        // A fact about this DEVICE having been shown the control once, not
+        // about whose books are on it. Clearing it would re-teach the i to a
+        // man who has been using Tim for a year, on every sign-out.
+        met: (() => { try { return localStorage.getItem('td_tim_met'); } catch (_e) { return null; } })(),
+      };
+    });
+    if (!r.skip) {
+      expect(r.before, 'the fixture has to actually write something').toBe(1);
+      expect(r.after, 'the outgoing account\'s conversation must not survive into the next login').toBe(0);
+      expect(r.raw === null || r.raw === '[]', 'and it must not be left on disk either').toBe(true);
+      expect(r.said, 'the figure he last spoke goes with it').toBe(null);
+      expect(r.met).toBe('1');
     }
   });
 

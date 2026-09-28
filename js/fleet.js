@@ -45,6 +45,15 @@ function setFleetTab(tab) {
   if(tab==='team' && typeof renderTeam === 'function') renderTeam();
 }
 
+// Which tab Fleet & Team opens on (Earl audit 2026-09-27: it always opened
+// on Fleet, so a man who just added a helper landed on trucks). A business
+// with crew opens on Team; a solo shop, whose page is mostly its truck, on
+// Fleet. A caller that wants a tab still calls setFleetTab after goPg.
+function _fleetDefaultTab() {
+  const crew = (S.employees || []).some(e => e && e.role !== 'owner') || (S.subcontractors || []).length > 0;
+  return crew ? 'team' : 'fleet';
+}
+
 /* ── Main render ─────────────────────────────────────────────────────────────── */
 function renderFleet() {
   if(_fleetTabActive === 'fleet') {
@@ -477,7 +486,7 @@ function _vehWinnerAlert(yr){
       return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?', you\'re already on the winning method '+svgIcon('✓',{size:13}):switchNote);
     });
     if(!parts.length)return;
-    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won'});
+    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won',html:true});
   }catch(_e){}
 }
 

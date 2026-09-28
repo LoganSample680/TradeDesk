@@ -6,10 +6,10 @@ function goPg(id){
   // leaving the signature screen takes the owner's face. Returns false and
   // re-runs this navigation itself once unlocked.
   if(typeof _handoffGuardNav==='function'&&!_handoffGuardNav(id))return;
-  // Redirect employees away from restricted pages
-  if(_isEmployee){
+  // Redirect employees away from restricted pages (a co-owner is not one)
+  if(!_ownerUI()){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
-      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money'];
+      'pg-dispatch','pg-licensing','pg-contracts','pg-client-hub','pg-money','pg-wh-list','pg-qi'];
     if(_empBlocked.includes(id))id='pg-dash';
     else if(id==='pg-leads'&&!_employeeRecord?.permissions?.leads)id='pg-dash';
   }
@@ -18,6 +18,10 @@ function goPg(id){
   // so boot-time goPg('pg-dash') calls can never wipe the marker before
   // _maybeResumeActiveEstimate reads it.
   if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
+  // Leaving a page turns Tim's mic off. Nothing else would: the listening
+  // panel is fixed to the screen, so it followed him to the next page with
+  // the mic still open (owner, 2026-09-26).
+  if(typeof _timTalking!=='undefined'&&_timTalking&&typeof _timTalkStop==='function'&&document.querySelector('.pg.active')?.id!==id){try{_timTalkStop(true);}catch(_e){}}
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
@@ -43,14 +47,17 @@ function goPg(id){
     'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
   // Sync mobile bottom tab bar
-  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
-    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'};
+  // No mtb-clients any more: Clients moved into the More menu so Tim could be
+  // dead centre, so it lights More, the same as every other page in there. A
+  // client opened FROM Leads still lights Leads, which is where he came from.
+  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-jobs':'mtb-jobs',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':''};
   document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
   const _mtb=document.getElementById(_mtbMap[id]||'');
   if(_mtb)_mtb.classList.add('active');
   else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
   document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
+  const _mmiKey={'pg-clients':'mmi-clients','pg-client-detail':'mmi-clients','pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing','pg-contracts':'mmi-contracts','pg-proposals':'mmi-proposals','pg-timelog':'mmi-timelog','pg-photos':'mmi-photos'}[id];
   if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
@@ -77,9 +84,15 @@ function goPg(id){
       setTimeout(()=>{ goPg('pg-team'); setFleetTab('fleet'); },150);
     }
   }
-  if(id==='pg-team'){renderTeam();renderFleetVehicles();}
+  if(id==='pg-team'){
+    // setFleetTab renders the tab it lands on, and keeps the header's add
+    // button matching it (the markup ships Fleet active with the Team button).
+    if(typeof setFleetTab==='function'&&typeof _fleetDefaultTab==='function')setFleetTab(_fleetDefaultTab());
+    renderTeam();renderFleetVehicles();
+  }
   if(id==='pg-dispatch'){if(typeof renderDispatch==='function')renderDispatch();}
   if(id==='pg-licensing')renderLicensing();
+  if(id==='pg-wh-list'&&typeof renderWhList==='function')renderWhList();
   if(id==='pg-contracts'){renderContracts();if(typeof refreshAgreementSignatures==='function')refreshAgreementSignatures();}
   if(id==='pg-timelog')renderTimeLog();
   if(id==='pg-photos'&&typeof renderPhotosPage==='function')renderPhotosPage();
@@ -91,6 +104,9 @@ function goPg(id){
   if(id==='pg-money')renderMoneyPage();
   if(id!=='pg-est-generic'){window._wakeLockRelease&&window._wakeLockRelease();}
   if(id==='pg-client-hub')renderClientHubPage();
+  // Tim's dock re-reads the screen he just landed on. What he found on the last
+  // page is not true on this one, and a stale pill is worse than no pill.
+  if(typeof timDockRefresh==='function')timDockRefresh();
 }
 
 // ── REPAINT WHAT IS ON SCREEN, WITHOUT NAVIGATING TO IT ─────────────────────
@@ -143,6 +159,7 @@ function _refreshActivePage(){
     'pg-taxes':()=>run('calcTax'),
     'pg-contracts':()=>run('renderContracts'),
     'pg-licensing':()=>run('renderLicensing'),
+    'pg-wh-list':()=>run('renderWhList'),
     'pg-checklist':()=>run('renderChecklist'),
     'pg-client-hub':()=>run('renderClientHubPage'),
   }[id]||(()=>{}))();
@@ -160,32 +177,54 @@ function _applyEmployeeNavGating(){
   // nb-taxes/mmi-taxes are owned exclusively by applyPermissions()'s canSeeTaxes() check
   // (a finer-grained owner/co-owner test), not listed here to avoid two functions
   // fighting over the same element.
+  // mmi-tim added 2026-09-21. Tim has been owner-only since he was built (the
+  // dock refuses to draw for a crew member, with the reason written beside it)
+  // but this button calls openTim() directly and was never gated, so it stayed
+  // a way in to every money answer he has: revenue, receivables, the best
+  // customer, the average job. None of those route through goPg, so the
+  // _empBlocked list above never saw them and pg-money being shut meant
+  // nothing. openTim and timAsk both refuse for crew now too; this only removes
+  // the invitation.
   const _gatedIds=['nb-tracker','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
    'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
+   'mmi-tim',
   ];
-  const _show=!_isEmployee;
+  const _show=_ownerUI();
   _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_show?'':'none';});
   // Leads nav: hidden only for employees without the leads permission; always shown otherwise.
-  const _leadsOk=!_isEmployee||!!_employeeRecord?.permissions?.leads;
+  const _leadsOk=_ownerUI()||!!_employeeRecord?.permissions?.leads;
   ['nb-leads','mtb-leads','mmi-leads'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_leadsOk?'':'none';});
   // Dispatch button inside the Jobs page header, employee-only hide, always restored otherwise.
-  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_isEmployee?'none':'';
+  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_ownerUI()?'':'none';
   // Grey (don't hide) the dashboard Estimate quick action for employees without
   // the estimate permission, the click still fires openEstimateForClient, which
   // shows the request-access popup. Full opacity for owners/co-owners always.
   const _qaEst=document.getElementById('qa-estimate-btn');
-  if(_qaEst){const _ok=!_isEmployee||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
+  if(_qaEst){const _ok=_ownerUI()||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
+  // Money on Home (Earl audit 2026-09-27: Jack, plain crew, had Invoice,
+  // Expense and Collect tiles and the lead-source revenue card). Hidden, not
+  // greyed: there is nothing to request. The split follows the redaction
+  // matrix in js/cloud.js _employeeRedactedTables, so a tile shows exactly
+  // when the data behind it would.
+  const _pm=(_employeeRecord&&_employeeRecord.permissions)||{};
+  const _fin=_ownerUI()||!!_pm.financials;
+  const _vis=(el,ok)=>{if(el)el.style.display=ok?'':'none';};
+  _vis(document.getElementById('qa-invoice-btn'),_fin);
+  _vis(document.getElementById('qa-collect-btn'),_fin||!!_pm.collect);
+  _vis(document.querySelector('#dash-quick .qa[onclick*="\'expense\'"]'),_fin||!!_pm.expenses);
+  _vis(document.querySelector('#dash-widget-root .td-dw[data-dw="sources"]'),_fin);
   // nav-user avatar: employees can't reach the Settings page (goPg blocks it), but they
   // still need a way to sign out, route their click to a small sign-out menu instead of
   // nulling the click entirely. Owners/co-owners go to Settings as always.
   const nu=document.getElementById('nav-user');
-  if(nu){nu.style.cursor='pointer';nu.onclick=_isEmployee?()=>_employeeSignOutMenu():()=>goPg('pg-settings');}
+  if(nu){nu.style.cursor='pointer';nu.onclick=_ownerUI()?()=>goPg('pg-settings'):()=>_employeeSignOutMenu();}
   // Mobile "more" menu: same reasoning, a dedicated Sign out entry only for employees
   // (owners already have Sign out inside Settings; don't add a redundant one for them).
   const _mmiSignout=document.getElementById('mmi-signout');
-  if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
+  if(_mmiSignout)_mmiSignout.style.display=_ownerUI()?'none':'';
   const nr=document.getElementById('nav-user-role');
-  if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+  if(nr&&_coOwner)nr.textContent='Owner';
+  else if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
   // Dual-hat switcher entry (§9.10 slice 1): an owner who is ALSO on someone's
   // crew gets a switch button in the Settings header. The crew hat's entry lives
   // in _employeeSignOutMenu below (employees can't reach Settings at all).
@@ -307,7 +346,9 @@ function _hatSwitcherMenu(){
 }
 
 // ── Tab bar drag-to-reorder ────────────────────────────────────────────────
-const _MTB_DEFAULT_ORDER = ['dash','leads','clients','jobs'];
+// Clients left the bar so Tim could be dead centre (see index.html). Three
+// tabs, his seat, and More is five slots, and five has a middle.
+const _MTB_DEFAULT_ORDER = ['dash','leads','jobs'];
 
 function _getTabOrder() {
   const saved = S.navTabOrder;
@@ -322,6 +363,24 @@ function _applyTabOrder(order) {
     const btn = document.getElementById('mtb-' + id);
     if (btn) inner.appendChild(btn);
   });
+  // Tim's seat goes back to the middle of the row afterwards. appendChild above
+  // moves the four named tabs to the end, so without this the spacer ends up
+  // FIRST on every phone that has ever had its bar dragged, and the notch is
+  // cut on the left edge with Tim floating over the Home tab. Which of the four
+  // tabs ends up either side of him is the owner's business; that he is in the
+  // middle of them is not.
+  const seat = document.getElementById('mtb-tim-slot');
+  if (seat) {
+    // Where the seat goes is NOT the middle of the tabs, it is the middle of
+    // the BAR, and the bar has one more slot in it than this row does: More
+    // sits outside #mtb-inner. With n tabs the bar has n+2 slots and the middle
+    // one is index (n+1)/2, which is 2 for the three tabs shipped here. Using
+    // the middle of the tabs instead put him one slot left of centre.
+    const kids = [...inner.children].filter(el => el !== seat);
+    const mid = Math.floor((kids.length + 1) / 2);
+    if (kids[mid]) inner.insertBefore(seat, kids[mid]);
+    else inner.appendChild(seat);
+  }
 }
 
 function _initTabBarDrag() {

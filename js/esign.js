@@ -76,7 +76,7 @@ function esignPadHTML(prefix, opts){
       '<div id="' + _esignEsc(phId) + '" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;pointer-events:none;text-align:center;padding:18px 20px 0">' + _esignEsc(phText) + '</div>' +
     '</div>' +
     '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">' +
-      '<button type="button" onclick="esignClear(\'' + prefix + '\')" style="font-size:12px;color:var(--text3,#6b7280);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear drawing</button>' +
+      '<button type="button" onclick="esignClear(\'' + prefix + '\')" style="font-size:12px;color:var(--text3,#6b7280);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline;min-height:44px;padding:0 8px;margin:-14px -8px">Clear drawing</button>' +
     '</div>';
 }
 
@@ -144,7 +144,11 @@ function esignWire(prefix, opts){
   }
   // Teardown when the pad's overlay leaves the DOM, no leaked listeners.
   const obs = new MutationObserver(() => {
-    if (!document.contains(canvas)) { ac.abort(); pad.drawing = false; obs.disconnect(); delete _ESIGN_PADS[prefix]; }
+    // Only forget THIS pad. Opening the pad a second time (Back, then Approve
+    // again) renders a new canvas under the same prefix before this observer
+    // fires, and deleting by prefix alone threw the new pad away too, so the
+    // signature step answered "no-pad" and the customer could not continue.
+    if (!document.contains(canvas)) { ac.abort(); pad.drawing = false; obs.disconnect(); if (_ESIGN_PADS[prefix] === pad) delete _ESIGN_PADS[prefix]; }
   });
   obs.observe(document.body, { childList: true, subtree: true });
   _ESIGN_PADS[prefix] = pad;
@@ -222,10 +226,18 @@ function esignConsentHTML(prefix, termsHtml, opts){
   return '<div style="font-size:12px;color:var(--text3,#6b7280);margin-bottom:10px;padding:0 2px">' + _esignEsc(lead) + '</div>' +
     '<div style="padding:14px;background:var(--bg,#fff);border:1.5px solid var(--border2,#d1d5db);border-radius:10px;margin-bottom:20px">' +
     '<button type="button" onclick="esignToggleTerms(\'' + prefix + '\')" style="display:flex;align-items:center;width:100%;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-family:inherit;cursor:pointer;transition:background .15s,border-color .15s">' +
-      '<span style="flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left">Terms &amp; Conditions</span>' +
+      '<span style="flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--accent,#1a365d);text-align:left">Terms &amp; Conditions</span>' +
       '<span id="' + prefix + '-terms-hint" style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;margin-left:8px">Tap to view ›</span>' +
     '</button>' +
-    '<div id="' + prefix + '-terms-body" style="display:none;font-size:11px;color:var(--text3,#6b7280);line-height:1.6;padding:10px 2px 0">' + termsHtml + '</div>' +
+    // The clauses as a document, not fine print: readable size, one clause per
+    // block, a hairline between. Scoped to this panel, and by CSS, because the
+    // clause markup itself ("<div>N. <strong>Title:") is a shape sign.html's
+    // legacy patcher keys on and must not change.
+    '<style>#' + prefix + '-terms-body>div{font-size:13px!important;line-height:1.6!important;color:#334155!important}' +
+      '#' + prefix + '-terms-body>div>div{padding:12px 2px;border-top:1px solid #eef0f3}' +
+      '#' + prefix + '-terms-body>div>div:first-child{border-top:0;padding-top:4px}' +
+      '#' + prefix + '-terms-body strong{color:#0b1220;font-weight:700}</style>' +
+    '<div id="' + prefix + '-terms-body" style="display:none;font-size:13px;color:#334155;line-height:1.6;padding:12px 4px 2px">' + termsHtml + '</div>' +
   '</div>';
 }
 function esignToggleTerms(prefix){

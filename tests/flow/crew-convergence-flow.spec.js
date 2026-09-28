@@ -4,9 +4,10 @@
 // swarm-convergence-flow (which runs N devices on the OWNER login), it certifies the
 // server half built in 20260715_crew_rls_and_invites.sql:
 //
-//   • LINKING, both real paths: half the crew joins via the server-minted single-use
-//     TOKEN (?emp_invite= with tok → claim_crew_invite), half via EMAIL MATCH, and
-//     every one must land nested (_isEmployee, _contractorUserId === boss).
+//   • LINKING: every crew member joins via the server-minted single-use TOKEN
+//     (?emp_invite= with tok → claim_crew_invite), the only way into a seat since
+//     20261049 (H4 retired the email-only claim), and every one must land nested
+//     (_isEmployee, _contractorUserId === boss).
 //   • WRITES: crew with estimate permission edit the SAME shared bid (distinct fields)
 //     and create their own bids, the td_* crew policies + op channel + cursor-bump RPC
 //     must converge everyone (boss included) to the full union, byte-equal on the
@@ -93,10 +94,10 @@ test.describe('crew: N distinct employee logins nest under one owner and converg
 
     // ── 1. Boss seeds the roster (permissions per member) + mints tokens for half. ──
     await step(page, {
-      label: `boss seeds ${M} roster rows + mints ${editorIdx.length ? Math.ceil(M / 2) : 0} claim tokens`, page: 'cloud', role: 'contractor',
+      label: `boss seeds ${M} roster rows + mints ${M} claim tokens`, page: 'cloud', role: 'contractor',
       suspect: 'cloud.js _mintCrewInviteToken / crew_invites RLS (contractor-only mint)',
       ruleText: 'every roster row must upsert and every requested token must mint',
-      expected: `${M} roster rows, tokens for the even half`,
+      expected: `${M} roster rows, a token for each`,
       act: async (p) => {
         p.__seed = await p.evaluate(async ({ CREW, M, noEstIdx, TAG }) => {
           const out = { rows: 0, tokens: {}, errs: [] };
@@ -110,7 +111,7 @@ test.describe('crew: N distinct employee logins nest under one owner and converg
             }, { onConflict: 'contractor_user_id,email' }).select('id').single();
             if (error || !row) { out.errs.push(`row${i}:${error && error.message}`); continue; }
             out.rows++;
-            if (i % 2 === 0) {
+            {
               const { data: inv, error: ie } = await _supa.from('crew_invites').insert({ contractor_user_id: _supaUser.id, team_member_id: row.id, email: CREW[i].email }).select('token').single();
               if (ie || !inv) out.errs.push(`tok${i}:${ie && ie.message}`);
               else out.tokens[i] = inv.token;
@@ -127,11 +128,11 @@ test.describe('crew: N distinct employee logins nest under one owner and converg
       }),
     });
 
-    // ── 2. Crew sign in, token half via the real ?emp_invite= URL, email half bare.
-    //       EVERY one must nest under the boss. ──
+    // ── 2. Crew sign in through the real ?emp_invite= URL. EVERY one must nest
+    //       under the boss. ──
     await step(page, {
-      label: `${M} crew logins nest under the boss (token + email-match paths)`, page: 'cloud', role: 'employee',
-      suspect: 'cloud.js loadAccountData crew linking (claim_crew_invite / email match)',
+      label: `${M} crew logins nest under the boss (invite token path)`, page: 'cloud', role: 'employee',
+      suspect: 'cloud.js loadAccountData crew linking (claim_crew_invite)',
       ruleText: 'every crew login must come up _isEmployee with _contractorUserId === the boss uid',
       expected: `${M}/${M} nested`,
       act: async () => {
@@ -155,7 +156,7 @@ test.describe('crew: N distinct employee logins nest under one owner and converg
       rule: async () => {
         const nested = [];
         for (const pg of crewPages) nested.push(await pg.evaluate((boss) => typeof _isEmployee !== 'undefined' && _isEmployee === true && String(_contractorUserId) === String(boss), bossUid));
-        return { ok: nested.every(Boolean) && nested.length === M, got: `${nested.filter(Boolean).length}/${M} nested (token half + email half)` };
+        return { ok: nested.every(Boolean) && nested.length === M, got: `${nested.filter(Boolean).length}/${M} nested (invite token)` };
       },
     });
 

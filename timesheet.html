@@ -11,7 +11,7 @@
      day rail are drawn by the app's own js/timelog.js against the rows one
      RPC returns for this token, so the boss sees exactly what the person saw.
      Reject is soft grey, Approve is the one dark button. -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <link rel="stylesheet" href="css/timelog.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -40,6 +40,10 @@ button{font-family:inherit}
 .tsp-eyebrow{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)}
 .tsp-name{font-size:20px;font-weight:800;letter-spacing:-.01em;margin-top:1px}
 .tsp-range{font-size:15px;color:var(--text2);margin-top:2px}
+.tsp-pay{display:flex;align-items:center;gap:12px;margin:10px 0 6px;padding:14px 16px;border-radius:14px;background:var(--bg-card);border:1px solid var(--line)}
+.tsp-pay-l{flex:1;min-width:0;font-size:16px;font-weight:800}
+.tsp-pay-l small{display:block;font-size:14px;font-weight:600;color:var(--text2);margin-top:2px}
+.tsp-pay-v{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tsp-chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:800;border-radius:7px;padding:4px 8px;white-space:nowrap}
 .tsp-chip.ok{color:var(--c-green-deep);background:var(--c-green-soft)}
 .tsp-chip.back{color:var(--amber);background:var(--amber-lt)}

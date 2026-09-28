@@ -160,6 +160,13 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
           startAutoRefresh: () => {}, stopAutoRefresh: () => {},
         },
         from: (table) => queryBuilder(),
+        // The signed-status check is proposal_sign_status now (20261049).
+        // __rpcDelayMs holds the answer back, like a slow network would.
+        rpc: (fn, args) => {
+          (window.__rpcCalls = window.__rpcCalls || []).push([fn, args]);
+          const ans = { data: [], error: null };
+          return window.__rpcDelayMs ? new Promise(r => setTimeout(() => r(ans), window.__rpcDelayMs)) : Promise.resolve(ans);
+        },
         storage: {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
@@ -305,14 +312,11 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
   // signed_proposals response delayed 3s, the page must reveal well before it.
   test('stash reveal does not wait for the signed-status check (3s-delayed response)', async ({ page }) => {
     await mountSignRoutes(page, null);
-    // Registered after mountSignRoutes so it wins for this URL: hold the
-    // signed-status response for 3s, then return "not signed".
-    await page.route('**/rest/v1/signed_proposals**', async route => {
-      await new Promise(r => setTimeout(r, 3000));
-      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-    });
+    // Hold the signed-status answer (proposal_sign_status, 20261049) for 3s,
+    // then return "not signed".
     const key = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
     await page.addInitScript(([k, v]) => {
+      window.__rpcDelayMs = 3000;
       try { sessionStorage.setItem('tdsign:' + k, JSON.stringify(v)); } catch (_) {}
     }, [key, { ...MOCK_PROPOSAL, status: 'pending' }]);
 
@@ -326,6 +330,9 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
     await page.waitForTimeout(3200);
     await expect(page.locator('#pg-sign')).toBeVisible();
     await expect(page.locator('#pg-done')).toBeHidden();
+    // And the check that ran is the token-checked RPC, keyed by the link.
+    const calls = await page.evaluate(() => window.__rpcCalls || []);
+    expect(calls.some(c => c[0] === 'proposal_sign_status' && c[1] && c[1].p_key === key)).toBe(true);
     assertNoErrors(page, 'stash reveal not gated by signed check');
   });
 

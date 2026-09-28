@@ -379,6 +379,15 @@ never decides on their behalf that their testing is finished.
   number neither has. Migration lint now fails a PR whose new version is
   already used on `uat` by a different file, and `scripts/uat-roll.sh`
   refuses to push a `uat` with two files on one version.
+- **Merge a PR into `main` as a MERGE COMMIT, never a squash** (owner
+  2026-09-26: "thought we fixed this messy bullshit"). A branch that was rolled
+  to `uat` already has its commits there; a squash rewrites them into one new
+  commit on `main`, so `main` and `uat` then hold the same code under different
+  history and every roll after that conflicts on those files. It happened with
+  #100 and #101: the next roll stopped on 14 files that were the same features
+  arriving twice. With a merge commit the commits are identical on both sides
+  and the roll is clean. `mcp__github__merge_pull_request` takes
+  `merge_method: 'merge'`; the §14.1.1 skip-token check still applies.
 - **To try one feature on its own, use that branch's Pages preview URL**, which
   every push already builds. `uat` is only special because the TestFlight shell
   points at it, so spend it on what has to be on a phone.
@@ -2077,6 +2086,8 @@ it runs with no signal, costs nothing per command, and nothing said to Tim
 leaves the phone. That last part is a promise made to a real customer, not a
 preference.
 
+- ~~**Tim owns no trade knowledge and must not grow any.**~~ Reversed by the
+  owner on 2026-09-19, see §18.3. Everything else in this section stands.
 - **Tim knows the trade, as data, in one place (owner 2026-09-25, reversing
   the 2026-09-17 line "Tim owns no trade knowledge"): "Tim should know trade
   knowledge ... filling in the gaps contractors miss."** It lives in
@@ -2089,8 +2100,57 @@ preference.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.
+- **Every job walk is stored too (owner 2026-09-28): "Tim should store so I
+  can see when he's fucked up or need to add capabilities."** A dictated scope
+  on T&M, Build Your Own or the quick invoice writes a `scope` row (what he
+  said, what Tim made) and the real save writes a `kept` row (what went out),
+  both in `td_tim_asks` with client names and addresses scrubbed on the phone
+  (`js/tim-log.js`). Read it with SQL: `said` next to `made` is how the split
+  is checked, and `kept` shows what he had to fix by hand. No screen for it on
+  purpose. Tim still makes no network call to THINK; only the scrubbed record
+  goes up.
 - **Tim asks who is on the job before he asks anything about money**, so a rate
   is a consequence of the crew rather than a field. Cost per person
   (`pay_type` / `pay_rate` on `team_members`) is already per-person and already
   gated behind `_canViewComp()`. The BILL rate per person is a separate number
   from what you pay them and the two must never be conflated.
+  *Shipped 2026-09-19: `billRate` on the employee is the default that follows
+  them to the next job, `_estCrewRates` is the per-job override, `_tmHourlyBill`
+  is the one definition of what the job bills per hour.*
+
+### 18.3 Tim holds trade knowledge, and it stays on the phone (owner rule 2026-09-19)
+
+Owner, amending §18.2: *"I don't want an AI running this, I want Tim to be his
+own AI that knows this shit, we're basically training a local sandbox model."*
+
+**What is unchanged, and is not open for a trade-off:** no model call, no key,
+no network. A contractor in a crawlspace with no bars gets the same answer as
+one in the yard, it costs nothing per estimate, and nothing said to Tim leaves
+the device. That was a promise made to a real customer. Any proposal that ends
+in an API call is the wrong answer to whatever question prompted it.
+
+**What changed:** the old rule said the price book carries what a repipe drags
+in with it. That was right about PRICE and wrong about ORDER and EXISTENCE. A
+price book can say what scaffold costs. It cannot say scaffold goes up before
+anything is stripped, and it cannot know that a man who said "second floor" and
+never said "scaffold" is about to send a proposal that will not stand up. Those
+are the same on every job in the country, so they are Tim's, and they live in
+`js/tim-knowledge.js`.
+
+Three rules keep it honest, and a change that breaks one of them is a bug:
+
+1. **He says where it came from, in the contractor's own words.** Never "I
+   think", never a confidence score. "You never said scaffold up first. It has
+   to be." is a correction. "You might want scaffold" is noise.
+2. **He never silently changes a number the contractor said.** Where the
+   coverage math disagrees with his count, Tim states both and leaves what was
+   said (`timCoverage`). An app that quietly edits his counts is an app whose
+   lists stop being read.
+3. **Nothing he guessed is settled until it is accepted twice** (`timLearn` /
+   `timKnows`), the same n:1 bar `_pbLearn` uses on price. Refused twice and it
+   stops being offered at all: he is allowed to teach Tim to shut up.
+
+**When Tim may interrupt** (`js/tim-nudge.js`): only when he can name a dollar,
+a percentage or a law. No pill otherwise, and the dock stays silent. "Ask Tim
+anything", "Tim has 3 suggestions" and anything naming AI all fail that bar by
+construction and are covered by tests.

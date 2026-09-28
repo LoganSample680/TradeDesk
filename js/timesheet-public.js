@@ -150,7 +150,20 @@ function _tspHeader(){
       '<div class="tsp-who"><div class="tsp-eyebrow">Timesheet</div><div class="tsp-name">'+escHtml(d.person_name||'Crew')+'</div>'+
         '<div class="tsp-range">'+escHtml(_tspRange(String(d.week_start||'').slice(0,10)))+'</div></div>'+
       _tspChip()+
-    '</div>';
+    '</div>'+_tspPayHtml();
+}
+// THE WEEK'S PAY (owner 2026-09-26): minutes x the rate the week was submitted
+// at, to the cent. Only when the week carries a rate; a week without one
+// shows the hours alone, exactly as before.
+function _tspPayHtml(){
+  const d=_tsp.data||{};
+  const rate=Number(d.pay_rate)||0,min=Number(d.total_min)||0;
+  if(!(rate>0))return '';
+  const pay=Math.round(min/60*rate*100)/100;
+  const h=Math.floor(min/60),m=min%60;
+  const hm=(h?h+'h':'')+(m?(h?' ':'')+m+'m':'')||'0m';
+  return '<div class="tsp-pay"><div class="tsp-pay-l">Pay this week<small>'+escHtml(hm)+' at $'+escHtml(String(rate).replace(/\.0+$/,''))+'/hr</small></div>'+
+    '<div class="tsp-pay-v">$'+pay.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div></div>';
 }
 function _tspFooter(){
   const d=_tsp.data||{};
@@ -163,6 +176,11 @@ function _tspFooter(){
     el.innerHTML='<div class="tsp-done back">'+svgIcon('↩',{size:14})+' Sent back '+escHtml(_tspWhen(d.rejected_at))+
       (d.reject_note?'<div class="tsp-done-note">“'+escHtml(String(d.reject_note))+'”</div>':'')+'</div>'+
       '<div class="tsp-fine">A corrected timesheet will show up at this same link.</div>';
+  }else if(d.can_decide===false){
+    // THE VIEW LINK (20261049, H6). The link the crew member texted shows the
+    // week and cannot decide it; the approve link went to the business
+    // owner's email, where the person who submitted the week cannot reach it.
+    el.innerHTML='<div class="tsp-fine" id="tsp-view-only">To approve or send this back, open the link TradeDesk emailed to the business owner.</div>';
   }else{
     el.innerHTML=
       '<div id="tsp-reject-box" class="tsp-reject-box" hidden>'+
@@ -230,6 +248,9 @@ async function _tspDecide(decision){
   }catch(_e){
     _tsp.busy=false;
     document.querySelectorAll('#tsp-foot button').forEach(b=>{b.disabled=false;});
+    const _m=String((_e&&_e.message)||'');
+    if(/emailed to the business owner/.test(_m))return _tspFail('Approve from the link TradeDesk emailed to the business owner.');
+    if(/your own timesheet/.test(_m))return _tspFail('You cannot approve your own timesheet.');
     return _tspFail('That did not save, try again');
   }finally{_tsp.busy=false;}
 }

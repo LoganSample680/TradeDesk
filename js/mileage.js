@@ -1351,7 +1351,7 @@ function _supplyRunPersonal(k){
            'Was this trip for work? Then hit <b>No, keep it</b> and answer <b>No receipt</b> instead.',
     ()=>{resolveSupplyRun(key,'personal');if(typeof showToast==='function')showToast('Off the books, and off your hours','🚗');},
     {title:'Read this before you tap',yes:'Delete it, it was personal',no:'No, keep it',
-     danger:true,safeRight:true});
+     danger:true,safeRight:true,html:true});
 }
 function _supplyRunNoReceipt(k){
   // Owner copy (2026-08-17): one plain line, not a tax lecture. No longer the
@@ -1391,7 +1391,7 @@ function _supplyRunScan(k){
   if(v&&!v.value&&store)v.value=store;
   const dd=m.querySelector('#em-date');
   const dm=day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(dd&&dm)dd.value=dm[2]+'/'+dm[3]+'/'+dm[1];
+  if(dd&&dm)dd.value=day; // native date input: ISO
   const c=m.querySelector('#em-cat');
   if(c)c.value='materials';
   // Straight into the camera, still inside the tap's user gesture. If the
@@ -1452,7 +1452,7 @@ function crewMilesOwed(yr){
   // the whole crew was owed, which is money data they have no business seeing.
   // The rest of this page has always narrowed to the viewer's own rows for
   // exactly that reason, and this line was reading straight past it.
-  const src=(typeof _isEmployee!=='undefined'&&_isEmployee)
+  const src=!_ownerUI()
     ? mileage.filter(m=>m.logged_by_id&&m.logged_by_id===(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id))
     : mileage;
   const rows=reimbursableTrips(src).filter(m=>m.date&&String(m.date).startsWith(y));
@@ -1930,10 +1930,10 @@ function _addrSugSearch(val,suggId,streetId,cityId,stateId,zipId){
       if(gen!==_addrSugGen)return;
       if(!results.length){box.style.display='none';return;}
       box.innerHTML=results.map(res=>{
-        const s1=res.street.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s2=res.city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s3=res.state.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s4=res.zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const s1=escHtml(res.street.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s2=escHtml(res.city.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s3=escHtml(res.state.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const s4=escHtml(res.zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>'+
@@ -2024,7 +2024,7 @@ function _showRecentFromAddresses(){
   const recents=_getRecentFromAddresses();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=escHtml(r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));const sp=escHtml((r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
@@ -2061,7 +2061,7 @@ function _showRecentDestinations(){
   const recents=_getRecentDestinations();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=escHtml(r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));const sp=escHtml((r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
@@ -2123,9 +2123,9 @@ function _tripDestSearch(val){
       // Bias may cut off distant locations (e.g. MT address when starting from KS), retry unbiased
       if(!results.length&&_fromBias)results=await _geocodeAddress(val,5);
       results.forEach(res=>{
-        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL1=escHtml(res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeL2=escHtml(res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeName=escHtml((res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
@@ -2184,9 +2184,9 @@ function tripPlaceSearch(fieldId,suggId,val){
       const results=await _geocodeAddress(val,6,_searchBias?.lat||null,_searchBias?.lng||null);
       if(!results.length){box.style.display='none';return;}
       box.innerHTML=results.map(res=>{
-        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL1=escHtml(res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeL2=escHtml(res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+        const safeName=escHtml((res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
@@ -2260,8 +2260,8 @@ function openLogTripModal(opts){
         '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
           suggList.map(s=>{
             const safeLabel=(s.label||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const safeAddr=(s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            const safePurpose=(s.purpose||'').replace(/'/g,"\\'");
+            const safeAddr=escHtml((s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+            const safePurpose=escHtml((s.purpose||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
             return '<button type="button" onclick="fillTripSuggestion('+s.clientId+',\''+safeAddr+'\',\''+safePurpose+'\')" style="display:flex;align-items:center;gap:5px;padding:7px 10px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;color:var(--text)">'+
               svgIcon(s.icon||'📍',{size:12})+' <span>'+safeLabel+'</span>'+
             '</button>';
@@ -2601,7 +2601,7 @@ function saveLoggedTrip(){
 }
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
-  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const _mileSrc=!_ownerUI()?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
   // The LIST is every trip the viewer is allowed to see. The DEDUCTION is only
   // the deductible ones. Filtering the list itself hid an employee's own-car
   // trips from the employee who drove them, and hid the crew's trips from the
@@ -2618,7 +2618,7 @@ function renderAllMileage(){
   // was a function no screen could reach and "answer it later" was a promise
   // with no later: the row sat outside both money totals forever. Owner side
   // only; crew have no mileage screen at all (owner call, 2026-08-03).
-  const _unattrib=(typeof _isEmployee!=='undefined'&&_isEmployee)?[]:unattributedTrips(filtered);
+  const _unattrib=!_ownerUI()?[]:unattributedTrips(filtered);
   let _uw=document.getElementById('mil-unattrib-wrap');
   const _tblEl=document.getElementById('mil-table');
   if(!_unattrib.length){if(_uw)_uw.remove();}
@@ -2654,16 +2654,23 @@ function renderAllMileage(){
   const heroEl=document.getElementById('mil-hero-wrap');
   if(heroEl){
     const vehs=getVehicles();
+    // No vehicle on file is a banner, not a wall (Earl audit 2026-09-27): it
+    // used to return here, which hid every trip already recorded and the IRS
+    // export along with them. The log below and the export still render.
     if(!vehs.length){
       heroEl.innerHTML=
-        '<div style="background:var(--bg2);border-radius:var(--r);padding:20px;text-align:center;margin-bottom:12px">'+
-          '<div style="font-size:28px;margin-bottom:8px">'+svgIcon('🚛',{size:28})+'</div>'+
-          '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px">Add a vehicle to start logging</div>'+
-          '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5">The IRS requires a vehicle description on every mileage entry. You\'re one tap away from tracking deductible trips.</div>'+
-          '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;padding:11px 22px">+ Add vehicle in Fleet</button>'+
+        '<div id="mil-no-vehicle" style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">'+
+          '<div style="flex:1;min-width:180px">'+
+            '<div style="font-size:14px;font-weight:800;color:#92400E">Add a vehicle</div>'+
+            '<div style="font-size:12px;color:#92400E;line-height:1.5">The IRS wants a vehicle on every trip. Your trips are still below.</div>'+
+          '</div>'+
+          '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;min-height:44px;padding:10px 16px">+ Add vehicle</button>'+
+        '</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px">'+
+          '<div style="font-size:13px;color:var(--text2)"><b>'+tot.toFixed(1)+'</b> business miles · '+filtered.length+' trip'+(filtered.length!==1?'s':'')+' · '+fmt(deduction)+'</div>'+
+          '<button class="btn" id="mil-export-btn" onclick="openExportPanel(\'mileage\')" style="min-height:44px">'+svgIcon('📊',{size:16})+' Export mileage log</button>'+
         '</div>';
-      return;
-    }
+    }else{
     const pVeh=vehs[0]||null;
     const odoRec=_vehOdo(pVeh,yr);
     const startOdo=odoRec.start||0;
@@ -2690,7 +2697,7 @@ function renderAllMileage(){
           // one exists. Hidden entirely when nobody is owed anything.
           (()=>{const o=(typeof crewMilesOwed==='function')?crewMilesOwed(yr):null;
             return (o&&o.miles>0)?'<div class="mil-meta" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14)">'+
-              '<span>'+(_isEmployee?'Your personal vehicle':'Crew personal vehicles')+' <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
+              '<span>'+(!_ownerUI()?'Your personal vehicle':'Crew personal vehicles')+' <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
               '<span>·</span>'+
               '<span>'+fmt(o.owed)+' at the IRS rate, estimate only</span>'+
               '<span>·</span>'+
@@ -2716,12 +2723,13 @@ function renderAllMileage(){
             '<div class="mil-action-icon">'+svgIcon('🔢',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
           '</button>'+
-          '<button class="mil-action" onclick="openExportPanel()">'+
+          '<button class="mil-action" id="mil-export-btn" onclick="openExportPanel(\'mileage\')">'+
             '<div class="mil-action-icon">'+svgIcon('📊',{size:20})+'</div>'+
-            '<div class="mil-action-body"><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Export mileage log</div><div class="mil-action-sub">IRS trip log · Excel</div></div>'+
           '</button>'+
         '</div>'+
       '</div>';
+    }
   }
 
   // ── Vehicle worksheet ──
@@ -2765,7 +2773,7 @@ function setMilFilter(f){
     if(el)el.className='fb'+(f===id?' active':'');
   });
   const yr=String(trackerYear||new Date().getFullYear());
-  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const _mileSrc=!_ownerUI()?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
   // Same rule as the summary above: the list shows everything the viewer may
   // see, and only the totals narrow to what is deductible.
   const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
@@ -2900,7 +2908,7 @@ function _milRenderTripList(shown,yr){
     el.innerHTML='<div class="empty">No trips match this filter.</div>';
     return;
   }
-  const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
+  const _hasMultiDriver=_ownerUI()&&mileage.some(m=>m.logged_by_name);
   const irsRate=IRS(yr);
   const byDay={};
   [...shown].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{

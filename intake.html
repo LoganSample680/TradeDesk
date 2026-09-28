@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Get a Free Quote</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="js/icons.js"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin async onload="_intakeInitMapKit()"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -98,7 +98,7 @@ textarea.input{resize:vertical;min-height:90px}
       </div>
       <div class="field">
         <div class="field-label">What are you looking to get done?</div>
-        <textarea id="f-notes" class="input" placeholder="Interior walls, exterior trim, garage, deck…" oninput="_qrTrackField()"></textarea>
+        <textarea id="f-notes" class="input" placeholder="What needs fixing, installing or replacing, and where" oninput="_qrTrackField()"></textarea>
       </div>
       <div class="field" style="margin-bottom:4px">
         <div class="field-label">Best time to call you</div>
@@ -154,7 +154,7 @@ let _qrLabel='';
 // before this page even loaded) → form_opened → submitted, plus which
 // field someone got stuck on if they leave without submitting. No-ops
 // entirely when there's no ?src= (a plain shared intake link, not a QR
-// scan) — this is instrumentation, never load-bearing for the form itself.
+// scan): this is instrumentation, never load-bearing for the form itself.
 const FIELD_ORDER=['f-name','f-phone','f-street','f-notes'];
 let _furthestField='';
 let _qrSubmitted=false;
@@ -172,7 +172,7 @@ function _qrTrackField(){
 }
 // sendBeacon, not the normal invoke() call above: this fires as the page is
 // actually being torn down (tab close, back button), where a regular fetch
-// can get cancelled mid-flight before it lands. No custom headers needed —
+// can get cancelled mid-flight before it lands. No custom headers needed,
 // log-qr-event is deployed anon-callable, same as log-proposal-view.
 function _qrLogDropoffOnExit(){
   if(!QR_CODE||_qrSubmitted||!_furthestField)return;
@@ -254,7 +254,11 @@ async function init(){
     return;
   }
   try{
-    const{data,error}=await _supa.from('account_public').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
+    // One business, by the id in this QR link (20261049). The account_public
+    // view used to answer anon for EVERY business; account_public_card answers
+    // for exactly the one asked about.
+    const{data:_cards,error}=await _supa.rpc('account_public_card',{p_id:ACCOUNT_ID});
+    const data=Array.isArray(_cards)?_cards[0]:null;
     if(error||!data){
       showErr('Contractor not found','This link may be invalid or expired.');
       return;
@@ -275,6 +279,7 @@ async function init(){
     hide('pg-load');
     show('pg-form');
     _qrLog('form_opened');
+    _resumePending();
   }catch(e){
     showErr('Connection error','Could not load contractor info. Please try again.');
   }
@@ -325,37 +330,96 @@ async function submitForm(){
   if(!street||!city){errEl.textContent='Please enter the street address and city.';show('form-err');document.getElementById('f-street').focus();return;}
   hide('form-err');
 
+  const row={
+    source:_qrLabel||'qr_form',
+    account_id:ACCOUNT_ID,
+    name:name,
+    phone:phone,
+    addr:addr,
+    street:street,
+    city:city,
+    state:state,
+    zip:zip,
+    notes:notes||null,
+    call_time:_callTime||null,
+    status:'pending'
+  };
   _submitting=true;
   const btn=document.getElementById('submit-btn');
   btn.disabled=true;
   btn.textContent='Sending…';
-
+  // Kept on the phone BEFORE the send, so a lost signal (a QR code on a yard
+  // sign is scanned outside, often on one bar) never costs the entry.
+  _pendingSet(row);
   try{
-    const{error}=await _supa.from('inbound_leads').insert({
-      source:_qrLabel||'qr_form',
-      account_id:ACCOUNT_ID,
-      name:name,
-      phone:phone,
-      addr:addr,
-      street:street,
-      city:city,
-      state:state,
-      zip:zip,
-      notes:notes||null,
-      call_time:_callTime||null,
-      status:'pending'
-    });
-    if(error)throw error;
+    await _sendLead(row);
+    _pendingClear();
     _qrSubmitted=true;
     _qrLog('submitted');
     showConfirm(name);
   }catch(e){
     _submitting=false;
+    if(_isNetErr(e)){
+      btn.disabled=true;
+      btn.textContent='Saved, waiting for signal';
+      errEl.textContent='No signal. Your details are saved on this phone, and we\'ll send them the moment you\'re back online.';
+      show('form-err');
+      _waitForSignal();
+      return;
+    }
+    _pendingClear();
     btn.disabled=false;
     btn.textContent='Send my details →';
     errEl.textContent='Something went wrong, please try again.';
     show('form-err');
   }
+}
+
+// ── No signal: keep the lead, send it when the phone is back online ────────
+// Per phone and per contractor. Cleared the moment the send lands.
+const _PENDING_KEY='zp3_intake_pending_'+ACCOUNT_ID;
+function _pendingGet(){try{const p=JSON.parse(localStorage.getItem(_PENDING_KEY)||'null');return (p&&typeof p==='object'&&p.name)?p:null;}catch(_e){return null;}}
+function _pendingSet(row){try{localStorage.setItem(_PENDING_KEY,JSON.stringify(row));}catch(_e){}}
+function _pendingClear(){try{localStorage.removeItem(_PENDING_KEY);}catch(_e){}}
+async function _sendLead(row){
+  const{error}=await _supa.from('inbound_leads').insert(row);
+  if(error)throw error;
+}
+// A dropped connection, not a refused row: only these are worth retrying.
+function _isNetErr(e){
+  if(typeof navigator!=='undefined'&&navigator.onLine===false)return true;
+  return /failed to fetch|network|load failed|timed? ?out|offline/i.test(String((e&&(e.message||e.details))||e||''));
+}
+let _signalWired=false;
+function _waitForSignal(){
+  if(_signalWired)return;
+  _signalWired=true;
+  window.addEventListener('online',_retryPending);
+}
+async function _retryPending(){
+  const row=_pendingGet();
+  if(!row||_submitting)return;
+  _submitting=true;
+  try{
+    await _sendLead(row);
+    _pendingClear();
+    _qrSubmitted=true;
+    _qrLog('submitted');
+    showConfirm(row.name);
+  }catch(_e){
+    // Still no signal: the entry stays saved and the next 'online' tries again.
+    _submitting=false;
+  }
+}
+// Reopened later with a lead still waiting: put it back on the form and send it.
+function _resumePending(){
+  const row=_pendingGet();
+  if(!row)return;
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
+  set('f-name',row.name);set('f-phone',row.phone);set('f-street',row.street);set('f-city',row.city);
+  set('f-state',row.state);set('f-zip',row.zip);set('f-notes',row.notes);
+  _waitForSignal();
+  if(navigator.onLine!==false)_retryPending();
 }
 
 function showConfirm(name){

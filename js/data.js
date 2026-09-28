@@ -114,6 +114,11 @@ let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
 let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
+// The factory settings, captured before anything from storage is merged in.
+// Sign-out resets S to exactly this (plus a few device-only preferences, see
+// _tdSignedOutSettings in js/cloud.js), so a shared crew phone keeps none of
+// the last business's address, office location, Venmo name or API keys.
+const _S_DEFAULTS=JSON.stringify(S);
 
 // ZJ's logo, SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account, other accounts see plain business name text.
@@ -125,7 +130,9 @@ function _proposalBizHeader(bname,bphone,blic){
   const logoHtml='<div class="brand-logo-slot">'+logoInner+'</div>';
   return '<div>'+logoHtml+
     (bphone?'<div style="font-size:12px;margin-top:4px;opacity:.85">P '+escHtml(bphone)+'</div>':'')+
-    (blic?'<div style="font-size:11px;margin-top:2px;opacity:.75">'+escHtml(blic)+'</div>':'')+
+    // A bare "KS-PL-4471" reads as a stray code; said what it is, unless he
+    // already wrote "License ..." or "Lic ..." himself.
+    (blic?'<div style="font-size:11px;margin-top:2px;opacity:.75">'+(/^\s*(lic|license|licence|#)/i.test(blic)?'':'Lic. ')+escHtml(blic)+'</div>':'')+
   '</div>';
 }
 
@@ -138,6 +145,15 @@ let _vehicles=[];    // vehicles rows
 let _isEmployee=false;        // true when logged-in user belongs to another contractor
 let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
 let _employeeRecord=null;     // team_members row for this employee
+// CO-OWNER (owner 2026-09-26): a second owner on a business that already
+// exists, joined through the crew link so every DATA path (whose rows, sync,
+// redaction, cursor) behaves exactly as crew, while every SCREEN is the
+// owner's. _isEmployee keeps meaning "my rows live on another account";
+// _ownerUI() is the question the screens ask. The server decides who is one
+// (is_co_owner, migration 20261048): this flag only picks the screens.
+let _coOwner=false;
+Object.defineProperty(window,'_coOwner',{get:()=>_coOwner,set:v=>{_coOwner=!!v;},configurable:true});
+function _ownerUI(){return !_isEmployee||_coOwner;}
 Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},configurable:true});
 Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
 // Bridge the rest of the employee-context trio so window assignment reaches the real
@@ -179,7 +195,7 @@ function _effectiveUid(){
 
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}
-function isOwner(){return !_isEmployee&&(getRole()==='owner'||getRole()==='co-owner');}
+function isOwner(){return _coOwner||(!_isEmployee&&(getRole()==='owner'||getRole()==='co-owner'));}
 function isEmployee(){return _isEmployee;}
 function canSeeTaxes(){return isOwner();}
 function isLifetimeAccount(){return !!_account?.is_lifetime;}
@@ -469,6 +485,48 @@ function clientAddresses(client){
   push('Primary',client.addr);
   (client.extraAddresses||[]).forEach((a,i)=>push(a.label||('Property '+(i+2)),a.addr));
   return out;
+}
+// ── ONE customer search (owner 2026-09-27) ─────────────────────────────────
+// "The quick invoice search sheet is only bringing up the primary address not
+// the multiple options like what we have in TrueShot, should we make that
+// search shared code?" Five pickers each had their own copy of "does this
+// customer match what he typed", and every copy read the primary address only,
+// so a landlord's second house was unfindable by its street. Every customer
+// search reads these three and nothing else:
+//   clientMatches(c,q)   name, any of their addresses, or 3+ digits of phone
+//   clientSearchText(c)  the same fields as one string, for lists that filter
+//                        rows in place (showQuickPicker's data-q)
+//   clientAddrSub(c,q)   the line under the name: the house that matched, else
+//                        the street, else "2 addresses"
+//   clientMatchedAddr(c,q) the one house the search named, so tapping the row
+//                        goes straight to it instead of asking which property
+//                        (owner 2026-09-27: "whatever is most intuitive")
+function clientMatches(c,q){
+  if(!c)return false;
+  const ql=String(q||'').trim().toLowerCase();
+  if(!ql)return true;
+  if(String(c.name||'').toLowerCase().includes(ql))return true;
+  if(clientAddresses(c).some(a=>String(a.addr||'').toLowerCase().includes(ql)))return true;
+  const d=ql.replace(/\D/g,'');
+  return d.length>=3&&String(c.phone||'').replace(/\D/g,'').includes(d);
+}
+function clientSearchText(c){
+  if(!c)return '';
+  return [c.name,c.phone].concat(clientAddresses(c).map(a=>a.addr)).filter(Boolean).join(' ').toLowerCase();
+}
+function clientMatchedAddr(c,q){
+  const all=clientAddresses(c);
+  const ql=String(q||'').trim().toLowerCase();
+  if(!ql||all.length<2)return null;
+  const hits=all.filter(a=>String(a.addr||'').toLowerCase().includes(ql));
+  return hits.length===1?hits[0]:null;
+}
+function clientAddrSub(c,q){
+  const all=clientAddresses(c);
+  const hit=clientMatchedAddr(c,q);
+  if(hit)return String(hit.addr).split(',')[0]+' · '+hit.label;
+  if(all.length>1)return all.length+' addresses';
+  return String((c&&c.addr)||'').split(',')[0]||'No address';
 }
 // Does this account TYPE own the sites under it? Homeowner/business do; a GC,
 // builder, or property manager is a payer who doesn't own the property.

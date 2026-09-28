@@ -3,7 +3,7 @@
  * Exhaustive E2E coverage for js/payroll-summary.js
  *
  * Functions covered:
- *   _paySummaryPeriodsPerYear, _paySummaryDefaultRange, _paySummaryWeeklySplit,
+ *   _paySummaryPeriodsPerYear, _paySummaryDefaultRange, _payPersonPeriod,
  *   _paySummaryYtdEstimate, _paySummaryBuild, renderPayrollSummary,
  *   _paySummaryExportCSV
  *
@@ -87,50 +87,67 @@ test.describe('payroll-summary.js: exhaustive coverage', () => {
     expect(ok).toBe(true);
   });
 
-  test('_paySummaryWeeklySplit([]) returns zero regular and zero OT', async () => {
-    const result = await page.evaluate(() => _paySummaryWeeklySplit([]));
-    expect(result).toEqual({ regMin: 0, otMin: 0 });
+  // _paySummaryWeeklySplit was DELETED 2026-09-27: it summed unpaid rows too,
+  // so an unanswered gap became overtime. The same boundary cases now run
+  // against the one pay function that replaced it, _payPersonPeriod.
+  test('_paySummaryWeeklySplit is gone, _payPersonPeriod replaces it', async () => {
+    const r = await page.evaluate(() => ({ old: typeof window._paySummaryWeeklySplit, now: typeof _payPersonPeriod }));
+    expect(r.old).toBe('undefined');
+    expect(r.now).toBe('function');
   });
 
-  test('_paySummaryWeeklySplit(null/undefined) does not throw', async () => {
+  test('_payPersonPeriod([]) returns zero regular and zero OT', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([], { pay_type: 'hourly', pay_rate: 20 }));
+    expect(result).toMatchObject({ regMin: 0, otMin: 0, wages: 0 });
+  });
+
+  test('_payPersonPeriod(null/undefined) does not throw', async () => {
     const result = await page.evaluate(() => ({
-      n: _paySummaryWeeklySplit(null),
-      u: _paySummaryWeeklySplit(undefined),
+      n: _payPersonPeriod(null, null),
+      u: _payPersonPeriod(undefined),
     }));
-    expect(result.n).toEqual({ regMin: 0, otMin: 0 });
-    expect(result.u).toEqual({ regMin: 0, otMin: 0 });
+    expect(result.n).toMatchObject({ regMin: 0, otMin: 0 });
+    expect(result.u).toMatchObject({ regMin: 0, otMin: 0 });
   });
 
-  test('_paySummaryWeeklySplit under 40h/week is all regular, no OT', async () => {
-    const result = await page.evaluate(() => _paySummaryWeeklySplit([
+  test('_payPersonPeriod skips unpaid rows, the Time Log rule (_tlPaidMin)', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([
+      { date: '2026-07-13', minutes: 2400 },
+      { date: '2026-07-14', minutes: 120, unpaid: true, source: 'unaccounted' },
+    ], { pay_type: 'hourly', pay_rate: 20 }));
+    expect(result).toMatchObject({ regMin: 2400, otMin: 0, wages: 800 });
+  });
+
+  test('_payPersonPeriod under 40h/week is all regular, no OT', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([
       { date: '2026-07-13', minutes: 480 }, // Monday, 8h
       { date: '2026-07-14', minutes: 480 },
-    ]));
+    ], { pay_rate: 20 }));
     expect(result.regMin).toBe(960);
     expect(result.otMin).toBe(0);
   });
 
-  test('_paySummaryWeeklySplit over 40h/week splits the excess into OT (boundary at exactly 40h)', async () => {
-    const result = await page.evaluate(() => _paySummaryWeeklySplit([
+  test('_payPersonPeriod over 40h/week splits the excess into OT (boundary at exactly 40h)', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([
       { date: '2026-07-13', minutes: 2400 }, // exactly 40h, all regular
-    ]));
+    ], { pay_rate: 20 }));
     expect(result.regMin).toBe(2400);
     expect(result.otMin).toBe(0);
   });
 
-  test('_paySummaryWeeklySplit over 40h/week (40h1m): 1 minute of OT', async () => {
-    const result = await page.evaluate(() => _paySummaryWeeklySplit([
+  test('_payPersonPeriod over 40h/week (40h1m): 1 minute of OT', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([
       { date: '2026-07-13', minutes: 2401 },
-    ]));
+    ], { pay_rate: 20 }));
     expect(result.regMin).toBe(2400);
     expect(result.otMin).toBe(1);
   });
 
-  test('_paySummaryWeeklySplit sums separate weeks independently (no cross-week bleed)', async () => {
-    const result = await page.evaluate(() => _paySummaryWeeklySplit([
+  test('_payPersonPeriod sums separate weeks independently (no cross-week bleed)', async () => {
+    const result = await page.evaluate(() => _payPersonPeriod([
       { date: '2026-07-06', minutes: 2460 }, // week 1: 40h regular + 60min OT
       { date: '2026-07-13', minutes: 2460 }, // week 2: same
-    ]));
+    ], { pay_rate: 20 }));
     expect(result.regMin).toBe(4800);
     expect(result.otMin).toBe(120);
   });

@@ -243,7 +243,11 @@ test.describe('Sales Tax Engine', () => {
   });
 
   // ── T&M and BYO show step 1 (job type picker) on open ──────────────────────
-  test('T&M estimate shows job type picker on step 1, not TM page', async () => {
+  // INVERTED 2026-09-23 (§10.4). A new T&M opens straight onto its page: the
+  // step-1 screen held two facts (home or business, which address) that are on
+  // the page's own sub-line now, with a Change that goes back to step 1. BYO,
+  // below, still opens on step 1.
+  test('T&M estimate opens straight onto its page, not the job type picker', async () => {
     await page.evaluate(() => {
       _geiIsTM = false; _geiIsFreeForm = false;
       // Isolation: remove any draft for this client so the estimate opens fresh on step 1
@@ -254,12 +258,14 @@ test.describe('Sales Tax Engine', () => {
     await page.waitForTimeout(150);
     const s1Display = await page.evaluate(() => document.getElementById('gei-s1')?.style.display);
     const tmDisplay = await page.evaluate(() => document.getElementById('gei-tm-page')?.style.display);
-    // Step 1 should be visible (display is '' or 'block'), TM page should be hidden
-    expect(s1Display).not.toBe('none');
-    expect(tmDisplay).toBe('none');
+    expect(s1Display).toBe('none');
+    expect(tmDisplay).not.toBe('none');
   });
 
-  test('BYO estimate shows job type picker on step 1, not BYO page', async () => {
+  // Was: a new BYO opened on step 1 (the "Next: Build proposal" screen). Now it
+  // opens on its page like T&M (Earl audit 2026-09-27: that screen carried
+  // nothing the page's sub-line and Change do not already hold).
+  test('BYO estimate opens straight on the BYO page, like T&M', async () => {
     await page.evaluate(() => {
       _geiIsTM = false; _geiIsFreeForm = false;
       // Isolation: remove any draft for this client so the estimate opens fresh on step 1
@@ -270,8 +276,8 @@ test.describe('Sales Tax Engine', () => {
     await page.waitForTimeout(150);
     const s1Display = await page.evaluate(() => document.getElementById('gei-s1')?.style.display);
     const byoDisplay = await page.evaluate(() => document.getElementById('gei-byo-page')?.style.display);
-    expect(s1Display).not.toBe('none');
-    expect(byoDisplay).toBe('none');
+    expect(s1Display).toBe('none');
+    expect(byoDisplay).not.toBe('none');
   });
 
   test('switching from T&M to Scope hides TM page', async () => {

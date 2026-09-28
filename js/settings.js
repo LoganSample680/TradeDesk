@@ -36,9 +36,28 @@ function renderPriceBookSettings(){
   const list=document.getElementById('pb-list');
   if(!list)return;
   const trades=_pbSettingsTrades();
+  // WHAT HE HAS ALREADY SENT IS A PRICE BOOK, it was just never read as one.
+  // Everything written before the book existed taught it nothing, so a man with
+  // fourteen proposals in the app still opened this screen to an empty list.
+  // Tim offers to read them, and only when there is something in them worth
+  // reading (js/tim-book.js).
+  let _offer='';
+  try{
+    const from=(typeof timBookNew==='function')?timBookNew():null;
+    if(from&&from.offer.length)_offer=
+      '<button type="button" onclick="openTimBook()" style="display:flex;align-items:center;gap:10px;width:100%;margin:0 0 14px;padding:13px 14px;border:0;border-radius:var(--rl);background:var(--bg2);box-shadow:0 0 0 1px var(--border);cursor:pointer;font-family:inherit;text-align:left">'+
+        (typeof timMark==='function'?timMark(24):'')+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:13px;font-weight:700;color:var(--text)">'+from.offer.length+' price'+(from.offer.length===1?'':'s')+' in proposals you already sent</span>'+
+          '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px">Read off '+from.proposals+' of them, with what you actually charged</span>'+
+        '</span>'+
+        '<span style="font-size:12px;font-weight:700;color:var(--blue);flex-shrink:0">Read them</span>'+
+      '</button>';
+  }catch(_e){_offer='';}
+
   if(!trades.length){
     if(tabs)tabs.innerHTML='';
-    list.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
+    list.innerHTML=_offer+'<div style="padding:'+(_offer?'4px':'22px')+' 4px 22px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
       '</div>';
     return;
@@ -51,7 +70,7 @@ function renderPriceBookSettings(){
   }).join(''):'';
   const rows=(S.priceBook[_pbTradeTab]||[]).slice()
     .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
-  list.innerHTML=rows.map((r,i)=>{
+  list.innerHTML=_offer+rows.map((r,i)=>{
     const used=(r.n||1)>=2?((r.n||1)+'x'):'once, not offered yet';
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
@@ -99,7 +118,7 @@ function _pbRemove(i){
     if(at>=0)arr.splice(at,1);
     _settingsChanged();renderPriceBookSettings();
   };
-  if(typeof zConfirm==='function')zConfirm('Remove "'+escHtml(r.desc)+'" from your price book? It will come back if you use it twice again.',go,{title:'Remove',yes:'Remove',danger:true});
+  if(typeof zConfirm==='function')zConfirm('Remove "'+(r.desc)+'" from your price book? It will come back if you use it twice again.',go,{title:'Remove',yes:'Remove',danger:true});
   else go();
 }
 
@@ -317,7 +336,13 @@ function _licStatusBadge(lic){
 const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
-function detectStateFromAddr(addr){if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+// Delegates to stateFromAddr (js/legal.js), the one reader every statute
+// lookup uses. The first-match regex this used to run read the street before
+// the state ("300 Ca Ave, Phoenix, AZ" was California). See legal.js.
+function detectStateFromAddr(addr){
+  if(typeof stateFromAddr==='function')return stateFromAddr(addr);
+  if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;
+}
 function _initServiceStates(){
   // Auto-populate from existing client + bid addresses on first use
   const found=new Set();
@@ -648,6 +673,11 @@ function getLicenseAlerts(){
 }
 
 // Returns the actual working calendar dates for a job, skipping weekends (unless job.allowWeekend)
+// The START day is always a work day (Earl audit 2026-09-27): a call booked on
+// a Sunday without the weekend box ticked used to slide to Monday here, so the
+// month grid said Monday while Home, Upcoming and the crew's day all said
+// Sunday. Somebody picked that date on purpose; only the days AFTER it skip
+// the weekend.
 function getJobWorkDays(job){
   const allowWknd=!!job.allowWeekend;
   const numDays=parseInt(job.days)||1;
@@ -656,10 +686,82 @@ function getJobWorkDays(job){
   let count=0;
   while(count<numDays){
     const dow=parseD(cur).getDay();
-    if(allowWknd||(dow!==0&&dow!==6)){days.push(cur);count++;}
+    if(allowWknd||count===0||(dow!==0&&dow!==6)){days.push(cur);count++;}
     if(count<numDays)cur=addDays(cur,1);
   }
   return days;
+}
+// The last day a job is actually worked (weekends skipped the same way the
+// grid skips them), so "is this job over yet" agrees with the calendar.
+function _jobLastWorkDay(job){
+  if(!job||!job.start)return '';
+  const wd=getJobWorkDays(job);
+  return wd.length?wd[wd.length-1]:job.start;
+}
+// A multi-day PROJECT holds the crew's whole day (a repaint, a remodel). A
+// one-day job is a service call: a plumber runs four to six of them, so it
+// never holds the day by itself (Earl audit 2026-09-27, the second call for
+// the same guy on the same day was refused).
+function _jobIsProject(j){return !!j&&j.eventType!=='estimate'&&(parseInt(j.days)||1)>1;}
+// Start/end minutes of a job's time slot, or null when it has no start time.
+// Estimates carry hours; a timed job with no length is read as one hour.
+function _jobSlot(j){
+  const t=String((j&&j.time)||'');const m=t.match(/^(\d{1,2}):(\d{2})/);
+  if(!m)return null;
+  const a=parseInt(m[1])*60+parseInt(m[2]);
+  const h=parseFloat(j.hours);
+  return {a,b:a+Math.max(15,Math.round((h>0?h:1)*60))};
+}
+// Why a new or moved job collides with the SAME crew member's work, or '' when
+// it does not. Never a block (the caller warns and lets him book it anyway):
+//   * two timed jobs on the same day whose slots actually overlap, or
+//   * a multi-day project laid over another multi-day project.
+// Two untimed service calls on one day are just a busy day, not a conflict.
+function _schedClash(nj,excludeId){
+  if(!nj||!nj.start)return '';
+  const crew=nj.assignedTo?String(nj.assignedTo):'';
+  const ndays=new Set(getJobWorkDays(nj));
+  const nslot=_jobSlot(nj);
+  for(const j of (Array.isArray(jobs)?jobs:[])){
+    if(!j||j.id===excludeId||j.status==='canceled'||j.status==='done'||j.completion_date)continue;
+    if((j.assignedTo?String(j.assignedTo):'')!==crew)continue;
+    if(!j.start)continue;
+    const shared=getJobWorkDays(j).filter(d=>ndays.has(d));
+    if(!shared.length)continue;
+    if(_jobIsProject(nj)&&_jobIsProject(j))return '"'+(j.name||'Another job')+'" is already booked across '+shared.length+' of those days.';
+    const s=_jobSlot(j);
+    if(nslot&&s&&nslot.a<s.b&&s.a<nslot.b)return '"'+(j.name||'Another job')+'" is at '+(typeof fmtTime==='function'?fmtTime(j.time):j.time)+' that day, the times overlap.';
+  }
+  return '';
+}
+// Who may see every job on the board. The owner and co-owner always; a crew
+// member only with Manage team or Schedule jobs. Everybody else sees the jobs
+// assigned to him, the same rule the crew home's Today's Jobs already uses.
+function _seesAllJobs(){
+  if(typeof _ownerUI!=='function'||_ownerUI())return true;
+  const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
+  return !!(p.team||p.schedule);
+}
+function _jobsForViewer(list){
+  const arr=Array.isArray(list)?list:[];
+  if(_seesAllJobs())return arr;
+  const me=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.id!=null)?String(_employeeRecord.id):null;
+  if(me==null)return [];
+  return arr.filter(j=>j&&String(j.assignedTo)===me);
+}
+// Dollar figures on shared screens (Home, Calendar, Jobs, the job sheet).
+// The same rule as _canSeeFinancials in js/clients.js, read defensively so a
+// page that does not load clients.js still answers.
+function _moneyVisible(){
+  if(typeof _canSeeFinancials==='function')return _canSeeFinancials();
+  return typeof _ownerUI!=='function'||_ownerUI();
+}
+// A job he can mark done: a real job (not an estimate visit), not finished or
+// cancelled, and its first day is today or already past. Nothing ever set
+// status 'active', so the old test for that hid the button for good.
+function _jobDueForDone(j,tk){
+  if(!j||j.eventType==='estimate'||j.status==='done'||j.status==='canceled'||j.cancelled||j.completion_date)return false;
+  return !!j.start&&j.start<=(tk||todayKey());
 }
 function getTimeOffDays(){
   const days=new Set();
@@ -729,8 +831,11 @@ function getBookedDays(){
     // Estimates never block a day, Zach can book multiple estimates on the same day
     // at different times (morning, afternoon, evening). Only paint jobs block days.
     if(j.eventType==='estimate')return;
+    // Only a multi-day project holds the day (a one-day service call never
+    // does: see _jobIsProject). Its buffer days still show as buffer.
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
@@ -747,7 +852,9 @@ function getBookedDays(){
 function _jobActiveOn(j,dateKey){
   if(!j||j.completion_date||j.cancelled||j.status==='done')return false;
   const start=j.start||j.date||'';if(!start)return false;
-  const end=addDays(start,(parseInt(j.days)||1)-1);
+  // Ends on the last WORKED day, the same day the calendar grid ends it, so a
+  // five-day job started on a Thursday is still on the crew's day next Wednesday.
+  const end=_jobLastWorkDay({start,days:j.days,allowWeekend:j.allowWeekend});
   return start<=dateKey&&end>=dateKey;
 }
 // Crew-scoped variant (owner spec 2026-07-18: multi-crew dispatch at
@@ -765,8 +872,9 @@ function getBookedDaysForCrew(empId){
     if(j.eventType==='estimate')return;
     const sameCrew=empId?String(j.assignedTo||'')===String(empId):!j.assignedTo;
     if(!sameCrew)return;
+    if(j.status==='canceled'||!j.start)return;
     const workDays=getJobWorkDays(j);
-    workDays.forEach(d=>booked.add(d));
+    if(_jobIsProject(j))workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
     const b=parseInt(j.buffer)||0;
     for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
@@ -919,6 +1027,7 @@ function loadSettingsForm(){
   const _pmCash=document.getElementById('set-accept-cash');if(_pmCash)_pmCash.checked=S.acceptCash!==false;
   const _pmCheck=document.getElementById('set-accept-check');if(_pmCheck)_pmCheck.checked=S.acceptCheck!==false;
   const _pmLater=document.getElementById('set-allow-pay-later');if(_pmLater)_pmLater.checked=S.allowPayLater!==false;
+  const _pmVenmo=document.getElementById('set-venmo');if(_pmVenmo)_pmVenmo.value=_venmoUser();
   const _scanP=document.getElementById('set-scan-price');if(_scanP)_scanP.value=(S.scanDefaultPrice!=null?S.scanDefaultPrice:99);
   const _scanR=document.getElementById('set-scan-rate');if(_scanR)_scanR.value=(S.scanRateSqFt!=null?S.scanRateSqFt:0);
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
@@ -959,6 +1068,7 @@ function saveSettings(){
     acceptCash:document.getElementById('set-accept-cash')?document.getElementById('set-accept-cash').checked:(S.acceptCash!==false),
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
+    venmoUser:document.getElementById('set-venmo')?_venmoClean(gs('set-venmo')):(S.venmoUser||''),
     scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
     scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
@@ -1035,9 +1145,49 @@ function _renderLogoPreview(){
   document.querySelectorAll('.set-logo-btn').forEach(el=>{el.textContent=src?'Change logo':'Upload image';});
   document.querySelectorAll('.set-logo-rm').forEach(el=>{el.style.display=src?'':'none';});
 }
+// WHAT THE LOGO IS, measured once and kept (proposal letterhead, 2026-09-23:
+// "look at the ugliness on jacks logo"). A logo drawn on its own solid tile,
+// Jack's black square, is laid out on the proposal as a rounded tile beside
+// the name, like an app icon; a transparent or white-backed one as a
+// wordmark. Measured here because the proposal is built synchronously and
+// cannot wait on an image to decode.
+function _logoEnsureMeta(){
+  const src=(typeof S!=='undefined'&&S&&S.logoData)||'';
+  if(!src){if(S&&S.logoMeta)S.logoMeta=null;return Promise.resolve(null);}
+  const h=String(typeof _hubHash==='function'?_hubHash(src):src.length);
+  if(S.logoMeta&&S.logoMeta.hash===h)return Promise.resolve(S.logoMeta);
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const w=img.naturalWidth||img.width||1,hh=img.naturalHeight||img.height||1;
+        const N=48,c=document.createElement('canvas');c.width=N;c.height=N;
+        const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
+        const px=(a,b)=>x.getImageData(a,b,1,1).data;
+        const cs=[px(1,1),px(N-2,1),px(1,N-2),px(N-2,N-2)];
+        const avg=[0,1,2].map(i=>Math.round(cs.reduce((t,p)=>t+p[i],0)/4));
+        const solid=cs.every(p=>p[3]>235)&&cs.every(p=>[0,1,2].every(i=>Math.abs(p[i]-avg[i])<40));
+        const lum=(0.2126*avg[0]+0.7152*avg[1]+0.0722*avg[2])/255;
+        S.logoMeta={hash:h,ratio:Math.round(w/hh*100)/100,solid,light:lum>0.92,bg:'rgb('+avg.join(',')+')'};
+      }catch(_e){S.logoMeta={hash:h,ratio:1,solid:false,light:true,bg:''};}
+      try{if(typeof _settingsChanged==='function')_settingsChanged();}catch(_e){}
+      res(S.logoMeta);
+    };
+    img.onerror=()=>res(null);
+    img.src=src;
+  });
+}
 function applyBrandLogo(){
+  // Measure the logo once; the first time it lands, paint again so a square
+  // emblem gets its badge without waiting for the next render.
+  try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
+  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData){
+    if(S.logoData&&tile){
+      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
+        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
+        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
+    } else if(S.logoData){
       el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
     } else {
       el.textContent=S.bname||'TradeDesk';
@@ -1045,35 +1195,25 @@ function applyBrandLogo(){
   });
 }
 function _updateBootPreview(){
-  const color=(document.getElementById('set-brandcolor')||{}).value||S.brandColor||'';
+  // A thumbnail of the real boot screen (tdBootFill, js/brand-look.js): the
+  // logo on its own background, else the business name, else TradeDesk.
   const logo=S.logoData||'';
   const bname=S.bname||'';
   const bg=document.getElementById('boot-preview-bg');
-  const bar=document.getElementById('boot-preview-bar');
-  const wordmark=document.getElementById('boot-preview-wordmark');
-  const pro=document.getElementById('boot-preview-pro');
   const logoEl=document.getElementById('boot-preview-logo');
   if(!bg)return;
-  if(color){
-    bg.style.background=color;
-    if(bar){
-      const hex=color.replace('#','');
-      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
-      const lum=(0.299*r+0.587*g+0.114*b)/255;
-      bar.style.background=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
-    }
+  const dark='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+  bg.style.background=dark;
+  if(!logoEl)return;
+  if(logo){
+    logoEl.innerHTML='<img src="'+logo+'" style="max-height:74px;max-width:160px;object-fit:contain">';
+    const im=logoEl.querySelector('img');
+    const paint=()=>{const lk=(typeof tdLogoLook==='function')?tdLogoLook(im):null;if(lk)bg.style.background=lk.bg;};
+    if(im.complete)paint();else im.onload=paint;
+  }else if(bname){
+    logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
   }else{
-    bg.style.background='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-    if(bar)bar.style.background='#2D5DA8';
-  }
-  if(logoEl){
-    if(logo){
-      logoEl.innerHTML='<img src="'+logo+'" style="max-height:36px;max-width:120px;object-fit:contain">';
-    }else if(bname){
-      logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
-    }else{
-      logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span>';
-    }
+    logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span>';
   }
 }
 function handleLogoUpload(input){
@@ -1085,8 +1225,23 @@ function handleLogoUpload(input){
   reader.onload=e=>{
     S.logoData=e.target.result;_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
     showToast('Logo saved, proposals will use your logo','🎨');
+    // Read the logo's own colours once it decodes (owner 2026-09-24: white
+    // label follows the logo). A brand colour they already picked is kept.
+    try{const im=new Image();im.onload=()=>_tdBrandFromLogo(typeof tdLogoLook==='function'?tdLogoLook(im):null);im.src=S.logoData;}catch(_e){}
   };
   reader.readAsDataURL(file);
+}
+// Fill the brand colour from the logo when the contractor has not picked one.
+// Never overwrites a choice. Returns true when it set one.
+function _tdBrandFromLogo(look){
+  if(!look||!look.accent||S.brandColor)return false;
+  S.brandColor=(typeof adaBrand==='function'?adaBrand(look.accent):look.accent)||'';
+  if(!S.brandColor)return false;
+  const inp=document.getElementById('set-brandcolor');if(inp)inp.value=S.brandColor;
+  try{_renderBrandSwatches(S.brandColor);}catch(_e){}
+  try{_updateBootPreview();}catch(_e){}
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
 }
 function clearLogoSetting(){
   S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
@@ -1297,7 +1452,7 @@ function resetLocationPermission(){
   updateLocationBtn();
   requestLocationPermission(()=>{
     updateLocationBtn();
-    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:svgIcon('✓')+' Location enabled'});
+    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:svgIcon('✓')+' Location enabled',html:true});
   },()=>{
     updateLocationBtn();
     zAlert('Location not allowed. You can try again any time from Settings.',{title:'Location blocked'});
@@ -1995,8 +2150,11 @@ function obBtn(label,onclick,secondary){
 }
 function obInput(id,label,placeholder,type,value){
   return '<div style="margin-bottom:18px">'+
-    '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">'+label+'</label>'+
-    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
+    // Readable labels and 48px fields (Earl audit 2026-09-27): 12px grey caps
+    // over 42px boxes was built for a designer's eyes, not a man in bifocals.
+    // 16px text also stops iOS zooming the page on focus.
+    '<label for="'+id+'" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">'+label+'</label>'+
+    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
   '</div>';
 }
 
@@ -2037,10 +2195,10 @@ function obStepAccount(el){
     (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+
     (oauth?'':obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
-    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">State</label>'+
-    '<select id="ob-state" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-bphone" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">Phone</label>'+
+    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:18px"><label for="ob-state" style="display:block;font-size:14px;font-weight:600;color:var(--text2);margin-bottom:6px">State</label>'+
+    '<select id="ob-state" style="font-size:16px;min-height:48px;padding:12px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     // The two real documents, not a paraphrase in an alert. Apple asks for a
     // reachable privacy policy, and a person signing up is entitled to read the
@@ -2307,21 +2465,34 @@ function obStepServices(el){
     shown.map((j,i)=>{
       const idx=jobs.indexOf(j);
       const on=_ob.svcPicked.includes(idx);
-      return '<button onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
+      return '<button type="button" class="ob-svc" data-svc="'+idx+'" aria-pressed="'+on+'" onclick="obToggleSvc('+idx+')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:48px;border-radius:var(--r);border:2px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left">'+
         '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name)+'</span>'+
-        '<span style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
+        '<span class="ob-svc-price" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text3)')+';flex-shrink:0">$'+_obSvcPrice(j).toLocaleString()+'</span>'+
       '</button>';
     }).join('')+
     '</div>'+
     (!all&&jobs.length>_OB_SVC_SHOWN?'<button onclick="_ob.svcAll=true;renderObStep()" style="width:100%;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:14px">Show all '+jobs.length+' '+escHtml(tLabel.toLowerCase())+' jobs</button>':'')+
-    obBtn(_ob.svcPicked.length?'Add '+_ob.svcPicked.length+' to my price book':'Continue','obNextServices()')+
+    '<div id="ob-svc-go">'+obBtn(_obSvcGoLabel(),'obNextServices()')+'</div>'+
     obBtn('Skip, I will build it as I go','obNextServices(true)','quiet');
 }
+function _obSvcGoLabel(){return (_ob.svcPicked||[]).length?'Add '+_ob.svcPicked.length+' to my price book':'Continue';}
+// Toggled IN PLACE, the way obSelectType flips the trade buttons (Earl audit
+// 2026-09-27): re-rendering the whole step threw him back to the top of the
+// list after every tap, so the job he wanted next was a scroll away again.
 function obToggleSvc(i){
   _ob.svcPicked=_ob.svcPicked||[];
   const at=_ob.svcPicked.indexOf(i);
   if(at===-1)_ob.svcPicked.push(i);else _ob.svcPicked.splice(at,1);
-  renderObStep();
+  const on=at===-1;
+  const btn=document.querySelector('#ob-body .ob-svc[data-svc="'+i+'"]');
+  if(!btn){renderObStep();return;}
+  btn.style.borderColor=on?'var(--blue)':'var(--border2)';
+  btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+  btn.setAttribute('aria-pressed',String(on));
+  const price=btn.querySelector('.ob-svc-price');
+  if(price)price.style.color=on?'var(--blue)':'var(--text3)';
+  const go=document.querySelector('#ob-svc-go button');
+  if(go)go.textContent=_obSvcGoLabel();
 }
 function obNextServices(skip){
   if(!skip&&(_ob.svcPicked||[]).length){

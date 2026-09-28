@@ -30,10 +30,10 @@ function openEstimateForClient(){
   // him to the Clients tab to fill in a form and walk back (see the gate).
   if(!c){_newClientQuickGate();return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked',html:true});return;}
   if(r==='high_risk'){
     zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with proposal?',
-      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
+      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true,html:true});
     return;
   }
   _rrpGateThenEstimate(c);
@@ -225,7 +225,7 @@ function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
     zConfirm("You don't have permission to create proposals yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:svgIcon('🔒')+' Proposal access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Proposal access',yes:'Request access',html:true});
   }else if(typeof zAlert==='function'){
     zAlert('You do not have permission to create proposals. Ask your manager for access.',{title:'Permission needed'});
   }
@@ -364,14 +364,9 @@ let _newcGateOpenId=null;
 function _newcGateMatches(q){
   const ql=(q||'').trim().toLowerCase();
   if(!ql)return (clients||[]).slice(-5).reverse();
-  const digits=ql.replace(/\D/g,'');
-  // Same predicate the Clients page search uses (onClientSearch), so "who do I
-  // have" means one thing in this app.
-  return (clients||[]).filter(c=>
-    (c.name||'').toLowerCase().includes(ql)||
-    (c.addr||'').toLowerCase().includes(ql)||
-    (digits&&(c.phone||'').replace(/\D/g,'').includes(digits))
-  ).slice(0,6);
+  // The one customer search (clientMatches, js/data.js), so "who do I have"
+  // means one thing in this app.
+  return (clients||[]).filter(c=>clientMatches(c,ql)).slice(0,6);
 }
 // Every property this customer has, in the shape the maps picker already uses.
 function _newcGateProps(c){
@@ -662,23 +657,54 @@ function _closeStylePicker(){
   const ov=document.getElementById('_style-pick-ov');
   if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),380);}
 }
+// Cancel on the picker. Opened from a client, it just closes. Opened from
+// Back on an estimate, closing it would drop him onto the estimate he just
+// backed out of, with no tab bar to leave by (owner, 2026-09-25: "no way to
+// get back to home page"). There it saves the draft and goes home.
+function _stylePickCancel(){
+  const onEst=document.querySelector('.pg.active')?.id==='pg-est-generic';
+  _closeStylePicker();
+  if(onEst&&typeof _geiSaveAndExit==='function')_geiSaveAndExit();
+}
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
+  // `locked` is either true (no LiDAR on this phone, the original case) or an
+  // object saying why this type is not available here and where to go instead.
   const card=(id,tone,icon,eyebrow,title,sub,bullets,locked)=>{
-    const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
-    const act=locked?'_scanWhyNoLidar()':`_pickEstStyle('${id}')`;
-    return `<button class="chooser-card chooser-${tone}" onclick="${act}"${locked?' style="opacity:.55;filter:grayscale(1)"':''}>
-      <div class="chooser-card-eyebrow"${locked?' style="color:var(--text3)"':''}>${locked?'Needs a Pro iPhone':eyebrow}</div>
+    const lk=locked===true?{eyebrow:'Needs a Pro iPhone',sub:'This phone has no LiDAR sensor to measure with',act:'_scanWhyNoLidar()',cta:'Which iPhones? \u2192'}:locked;
+    const bul=bullets.map(b=>'<li><span>'+svgIcon('\u2713')+'</span>'+b+'</li>').join('');
+    const act=lk?lk.act:`_pickEstStyle('${id}')`;
+    return `<button class="chooser-card chooser-${tone}" data-type="${id}"${lk?' data-locked="1"':''} onclick="${act}"${lk?' style="opacity:.55;filter:grayscale(1)"':''}>
+      <div class="chooser-card-eyebrow"${lk?' style="color:var(--text3)"':''}>${lk?lk.eyebrow:eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
       <div class="chooser-card-title">${title}</div>
-      <div class="chooser-card-sub">${locked?'This phone has no LiDAR sensor to measure with':sub}</div>
+      <div class="chooser-card-sub">${lk?lk.sub:sub}</div>
       <ul class="chooser-card-bullets">${bul}</ul>
-      <div class="chooser-card-cta">${locked?'Which iPhones? →':'Start →'}</div>
+      <div class="chooser-card-cta">${lk?lk.cta:'Start \u2192'}</div>
     </button>`;
   };
+  // CALIFORNIA, BEFORE HE BUILDS ANYTHING. B&P 7159 will not take a time and
+  // materials home improvement contract. The builder and the Send button both
+  // stop one too (_tmLegal), but the kind thing is to say so here, on the
+  // screen where he chooses, not after he has written the scope. Home jobs
+  // only: a commercial property is outside the statute.
+  const _pickAddr=(overrideAddr||(c&&c.addr)||'');
+  const _pickSt=(typeof stateFromAddr==='function')?stateFromAddr(_pickAddr):null;
+  const _pickRule=(typeof statePriceRule==='function'&&_pickSt)?statePriceRule(_pickSt):{rule:'none'};
+  const _pickHome=String((c&&c.ptype)||'').toLowerCase()!=='commercial';
+  // A customer with several properties picks the address AFTER the type, so the
+  // primary address is not the job's: their Arizona rental must not be refused
+  // because they live in California. There the builder's own check
+  // (_geiOpenModeAt) stops it once the address is chosen.
+  const _pickMulti=!overrideAddr&&typeof clientAddresses==='function'&&c&&clientAddresses(c).length>1;
+  const _tmLock=(_pickHome&&!_pickMulti&&_pickRule.rule==='block')?{
+    eyebrow:'Not allowed in '+((typeof STATE_NAMES!=='undefined'&&STATE_NAMES[_pickSt])||_pickSt),
+    sub:((typeof STATE_NAMES!=='undefined'&&STATE_NAMES[_pickSt])||_pickSt)+' requires a fixed price on home improvement work',
+    act:"_pickEstStyle('freeform')",
+    cta:'Use Build Your Own \u2192'}:null;
   ov.innerHTML=
     '<div style="max-width:760px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px))">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
@@ -686,15 +712,15 @@ function _showEstimateStylePicker(c,overrideAddr){
           '<div class="tbar-eyebrow">Pick proposal type</div>'+
           '<div class="tbar-title">How are you billing this job?</div>'+
         '</div>'+
-        '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
+        '<button class="btn btn-ghost" onclick="_stylePickCancel()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('truebid','blue',svgIcon('🛰️',{size:36}),'The flagship','TrueBid','Powered by the TrueSuite, minimal typing, nothing guessed',
-          ['TrueScan measures every room by LiDAR','TrueMeasure traces any property from above','The right tool opens automatically for your trade'])+
-        card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
+        card('truebid','blue',svgIcon('🛰️',{size:36}),'TrueBid','Measure it first','Your phone measures it, you set the price',
+          ['Scan the rooms with your phone','Trace the property from above on a map','The right tool opens for your trade'])+
+        card('freeform','green',svgIcon('🧩',{size:36}),'Line by line','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
-        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
-          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
+        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Bill the hours when you can\'t lock in a price',
+          ['Your hourly rate, already filled in','Say the job, Tim writes the steps','The most it can cost, when they want one'],_tmLock)+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
@@ -826,8 +852,8 @@ function renderClientHubPage(){
     const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >'+svgIcon('👁')+' Preview</button>'+
-      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">'+svgIcon('📋')+' Copy</button>'+
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub('+_jsArg(url)+','+_jsArg(c.name||'')+','+(Number(c.id)||0)+')" >'+svgIcon('👁')+' Preview</button>'+
+      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy('+_jsArg(url)+',this)">'+svgIcon('📋')+' Copy</button>'+
       (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">'+svgIcon('📱')+' Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
@@ -903,12 +929,9 @@ function onClientSearch(inp){
     const el=document.getElementById('client-list');
     const tk=todayKey();
     const ql=q.toLowerCase();
-    const matched=clients.filter(c=>
-      (c.name||'').toLowerCase().includes(ql)||
-      (c.addr||'').toLowerCase().includes(ql)||
-      (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||
-      (c.source||'').toLowerCase().includes(ql)
-    );
+    // The one customer search (clientMatches, js/data.js), plus lead source,
+    // which only this page's search has ever offered.
+    const matched=clients.filter(c=>clientMatches(c,q)||(c.source||'').toLowerCase().includes(ql));
     if(!matched.length){el.innerHTML='<div class="empty">No clients match "'+escHtml(q)+'".</div>';return;}
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);
@@ -1164,8 +1187,18 @@ function openNewClient(){
   document.getElementById('client-form-wrap').style.display='block';
   const pt=document.getElementById('clients-page-title');if(pt)pt.textContent='New Lead';
   const nb=document.getElementById('clients-new-btn');if(nb)nb.style.display='none';
+  const _cfw=document.getElementById('client-form-wrap');
+  if(_cfw&&!_cfw._cfDraftWired){_cfw._cfDraftWired=true;_cfw.addEventListener('input',_cfDraftSave);_cfw.addEventListener('change',_cfDraftSave);}
+  if(_cfDraftRestore()&&typeof showToast==='function')showToast('Picked up the lead you started','📝');
   window.scrollTo(0,0);
-  setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
+  // Start him on Name, unless he has already tapped into another field by the
+  // time this runs: taking the cursor back put what he typed next into Name
+  // (a quick tap to Notes on a slow phone wrote "Dale PruittLeaking tank...").
+  setTimeout(()=>{
+    const n=document.getElementById('cf-name');
+    const a=document.activeElement;
+    if(n&&!(a&&a!==n&&_cfw&&_cfw.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))n.focus();
+  },100);
 }
 function checkYearBuilt(){
   const yr=parseInt(document.getElementById('cf-year-built')?.value||'');
@@ -1423,7 +1456,32 @@ function deleteClient(){
     closeClientForm();goPg('pg-clients');
   },{title:'Delete client',yes:'Delete everything',danger:true});
 }
+// AN UNSENT NEW LEAD SURVIVES A REFRESH. A name and a phone number typed in a
+// driveway were gone the moment the phone locked, the app reloaded, or he
+// tapped away to check something. The draft lives in this browser only (a
+// per-device convenience, never account data), is written as he types, put
+// back when he opens New client again, and cleared on Save or Cancel.
+const _CF_DRAFT_KEY='zp3_new_lead_draft';
+const _CF_DRAFT_IDS=['cf-name','cf-phone','cf-street','cf-city','cf-state','cf-zip','cf-email','cf-source','cf-ref','cf-partytype','cf-notes'];
+function _cfDraftSave(){
+  if(editClientId)return;
+  const d={};let any=false;
+  _CF_DRAFT_IDS.forEach(id=>{const el=document.getElementById(id);if(el&&el.value){d[id]=el.value;any=true;}});
+  try{if(any)localStorage.setItem(_CF_DRAFT_KEY,JSON.stringify(d));else localStorage.removeItem(_CF_DRAFT_KEY);}catch(_e){}
+}
+function _cfDraftRestore(){
+  let d=null;
+  try{d=JSON.parse(localStorage.getItem(_CF_DRAFT_KEY)||'null');}catch(_e){d=null;}
+  if(!d||typeof d!=='object'||Array.isArray(d))return false;
+  let any=false;
+  _CF_DRAFT_IDS.forEach(id=>{const el=document.getElementById(id);if(el&&typeof d[id]==='string'&&d[id]){el.value=d[id];any=true;}});
+  const src=document.getElementById('cf-source');
+  if(src&&src.value&&typeof toggleRefField==='function')toggleRefField(src);
+  return any;
+}
+function _cfDraftClear(){try{localStorage.removeItem(_CF_DRAFT_KEY);}catch(_e){}}
 function closeClientForm(){
+  if(!editClientId)_cfDraftClear();
   document.getElementById('client-form-wrap').style.display='none';
   document.getElementById('client-list').style.display='';
   const sw2=document.getElementById('cf-search-wrap');if(sw2)sw2.style.display='';
@@ -1757,7 +1815,10 @@ function renderClientDetail(){
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
   // TIER as a small filled pill + source, reads more finished than plain text.
-  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">TIER '+_tier+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
+  // Plain words, not a letter grade: "TIER C" on a lead he met ten minutes
+  // ago read as a verdict on the customer. A lead with no work yet is a lead.
+  const _tierWord=(!_wonBids.length&&!c.tier)?'New lead':({A:'Top customer',B:'Regular customer',C:'Customer'}[_tier]||'Customer');
+  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">'+_tierWord+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
   // Monogram avatar (first + last initial) gives the card an identity/anchor.
   const _words=(c.name||'?').trim().split(/\s+/).filter(Boolean);
   const _initials=(((_words[0]||'?')[0]||'?')+(_words.length>1?((_words[_words.length-1]||'')[0]||''):'')).toUpperCase();
@@ -1875,23 +1936,26 @@ function renderClientDetail(){
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
   if(_cdActions){
+    // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
+    // people; scheduling a visit now lives in the More menu, and this is the
+    // single obvious "make a quote" button.
+    const _lock=!_canEstimate();
+    const _newPropBtn='<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
+        svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
+      '</button>';
     if(_cdStage==='incomplete'){
+      // A lead with no address still gets New proposal. He is often standing
+      // in the kitchen with the customer, and the address goes on the estimate
+      // itself; the onboarding link is the option, not the only way forward.
       const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
       _cdActions.innerHTML=
-        '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
-          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding, send link so they can fill in their address &amp; project details</div>'+
+        '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:10px">'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' No address yet. Send a link so they can fill in their address &amp; project details, or start the proposal now.</div>'+
           '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📲')+' Send onboarding link</button>'+
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
-        '</div>';
+        '</div>'+_newPropBtn;
     }else{
-      // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
-      // people; scheduling a visit now lives in the More menu, and this is the
-      // single obvious "make a quote" button.
-      const _lock=!_canEstimate();
-      _cdActions.innerHTML=
-        '<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
-          svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
-        '</button>';
+      _cdActions.innerHTML=_newPropBtn;
     }
   }
   renderCDTimeline();
@@ -3032,7 +3096,7 @@ function openMapsDir(){
   if(extras.length===0){window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');return;}
   _mapsPickerAddrs=[{label:'Primary',addr:c.addr},...extras];
   const btns=_mapsPickerAddrs.map((a,i)=>'<button onclick="_mapsPickAddr('+i+')" style="display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);font-size:13px;cursor:pointer;font-family:inherit;color:var(--text);margin-bottom:6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:2px">'+escHtml(a.label)+'</span>'+escHtml(a.addr)+'</button>').join('');
-  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...'});
+  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...',html:true});
 }
 function _mapsPickAddr(idx){
   const a=_mapsPickerAddrs[idx];

@@ -6996,9 +6996,19 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _renderScopeChips('test-scope-wrap');
         const html = wrap.innerHTML;
         wrap.remove();
-        return { hasAddBtn: html.includes('Add scope of work') };
+        return { composer: html.includes('Tell me what you are doing'),
+          build: html.includes('Build the steps'),
+          picker: html.includes('Or pick from a list') };
       });
-      expect(r.hasAddBtn).toBe(true);
+      // CHANGED 2026-09-22 (§10.4). The empty scope used to be a dashed
+      // "+ Add scope of work" button that opened a picker. Owner: "I really
+      // want to retire the scope picker on every bid, instead I want you to
+      // type up what youre doing or speak it to tim and he builds the scope in
+      // order broken down by steps in order." So the empty state is the box he
+      // talks into. The picker is still reachable from inside it.
+      expect(r.composer).toBe(true);
+      expect(r.build).toBe(true);
+      expect(r.picker, 'the list must stay reachable, it has been live one afternoon').toBe(true);
     });
 
     test('scope chips selected, renders chip items', async () => {
@@ -19718,265 +19728,59 @@ test.describe('tax.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 9. estimateTax
+  // 9. taxYearSnapshot / taxSetAside (replaced estimateTax, 2026-09-27: one
+  //    definition of the year's tax numbers for every screen)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('estimateTax', () => {
-    test('null netSelf, returns 0', async () => {
+  test.describe('taxYearSnapshot', () => {
+    test('estimateTax is gone, its callers read the snapshot', async () => {
+      const r = await page.evaluate(() => ({ old: typeof estimateTax, snap: typeof taxYearSnapshot, aside: typeof taxSetAside }));
+      expect(r.old).toBe('undefined');
+      expect(r.snap).toBe('function');
+      expect(r.aside).toBe('function');
+    });
+
+    test('no income: zero tax and a zero set-aside rate', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, result: estimateTax(null) }; }
+        const sv = { income, payments, expenses };
+        income = []; payments = []; expenses = [];
+        try { const T = taxYearSnapshot('2025'); return { ok: true, tot: T.totalOwed, rate: T.setAsideRate, aside: taxSetAside(100, '2025') }; }
         catch (e) { return { ok: false, err: e.message }; }
+        finally { income = sv.income; payments = sv.payments; expenses = sv.expenses; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
+      expect(r.tot).toBe(0);
+      expect(r.rate).toBe(0);
+      expect(r.aside).toBe(0);
     });
 
-    test('undefined netSelf, returns 0', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, result: estimateTax(undefined) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
+    test('taxSetAside rejects null, negative and text', async () => {
+      const r = await page.evaluate(() => [taxSetAside(null, '2025'), taxSetAside(-5, '2025'), taxSetAside('abc', '2025'), taxSetAside(undefined)]);
+      expect(r).toEqual([0, 0, 0, 0]);
     });
 
-    test('0 netSelf, returns 0 (early exit for <= 0)', async () => {
+    test('job payments count as income, the same as hand-typed income', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, result: estimateTax(0) }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        const sv = { income, payments, expenses };
+        income = [{ date: '2025-03-01', amount: 30000 }];
+        payments = [{ id: 1, bid_id: 1, date: '2025-04-01', amount: 30000 }];
+        expenses = [];
+        try { const a = taxYearSnapshot('2025'); income = [{ date: '2025-03-01', amount: 60000 }]; payments = []; const b = taxYearSnapshot('2025'); return { a: a.totalOwed, b: b.totalOwed, tIn: a.tIn }; }
+        finally { income = sv.income; payments = sv.payments; expenses = sv.expenses; }
       });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
+      expect(r.tIn).toBe(60000);
+      expect(r.a).toBe(r.b);
+      expect(r.a).toBeGreaterThan(0);
     });
 
-    test('-1 netSelf, returns 0 (early exit for <= 0)', async () => {
+    test('set-aside over every payment adds back up to the year total', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, result: estimateTax(-1) }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        const sv = { income, payments, expenses };
+        income = []; expenses = [];
+        payments = [{ id: 1, bid_id: 1, date: '2025-02-01', amount: 20000 }, { id: 2, bid_id: 1, date: '2025-06-01', amount: 40000 }];
+        try { const T = taxYearSnapshot('2025'); return { tot: T.totalOwed, sum: taxSetAside(20000, '2025') + taxSetAside(40000, '2025') }; }
+        finally { income = sv.income; payments = sv.payments; expenses = sv.expenses; }
       });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
-    });
-
-    test('-999999 netSelf, returns 0', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, result: estimateTax(-999999) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
-    });
-
-    test('golden path 80000 single 2025, returns positive integer', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(80000, 2025);
-          return { ok: true, result, isInteger: Number.isInteger(result) };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(5000);
-      expect(r.result).toBeLessThan(35000);
-      expect(r.isInteger).toBe(true);
-    });
-
-    test('mfj status, returns lower tax than single (doubled brackets)', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          S.txStatus = 'mfj';
-          const mfjTax = estimateTax(80000, 2025);
-          S.txStatus = 'single';
-          const singleTax = estimateTax(80000, 2025);
-          return { ok: true, mfjTax, singleTax };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      // MFJ brackets are wider so tax should be <= single at same income
-      expect(r.mfjTax).toBeLessThanOrEqual(r.singleTax);
-    });
-
-    test('year 2024, uses 2024 brackets, not current year', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result2024 = estimateTax(80000, 2024);
-          const result2025 = estimateTax(80000, 2025);
-          return { ok: true, result2024, result2025 };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      // Both should be positive and reasonable
-      expect(r.result2024).toBeGreaterThan(0);
-      expect(r.result2025).toBeGreaterThan(0);
-    });
-
-    test('no year provided, uses current year brackets', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(60000);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(0);
-    });
-
-    test('1 dollar netSelf, returns positive tax', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(1, 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThanOrEqual(0);
-    });
-
-    test('very large income 5000000, does not throw, returns large number', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(5000000, 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(100000);
-    });
-
-    test('string netSelf "50000", behaves gracefully (early-exit branch: "50000" > 0 is true)', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax('50000', 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      // String '50000' > 0 is true in JS, so function proceeds
-      expect(typeof r.result).toBe('number');
-    });
-
-    test('string "0", returns 0 (early exit: "0" <= 0 is false in JS, but 0 returns 0)', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          // estimateTax(0) → netSelf<=0 → return 0
-          const result = estimateTax(0, 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBe(0);
-    });
-
-    test('MFS status, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'mfs';
-        try {
-          const result = estimateTax(60000, 2025);
-          S.txStatus = 'single';
-          return { ok: true, result };
-        } catch (e) { S.txStatus = 'single'; return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(0);
-    });
-
-    test('HOH status, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'hoh';
-        try {
-          const result = estimateTax(60000, 2025);
-          S.txStatus = 'single';
-          return { ok: true, result };
-        } catch (e) { S.txStatus = 'single'; return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(0);
-    });
-
-    test('unknown status falls back to single brackets', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'invalidstatus';
-        try {
-          const result = estimateTax(70000, 2025);
-          S.txStatus = 'single';
-          const singleResult = estimateTax(70000, 2025);
-          return { ok: true, result, singleResult };
-        } catch (e) { S.txStatus = 'single'; return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      // Unknown status → falls back to single in calcBrackets call
-      expect(r.result).toBe(r.singleResult);
-    });
-
-    test('tax increases monotonically with income', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const t1 = estimateTax(30000, 2025);
-          const t2 = estimateTax(60000, 2025);
-          const t3 = estimateTax(120000, 2025);
-          return { ok: true, t1, t2, t3 };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.t1).toBeLessThan(r.t2);
-      expect(r.t2).toBeLessThan(r.t3);
-    });
-
-    test('concurrent calls, all return same result', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        const results = [];
-        for (let i = 0; i < 5; i++) {
-          try { results.push(estimateTax(50000, 2025)); } catch (_) { results.push(null); }
-        }
-        return { ok: results.every(v => v !== null), results };
-      });
-      expect(r.ok).toBe(true);
-      // All calls should return the same deterministic value
-      const unique = [...new Set(r.results)];
-      expect(unique).toHaveLength(1);
-    });
-
-    test('corrupted localStorage, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        localStorage.setItem('td_settings', '{BAD{{JSON');
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(50000, 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-        finally { localStorage.removeItem('td_settings'); }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('year 2019, uses 2019 brackets', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(80000, 2019);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.result).toBeGreaterThan(0);
-    });
-
-    test('fractional income 0.01: does not throw', async () => {
-      const r = await page.evaluate(() => {
-        S.txStatus = 'single';
-        try {
-          const result = estimateTax(0.01, 2025);
-          return { ok: true, result };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(typeof r.result).toBe('number');
+      expect(r.sum).toBeCloseTo(r.tot, 2);
     });
   });
 
@@ -23202,7 +23006,7 @@ test.describe('finance.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.gone).toBe(true);
-      expect(r.dateVal).toBe('06/15/2025');
+      expect(r.dateVal).toBe('2025-06-15'); // em-date is a native date input now, which holds ISO
     });
 
     test('no button, clears em-date and removes widget', async () => {
@@ -23210,7 +23014,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
         try {
-          document.getElementById('em-date').value = '06/15/2025';
+          document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
           _confirmReceiptDate('2025-06-15', statusEl);
           document.getElementById('rcpt-no-btn')?.click();
           return { ok: true, gone: !document.getElementById('rcpt-date-confirm'), dateVal: document.getElementById('em-date')?.value };
@@ -23366,7 +23170,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = '';
         document.getElementById('em-amount').value = '50';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, errText: document.getElementById('exp-save-err')?.textContent, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23381,7 +23185,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, errText: document.getElementById('exp-save-err')?.textContent, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23396,7 +23200,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '0';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, added: expenses.length - before, errText: document.getElementById('exp-save-err')?.textContent }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23410,7 +23214,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
         document.getElementById('em-amount').value = '-10';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         const before = expenses.length;
         try { await expSave(); return { ok: true, added: expenses.length - before }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23424,7 +23228,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Denny\'s';
         document.getElementById('em-amount').value = '45';
-        document.getElementById('em-date').value = '06/01/2025';
+        document.getElementById('em-date').value = '2025-06-01'; // native date input takes ISO
         document.getElementById('em-cat').value = 'meals';
         document.getElementById('em-meal-purpose').value = '';
         const before = expenses.length;
@@ -23441,7 +23245,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Sherwin-Williams';
         document.getElementById('em-amount').value = '125.50';
-        document.getElementById('em-date').value = '06/15/2025';
+        document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
         // Use first category in list
         document.getElementById('em-cat').selectedIndex = 0;
         const before = expenses.length;
@@ -23473,7 +23277,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'TestVendor';
         document.getElementById('em-amount').value = '10';
-        document.getElementById('em-date').value = '06/15/2025';
+        document.getElementById('em-date').value = '2025-06-15'; // native date input takes ISO
         try { await expSave(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
         finally { localStorage.removeItem('zp3_data'); }

@@ -36,15 +36,15 @@ async function openPage(page, data, opts) {
       const bang = () => { throw new Error('storage is off'); };
       try { Object.defineProperty(window, 'localStorage', { get: bang, configurable: true }); } catch (_e) {}
     }
-  }, { data, decideFail: !!(opts && opts.decideFail), noStorage: !!(opts && opts.noStorage) });
+  }, { data, decideFail: (opts && opts.decideFail) || false, noStorage: !!(opts && opts.noStorage) });
   // Registered AFTER mockAllExternal so it wins: the SDK becomes a shim whose
   // rpc answers from window.__tsp.
-  await page.route('**/supabase-js@2*', (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
+  await page.route(/supabase-js@2[^/]*\//, (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: `
     window.supabase = { createClient: function(){ return { rpc: async function(fn, args){
       window.__tsp.calls.push([fn, args]);
       if (fn === 'timesheet_public') return { data: window.__tsp.data, error: null };
       if (fn === 'timesheet_decide') {
-        if (window.__tsp.decideFail) return { data: null, error: { message: 'nope' } };
+        if (window.__tsp.decideFail) return { data: null, error: { message: typeof window.__tsp.decideFail === 'string' ? window.__tsp.decideFail : 'nope' } };
         var st = args.p_decision === 'approve' ? 'approved' : 'rejected';
         return { data: { status: st, version: 1, approved_at: st === 'approved' ? '2026-09-06T01:10:00Z' : null, rejected_at: st === 'rejected' ? '2026-09-06T01:10:00Z' : null, reject_note: args.p_note }, error: null };
       }
@@ -202,6 +202,34 @@ test.describe('The public timesheet page', () => {
     expect(r.chip).toMatch(/^Submitted/);
   });
 
+  // H6 (20261049): the link a crew member TEXTS is the view link. It shows the
+  // week and cannot decide it: no buttons, one line saying where approving
+  // happens. The approve link (can_decide true) is the one emailed to the owner.
+  test('the texted view link shows the week with no Approve or Reject', async ({ page }) => {
+    await openPage(page, Object.assign({}, DATA, { can_decide: false }));
+    const r = await page.evaluate(() => ({
+      btns: document.querySelectorAll('#tsp-foot button').length,
+      note: (document.getElementById('tsp-view-only') || {}).textContent || '',
+      bars: document.querySelectorAll('#tsp-body .tl-wbar-col').length,
+    }));
+    expect(r.btns).toBe(0);
+    expect(r.note).toContain('emailed to the business owner');
+    expect(r.bars, 'the week itself still shows').toBe(7);
+  });
+
+  test('the approve link (can_decide true) keeps both buttons', async ({ page }) => {
+    await openPage(page, Object.assign({}, DATA, { can_decide: true }));
+    const r = await page.evaluate(() => ({ ap: !!document.getElementById('tsp-approve'), rj: !!document.getElementById('tsp-reject') }));
+    expect(r).toEqual({ ap: true, rj: true });
+  });
+
+  test('a server refusal to the worker says why, not "try again"', async ({ page }) => {
+    await openPage(page, DATA, { decideFail: 'timesheet_decide: you cannot approve your own timesheet' });
+    await page.click('#tsp-approve');
+    await page.waitForFunction(() => !document.getElementById('tsp-err').hidden);
+    expect(await page.textContent('#tsp-err')).toBe('You cannot approve your own timesheet.');
+  });
+
   test('already approved or sent back: the state, no buttons', async ({ page }) => {
     await openPage(page, Object.assign({}, DATA, { status: 'approved', approved_at: '2026-09-06T01:10:00Z' }));
     let r = await page.evaluate(() => ({ btns: document.querySelectorAll('#tsp-foot button').length, done: document.querySelector('.tsp-done').textContent.trim() }));
@@ -212,6 +240,21 @@ test.describe('The public timesheet page', () => {
     expect(r.btns).toBe(0);
     expect(r.done).toContain('Thursday should be 8');
     expect(r.fine).toBe('A corrected timesheet will show up at this same link.');
+  });
+
+  test('pay: the week carries a rate, the header shows the payout to the cent', async ({ page }) => {
+    await openPage(page, Object.assign({}, DATA, { pay_rate: 25 }));
+    const r = await page.evaluate(() => ({
+      l: document.querySelector('.tsp-pay-l').textContent.trim(),
+      v: document.querySelector('.tsp-pay-v').textContent.trim(),
+    }));
+    // 1000 min = 16h 40m; 1000/60*25 = 416.666... -> $416.67.
+    expect(r.l).toBe('Pay this week16h 40m at $25/hr');
+    expect(r.v).toBe('$416.67');
+  });
+  test('pay: no rate, no pay line', async ({ page }) => {
+    await openPage(page, DATA);
+    expect(await page.locator('.tsp-pay').count()).toBe(0);
   });
 
   test('a corrected version says so', async ({ page }) => {

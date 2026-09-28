@@ -175,9 +175,12 @@ test.describe('the price hold', () => {
 
       return {
         afterPreview,
-        previewShows: previewHtml.includes(_fmtValidUntil(addDays(todayKey(), 30))),
-        stampedShows: stampedHtml.includes(_fmtValidUntil(addDays(todayKey(), 5))),
-        stampedNotFresh: !stampedHtml.includes(_fmtValidUntil(addDays(todayKey(), 30))),
+        // The cover writes the date the way a letter does ("Oct 23, 2026")
+        // since the white-label redesign (2026-09-23, §10.4); same date, so the
+        // same promise is checked through the same formatter the page uses.
+        previewShows: previewHtml.includes(_propDate(_fmtValidUntil(addDays(todayKey(), 30)))),
+        stampedShows: stampedHtml.includes(_propDate(_fmtValidUntil(addDays(todayKey(), 5)))),
+        stampedNotFresh: !stampedHtml.includes(_propDate(_fmtValidUntil(addDays(todayKey(), 30)))),
         stillStamped: bids.find(x => x.id === bidId)?.validUntil
       };
     });

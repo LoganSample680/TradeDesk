@@ -105,7 +105,7 @@ function _populateTaxYearSel(){
   const cur=new Date().getFullYear();
   const dataYears=new Set([cur]);
   const yr=String(cur);
-  [income,expenses,mileage].forEach(arr=>arr.forEach(r=>{const y=parseInt((r.date||'').slice(0,4));if(y>=2019&&y<=cur)dataYears.add(y);}));
+  [income,payments,expenses,mileage].forEach(arr=>arr.forEach(r=>{const y=parseInt((r.date||'').slice(0,4));if(y>=2019&&y<=cur)dataYears.add(y);}));
   const years=[...dataYears].sort((a,b)=>b-a);
   if(!dataYears.has(_taxPageYear))_taxPageYear=cur;
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(_taxPageYear===y?' selected':'')+'>'+y+'</option>').join('');
@@ -232,12 +232,30 @@ function _calcStateEstimate(stateAgi,stInfo){
   return Math.ceil(parseFloat((lowPart*stInfo.low/100+highPart*stInfo.high/100).toFixed(2)));
 }
 
-function calcTax(){
-  const _taxYr=String(_taxPageYear||new Date().getFullYear());
-  // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
-  const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
-           +payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
-  const _tExRaw=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
+// ── ONE definition of the year's tax numbers (Earl audit 2026-09-27) ──────
+// Home's Taxes tile, the Taxes screen, the Books summary, the tax PDF and the
+// "set aside" line on a recorded payment used to run five different sums: the
+// Books summary counted only hand-typed income (job payments were missing, so a
+// man who had been paid $1,347.50 saw Income $0 and a loss), and the payment
+// banner ran its own 15% sum on the wrong income with a hardcoded deduction.
+// Every one of them now reads taxYearSnapshot / taxSetAside, and nothing else.
+function taxIncomeForYear(yr){
+  const y=String(yr||new Date().getFullYear());
+  const manual=(typeof income!=='undefined'?income:[]).filter(r=>r&&r.date&&String(r.date).startsWith(y)).reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const jobs=(typeof payments!=='undefined'?payments:[]).filter(p=>p&&p.amount!==0&&p.date&&String(p.date).startsWith(y)).reduce((s,p)=>s+(Number(p.amount)||0),0);
+  return {manual,jobs,total:manual+jobs};
+}
+// A business meal deducts at 50% (IRC 274(n)). Rows from the full expense flow
+// carry cat 'meals' / meals_50; older quick-expense rows stored the label text.
+function _taxIsMeal(e){return !!e&&(e.cat==='meals'||e.meals_50===true||e.cat==='Meals (business)');}
+function taxYearSnapshot(yr){
+  const _taxYr=String(yr||_taxPageYear||new Date().getFullYear());
+  const _inc=taxIncomeForYear(_taxYr);
+  const tIn=_inc.total;
+  const _yrExp=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr));
+  const _tExRaw=_yrExp.reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const mealsTotal=_yrExp.filter(_taxIsMeal).reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const mealsDisallowed=Math.round(mealsTotal*50)/100;
   // deductibleTrips, not the raw array. A crew member's own-car miles are owed to
   // THEM at the IRS rate; they are not the business's vehicle deduction, and
   // counting them here would cut the owner's taxable income by money they still
@@ -249,14 +267,14 @@ function calcTax(){
   // Mileage-method vehicles: miles deduct, their vehicle expenses don't (expAdjust).
   // Actual-method vehicles: expenses deduct at biz-use %, their miles don't.
   const _vd=(typeof _vehSchedC==='function')?_vehSchedC(_taxYr):null;
-  const tEx=_tExRaw-(_vd?_vd.expAdjust:0);
+  const tExCash=_tExRaw-(_vd?_vd.expAdjust:0);
+  const tEx=tExCash-mealsDisallowed;
   const mileDed=_vd?_vd.mileDed:tMi*_yrIrsRate;
   const netSelf=Math.max(0,tIn-tEx-mileDed);
   const spouseInc=nv('tx-spouse');
   const taxPaid=nv('tx-paid');
-  const status=v('tx-status')||S.txStatus||'single';
-  if(S.txStatus!==status){S.txStatus=status;S.settingsTs=Date.now();} // conditional: calc runs on every render
-  const sumSel=document.getElementById('sum-tx-status');if(sumSel)sumSel.value=status;
+  const _rawStatus=v('tx-status')||S.txStatus||'single';
+  const status=_VALID_TAX_STATUSES.has(_rawStatus)?_rawStatus:'single';
 
   const seTax=_calcSeTax(netSelf,_taxYr);
   const seDed=seTax/2; // deduct half SE tax from income
@@ -270,40 +288,41 @@ function calcTax(){
 
   // ── Multi-state revenue breakdown ────────────────────────────────────────
   // Scan payments → detect job state from bid.addr; manual income → home state
-  const _homeState=S.state||'KS';
-  const _stateRev={};
+  const homeState=S.state||'KS';
+  const stateRev={};
   payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).forEach(p=>{
     const bid=bids.find(b=>b.id===p.bid_id);
-    const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_homeState;
-    _stateRev[st]=(_stateRev[st]||0)+p.amount;
+    const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||homeState;
+    stateRev[st]=(stateRev[st]||0)+p.amount;
   });
-  income.filter(r=>r.date&&r.date.startsWith(_taxYr)).forEach(r=>{_stateRev[_homeState]=(_stateRev[_homeState]||0)+r.amount;});
-  const _isMultiState=tIn>0&&Object.keys(_stateRev).some(st=>st!==_homeState);
+  income.filter(r=>r.date&&r.date.startsWith(_taxYr)).forEach(r=>{stateRev[homeState]=(stateRev[homeState]||0)+r.amount;});
+  const isMultiState=tIn>0&&Object.keys(stateRev).some(st=>st!==homeState);
   // Calculate non-home state taxes (non-resident, apportioned by revenue fraction)
-  const _nonHomeTaxes=[];
-  let _totalNonHomeTax=0;
-  if(_isMultiState){
-    Object.entries(_stateRev).filter(([st])=>st!==_homeState).forEach(([st,rev])=>{
+  const nonHomeTaxes=[];
+  let totalNonHomeTax=0;
+  if(isMultiState){
+    Object.entries(stateRev).filter(([st])=>st!==homeState).forEach(([st,rev])=>{
       const stInfo=STATE_TAX[st];
       const stateAgi=agi*(rev/tIn);
       const stTax=_calcStateEstimate(stateAgi,stInfo);
-      _nonHomeTaxes.push({st,name:(stInfo?.name||st),rev,stTax,noTax:!!(stInfo?.noTax)});
-      _totalNonHomeTax+=stTax;
+      nonHomeTaxes.push({st,name:(stInfo?.name||st),rev,stTax,noTax:!!(stInfo?.noTax)});
+      totalNonHomeTax+=stTax;
     });
-    _nonHomeTaxes.sort((a,b)=>b.rev-a.rev);
+    nonHomeTaxes.sort((a,b)=>b.rev-a.rev);
   }
   // Home state: tax on full AGI, then credit for taxes paid to other states
   // Credit = min(non-home tax paid, home tax that would have applied to same income)
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
   const ksTaxGross=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
-  const _nonHomeIncome=_nonHomeTaxes.reduce((s,t)=>s+t.rev,0);
+  const _nonHomeIncome=nonHomeTaxes.reduce((s,t)=>s+t.rev,0);
   const _nonHomeFraction=tIn>0?_nonHomeIncome/tIn:0;
-  const _credit=Math.min(_totalNonHomeTax,ksTaxGross*_nonHomeFraction);
-  const ksTax=Math.max(0,Math.ceil(ksTaxGross-_credit));
+  const credit=Math.min(totalNonHomeTax,ksTaxGross*_nonHomeFraction);
+  const ksTax=Math.max(0,Math.ceil(ksTaxGross-credit));
 
-  const totalOwed=seTax+fedTax+ksTax+_totalNonHomeTax;
+  const fedTotal=seTax+fedTax;             // what the IRS quarterly estimates cover
+  const stateTotal=ksTax+totalNonHomeTax;  // state estimates are a separate payment
+  const totalOwed=fedTotal+stateTotal;
   const stillOwed=Math.max(0,totalOwed-taxPaid);
-  const perQ=Math.ceil(stillOwed/4);
   // Prior-year safe harbor: pay 100% of last year's tax (110% if AGI > $150K) to avoid underpayment penalty
   const priorYrTax=nv('tx-prior-yr')||0;
   const priorYrAgi=nv('tx-prior-yr-agi')||0;
@@ -312,9 +331,78 @@ function calcTax(){
   const safeHarborQ=priorYrTax>0?Math.ceil(safeHarborTotal/4):0;
   // SEP-IRA: 20% of net self-employment income (after SE deduction), max $70,000
   const sepMax=Math.min(70000,Math.floor(Math.max(0,netSelf-seDed)*0.20));
+  // The share of every dollar collected that belongs to the tax bill. Applied to
+  // every payment of the year it adds back up to totalOwed exactly, which is why
+  // "set aside X of this payment" and "year to date reserve" can never disagree.
+  const setAsideRate=tIn>0?totalOwed/tIn:0;
+  return {yr:_taxYr,manualIn:_inc.manual,jobIn:_inc.jobs,tIn,tExRaw:_tExRaw,tExCash,mealsTotal,mealsDisallowed,tEx,tMi,mileDed,vd:_vd,
+    netSelf,spouseInc,taxPaid,status,seTax,seDed,agi,stdDed,fedTaxable,fedTax,homeState,stateRev,isMultiState,nonHomeTaxes,
+    totalNonHomeTax,ksTaxable,ksTaxGross,credit,ksTax,fedTotal,stateTotal,totalOwed,stillOwed,priorYrTax,safeHarborTotal,safeHarborQ,sepMax,setAsideRate};
+}
+// What to put away from an amount of money collected in a year: that amount
+// times the year's set-aside rate, to the cent.
+function taxSetAside(amount,yr){
+  const a=Number(amount);
+  if(!(a>0))return 0;
+  const r=taxYearSnapshot(yr).setAsideRate;
+  return Math.round(a*r*100)/100;
+}
+// IRS rule: a due date on a Saturday, Sunday or legal holiday moves to the next
+// business day (IRC 7503). The federal holidays that can land on a quarterly
+// date: New Year's Day, MLK Day (third Monday of January) and DC Emancipation
+// Day (Apr 16, observed Fri Apr 15 when it is a Saturday, Mon Apr 17 when a Sunday).
+function _irsIsHoliday(d){
+  const m=d.getMonth(),day=d.getDate(),dow=d.getDay();
+  if(m===0&&day===1)return true;
+  if(m===0&&dow===1&&day>=15&&day<=21)return true;
+  if(m===3&&day===16&&dow>=1&&dow<=5)return true;
+  if(m===3&&day===15&&dow===5)return true;
+  if(m===3&&day===17&&dow===1)return true;
+  return false;
+}
+function irsDueDate(y,m,d){
+  const dt=new Date(y,m,d);
+  while(dt.getDay()===0||dt.getDay()===6||_irsIsHoliday(dt))dt.setDate(dt.getDate()+1);
+  return dt;
+}
+// The four estimated-tax installments for a tax year, with their real due dates.
+function taxQuarterDates(yr){
+  const y=parseInt(yr,10)||new Date().getFullYear();
+  return [
+    {q:'Q1',period:'Jan to Mar',date:irsDueDate(y,3,15)},
+    {q:'Q2',period:'Apr to May',date:irsDueDate(y,5,15)},
+    {q:'Q3',period:'Jun to Aug',date:irsDueDate(y,8,15)},
+    {q:'Q4',period:'Sep to Dec',date:irsDueDate(y+1,0,15)},
+  ];
+}
+// The ONE installment due next, federal only (SE tax plus federal income tax):
+// its amount, and the catch-up from earlier quarters the paid-so-far box does
+// not cover. Null when every installment for the year is behind us.
+function taxNextQuarter(T,now){
+  const today=now||new Date();
+  const t0=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  const qs=taxQuarterDates(T.yr);
+  const idx=qs.findIndex(q=>q.date>=t0);
+  if(idx<0)return null;
+  // Cumulative, so the four quarters add up to the year and never past it
+  // (four rounded-up quarters of $165 would ask for $168).
+  const dueBy=n=>Math.ceil(T.fedTotal*n/4);
+  const installment=dueBy(1);
+  const paid=Math.max(0,T.taxPaid||0);
+  const amount=Math.max(0,dueBy(idx+1)-paid);
+  const catchUp=Math.max(0,dueBy(idx)-paid);
+  return {...qs[idx],n:idx+1,installment,amount,catchUp,stateInstallment:Math.ceil(T.stateTotal/4),all:qs};
+}
+function _fmtDueDate(d,withYear){return d.toLocaleDateString('en-US',withYear?{month:'short',day:'numeric',year:'numeric'}:{month:'short',day:'numeric'});}
 
-  const reserveRate=netSelf>0?Math.ceil(totalOwed/netSelf*100):32; // default 32% if no income yet
-  const reserveAmt=Math.ceil(netSelf*reserveRate/100);
+function calcTax(){
+  const _taxYr=String(_taxPageYear||new Date().getFullYear());
+  const T=taxYearSnapshot(_taxYr);
+  const {tIn,tEx,mileDed,netSelf,spouseInc,taxPaid,status,seTax,agi,fedTax,homeState:_homeState,stateRev:_stateRev,
+    isMultiState:_isMultiState,nonHomeTaxes:_nonHomeTaxes,credit:_credit,ksTax,totalOwed,stillOwed,safeHarborQ,sepMax,tMi}=T;
+  const _vd=T.vd;
+  if(S.txStatus!==status){S.txStatus=status;S.settingsTs=Date.now();} // conditional: calc runs on every render
+  const sumSel=document.getElementById('sum-tx-status');if(sumSel)sumSel.value=status;
 
   // Keep year selector in sync and update dynamic header
   _populateTaxYearSel();
@@ -325,20 +413,20 @@ function calcTax(){
     if(!tIn){
       banner.innerHTML='';
     } else {
-      const bannerColor=reserveAmt<=taxPaid?'var(--green)':'#A32D2D';
+      // Two numbers, each saying what it is (Earl audit 2026-09-27): the old line
+      // read "Set aside $176 from every payment" when $176 was the whole year's
+      // reserve, not a per-payment amount.
+      const _pct=(T.setAsideRate*100).toFixed(1).replace(/\.0$/,'');
       banner.innerHTML=
         '<div style="background:#FFF0F0;border:2px solid #A32D2D;border-radius:var(--rl);padding:14px 16px">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:4px">Tax reserve needed</div>'+
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'+
-            '<div style="font-size:32px;font-weight:800;color:#A32D2D">'+fmt(reserveAmt)+'</div>'+
-            '<div style="font-size:13px;color:#A32D2D;font-weight:700">&nbsp;</div>'+
-          '</div>'+
-          '<div style="font-size:12px;color:var(--text2);line-height:1.5">'+
-            'Set aside '+fmt(reserveAmt)+' from every payment, you\'ll need it at tax time.'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:4px">Year to date reserve</div>'+
+          '<div id="tx-reserve-amt" style="font-size:32px;font-weight:800;color:#A32D2D;margin-bottom:6px">'+fmt(totalOwed)+'</div>'+
+          '<div id="tx-reserve-rate" style="font-size:12px;color:var(--text2);line-height:1.5">'+
+            'Set aside '+_pct+'% of every payment. That is what the '+escHtml(_taxYr)+' tax bill works out to so far.'+
           '</div>'+
           (taxPaid>0?
-            '<div style="margin-top:8px;font-size:12px;font-weight:700;color:'+(taxPaid>=reserveAmt?'var(--green-mid)':'var(--amber)')+'">'+
-              (taxPaid>=reserveAmt?'✓ Reserve covered':'Still need '+fmt(reserveAmt-taxPaid)+' more set aside')+
+            '<div style="margin-top:8px;font-size:12px;font-weight:700;color:'+(taxPaid>=totalOwed?'var(--green-mid)':'var(--amber)')+'">'+
+              (taxPaid>=totalOwed?'✓ Reserve covered':'Still need '+fmt(totalOwed-taxPaid)+' more set aside')+
             '</div>':''
           )+
         '</div>';
@@ -395,6 +483,7 @@ function calcTax(){
   if(_txInputsEl)_txInputsEl.innerHTML=
     '<div class="tax-row"><span style="color:var(--text2)">Gross income</span><span style="font-weight:700">'+fmt(tIn)+'</span></div>'+
     '<div class="tax-row"><span style="color:var(--text2)">Business expenses'+(_vd&&_vd.expAdjust>0?' <span style="font-size:9px;color:var(--text3)">(vehicle costs excluded per method)</span>':'')+'</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
+    (T.mealsDisallowed>0?'<div class="tax-row" id="tx-meals-50"><span style="color:var(--text3);font-size:11px;padding-left:10px">Meals count at 50%: '+fmt(T.mealsDisallowed)+' of '+fmt(T.mealsTotal)+' left out</span><span></span></div>':'')+
     '<div class="tax-row"><span style="color:var(--text2)">Mileage savings <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+(_vd?_vd.deductedMiles:tMi).toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
     (_vd&&_vd.vehExpDed>0?'<div class="tax-row"><span style="color:var(--text2)">Vehicle actual expenses <span style="font-size:10px;color:var(--text3)">(at business-use %)</span></span><span style="color:#A32D2D">included above</span></div>':'')+
     '<div class="tax-row" style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px">'+
@@ -430,13 +519,11 @@ function calcTax(){
     '';
 
   const now=new Date();
-  const yr=now.getFullYear();
-  const qdates=[
-    {q:'Q1',due:'Apr 15',date:new Date(yr,3,15),period:'Jan–Mar'},
-    {q:'Q2',due:'Jun 16',date:new Date(yr,5,16),period:'Apr–May'},
-    {q:'Q3',due:'Sep 15',date:new Date(yr,8,15),period:'Jun–Aug'},
-    {q:'Q4',due:'Jan 15',date:new Date(yr+1,0,15),period:'Sep–Dec'},
-  ];
+  // ONE quarter: the installment due next, with its amount (Earl audit
+  // 2026-09-27). Federal only, since the IRS estimate is its own payment; the
+  // state's share is shown under it as a separate line. Dates come from
+  // taxQuarterDates, which applies the weekend/holiday rule, never a hardcoded day.
+  const NQ=taxNextQuarter(T,now);
   const safeHarborNote=safeHarborQ>0
     ? '<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
         '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Penalty-free plan</div>'+
@@ -445,23 +532,26 @@ function calcTax(){
     : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
         svgIcon('💡')+' Enter last year\'s total tax above for the simplest quarterly number.'+
       '</div>';
+  const _allDates=taxQuarterDates(_taxYr).map(x=>x.q+' '+_fmtDueDate(x.date)).join(' · ');
   const _txQuartersEl=document.getElementById('tx-quarters');
   if(_txQuartersEl)_txQuartersEl.innerHTML=
+    (NQ
+      ? '<div id="tx-next-q" style="padding:4px 0 12px">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+NQ.q+' federal estimate, '+NQ.period+'</div>'+
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:4px">'+
+            '<div id="tx-next-q-due" style="font-size:15px;font-weight:700">Due '+_fmtDueDate(NQ.date,true)+'</div>'+
+            '<div id="tx-next-q-amt" style="font-size:24px;font-weight:800;color:#A32D2D">'+fmt(NQ.amount)+'</div>'+
+          '</div>'+
+          (NQ.catchUp>0
+            ? '<div id="tx-next-q-catchup" style="margin-top:6px;font-size:12px;font-weight:700;color:var(--amber)">Includes '+fmt(NQ.catchUp)+' to catch up on earlier quarters</div>'
+            : '')+
+          (NQ.stateInstallment>0
+            ? '<div id="tx-next-q-state" style="margin-top:6px;font-size:12px;color:var(--text2)">'+escHtml(STATE_TAX[_homeState]?.name||_homeState)+' estimate is separate: about '+fmt(NQ.stateInstallment)+' a quarter</div>'
+            : '')+
+        '</div>'
+      : '<div id="tx-next-q" style="padding:4px 0 12px;font-size:13px;color:var(--text2)">Every '+escHtml(_taxYr)+' quarterly date has passed. Anything still owed ('+fmt(stillOwed)+') is due with the return.</div>')+
     safeHarborNote+
-    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Pay '+fmt(perQ)+' each quarter.</div>'+
-    qdates.map(({q,due,date,period})=>{
-      const isPast=date<now;
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-        '<div>'+
-          '<div style="font-size:13px;font-weight:700">'+q+' <span style="font-weight:400;color:var(--text3)">'+period+'</span></div>'+
-          '<div style="font-size:11px;color:'+(isPast?'var(--text3)':'var(--text2)')+'">Due '+due+(isPast?' · past due':'')+'</div>'+
-        '</div>'+
-        '<div style="text-align:right">'+
-          '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
-          (safeHarborQ>0?'<div style="font-size:10px;color:#166534;font-weight:600">'+fmt(safeHarborQ)+' penalty-free</div>':'')+
-        '</div>'+
-      '</div>';
-    }).join('');
+    '<div style="font-size:11px;color:var(--text3)">'+escHtml(_taxYr)+' dates: '+_allDates+'</div>';
 
   // ── DIF Audit Risk Score ───────────────────────────────────────────────
   const difPct=tIn>0?tEx/tIn:0;
@@ -551,22 +641,6 @@ function calcTax(){
 }
 
 const _VALID_TAX_STATUSES=new Set(['single','mfj','mfs','hoh','qss']);
-function estimateTax(netSelf,yr){
-  if(!(netSelf>0))return 0;
-  const _rawStatus=S.txStatus||'single';
-  const status=_VALID_TAX_STATUSES.has(_rawStatus)?_rawStatus:'single';
-  const seTax=_calcSeTax(netSelf,yr||new Date().getFullYear());
-  const seDed=seTax/2;
-  const bkts=yr?_getFedBracketsForYear(yr):FED_BRACKETS;
-  const stdDed=yr?_getStdDedForYear(yr,status):(STD_DED[status]||14600);
-  const agi=netSelf-seDed;
-  const fedTaxable=Math.max(0,agi-stdDed);
-  const fedTax=Math.ceil(calcBrackets(fedTaxable,bkts[status]||bkts.single));
-  const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
-  const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
-  return seTax+fedTax+ksTax;
-}
-
 let _bracketRefreshInProgress=false;
 Object.defineProperty(window,'_bracketRefreshInProgress',{get:()=>_bracketRefreshInProgress,set:v=>{_bracketRefreshInProgress=v;},configurable:true});
 async function autoRefreshTaxBrackets(){
