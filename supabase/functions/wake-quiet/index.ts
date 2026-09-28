@@ -20,6 +20,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apnsConfigured } from "../_shared/apns.ts";
 import { sendSilentWake } from "../_shared/silent-push.ts";
 import { quietWakeDue, workHoursFromSettings } from "../_shared/terminate-wake.mjs";
+import { workSettings } from "../_shared/derive-day.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -63,8 +64,9 @@ serve(async (req) => {
         if (!last || last.type !== "app-background") continue;
         const cid = String(last.contractor_user_id || uid);
         if (!settingsCache.has(cid)) {
-          const { data: cfg } = await svc.from("zj_data").select("settings").eq("user_id", cid).maybeSingle();
-          settingsCache.set(cid, cfg?.settings ?? null);
+          // workHours only, never the whole settings blob: this runs every two
+          // minutes, and the blob once carried a 1.5 MB logo (egress, 2026-09-28).
+          settingsCache.set(cid, await workSettings(svc, cid));
         }
         const key = "wake:" + uid;
         const { data: wm } = await svc.from("cron_watermarks").select("ran_at").eq("name", key).maybeSingle();

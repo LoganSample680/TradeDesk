@@ -3472,10 +3472,11 @@ function _geoIngestPost(events){
     _supa.auth.getSession().then(({data})=>{
       const tok=data&&data.session&&data.session.access_token;
       if(!tok)return;
+      const cid=_geoFlushCid();
       fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
         method:'POST',
         headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
-        body:JSON.stringify({device_id:devId,events})
+        body:JSON.stringify(cid?{device_id:devId,cid,events}:{device_id:devId,events})
       }).catch(()=>{});
     }).catch(()=>{});
   }catch(_e){}
@@ -5960,9 +5961,28 @@ async function _geoTdEvent(ev,replay){
 // geo_flush_keys (owner-only RLS), then handed to the plugin. Configure only
 // after the server registration succeeds: a key the server never saw would
 // just 401 forever from inside the background session.
+// WHICH HAT THE SERVER FILES UNDER (owner 2026-09-28: "fix crew"). ingest-geo
+// used to look the crew link up itself, on a column team_members has never
+// had, so every crew member was filed as the owner of their own business and
+// the server's real-time timesheet never reached their employer. It cannot
+// just read the link either: a dual-hat person (9.10) is crew by day and an
+// owner on the side, and only this phone knows which hat is on. So the phone
+// names the business, the same one every row here is written under
+// (_geoCid), and the server only checks it is allowed: the poster's own, or
+// one they hold an active crew link to (geo_ingest_begin, 20261055).
+function _geoFlushCid(){
+  try{const c=(typeof _geoCid==='function')?_geoCid():null;return c?String(c):'';}catch(_e){return '';}
+}
+function _geoIngestUrl(cid){
+  return _SUPA_DIRECT_URL+'/functions/v1/ingest-geo'+(cid?'?cid='+encodeURIComponent(cid):'');
+}
 async function _geoConfigureFlush(){
   try{
-    if(window._geoFlushCfgDone)return;
+    // Configured again whenever the hat changes, which a switch does by
+    // reloading; this also catches a first configure that ran before the
+    // account had loaded and still named the poster.
+    const cid=_geoFlushCid();
+    if(window._geoFlushCfgDone&&window._geoFlushCfgCid===cid)return;
     const Td=_geoTdPlugin();
     if(!Td||typeof Td.configureFlush!=='function')return; // shell predates build 39
     if(!_supa||!_supaUser||typeof supaEnabled!=='function'||!supaEnabled())return;
@@ -5979,10 +5999,11 @@ async function _geoConfigureFlush(){
       .upsert({user_id:_supaUser.id,device_id:devId,key},{onConflict:'user_id,device_id'});
     if(error)return; // table not deployed yet, or offline: retry next session
     await Td.configureFlush({
-      url:_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',
+      url:_geoIngestUrl(cid),
       userId:_supaUser.id,deviceId:devId,key
     });
     window._geoFlushCfgDone=true;
+    window._geoFlushCfgCid=cid;
   }catch(_e){}
 }
 // One version probe per wake, and never while the user is watching. Throttled

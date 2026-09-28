@@ -169,7 +169,7 @@ test.describe('terminate wake: the wiring, read off the source', () => {
 
   test('working hours are read in one place, for the deriver and the wake', () => {
     const d = read('supabase/functions/_shared/derive-day.mjs');
-    expect(d).toContain('workHoursFromSettings(cfgRes?.data?.settings)');
+    expect(d).toContain('workHoursFromSettings(cfgRes)');
     expect(d, 'the hand-written copy is gone').not.toContain('let workHours = { start: "06:00"');
   });
 

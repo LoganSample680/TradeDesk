@@ -387,6 +387,127 @@ test.describe('egress: hub logo as URL, base64 only as fallback', () => {
   });
 });
 
+// The settings row stopped carrying the logo (2026-09-28). Supabase dropped
+// every request on the project: egress 6.02 GB of 5.5. One account's logo was
+// 1.5 MB of base64 inside zj_data.settings, and that row went down about 1,000
+// times a day (server rebuilds, realtime pushes, phone reads).
+test.describe('egress: the settings row carries logoUrl, never the logo bytes', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('an uploaded logo is left out of the cloud settings; stateRates too', async () => {
+    const r = await page.evaluate((png) => {
+      const src = { bname: 'Acme', logoData: png, logoUrl: 'https://x/branding/logo-1.png', logoHash: String(_hubHash(png)), stateRates: { OH: 1 } };
+      const out = _settingsForCloud(src);
+      return { keys: Object.keys(out).sort(), srcKept: src.logoData === png };
+    }, TINY_PNG);
+    expect(r.keys).toEqual(['bname', 'logoHash', 'logoUrl']);
+    expect(r.srcKept, 'S itself keeps the logo, only the upload drops it').toBe(true);
+  });
+
+  test('a logo storage does not hold yet still syncs in the row, and starts ONE upload', async () => {
+    const r = await page.evaluate((png) => {
+      const orig = window._ensureLogoUrl; let calls = 0;
+      window._ensureLogoUrl = async () => { calls++; return ''; };
+      try {
+        // Never uploaded, then a stale URL for an older logo: both must keep the bytes.
+        const a = _settingsForCloud({ logoData: png + 'A', logoUrl: '', logoHash: '' });
+        const b = _settingsForCloud({ logoData: png + 'A', logoUrl: 'https://x/old.png', logoHash: 'stale' });
+        const c = _settingsForCloud({ logoData: png + 'A' });
+        return { a: a.logoData === png + 'A', b: b.logoData === png + 'A', c: c.logoData === png + 'A', calls };
+      } finally { window._ensureLogoUrl = orig; }
+    }, TINY_PNG);
+    expect(r.a).toBe(true);
+    expect(r.b).toBe(true);
+    expect(r.c).toBe(true);
+    expect(r.calls, 'one attempt per logo per session, not one per save').toBe(1);
+  });
+
+  test('empty, null and a removed logo: nothing throws, a removal still syncs', async () => {
+    const r = await page.evaluate(() => ({
+      n: Object.keys(_settingsForCloud(null)).length,
+      u: Object.keys(_settingsForCloud(undefined)).length,
+      removed: _settingsForCloud({ logoData: '', logoUrl: '', logoHash: '' }),
+    }));
+    expect(r.n).toBe(0);
+    expect(r.u).toBe(0);
+    expect(r.removed.logoData, 'clearing the logo must reach the other devices').toBe('');
+  });
+
+  test('the only settings upload goes through _settingsForCloud', async () => {
+    const fs = require('fs');
+    const src = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    expect(src).toContain('const sForCloud=_settingsForCloud(S);');
+    expect(src.match(/settings:JSON\.stringify\(/g) || []).toHaveLength(1);
+  });
+
+  test('a device without the logo rebuilds it from logoUrl, once', async () => {
+    const r = await page.evaluate(async (png) => {
+      const realFetch = window.fetch; let hits = 0;
+      const blob = await (await realFetch(png)).blob();
+      window.fetch = async (u) => { hits++; return new Response(blob, { status: 200, headers: { 'Content-Type': 'image/png' } }); };
+      try {
+        S.logoData = ''; S.logoUrl = 'https://mock.supabase.co/storage/v1/object/public/gallery/u/branding/logo-9.png';
+        S.logoHash = String(_hubHash(png));
+        const p1 = _hydrateLogoFromUrl(); const p2 = _hydrateLogoFromUrl();
+        await p1;
+        const after = { data: S.logoData, hashOk: String(_hubHash(S.logoData)) === String(S.logoHash), second: p2 };
+        const again = _hydrateLogoFromUrl(); // already matches: no fetch
+        return { same: after.data === png, hashOk: after.hashOk, secondWasNull: after.second === null, againNull: again === null, hits };
+      } finally { window.fetch = realFetch; }
+    }, TINY_PNG);
+    expect(r.same).toBe(true);
+    expect(r.hashOk).toBe(true);
+    expect(r.secondWasNull, 'a second call while one is in flight does not fetch again').toBe(true);
+    expect(r.againNull).toBe(true);
+    expect(r.hits).toBe(1);
+  });
+
+  test('a failed fetch, a non-image and a logo changed mid-flight all leave S alone', async () => {
+    const r = await page.evaluate(async (png) => {
+      const realFetch = window.fetch; const out = {};
+      try {
+        S.logoData = ''; S.logoUrl = 'https://x/a.png'; S.logoHash = '123';
+        window.fetch = async () => { throw new Error('offline'); };
+        await _hydrateLogoFromUrl(); out.failed = S.logoData;
+        window.fetch = async () => new Response('nope', { status: 404 });
+        await _hydrateLogoFromUrl(); out.notFound = S.logoData;
+        window.fetch = async () => new Response(new Blob(['<html>'], { type: 'text/html' }), { status: 200 });
+        await _hydrateLogoFromUrl(); out.html = S.logoData;
+        const blob = await (await realFetch(png)).blob();
+        window.fetch = async () => { S.logoUrl = ''; return new Response(blob, { status: 200 }); };
+        await _hydrateLogoFromUrl(); out.removed = S.logoData;
+      } finally { window.fetch = realFetch; S.logoUrl = ''; S.logoHash = ''; }
+      return out;
+    }, TINY_PNG);
+    expect(r).toEqual({ failed: '', notFound: '', html: '', removed: '' });
+  });
+
+  test('settings arriving without logoData keep the logo this device already has', async () => {
+    const r = await page.evaluate((png) => {
+      S.logoData = png; S.logoUrl = 'https://x/l.png'; S.logoHash = String(_hubHash(png));
+      const ts = (S.settingsTs || 0) + 1000;
+      // As it comes off the wire: JSON never carries the key at all.
+      const incoming = { bname: 'Merged Co 2', logoUrl: S.logoUrl, logoHash: S.logoHash, settingsTs: ts + 1 };
+      _mergeIncomingSettings(incoming, 'test');
+      return { kept: S.logoData === png, name: S.bname };
+    }, TINY_PNG);
+    expect(r.kept).toBe(true);
+    expect(r.name).toBe('Merged Co 2');
+  });
+
+  test('no console errors from the settings logo suite', async () => {
+    assertNoErrors(page, 'settings logo');
+  });
+});
+
 test.describe('egress: photo compression, thumbnails, CDN rewrite', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
