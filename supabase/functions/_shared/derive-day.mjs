@@ -22,6 +22,7 @@
 // ever"). The phone's own rebuild still sweeps properly the next morning.
 
 import { geoDeriveDay, geoDeriveRows } from "./geo-derive.mjs";
+import { workHoursFromSettings } from "./terminate-wake.mjs";
 
 const CENTRAL = "America/Chicago";
 const TWO_HOURS = 2 * 3600_000;
@@ -461,18 +462,8 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     clockHistory.push({ day: centralDayKey(s), inMin, outMin: outMin > inMin ? outMin : 24 * 60 });
   }
 
-  let workHours = { start: "06:00", end: "20:00", days: [1, 2, 3, 4, 5, 6] };
-  try {
-    const raw = cfgRes?.data?.settings;
-    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
-    const w = s?.workHours;
-    const ok = (v) => /^\d{1,2}:\d{2}$/.test(String(v || ""));
-    if (w) workHours = {
-      start: ok(w.start) ? w.start : "06:00",
-      end: ok(w.end) ? w.end : "20:00",
-      days: Array.isArray(w.days) && w.days.length ? w.days.map(Number) : [1, 2, 3, 4, 5, 6],
-    };
-  } catch { /* defaults stand */ }
+  // One reading of the setting, shared with the terminate wake (terminate-wake.mjs).
+  const workHours = workHoursFromSettings(cfgRes?.data?.settings);
   // Rule 25: the account's Time off blocks (Settings, js/settings.js). Read
   // from the same settings row as the working hours, so the phone and the
   // server hold the same days.

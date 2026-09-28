@@ -1039,6 +1039,105 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [off], timeout: 30)
     }
 
+    // ── The close reaches the server before the process dies (2026-09-28) ──
+    // The row carries who closed it, and willTerminate waits a bounded time
+    // for its own upload. No flush config in the test process means nothing
+    // can ack, so these prove the bound and the shape, not the network.
+    func testTerminateRowCarriesStateBackgroundAgeAndMemory() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let row = TdGeoPlugin.terminateRow(state: "background", bgSince: now.addingTimeInterval(-12.4),
+                                           footprintMb: 212, now: now)
+        XCTAssertEqual(row["type"] as? String, "app-terminate")
+        XCTAssertEqual(row["state"] as? String, "background")
+        XCTAssertEqual(row["bgSec"] as? Double, 12)
+        XCTAssertEqual(row["mb"] as? Double, 212)
+        XCTAssertEqual(row["ts"] as? Double, 1_790_000_000_000)
+    }
+
+    func testTerminateRowWithNothingKnownStillHasTheFacts() {
+        let row = TdGeoPlugin.terminateRow(state: "active", bgSince: nil, footprintMb: nil, now: Date())
+        XCTAssertEqual(row["state"] as? String, "active")
+        XCTAssertNil(row["bgSec"], "never backgrounded is not zero seconds")
+        XCTAssertNil(row["mb"])
+        // A clock that ran backwards cannot produce a negative age.
+        let now = Date()
+        let back = TdGeoPlugin.terminateRow(state: "background", bgSince: now.addingTimeInterval(30), footprintMb: nil, now: now)
+        XCTAssertEqual(back["bgSec"] as? Double, 0)
+    }
+
+    func testMemoryFootprintIsReadable() {
+        let mb = TdGeoPlugin.footprintMb()
+        XCTAssertNotNil(mb)
+        XCTAssertGreaterThan(mb ?? 0, 0)
+    }
+
+    func testTerminateRecordsTheCloseOnlyWhenArmedAndHoldsNoLongerThanTheCap() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.load()
+        plugin.setLastBackgroundAtForTest(Date().addingTimeInterval(-5))
+        let before = bufferCount(ofType: "app-terminate")
+        let t0 = Date()
+        plugin.appTerminateForTest()
+        let held = Date().timeIntervalSince(t0)
+        XCTAssertGreaterThan(bufferCount(ofType: "app-terminate"), before)
+        XCTAssertLessThanOrEqual(held, TdGeoPlugin.terminateHoldSec + 0.5,
+                                 "iOS gives about five seconds; the hold must never eat them all")
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        let last = buf.last(where: { ($0["type"] as? String) == "app-terminate" })
+        XCTAssertNotNil(last?["state"] as? String)
+        XCTAssertNotNil(last?["bgSec"] as? Double)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        let quiet = bufferCount(ofType: "app-terminate")
+        plugin.appTerminateForTest()
+        XCTAssertEqual(bufferCount(ofType: "app-terminate"), quiet, "tracking off records nothing")
+    }
+
+    func testHoldReturnsAtOnceWhenEverythingIsAlreadyAcked() {
+        let d = UserDefaults.standard
+        d.set(41, forKey: plugin.recordSeqKeyForTest)
+        d.set(41, forKey: plugin.flushSeqMarkKeyForTest)
+        let t0 = Date()
+        XCTAssertTrue(plugin.holdForFlushForTest(maxSec: 2))
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 0.2)
+    }
+
+    func testHoldGivesUpAtTheCapWhenNothingAcks() {
+        let d = UserDefaults.standard
+        d.set(50, forKey: plugin.recordSeqKeyForTest)
+        d.set(49, forKey: plugin.flushSeqMarkKeyForTest)
+        let t0 = Date()
+        XCTAssertFalse(plugin.holdForFlushForTest(maxSec: 0.3))
+        let took = Date().timeIntervalSince(t0)
+        XCTAssertGreaterThanOrEqual(took, 0.3)
+        XCTAssertLessThan(took, 1.0)
+        // Junk caps are clamped, never an unbounded wait or a negative one.
+        let t1 = Date()
+        XCTAssertFalse(plugin.holdForFlushForTest(maxSec: -5))
+        XCTAssertLessThan(Date().timeIntervalSince(t1), 0.2)
+    }
+
+    func testHoldReturnsWhenTheAckLandsMidWait() {
+        let d = UserDefaults.standard
+        d.set(60, forKey: plugin.recordSeqKeyForTest)
+        d.set(59, forKey: plugin.flushSeqMarkKeyForTest)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { d.set(60, forKey: self.plugin.flushSeqMarkKeyForTest) }
+        let t0 = Date()
+        XCTAssertTrue(plugin.holdForFlushForTest(maxSec: 2))
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 1.0)
+    }
+
+    func testMemoryWarningRecordsOnlyWhenArmed() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.load()
+        let before = bufferCount(ofType: "memory-warning")
+        plugin.memoryWarningForTest()
+        XCTAssertGreaterThan(bufferCount(ofType: "memory-warning"), before)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        let quiet = bufferCount(ofType: "memory-warning")
+        plugin.memoryWarningForTest()
+        XCTAssertEqual(bufferCount(ofType: "memory-warning"), quiet)
+    }
+
     func testRelaunchRecordsALifecycleRowWhenArmed() {
         UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
         let before = bufferCount(ofType: "app-relaunch")
@@ -2676,6 +2775,18 @@ extension TdGeoPluginTests {
 
     // MARK: - The event flush: one upload per batch, and the background session's completion handoff (2026-09-02)
 
+    // The flush tests post to a closed local port, and the refusal lands on the
+    // session's own queue whenever it lands: on a loaded runner, fast enough to
+    // retire a batch before the test reads it (twoBatches, 2026-09-28). Parking
+    // both sessions' delegate queues holds every completion until the test has
+    // looked.
+    private func withUploadsParked(_ body: () -> Void) {
+        let queues = [plugin.liveSessionForTest.delegateQueue, plugin.flushSessionForTest.delegateQueue]
+        queues.forEach { $0.isSuspended = true }
+        defer { queues.forEach { $0.isSuspended = false } }
+        body()
+    }
+
     private func seedFlushConfig() {
         let d = UserDefaults.standard
         d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"], forKey: plugin.flushCfgKeyForTest)
@@ -2686,12 +2797,14 @@ extension TdGeoPluginTests {
 
     func testFlushNow_twiceForTheSameBatchStartsOneUpload() {
         seedFlushConfig()
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.count, 1, "the batch already on its way is not sent again")
-        XCTAssertEqual(inflight.values.first, 1_700_000_000_000.0)
+        withUploadsParked {
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.count, 1, "the batch already on its way is not sent again")
+            XCTAssertEqual(inflight.values.first, 1_700_000_000_000.0)
+        }
         UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
@@ -2699,14 +2812,16 @@ extension TdGeoPluginTests {
 
     func testFlushNow_aNewerEventIsANewBatchAndDoesUpload() {
         seedFlushConfig()
-        plugin.flushNowForTest()
-        var buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
-        buf.append(["type": "fix", "ts": 1_700_000_005_000.0, "lat": 39.0, "lng": -95.0])
-        UserDefaults.standard.set(buf, forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.count, 2)
-        XCTAssertEqual(Set(inflight.values), Set([1_700_000_000_000.0, 1_700_000_005_000.0]))
+        withUploadsParked {
+            plugin.flushNowForTest()
+            var buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            buf.append(["type": "fix", "ts": 1_700_000_005_000.0, "lat": 39.0, "lng": -95.0])
+            UserDefaults.standard.set(buf, forKey: plugin.bufferKeyForTest)
+            plugin.flushNowForTest()
+            let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.count, 2)
+            XCTAssertEqual(Set(inflight.values), Set([1_700_000_000_000.0, 1_700_000_005_000.0]))
+        }
         UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
@@ -3812,9 +3927,11 @@ extension TdGeoPluginTests {
         d.set(41.0, forKey: plugin.flushSeqMarkKeyForTest)
         d.set([["type": "motion", "ts": 1_790_172_067_000.0, "kind": "onFoot", "hist": true, "seq": 42.0]],
               forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        withUploadsParked {
+            plugin.flushNowForTest()
+            let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        }
         clearSeqState()
     }
 
@@ -3826,18 +3943,20 @@ extension TdGeoPluginTests {
         d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
               forKey: plugin.flushCfgKeyForTest)
         d.set([["type": "fix", "ts": 5_000.0, "seq": 1.0]], forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
-        buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
-        d.set(buf, forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
-        // And the same batch twice is still one upload.
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(again.count, 2)
+        withUploadsParked {
+            plugin.flushNowForTest()
+            var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
+            d.set(buf, forKey: plugin.bufferKeyForTest)
+            plugin.flushNowForTest()
+            let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
+            // And the same batch twice is still one upload.
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(again.count, 2)
+        }
         clearSeqState()
     }
 
