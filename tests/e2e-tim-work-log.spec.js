@@ -199,5 +199,37 @@ test.describe("Tim's work: every job walk is stored", () => {
     expect(r.rows[0]).toMatchObject({ kind: 'scope', surface: 'byo', ref: 'b10', made: ['Pull the heater'], scrubbed: true });
   });
 
+  test('queued rows go up when the network comes back or he returns to the app, not only on the next sentence', async () => {
+    await online();
+    const r = await page.evaluate(async () => {
+      const realFrom = _supa.from.bind(_supa);
+      const prevUser = window._supaUser;
+      _supaUser = _supaUser || { id: '00000000-0000-0000-0000-000000000001' };
+      let calls = 0; const sent = [];
+      _supa.from = (t) => t !== 'td_tim_asks' ? realFrom(t) : { insert: async (rows) => { calls++; sent.push(...rows); return { error: null }; } };
+      try {
+        // Nothing queued: nothing asked of the server.
+        localStorage.removeItem('td_tim_send');
+        window.dispatchEvent(new Event('online'));
+        await new Promise(res => setTimeout(res, 50));
+        const emptyCalls = calls;
+        // A walk queued earlier, with no new sentence since.
+        localStorage.setItem('td_tim_send', JSON.stringify([{ said: 'pull the heater', kind: 'scope', made: ['Pull the heater'], surface: 'tm', ref: 'q1', at: '2026-09-28T01:25:00.000Z' }]));
+        window.dispatchEvent(new Event('online'));
+        await new Promise(res => setTimeout(res, 100));
+        const afterOnline = JSON.parse(localStorage.getItem('td_tim_send') || '[]').length;
+        localStorage.setItem('td_tim_send', JSON.stringify([{ said: 'what am I owed', kind: 'ask', family: 'owed', at: '2026-09-28T01:26:00.000Z' }]));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(res => setTimeout(res, 100));
+        const afterVisible = JSON.parse(localStorage.getItem('td_tim_send') || '[]').length;
+        return { emptyCalls, afterOnline, afterVisible, kinds: sent.map(x => x.kind) };
+      } finally { _supa.from = realFrom; window._supaUser = prevUser; }
+    });
+    expect(r.emptyCalls).toBe(0);
+    expect(r.afterOnline).toBe(0);
+    expect(r.afterVisible).toBe(0);
+    expect(r.kinds).toEqual(['scope', 'ask']);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, "tim's work log"); });
 });

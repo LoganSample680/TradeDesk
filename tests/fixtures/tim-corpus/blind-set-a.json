@@ -1,0 +1,710 @@
+[
+  {
+    "id": "blindA-01",
+    "trade": "plumbing",
+    "said": "okay so um replace the water heater with a 50 gallon ream gas unit. 1850 installed. new expansion tank. and haul away the old one",
+    "expect": [
+      "Replace the water heater with a 50 gallon Rheem gas unit",
+      "New expansion tank",
+      "Haul away the old one"
+    ],
+    "heard": [
+      { "said": "ream", "means": "Rheem" }
+    ]
+  },
+  {
+    "id": "blindA-02",
+    "trade": "plumbing",
+    "said": "Swap the kitchen faucet for a Moen. Replace both angle stops. New supply lines.",
+    "expect": [
+      "Swap the kitchen faucet for a Moen",
+      "Replace both angle stops",
+      "New supply lines"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-03",
+    "trade": "plumbing",
+    "said": "alright so we're gonna cut out the cast iron stack in the basement about 8 feet of it and replace it with 4 inch PVC then tie into the existing cleanout and we're gonna put a new cleanout at the base of the stack figure 2400 for that",
+    "expect": [
+      "Cut out the cast iron stack in the basement about 8 feet of it",
+      "Replace it with 4 inch PVC",
+      "Tie into the existing cleanout",
+      "Put a new cleanout at the base of the stack"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-04",
+    "trade": "plumbing",
+    "said": "Pull the toilet in the hall bath. Replace the wax ring and. Flange. Reset the toilet. 275",
+    "expect": [
+      "Pull the toilet in the hall bath",
+      "Replace the wax ring and flange",
+      "Reset the toilet"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-05",
+    "trade": "plumbing",
+    "said": "install a new fister kitchen faucet with the sprayer. new in sink erator disposal half horsepower no wait make that 3/4 horsepower",
+    "expect": [
+      "Install a new Pfister kitchen faucet with the sprayer",
+      "New InSinkErator disposal 3/4 horsepower"
+    ],
+    "heard": [
+      { "said": "fister", "means": "Pfister" },
+      { "said": "in sink erator", "means": "InSinkErator" }
+    ]
+  },
+  {
+    "id": "blindA-06",
+    "trade": "plumbing",
+    "said": "Um we're gonna remove the old tank. Install a navy in tankless 199,000 BTU. Run a new 3/4 gas line from the meter. Vent it out the side wall with the concentric kit. 4200 for all of it",
+    "expect": [
+      "Remove the old tank",
+      "Install a Navien tankless 199,000 BTU",
+      "Run a new 3/4 gas line from the meter",
+      "Vent it out the side wall with the concentric kit"
+    ],
+    "heard": [
+      { "said": "navy in", "means": "Navien" }
+    ]
+  },
+  {
+    "id": "blindA-07",
+    "trade": "plumbing",
+    "said": "replace the sump pump with a zeller 1/3 horse. add a check valve. put in a battery backup for another 450",
+    "expect": [
+      "Replace the sump pump with a Zoeller 1/3 horse",
+      "Add a check valve",
+      "Put in a battery backup"
+    ],
+    "heard": [
+      { "said": "zeller", "means": "Zoeller" }
+    ]
+  },
+  {
+    "id": "blindA-08",
+    "trade": "plumbing",
+    "said": "snake the main line from the cleanout. camera the line after",
+    "expect": [
+      "Snake the main line from the cleanout",
+      "Camera the line after"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-09",
+    "trade": "plumbing",
+    "said": "repipe the whole house in PEX about 14 fixtures scratch that 16 fixtures you pon or with the expansion fittings. patch the drywall openings. 7800",
+    "expect": [
+      "Repipe the whole house in PEX about 16 fixtures Uponor with the expansion fittings",
+      "Patch the drywall openings"
+    ],
+    "heard": [
+      { "said": "you pon or", "means": "Uponor" }
+    ]
+  },
+  {
+    "id": "blindA-10",
+    "trade": "plumbing",
+    "said": "Install a water softener. Flick 5600 valve 48,000 grain. Bypass loop. Drain line to the laundry standpipe",
+    "expect": [
+      "Install a water softener Fleck 5600 valve 48,000 grain",
+      "Bypass loop",
+      "Drain line to the laundry standpipe"
+    ],
+    "heard": [
+      { "said": "Flick", "means": "Fleck" }
+    ]
+  },
+  {
+    "id": "blindA-11",
+    "trade": "plumbing",
+    "said": "the shower valve is dripping. replace the shower valve with a Delta Monitor pressure balance valve. new trim kit. 650 installed",
+    "expect": [
+      "Replace the shower valve with a Delta Monitor pressure balance valve",
+      "New trim kit"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-12",
+    "trade": "plumbing",
+    "said": "install 2 frost free hose bibs wood ford model 17 on the back wall 225 each and uh move the washer box over about 3 feet",
+    "expect": [
+      "Install 2 frost free hose bibs Woodford model 17 on the back wall",
+      "Move the washer box over about 3 feet"
+    ],
+    "heard": [
+      { "said": "wood ford", "means": "Woodford" }
+    ]
+  },
+  {
+    "id": "blindA-13",
+    "trade": "hvac",
+    "said": "replace the furnace with a die kin 80 percent 60,000 BTU. new filter rack. new Honeywell T6 thermostat",
+    "expect": [
+      "Replace the furnace with a Daikin 80 percent 60,000 BTU",
+      "New filter rack",
+      "New Honeywell T6 thermostat"
+    ],
+    "heard": [
+      { "said": "die kin", "means": "Daikin" }
+    ]
+  },
+  {
+    "id": "blindA-14",
+    "trade": "hvac",
+    "said": "Okay so we're gonna change out the condenser 3 ton Goodman 14 SEER no make that 15 SEER. New line set. New pad. 5200",
+    "expect": [
+      "Change out the condenser 3 ton Goodman 15 SEER",
+      "New line set",
+      "New pad"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-15",
+    "trade": "hvac",
+    "said": "clean the coils on the outdoor unit check the refrigerant charge replace the capacitor swap the contactor too",
+    "expect": [
+      "Clean the coils on the outdoor unit",
+      "Check the refrigerant charge",
+      "Replace the capacitor",
+      "Swap the contactor too"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-16",
+    "trade": "hvac",
+    "said": "Install a 2 zone Mitsubishi mini split with heads in the bonus room and the master. Run the line set up the side of the house in line hide. New disconnect and whip",
+    "expect": [
+      "Install a 2 zone Mitsubishi mini split with heads in the bonus room and the master",
+      "Run the line set up the side of the house in line hide",
+      "New disconnect and whip"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-17",
+    "trade": "hvac",
+    "said": "alright so the return in the hallway is undersized we're gonna cut in a second return in the master bedroom 14 by 20 grille and uh run 12 inch flex back to the plenum and then seal all the joints in the attic with mastic",
+    "expect": [
+      "Cut in a second return in the master bedroom 14 by 20 grille",
+      "Run 12 inch flex back to the plenum",
+      "Seal all the joints in the attic with mastic"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-18",
+    "trade": "hvac",
+    "said": "replace the air handler with a train 3 ton variable speed. new drain pan. float switch on the secondary. 3900 installed",
+    "expect": [
+      "Replace the air handler with a Trane 3 ton variable speed",
+      "New drain pan",
+      "Float switch on the secondary"
+    ],
+    "heard": [
+      { "said": "train", "means": "Trane" }
+    ]
+  },
+  {
+    "id": "blindA-19",
+    "trade": "hvac",
+    "said": "install an april air 600 humidifier on the supply plenum, tie into the water line with a saddle valve, another 380",
+    "expect": [
+      "Install an Aprilaire 600 humidifier on the supply plenum",
+      "Tie into the water line with a saddle valve"
+    ],
+    "heard": [
+      { "said": "april air", "means": "Aprilaire" }
+    ]
+  },
+  {
+    "id": "blindA-20",
+    "trade": "hvac",
+    "said": "swap the old thermostat for an ecobee premium. add a C wire adapter. 275",
+    "expect": [
+      "Swap the old thermostat for an ecobee premium",
+      "Add a C wire adapter"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-21",
+    "trade": "hvac",
+    "said": "We're gonna put in a 4 ton heat pump. Scratch that. 3 1/2 ton. Heat pump with a 10 kW heat strip. New pad. And. A new disconnect",
+    "expect": [
+      "Put in a 3 1/2 ton heat pump with a 10 kW heat strip",
+      "New pad",
+      "New disconnect"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-22",
+    "trade": "hvac",
+    "said": "replace the gas furnace with a rude 96 percent 2 stage, new PVC intake and exhaust out the side wall, pull a permit",
+    "expect": [
+      "Replace the gas furnace with a Ruud 96 percent 2 stage",
+      "New PVC intake and exhaust out the side wall",
+      "Pull a permit"
+    ],
+    "heard": [
+      { "said": "rude", "means": "Ruud" }
+    ]
+  },
+  {
+    "id": "blindA-23",
+    "trade": "electrical",
+    "said": "upgrade to a 200 amp see mens panel. new meter base. drive 2 new ground rods. 3400",
+    "expect": [
+      "Upgrade to a 200 amp Siemens panel",
+      "New meter base",
+      "Drive 2 new ground rods"
+    ],
+    "heard": [
+      { "said": "see mens", "means": "Siemens" }
+    ]
+  },
+  {
+    "id": "blindA-24",
+    "trade": "electrical",
+    "said": "Install 6 recessed lights in the living room 6 inch Halo LED wafers. 85 a can. Put in a lou tron Diva dimmer for them",
+    "expect": [
+      "Install 6 recessed lights in the living room 6 inch Halo LED wafers",
+      "Put in a Lutron Diva dimmer for them"
+    ],
+    "heard": [
+      { "said": "lou tron", "means": "Lutron" }
+    ]
+  },
+  {
+    "id": "blindA-25",
+    "trade": "electrical",
+    "said": "add a 20 amp dedicated circuit for the microwave replace the 4 kitchen outlets with GFCI and add 2 more outlets on the island",
+    "expect": [
+      "Add a 20 amp dedicated circuit for the microwave",
+      "Replace the 4 kitchen outlets with GFCI",
+      "Add 2 more outlets on the island"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-26",
+    "trade": "electrical",
+    "said": "okay so um install a 50 amp circuit for the EV charger in the garage run 6 gauge about 40 feet mount the ChargePoint Home Flex 950 for everything",
+    "expect": [
+      "Install a 50 amp circuit for the EV charger in the garage",
+      "Run 6 gauge about 40 feet",
+      "Mount the ChargePoint Home Flex"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-27",
+    "trade": "electrical",
+    "said": "Replace the 2 exterior receptacles with hubble weather resistant GFCIs. In use covers on both",
+    "expect": [
+      "Replace the 2 exterior receptacles with Hubbell weather resistant GFCIs",
+      "In use covers on both"
+    ],
+    "heard": [
+      { "said": "hubble", "means": "Hubbell" }
+    ]
+  },
+  {
+    "id": "blindA-28",
+    "trade": "electrical",
+    "said": "install a gen rack 22 kW standby generator, install a 200 amp automatic transfer switch, pour a pad no wait set it on the composite pad that comes with it, gas line is by the plumber not us",
+    "expect": [
+      "Install a Generac 22 kW standby generator",
+      "Install a 200 amp automatic transfer switch",
+      "Set it on the composite pad that comes with it"
+    ],
+    "heard": [
+      { "said": "gen rack", "means": "Generac" }
+    ]
+  },
+  {
+    "id": "blindA-29",
+    "trade": "electrical",
+    "said": "hang a ceiling fan in the master, there's already a box but it's not fan rated so swap the box for a fan rated brace box. 225",
+    "expect": [
+      "Hang a ceiling fan in the master",
+      "Swap the box for a fan rated brace box"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-30",
+    "trade": "electrical",
+    "said": "Put a whole house eat on surge protector. In the panel. 325",
+    "expect": [
+      "Put a whole house Eaton surge protector in the panel"
+    ],
+    "heard": [
+      { "said": "eat on", "means": "Eaton" }
+    ]
+  },
+  {
+    "id": "blindA-31",
+    "trade": "electrical",
+    "said": "alright so this is an old house there's knob and tube in the upstairs bedrooms we're gonna rewire the 3 upstairs bedrooms with 12/2 Romex fish it through the walls where we can cut access holes where we can't fish and uh patch the holes after but no paint and then add AFCI breakers for those circuits",
+    "expect": [
+      "Rewire the 3 upstairs bedrooms with 12/2 Romex",
+      "Fish it through the walls where we can",
+      "Cut access holes where we can't fish",
+      "Patch the holes after but no paint",
+      "Add AFCI breakers for those circuits"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-32",
+    "trade": "electrical",
+    "said": "change all 22 switches in the house to level ton decora. change the 38 outlets too, 6 bucks each",
+    "expect": [
+      "Change all 22 switches in the house to Leviton decora",
+      "Change the 38 outlets too"
+    ],
+    "heard": [
+      { "said": "level ton", "means": "Leviton" }
+    ]
+  },
+  {
+    "id": "blindA-33",
+    "trade": "electrical",
+    "said": "install a brone 80 CFM exhaust fan in the hall bath. vent it out the roof. With a new roof jack. wire it to the existing switch",
+    "expect": [
+      "Install a Broan 80 CFM exhaust fan in the hall bath",
+      "Vent it out the roof with a new roof jack",
+      "Wire it to the existing switch"
+    ],
+    "heard": [
+      { "said": "brone", "means": "Broan" }
+    ]
+  },
+  {
+    "id": "blindA-34",
+    "trade": "electrical",
+    "said": "trace the dead outlets in the garage reset or replace the GFCI",
+    "expect": [
+      "Trace the dead outlets in the garage",
+      "Reset or replace the GFCI"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-35",
+    "trade": "roofing",
+    "said": "tear off 2 layers down to the deck. replace any bad decking at 85 a sheet. ice and water shield at the eaves and valleys. synthetic underlayment. malarky vista shingles in weathered wood",
+    "expect": [
+      "Tear off 2 layers down to the deck",
+      "Replace any bad decking",
+      "Ice and water shield at the eaves and valleys",
+      "Synthetic underlayment",
+      "Malarkey vista shingles in weathered wood"
+    ],
+    "heard": [
+      { "said": "malarky", "means": "Malarkey" }
+    ]
+  },
+  {
+    "id": "blindA-36",
+    "trade": "roofing",
+    "said": "okay so we're gonna tear off the garage roof about 6 squares put down new drip edge and then architectural shingles GAF Timberline HDZ charcoal new ridge vent the whole length 3200 for the garage",
+    "expect": [
+      "Tear off the garage roof about 6 squares",
+      "Put down new drip edge",
+      "Architectural shingles GAF Timberline HDZ charcoal",
+      "New ridge vent the whole length"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-37",
+    "trade": "roofing",
+    "said": "Replace the flashing around the chimney with new step and counter flashing. Reseal the pipe boots. No wait. Replace the 3 pipe boots. 650",
+    "expect": [
+      "Replace the flashing around the chimney with new step and counter flashing",
+      "Replace the 3 pipe boots"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-38",
+    "trade": "roofing",
+    "said": "reroof the whole house 28 squares certain teed landmark in moire black. new starter strip and hip and ridge. 16,500",
+    "expect": [
+      "Reroof the whole house 28 squares CertainTeed landmark in moire black",
+      "New starter strip and hip and ridge"
+    ],
+    "heard": [
+      { "said": "certain teed", "means": "CertainTeed" }
+    ]
+  },
+  {
+    "id": "blindA-39",
+    "trade": "roofing",
+    "said": "Tear off the flat section over the porch. Install. Firestone TPO 60 mil. Fully adhered. New termination bar. 2800",
+    "expect": [
+      "Tear off the flat section over the porch",
+      "Install Firestone TPO 60 mil fully adhered",
+      "New termination bar"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-40",
+    "trade": "roofing",
+    "said": "put on 5 inch seamless gutters 140 feet. 6 downspouts. leaf guards another 1100",
+    "expect": [
+      "Put on 5 inch seamless gutters 140 feet",
+      "6 downspouts",
+      "Leaf guards"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-41",
+    "trade": "roofing",
+    "said": "um so there's a leak over the kitchen. pull up the shingles around the vent, replace the underlayment there, reshingle to match, 450",
+    "expect": [
+      "Pull up the shingles around the vent",
+      "Replace the underlayment there",
+      "Reshingle to match"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-42",
+    "trade": "roofing",
+    "said": "install 26 gauge standing seam in charcoal no wait make that bronze over the back porch 4 squares. add snow guards along the eave",
+    "expect": [
+      "Install 26 gauge standing seam in bronze over the back porch 4 squares",
+      "Add snow guards along the eave"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-43",
+    "trade": "painting",
+    "said": "paint the living room and dining room walls val spar signature eggshell 2 coats. ceilings flat white. trim semi gloss",
+    "expect": [
+      "Paint the living room and dining room walls Valspar signature eggshell 2 coats",
+      "Ceilings flat white",
+      "Trim semi gloss"
+    ],
+    "heard": [
+      { "said": "val spar", "means": "Valspar" }
+    ]
+  },
+  {
+    "id": "blindA-44",
+    "trade": "painting",
+    "said": "alright so exterior we're gonna pressure wash the whole house scrape and sand the loose paint on the south side caulk all the windows and trim prime the bare wood then 2 coats of Sherwin Williams Duration on the body and satin on the trim same color",
+    "expect": [
+      "Pressure wash the whole house",
+      "Scrape and sand the loose paint on the south side",
+      "Caulk all the windows and trim",
+      "Prime the bare wood",
+      "2 coats of Sherwin Williams Duration on the body",
+      "Satin on the trim same color"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-45",
+    "trade": "painting",
+    "said": "Paint the kitchen cabinets. 22 doors 9 drawers. Degrease. Scuff sand. Bonding primer. Ben Moore Advance in white dove. 4800",
+    "expect": [
+      "Paint the kitchen cabinets 22 doors 9 drawers",
+      "Degrease",
+      "Scuff sand",
+      "Bonding primer",
+      "Ben Moore Advance in white dove"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-46",
+    "trade": "painting",
+    "said": "grind the garage floor first. 2 coats of bear epoxy. broadcast the flakes. 950",
+    "expect": [
+      "Grind the garage floor first",
+      "2 coats of Behr epoxy",
+      "Broadcast the flakes"
+    ],
+    "heard": [
+      { "said": "bear", "means": "Behr" }
+    ]
+  },
+  {
+    "id": "blindA-47",
+    "trade": "painting",
+    "said": "power wash the deck. sand the rails. stain with cab it semi transparent. no wait. solid. 2 coats",
+    "expect": [
+      "Power wash the deck",
+      "Sand the rails",
+      "Stain with Cabot solid 2 coats"
+    ],
+    "heard": [
+      { "said": "cab it", "means": "Cabot" }
+    ]
+  },
+  {
+    "id": "blindA-48",
+    "trade": "painting",
+    "said": "patch the 3 holes in the hallway, texture to match orange peel, prime and paint the whole hallway wall to wall, 375",
+    "expect": [
+      "Patch the 3 holes in the hallway",
+      "Texture to match orange peel",
+      "Prime and paint the whole hallway wall to wall"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-49",
+    "trade": "painting",
+    "said": "spot prime the water stains on the ceiling with kills. then roll the whole ceiling. flat. 2 coats",
+    "expect": [
+      "Spot prime the water stains on the ceiling with Kilz",
+      "Roll the whole ceiling flat 2 coats"
+    ],
+    "heard": [
+      { "said": "kills", "means": "Kilz" }
+    ]
+  },
+  {
+    "id": "blindA-50",
+    "trade": "painting",
+    "said": "paint 6 interior doors both sides. and the jambs",
+    "expect": [
+      "Paint 6 interior doors both sides and the jambs"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-51",
+    "trade": "painting",
+    "said": "okay um paint the master bedroom walls 2 coats agreeable gray. the ceiling is fine leave it. paint the closet same color for another 80. 650 for the room",
+    "expect": [
+      "Paint the master bedroom walls 2 coats agreeable gray",
+      "Paint the closet same color"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-52",
+    "trade": "painting",
+    "said": "Replace the rotted fascia board on the front 16 feet. Prime and paint to match. Sherwin. Emerald. 700",
+    "expect": [
+      "Replace the rotted fascia board on the front 16 feet",
+      "Prime and paint to match Sherwin Emerald"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-53",
+    "trade": "landscaping",
+    "said": "mulch all the beds 12 yards double shredded brown. edge the beds. pull the weeds first",
+    "expect": [
+      "Mulch all the beds 12 yards double shredded brown",
+      "Edge the beds",
+      "Pull the weeds first"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-54",
+    "trade": "landscaping",
+    "said": "Install a hunter pro see controller. 6 zones. Replace 4 broken heads with Hunter MP rotators. 850",
+    "expect": [
+      "Install a Hunter Pro-C controller 6 zones",
+      "Replace 4 broken heads with Hunter MP rotators"
+    ],
+    "heard": [
+      { "said": "pro see", "means": "Pro-C" }
+    ]
+  },
+  {
+    "id": "blindA-55",
+    "trade": "landscaping",
+    "said": "okay so we're gonna tear out the 5 old shrubs along the front grind the stumps and then plant 5 boxwoods 3 gallon and then put down fabric and river rock about 3 tons 2200 for all of it",
+    "expect": [
+      "Tear out the 5 old shrubs along the front",
+      "Grind the stumps",
+      "Plant 5 boxwoods 3 gallon",
+      "Put down fabric and river rock about 3 tons"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-56",
+    "trade": "landscaping",
+    "said": "kill the existing lawn. grade. lay 2500 square feet of zoysia sod no wait bermuda. roll it",
+    "expect": [
+      "Kill the existing lawn",
+      "Grade",
+      "Lay 2500 square feet of bermuda sod",
+      "Roll it"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-57",
+    "trade": "landscaping",
+    "said": "build a 12 by 16 bell guard paver patio. 6 inches of base. polymeric sand. 5400",
+    "expect": [
+      "Build a 12 by 16 Belgard paver patio",
+      "6 inches of base",
+      "Polymeric sand"
+    ],
+    "heard": [
+      { "said": "bell guard", "means": "Belgard" }
+    ]
+  },
+  {
+    "id": "blindA-58",
+    "trade": "landscaping",
+    "said": "put in a versa lock retaining wall 40 feet long 3 feet high. drain tile behind it. backfill with gravel",
+    "expect": [
+      "Put in a Versa-Lok retaining wall 40 feet long 3 feet high",
+      "Drain tile behind it",
+      "Backfill with gravel"
+    ],
+    "heard": [
+      { "said": "versa lock", "means": "Versa-Lok" }
+    ]
+  },
+  {
+    "id": "blindA-59",
+    "trade": "landscaping",
+    "said": "trim the 2 oaks off the roof. haul the brush. grind the stump by the driveway, another 250",
+    "expect": [
+      "Trim the 2 oaks off the roof",
+      "Haul the brush",
+      "Grind the stump by the driveway"
+    ],
+    "heard": []
+  },
+  {
+    "id": "blindA-60",
+    "trade": "landscaping",
+    "said": "core aerate the front and back. overseed with tall fescue. fertilize. put down lime",
+    "expect": [
+      "Core aerate the front and back",
+      "Overseed with tall fescue",
+      "Fertilize",
+      "Put down lime"
+    ],
+    "heard": []
+  }
+]
