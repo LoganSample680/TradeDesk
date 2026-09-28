@@ -19,6 +19,11 @@
  *     floor in that file.
  * When Tim gets better, add the newly passing ids and raise the floor in the
  * same commit. Never lower either to make a change pass.
+ *
+ * tests/fixtures/tim-holdout/ is deliberately NOT read here. It is 60 walks
+ * Tim has never been tuned against (flooring, concrete, fencing, siding...),
+ * kept aside to measure him honestly. Fold it in only when a fresh holdout
+ * replaces it, or it stops measuring anything.
  */
 const fs = require('fs');
 const path = require('path');
@@ -50,7 +55,7 @@ test.describe('Tim against the trade corpus', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('the corpus is all there and well formed', async () => {
-    expect(WALKS.length).toBeGreaterThanOrEqual(240);
+    expect(WALKS.length).toBeGreaterThanOrEqual(300);
     const ids = new Set(WALKS.map(w => w.id));
     expect(ids.size).toBe(WALKS.length);
     for (const w of WALKS) {
