@@ -2038,6 +2038,9 @@ function _geiScopeBuild(containerId){
   if(typeof timScopeBuild!=='function')return;
   const rejected=(typeof timDropped==='function')?[]:[];
   const built=timScopeBuild(said,{rejected,trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
+  // Every job walk and what Tim made of it, so a bad split is visible to the
+  // owner instead of only to the homeowner (js/tim-log.js timLogScope).
+  if(typeof timLogScope==='function')timLogScope(said,built.steps,_geiIsTM?'tm':'est',_geiEditBidId);
   if(!built.steps.length){
     if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
     return;
@@ -2937,6 +2940,7 @@ function _byoSayBuild(){
   if(!said)return;
   if(typeof timScopeBuild!=='function')return;
   const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
+  if(typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
   if(!built.steps.length){if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;}
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
   built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());}});
@@ -7334,6 +7338,13 @@ function saveGenericEstimate(draft,opts){
   const _byoTermsEl=document.getElementById('byo-custom-terms');
   const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
   const _byoSecsSave=[..._byoCustomSections];
+  // What went out, against what Tim made (js/tim-log.js timLogKept). Only a
+  // real save: a draft is still being fixed, and the fixing is the lesson.
+  if(!draft&&_geiEditBidId!=null&&typeof timLogKept==='function'){
+    timLogKept(_geiEditBidId,_geiIsFreeForm
+      ?_byoItems.filter(it=>it&&it.on!==false&&!it._rrp&&!it._supply).map(it=>it.label)
+      :_geiScopeChips,_geiIsTM?'tm':_geiIsFreeForm?'byo':'est');
+  }
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){

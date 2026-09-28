@@ -317,6 +317,86 @@ function timLearnFrom(said,outcome){
   }catch(_e){return null;}
 }
 
+// ── HIS JOB WALK, WHAT TIM MADE OF IT, WHAT WENT OUT (owner 2026-09-28) ─────
+//
+// "Tim should store so I can see when he's fucked up or need to add
+// capabilities." The dock above was logged; the place Tim does his real work,
+// a dictated job walk turned into scope lines, was not. Blake Sample's
+// proposal went out with "Install where" on it and nobody could see what he
+// had actually said.
+//
+// Two rows, same queue, same scrub:
+//   'scope': the whole dictation and the lines Tim built from it.
+//   'kept':  the lines the proposal was saved with. The difference between the
+//            two is every line he had to fix by hand, which is Tim's backlog.
+// Addresses come out as well as names here: a job walk names the house far
+// more often than a question to the dock does.
+const _TIM_SAID_MAX=3000,_TIM_LINES_MAX=60;
+function _timScrubAll(said){
+  let t=_timScrub(said);
+  try{
+    const rows=(typeof clients!=='undefined'&&Array.isArray(clients))?clients:[];
+    const addrs=[];
+    rows.forEach(c=>{
+      const a=String((c&&(c.addr||c.address))||'').trim();
+      if(a.length<6)return;
+      addrs.push(a);
+      const street=a.split(',')[0].trim();
+      if(street.length>=6&&street!==a)addrs.push(street);
+    });
+    addrs.sort((a,b)=>b.length-a.length).forEach(a=>{
+      const esc=a.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      t=t.replace(new RegExp(esc,'gi'),'<address>');
+    });
+  }catch(_e){}
+  return t;
+}
+function _timLines(lines){
+  return (Array.isArray(lines)?lines:[]).map(l=>(l&&typeof l==='object')?(l.text||l.label||l.desc||''):l)
+    .map(l=>_timScrubAll(String(l==null?'':l)).trim().slice(0,200)).filter(Boolean).slice(0,_TIM_LINES_MAX);
+}
+function _timQueueRich(row){
+  const q=_timSendQueue();
+  q.push(row);
+  _timSendWrite(q);
+  timLearnFlush();
+  return row;
+}
+// The proposals Tim built a scope for this session. A 'kept' row is only worth
+// writing for one of these: a proposal he typed by hand has no Tim in it.
+const _timScopeRefs=new Set();
+function timLogScope(said,lines,surface,ref){
+  try{
+    const t=String(said||'').trim();
+    if(!t)return null;
+    if(ref!=null&&ref!=='')_timScopeRefs.add(String(ref).slice(0,64));
+    return _timQueueRich({
+      said:_timScrubAll(t).slice(0,_TIM_SAID_MAX),kind:'scope',family:null,
+      page:(()=>{try{return (document.querySelector('.pg.active')||{}).id||'';}catch(_e){return '';}})(),
+      made:_timLines(lines),surface:String(surface||'').slice(0,12)||null,
+      ref:ref==null||ref===''?null:String(ref).slice(0,64),at:new Date().toISOString(),
+    });
+  }catch(_e){return null;}
+}
+// Once per proposal per session: a man who saves six times has still only
+// sent one scope, and six identical rows would bury the one worth reading.
+const _timKeptSent=new Set();
+function timLogKept(ref,lines,surface){
+  try{
+    const r=ref==null?'':String(ref).slice(0,64);
+    if(!r||!_timScopeRefs.has(r))return null;
+    const made=_timLines(lines);
+    const key=r+'|'+made.join('\n');
+    if(_timKeptSent.has(key))return null;
+    _timKeptSent.add(key);
+    return _timQueueRich({
+      said:'',kind:'kept',family:null,
+      page:(()=>{try{return (document.querySelector('.pg.active')||{}).id||'';}catch(_e){return '';}})(),
+      made,surface:String(surface||'').slice(0,12)||null,ref:r,at:new Date().toISOString(),
+    });
+  }catch(_e){return null;}
+}
+
 let _timFlushing=false;
 async function timLearnFlush(){
   if(_timFlushing)return 0;
@@ -335,18 +415,30 @@ async function timLearnFlush(){
   try{
     const dev=(()=>{try{return (typeof _deviceId!=='undefined')?_deviceId:null;}catch(_e){return null;}})();
     const ver=(()=>{try{return (typeof APP_VERSION!=='undefined')?APP_VERSION:null;}catch(_e){return null;}})();
-    const send=q.slice(0,50);
-    const {error}=await supa.from('td_tim_asks').insert(send.map(r=>({
-      user_id:uid,device_id:dev,said:r.said,kind:r.kind,
-      family:r.family,page:r.page,app_version:ver,scrubbed:true,
-      created_at:r.at,
-    })));
-    if(error)return 0;
+    // Two batches. The job-walk rows carry columns an older database may not
+    // have yet (20261050); if that insert is refused they wait in the queue,
+    // and the plain rows behind them still go.
+    const rich=r=>r&&(r.made!==undefined||r.ref!==undefined||r.surface!==undefined);
+    const plainIdx=[],richIdx=[];
+    q.forEach((r,i)=>{if(rich(r)){if(richIdx.length<20)richIdx.push(i);}else if(plainIdx.length<50)plainIdx.push(i);});
+    const base=r=>({user_id:uid,device_id:dev,said:r.said,kind:r.kind,
+      family:r.family,page:r.page,app_version:ver,scrubbed:true,created_at:r.at});
+    const sent=new Set();
+    if(plainIdx.length){
+      const {error}=await supa.from('td_tim_asks').insert(plainIdx.map(i=>base(q[i])));
+      if(!error)plainIdx.forEach(i=>sent.add(i));
+    }
+    if(richIdx.length){
+      const {error}=await supa.from('td_tim_asks').insert(richIdx.map(i=>Object.assign(base(q[i]),
+        {made:q[i].made||null,ref:q[i].ref||null,surface:q[i].surface||null})));
+      if(!error)richIdx.forEach(i=>sent.add(i));
+    }
+    if(!sent.size)return 0;
     // Only what actually went is dropped. Anything added while this was in
-    // flight is still in there.
+    // flight is after the snapshot and is still in there.
     const now=_timSendQueue();
-    _timSendWrite(now.slice(send.length));
-    return send.length;
+    _timSendWrite(now.slice(0,q.length).filter((_r,i)=>!sent.has(i)).concat(now.slice(q.length)));
+    return sent.size;
   }catch(_e){return 0;}
   finally{_timFlushing=false;}
 }
