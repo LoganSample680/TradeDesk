@@ -610,6 +610,59 @@ test.describe('month bars: the page', () => {
     expect(r.opens[3]).toContain('2026-08-23');
   });
 
+  // Owner 2026-09-27, on a phone after the text grew (#98): the week that
+  // crossed into the month wrapped its label to two lines and its hours sat
+  // lower than every other week's. A label that wraps must not move them.
+  test('every week\'s hours share one line, even when a label wraps', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const cols = [...document.querySelectorAll('.tl-drill-body .tl-wbar-col')];
+      const top = c => Math.round(c.querySelector('.tl-wbar-amt').getBoundingClientRect().top);
+      const before = cols.map(top);
+      // Force the worst case: a label that wraps to several lines.
+      const dow = cols[0].querySelector('.tl-wbar-dow');
+      dow.firstChild.textContent = '12/28\u20131/3 12/28\u20131/3 12/28';
+      const lines = Math.round(dow.getBoundingClientRect().height / parseFloat(getComputedStyle(dow).lineHeight));
+      const after = cols.map(top);
+      return { before, after, lines };
+    });
+    expect(new Set(r.before).size, 'one baseline for the hours').toBe(1);
+    expect(r.lines, 'the forced label really did wrap').toBeGreaterThanOrEqual(2);
+    // The row may drop together to make room; what must never happen is one
+    // week's hours sitting lower than the rest.
+    expect(new Set(r.after).size, 'a wrapped label keeps every week\'s hours on one line').toBe(1);
+  });
+
+  // Owner 2026-09-27: "why do the bar graphs glitch out quickly 3 times when
+  // going back into the app?" Resume repaints this screen several times as
+  // data lands, and each repaint replayed the bar rise and the last drill's
+  // zoom. Motion now belongs to the tap, never to a background repaint.
+  test('bars grow on a tap, and a background repaint swaps numbers without replaying it', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const body = () => document.querySelector('.tl-drill-body');
+      const anim = () => getComputedStyle(document.querySelector('.tl-drill-body .tl-wbar-stack')).animationName;
+      _tlDrillTo('week', '2026-08-23');
+      const tapCls = body().className, tapAnim = anim();
+      // What coming back into the app does: repaints nobody tapped for.
+      await renderTimeLog({ cached: true });
+      const bg1 = body().className, bgAnim = anim();
+      await renderTimeLog({ cached: true });
+      await renderTimeLog();
+      const bg3 = body().className;
+      // The next thing he actually does animates again.
+      _tlDrillTo('month', '2026-08');
+      const upCls = body().className;
+      return { tapCls, tapAnim, bg1, bgAnim, bg3, upCls };
+    });
+    expect(r.tapCls).toContain('tl-mbars-down');
+    expect(r.tapAnim).toBe('td-bar-rise');
+    expect(r.bg1).toContain('tl-still');
+    expect(r.bg1).not.toContain('tl-mbars-');
+    expect(r.bgAnim, 'no bar rise on a repaint').toBe('none');
+    expect(r.bg3).toContain('tl-still');
+    expect(r.upCls).toContain('tl-mbars-up');
+    expect(r.upCls).not.toContain('tl-still');
+  });
+
   // Design handoff 2026-09-04: "a month column must derive its totals from
   // the weeks it drills into, never carry its own roll-up." It already does
   // (_tlMonthBarsHtml folds each week's rows), and this pins it: the number
@@ -632,7 +685,10 @@ test.describe('month bars: the page', () => {
     const r = await page.evaluate(() => [
       _tlWeekRangeLabel('2026-08-23'), _tlWeekRangeLabel('2026-08-30'), _tlWeekRangeLabel('2026-02-01'),
       _tlWeekRangeLabel('junk'), _tlWeekRangeLabel(''), _tlWeekRangeLabel(null)]);
-    expect(r).toEqual(['23\u201329', 'Aug 30\u2013Sep 5', '1\u20137', 'junk', '', '']);
+    // Across a month the numbers name both months in one line's width (owner
+    // 2026-09-27: "Aug 30–Sep 5" wrapped once the text grew and dropped that
+    // week's hours below the rest).
+    expect(r).toEqual(['23\u201329', '8/30\u20139/5', '1\u20137', 'junk', '', '']);
   });
 
   test('the unanswered hole is flagged at month zoom too', async ({ page }) => {
