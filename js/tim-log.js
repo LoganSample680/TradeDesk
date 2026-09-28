@@ -635,3 +635,19 @@ function _timLogWipe(){
   timLogClear();
   openTimLog();
 }
+
+// ── What was queued goes up without waiting for the next sentence ───────────
+// The queue only flushed when a NEW sentence was logged, so a job walk said on
+// a driveway with no bars (or on a build whose database was a step behind)
+// sat on the phone until the next time he spoke to Tim. Found 2026-09-28:
+// Blake Sample's walk was on the phone and nowhere else. Try again when the
+// app starts, when the network comes back and when he returns to the app.
+// Cheap when there is nothing queued: no request at all.
+function _timFlushSoon(){
+  try{if(_timSendQueue().length)timLearnFlush();}catch(_e){}
+}
+if(typeof window!=='undefined'&&typeof document!=='undefined'){
+  window.addEventListener('online',_timFlushSoon);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')_timFlushSoon();});
+  [8000,30000].forEach(ms=>setTimeout(_timFlushSoon,ms));
+}
