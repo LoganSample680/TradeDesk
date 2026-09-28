@@ -250,7 +250,13 @@ body.dark .tl-wbar-guide b{background:rgba(183,205,237,.18);color:var(--text)}
 /* The 56px column cap is gone: the BAR is capped now, with clamp() per level
    (below), so the track can be as wide as the tile it lives in while one
    week and seven days still draw the same object. */
-.tl-wbar-col{min-width:0;justify-self:center;width:100%}
+/* Every column is as tall as the tallest (a grid row stretches), and the
+   label takes up the slack, so the hours sit on ONE line under every bar
+   however many lines a label wraps to (owner 2026-09-27; WebKit's narrower
+   columns wrapped a boundary week to three). */
+.tl-wbar-col{min-width:0;justify-self:center;width:100%;display:flex}
+.tl-wbar-col>.tl-wbar-hit{flex:1 1 auto}
+.tl-wbar-dow{flex:1 0 auto}
 .tl-wbar-hit{display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;
   background:none;border:0;padding:var(--tl-tile) 2px 9px;margin:0;font-family:inherit;cursor:pointer}
 /* The column the bar grows inside. Height is fixed so every day is measured
