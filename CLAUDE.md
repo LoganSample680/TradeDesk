@@ -2100,6 +2100,15 @@ preference.
 - **Every sentence Tim could not place gets logged.** That miss list is the
   vocabulary roadmap, written by real contractors instead of guessed. It is how
   he gets smarter without a model.
+- **Every job walk is stored too (owner 2026-09-28): "Tim should store so I
+  can see when he's fucked up or need to add capabilities."** A dictated scope
+  on T&M, Build Your Own or the quick invoice writes a `scope` row (what he
+  said, what Tim made) and the real save writes a `kept` row (what went out),
+  both in `td_tim_asks` with client names and addresses scrubbed on the phone
+  (`js/tim-log.js`). Read it with SQL: `said` next to `made` is how the split
+  is checked, and `kept` shows what he had to fix by hand. No screen for it on
+  purpose. Tim still makes no network call to THINK; only the scrubbed record
+  goes up.
 - **Tim asks who is on the job before he asks anything about money**, so a rate
   is a consequence of the crew rather than a field. Cost per person
   (`pay_type` / `pay_rate` on `team_members`) is already per-person and already
