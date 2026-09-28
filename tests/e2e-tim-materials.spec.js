@@ -209,6 +209,22 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
     expect(r).toEqual({ rows: 1, list: 1 });
   });
 
+  // Blake Sample, 2026-09-28: the quote had the heater, and "a 40 gallon water
+  // heater" said to Tim put a second one on the list at $0.
+  test('T&M: a thing the supply quote already has is not added again', async () => {
+    const r = await page.evaluate(() => {
+      const h = _supHost(true);
+      h._supply.items = (h._supply.items || []).concat([{ on: true, qty: 1, cost: 542.15, desc: 'BWC RG240T6N 40GAL NAT GAS WATER HEATER 60-1/8" TALL 40,000BTU' }]);
+      const before = h._supply.items.length;
+      const a = timAddMaterials([{ qty: 1, unit: 'ea', item: '40 gallon water heater' }, { qty: 1, unit: 'ea', item: 'Water heater' }]);
+      const b = timAddMaterials([{ qty: 2, unit: 'ea', item: 'Expansion tank' }]);
+      return { a, b, added: h._supply.items.length - before };
+    });
+    expect(r.a).toEqual({ rows: 0, listed: 0 });
+    expect(r.b.listed, 'something the quote does not have still goes on').toBe(1);
+    expect(r.added).toBe(1);
+  });
+
   test('T&M: no material line on the proposal reads $0', async () => {
     const r = await page.evaluate(() => _matIdx().map(i => _matView(i).price));
     expect(r.every(p => p > 0)).toBe(true);
@@ -255,6 +271,24 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
     expect(r).toContain('12 bags Quikrete = 78');
     expect(r).toContain('2 sticks rebar = ');
     expect(r.some(l => /used 12 bags/i.test(l))).toBe(false);
+  });
+
+  // Owner 2026-09-28: "on invoice, materials are totaling when they shouldn't".
+  // "Installed a 40 gallon water heater" is the job; the heater is not a second
+  // priced line on top of it.
+  test('Quick invoice: a part named in the work is not billed again as its own line', async () => {
+    const r = await page.evaluate(() => {
+      S.priceBook.general = (S.priceBook.general || []).concat([{ desc: '40 gallon water heater', rate: 1800, unit: 'ea' }]);
+      openQuickInvoice(99951); _qiSetMode('set');
+      _qi.typed = [{ desc: '', amount: '' }];
+      document.getElementById('qi-say').value = 'Removed and installed a old 40 gallon water heater';
+      _qiSayBuild();
+      const lines = _qi.typed.filter(l => String(l.desc || '').trim()).map(l => l.desc);
+      S.priceBook.general = S.priceBook.general.filter(p => p.desc !== '40 gallon water heater');
+      return lines;
+    });
+    expect(r.length, JSON.stringify(r)).toBe(1);
+    expect(r[0]).toMatch(/water heater/i);
   });
 
   test('no console errors', async () => {

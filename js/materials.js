@@ -157,12 +157,23 @@ function timAddMaterials(mats){
   const haveRows=new Set(_matIdx().map(i=>key((_matView(i)||{}).label)));
   const host=_supHost(false);
   const haveList=new Set(((host&&host._supply&&host._supply.items)||[]).map(it=>key(it.desc)));
+  // The same thing said a different way is still the same thing: a supply
+  // house quote reads "BWC RG240T6N 40GAL NAT GAS WATER HEATER" where he said
+  // "a 40 gallon water heater" (Blake Sample, 2026-09-28: the list got a $0
+  // second heater). Two shared words of four letters or more, or the last word
+  // of what he said (the thing itself) plus one more, is a match.
+  const words=s=>key(s).replace(/(\d+)\s*gal(?:lon)?s?\b/g,'$1gal').split(/[^a-z0-9]+/).filter(w=>w.length>=4||/^\d+gal$/.test(w)).map(w=>w.replace(/(?:es|s)$/,''));
+  const already=(label)=>{
+    const mine=words(label);if(!mine.length)return false;
+    const theirs=[..._matIdx().map(i=>(_matView(i)||{}).label),...((host&&host._supply&&host._supply.items)||[]).map(it=>it&&it.desc)];
+    return theirs.some(t=>{const w=new Set(words(t));const hit=mine.filter(x=>w.has(x)).length;return hit>=Math.min(2,mine.length)&&w.has(mine[mine.length-1]);});
+  };
   let rows=0,listed=0;
   const toList=[];
   list.forEach(m=>{
     const label=String(m.item).trim();
     const k=key(label);
-    if(haveRows.has(k)||haveList.has(k))return;
+    if(haveRows.has(k)||haveList.has(k)||already(label))return;
     const qty=Number(m.qty)>0?Number(m.qty):1;
     const unit=m.unit||'ea';
     const own=(typeof _pbFind==='function')?_pbFind(label,trade):null;

@@ -321,7 +321,11 @@ test.describe('supply list: on a BYO estimate', () => {
       return { label: it.label, price: it.price, n: it._supply.items.length, off: it._supply.items.filter(x => x.on === false).length,
         first: it._supply.items[0].desc, geiLine: _geiLines.find(l => l._supply) };
     });
-    expect(r.label).toBe('Materials (Neenan Co. Topeka)');
+    // Changed 2026-09-28 (owner: "don't want to show Neenan's on the proposal a
+    // client sees"): the line the client reads is "Materials"; the supply house
+    // stays on the card, for him.
+    expect(r.label).toBe('Materials');
+    expect(await page.evaluate(() => _byoItems.find(x => x._supply)._supply.vendor)).toBe('Neenan Co. Topeka');
     expect(r.n).toBe(11);
     expect(r.off).toBe(1);
     expect(r.first).toMatch(/^CORRO-PROTEC/);
@@ -355,8 +359,25 @@ test.describe('supply list: on a BYO estimate', () => {
 
   test('the proposal never shows cost: the line carries the client price only', async () => {
     const r = await page.evaluate(() => { const l = _geiLines.find(x => x._supply); return { total: l.total, notes: l.notes }; });
-    expect(r.notes).toMatch(/items? per supply house quote S3318549/);
-    expect(r.notes).not.toMatch(/\$/);
+    expect(r.notes).toMatch(/^\d+ items?$/);
+    expect(r.notes).not.toMatch(/\$|Neenan|S3318549|supply house/i);
+  });
+
+  test('a line saved with the supply house in its words is scrubbed on load and save', async () => {
+    const r = await page.evaluate(() => {
+      const old = [{ desc: 'Materials (Neenan Co. Topeka)', notes: '12 items per supply house quote S3318549', _supply: { vendor: 'Neenan Co. Topeka', items: [{ on: true }, { on: true }, { on: false }] } },
+                   { desc: 'Install heater', notes: 'keep me' }];
+      _supScrub(old);
+      const byo = [{ label: 'Materials (Neenan)', notes: 'x', _supply: { items: [{ on: true }] } }];
+      _supScrub(byo);
+      return { old, byo, junk: [_supScrub(null), _supScrub([null, {}, { _supply: true, desc: 'Keep' }])] };
+    });
+    expect(r.old[0].desc).toBe('Materials');
+    expect(r.old[0].notes).toBe('2 items');
+    expect(r.old[0]._supply.vendor, 'the vendor stays for him').toBe('Neenan Co. Topeka');
+    expect(r.old[1]).toEqual({ desc: 'Install heater', notes: 'keep me' });
+    expect(r.byo[0].label).toBe('Materials');
+    expect(r.junk[1][2].desc).toBe('Keep');
   });
 
   test('a quote that charged tax is not taxed again on the proposal', async () => {

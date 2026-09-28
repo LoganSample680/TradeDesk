@@ -789,6 +789,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr){sf('gei-addr',b.addr);_geiCurAddr=b.addr;}
       _geiDescUserSet=!!b.descUserSet;
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
+      if(typeof _supScrub==='function')_supScrub(_geiLines);
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
@@ -862,6 +863,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       // one (forceAddr) — a deliberate pick always wins over a stub's default.
       if(_b.addr&&!opts?.forceAddr){sf('gei-addr',_b.addr);_geiCurAddr=_b.addr;}
       if(_b.geiLines&&_b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(_b.geiLines));
+      if(typeof _supScrub==='function')_supScrub(_geiLines);
       if(_b.geiTaxPct)sf('gei-tax-pct',_b.geiTaxPct);
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
@@ -1810,7 +1812,7 @@ function _byoShowPage(){
   _tmHidePage(); // must run first, it re-shows gei-old-tbar; the shared chrome re-hides it
   const b=_geiShowSharedChrome('byo');
   // Load items from saved bid, otherwise start blank
-  if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
+  if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));if(typeof _supScrub==='function')_supScrub(_byoItems);}
   else{_byoItems=[];}
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
@@ -7401,9 +7403,9 @@ function saveGenericEstimate(draft,opts){
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiScanId?{scanId:_geiScanId}:{}),
-      ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
+      ...(_geiIsFreeForm&&_byoItems.length?{byoItems:(typeof _supScrub==='function'?_supScrub:x=>x)(JSON.parse(JSON.stringify(_byoItems)))}:{}),
       ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
-      geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
+      geiLines:(typeof _supScrub==='function'?_supScrub:x=>x)(JSON.parse(JSON.stringify(_geiLines))),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       scopeChips:[..._geiScopeChips],
       scopeNoScope:_geiScopeNoScope||false,
