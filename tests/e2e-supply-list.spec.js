@@ -283,6 +283,9 @@ test.describe('supply list: on a BYO estimate', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The cloud load lands later on WebKit and would swap the estimate out from
+    // under the tests (the same race e2e-attach-suggestions waits out).
+    await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 15000 }).catch(() => {});
     await openEstimate(page, 'byo');
   });
   test.afterAll(async () => { await page.context().close(); });

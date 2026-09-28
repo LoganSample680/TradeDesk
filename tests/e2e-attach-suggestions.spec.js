@@ -72,6 +72,10 @@ test.describe('attach suggestions', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The boot's own cloud load is already in flight when the stub below goes
+    // in. On WebKit it can land after a test seeds its history and replace
+    // `bids`, so that test saw no past jobs at all. Let it finish first.
+    await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 15000 }).catch(() => {});
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {};
       // The learned half on its own (see the header). Restored in afterAll.
       window.__tkKeep = window.tkMissedFor; window.tkMissedFor = () => []; });
@@ -303,6 +307,10 @@ test.describe('attach suggestions: the trade library', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The boot's own cloud load is already in flight when the stub below goes
+    // in. On WebKit it can land after a test seeds its history and replace
+    // `bids`, so that test saw no past jobs at all. Let it finish first.
+    await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 15000 }).catch(() => {});
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; window._byoAutosave = () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });
