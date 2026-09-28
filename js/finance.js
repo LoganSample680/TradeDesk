@@ -3248,15 +3248,48 @@ function _bizHM(d){
   }catch(_e){return '??:??';}
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
-async function _fetchCrewLabor(sinceISO){
+// opts (the quick invoice, owner 2026-09-28: "time to search for hours is
+// slow"): {only:{jobIds,places}} asks the server for just one customer's rows
+// (their jobs, or a visit or drive at one of their places) instead of every
+// crew member at every customer for six months, and {noShop:true} skips the
+// shop rows a customer is never billed for. The three reads run side by side
+// either way. With no opts every caller gets exactly what it always did.
+function _crewOnlyOr(only){
+  if(!only)return '';
+  const q=v=>'"'+String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+  const ids=(only.jobIds||[]).filter(x=>x!=null&&x!=='').map(x=>String(x).replace(/[^0-9a-zA-Z_-]/g,'')).filter(Boolean);
+  const pl=[...(only.places||[])].filter(Boolean).map(q);
+  const parts=[];
+  if(ids.length)parts.push('job_id.in.('+ids.join(',')+')');
+  if(pl.length){parts.push('dest_place.in.('+pl.join(',')+')');parts.push('origin_place.in.('+pl.join(',')+')');}
+  return parts.join(',');
+}
+async function _fetchCrewLabor(sinceISO,opts){
   // comp: the raw team_members pay row per uid, so Crew Cost can hand it to
   // the one pay function (_payPersonPeriod) instead of an hourly figure.
   // Additive, every other consumer ignores it.
   const out={loaded:{},wage:{},comp:{},name:{},entries:[],shopEntries:[]};
   if(!supaEnabled()||!_supaUser)return out;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  const only=opts&&opts.only;
+  const onlyOr=_crewOnlyOr(only);
+  // A customer with no jobs and no places has no rows to find.
+  if(only&&!onlyOr)return out;
   try{
-    const{data:tm}=await _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
+    if(sinceISO)q=q.gte('arrived_at',sinceISO);
+    if(onlyOr)q=q.or(onlyOr);
+    let sq=null;
+    if(!(opts&&opts.noShop)){
+      sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
+      if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
+    }
+    const [tmR,teR,seR]=await Promise.all([
+      _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid),
+      q,
+      sq||Promise.resolve({data:[]}),
+    ]);
+    const tm=tmR&&tmR.data;
     (tm||[]).forEach(r=>{
       if(!r.employee_user_id)return;
       const comp={pay_type:r.pay_type,pay_rate:r.pay_rate};
@@ -3284,10 +3317,7 @@ async function _fetchCrewLabor(sinceISO){
     // id: the Time Log's Edit button needs to address the actual row to
     // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
     // other _fetchCrewLabor consumer ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
-    if(sinceISO)q=q.gte('arrived_at',sinceISO);
-    const{data:te}=await q;
-    out.entries=te||[];
+    out.entries=(teR&&teR.data)||[];
     // departed_at rides along for the Time Log's stop-anchor rule
     // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
     // location events" an unpaid stop must sit between. Additive, every
@@ -3298,10 +3328,7 @@ async function _fetchCrewLabor(sinceISO){
     // row with no rawId behind it, correctly, because there would be nothing
     // for an action to act ON; this select simply never asked for one, so every
     // shop row in the app has arrived id-less since the rail was built.
-    let sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
-    if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
-    const{data:se}=await sq;
-    out.shopEntries=se||[];
+    out.shopEntries=(seR&&seR.data)||[];
   }catch(_e){}
   return out;
 }

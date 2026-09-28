@@ -601,6 +601,58 @@ test.describe('Quick invoice', () => {
     expect(id).not.toBe('pg-qi');
   });
 
+  // Owner 2026-09-28: "time to search for hours is slow". The invoice asks the
+  // server for this customer's rows only, skips shop rows, and runs the reads
+  // side by side; everybody else's _fetchCrewLabor call is unchanged.
+  test('hours: one customer\'s rows only, no shop read, reads side by side', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const calls = []; let open = 0, peak = 0;
+      const mk = (t) => { const c = { t, f: [] }; calls.push(c);
+        const q = { select: () => q, is: () => q, eq: () => q, gte: () => q, or: (x) => { c.or = x; return q; },
+          then: (res, rej) => { open++; peak = Math.max(peak, open); return new Promise(r => setTimeout(r, 30)).then(() => { open--; return { data: [] }; }).then(res, rej); } };
+        return q; };
+      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser };
+      window._supa = { from: mk }; window.supaEnabled = () => true; window._supaUser = { id: 'owner-uid' };
+      const c = clients.find(x => x.id === 901);
+      c.extraAddresses = [{ label: 'Rental', addr: '9 "Quoted" Ln, Springfield, IL' }];
+      await _fetchCrewLabor('2026-09-01T00:00:00Z', { noShop: true, only: _qiOnly(c) });
+      const one = { tables: calls.map(x => x.t), or: calls.find(x => x.t === 'job_time_entries').or, peak };
+      calls.length = 0; peak = 0;
+      await _fetchCrewLabor('2026-09-01T00:00:00Z');
+      const all = { tables: calls.map(x => x.t).sort(), or: calls.find(x => x.t === 'job_time_entries').or, peak };
+      const none = await _fetchCrewLabor(null, { only: { jobIds: [], places: [] } });
+      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su });
+      return { one, all, none: none.entries.length, esc: _crewOnlyOr({ jobIds: ['j9', 'x;drop'], places: ['A "B" (C)'] }) };
+    });
+    expect(r.one.tables).not.toContain('shop_time_entries');
+    expect(r.one.or).toContain('job_id.in.(j901)');
+    expect(r.one.or).toContain('dest_place.in.(');
+    expect(r.one.or).toContain('John Doe');
+    expect(r.one.peak, 'the reads run side by side').toBeGreaterThanOrEqual(2);
+    expect(r.all.tables, 'everyone else still gets every table').toEqual(['job_time_entries', 'shop_time_entries', 'team_members']);
+    expect(r.all.or).toBeUndefined();
+    expect(r.all.peak).toBe(3);
+    expect(r.none).toBe(0);
+    expect(r.esc).toBe('job_id.in.(j9,xdrop),dest_place.in.("A \\"B\\" (C)"),origin_place.in.("A \\"B\\" (C)")');
+  });
+
+  test('hours: what the Time Log already fetched paints at once', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const t = Date.parse('2026-09-25T15:00:00Z'), h = 3600e3;
+      _tlCrewCache = { since: new Date(Date.now() - 200 * 86400e3).toISOString(), payload: { name: { 'u1': 'Jack Sample' }, entries: [
+        { employee_user_id: 'u1', job_id: null, dest_place: _geoFenceName('Mary Smith', '77 Lakeview Dr'), source: 'visit', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 2 * h).toISOString(), minutes: 120 },
+      ] } };
+      const saved = window.supaEnabled; window.supaEnabled = () => false;
+      openQuickInvoice(902);
+      const lines = _qi.tracked.filter(l => l.kind === 'time').map(l => l.who + ' ' + l.mins);
+      window.supaEnabled = saved; _tlCrewCache = null;
+      return lines;
+    });
+    expect(r).toContain('Jack Sample 120');
+  });
+
   for (const w of [320, 390]) {
     test('no bleed at ' + w + 'px', async ({ page }) => {
       await boot(page, w);
