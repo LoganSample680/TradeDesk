@@ -328,7 +328,14 @@ test.describe('supply list: on a BYO estimate', () => {
 
   test('markup goes on top, and sales tax is figured on the marked-up price', async () => {
     await page.locator('#sup-markup').fill('20');
-    await page.waitForTimeout(500);
+    // The card redraws 350ms after the last keystroke (_supSetMarkup). A fixed
+    // 500ms wait raced that timer on a loaded WebKit runner and read the price
+    // before the markup landed, so wait for the redraw itself.
+    const cost0 = 1356.43 - 497.15;
+    await page.waitForFunction((want) => {
+      const it = _byoItems.find(x => x._supply);
+      return !!it && Math.abs(it.price - want) < 0.01;
+    }, Math.round(cost0 * 1.2 * 100) / 100, { timeout: 5000 });
     const r = await page.evaluate(() => {
       _geiClientTaxRate = { rate: 10, source: 'db_zip' };
       _byoUpdateRail();
