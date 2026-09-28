@@ -525,6 +525,96 @@ test.describe('manual clock over a derived day', () => {
     expect(r.paid).not.toBe(569 + 509);
   });
 
+  // ── AN ANSWERED HOLE IS NOT A CLOCK (owner 2026-09-28) ────────────────
+  // "Why does it say he clocked out at 9:28am?" Jack clocked in at 7:58 and
+  // never clocked out. At 9:40 he answered a 9:21 to 9:28 hole as work, which
+  // writes a closed row with both ends, and the rail drew every manual row
+  // with both ends as a clock: CLOCKED IN 9:21, CLOCKED OUT 9:28. The ops day
+  // view read the same row as his last clock-out (v_clock_day, 20261051).
+  // Later the server filled that stretch with the visit itself, so the answer
+  // now sits entirely under a job site row, and must add nothing to the day.
+  const jack = (clockEnd, noAnswer) => page.evaluate(async ([DAY, DAY_START, clockEnd, noAnswer]) => {
+    const me = _supaUser.id;
+    const T = (h, m) => new Date(DAY_START + h * 3600000 + m * 60000).toISOString();
+    const keepT = timeEntries.slice(); const keepF = window._fetchCrewLabor;
+    const at = (h, m, s) => new Date(Date.parse(T(h, m)) + (s || 0) * 1000).toISOString();
+    window.timeEntries = [
+      { id: 9701, job_id: null, date: DAY, start_time: T(7, 58), end_time: clockEnd ? T(12, 30) : null, open: !clockEnd,
+        minutes: clockEnd ? 272 : 0, logged_by_uid: null, logged_by_name: 'Jack' },
+      { id: 9702, job_id: null, date: DAY, start_time: at(9, 21, 49), end_time: at(9, 28, 33), open: false,
+        minutes: 7, fromGap: true, unpaid: false, scope_label: 'Added from unaccounted time', logged_by_uid: null, logged_by_name: 'Jack' },
+    ].slice(0, noAnswer ? 1 : 2);
+    const r = (id, source, st, en, dest) => ({ id, source, job_id: null, client_key: 'd-' + id, arrived_at: st, departed_at: en,
+      minutes: Math.round((Date.parse(en) - Date.parse(st)) / 60000), dest_place: dest, employee_user_id: me, contractor_user_id: me });
+    window._fetchCrewLabor = async () => ({ name: { [me]: 'Jack' },
+      entries: [r('j1', 'drive', T(9, 17), at(9, 21, 49), 'Treyton Schafer'), r('j2', 'client', at(9, 21, 49), at(11, 39, 53), 'Treyton Schafer'),
+                r('j3', 'drive', at(11, 39, 53), T(11, 44), 'Plumbing Solutions shop')],
+      shopEntries: [r('s1', 'shop', at(7, 57, 27), T(9, 17)), r('s2', 'shop', T(11, 44), T(12, 30))] });
+    try {
+      const rows = (await _timeLogRows(null)).filter(x => x.date === DAY)
+        .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+      const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+      const caps = (k) => [...d.querySelectorAll('li[data-kind="clock-' + k + '"] .tl-rail-time')].map(e => e.textContent.trim());
+      return { ins: caps('in'), outs: caps('out'), clockIn: _tlFmtTime(T(7, 58)), clockOut: _tlFmtTime(T(12, 30)),
+        answer: _tlFmtTime(at(9, 28, 33)), answerIn: _tlFmtTime(at(9, 21, 49)),
+        paid: rows.reduce((n, x) => n + (x.unpaid || x.dismissed ? 0 : x.minutes), 0),
+        gapRows: rows.filter(x => x.gapAnswer).length,
+        dump: rows.map(x => [x.source, x.rawSource || '', new Date(x.startTime).toISOString().slice(11, 19), x.endTime ? new Date(x.endTime).toISOString().slice(11, 19) : '', x.minutes, !!x.unpaid, !!x.dismissed, x.blendedMin || 0]) };
+    } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; }
+  }, [DAY, DAY_START, clockEnd, !!noAnswer]);
+
+  test('Jack 9/28: a work answer draws no clock caps, the clock he punched draws both', async () => {
+    const r = await jack(true);
+    expect(r.gapRows, 'the answer is still a row the reader knows about').toBe(1);
+    expect(r.ins, 'one clock in, the one he punched').toEqual([r.clockIn]);
+    expect(r.outs, 'one clock out, the one he punched, never 9:28').toEqual([r.clockOut]);
+    expect(r.outs).not.toContain(r.answer);
+    expect(r.ins).not.toContain(r.answerIn);
+  });
+
+  test('Jack 9/28: the leftover answer under the visit adds nothing to the day', async () => {
+    // The seven minutes he answered are inside the visit and inside the
+    // clock, so the day totals exactly what it totals without the answer
+    // (273: the fences keep their own minutes, and the shop visit began 33
+    // seconds before he clocked in). It read 280 before this.
+    const r = await jack(true);
+    const bare = await jack(true, true);
+    expect(bare.paid).toBe(273);
+    expect(r.paid).toBe(bare.paid);
+    expect(r.gapRows, 'the answer is still in the rows, so the hole is never asked again').toBe(1);
+  });
+
+  test('Jack 9/28 as it actually was: clock still running, the answer under the visit adds nothing', async () => {
+    const r = await jack(false);
+    const bare = await jack(false, true);
+    expect(r.ins).toHaveLength(1);
+    expect(r.outs, 'no clock out, because he never punched one').toEqual([]);
+    expect(r.paid).toBe(bare.paid);
+  });
+
+  test('an answer that no tracked row covers still counts in full, and once', async () => {
+    const r = await page.evaluate(async ([DAY, DAY_START]) => {
+      const T = (h, m) => new Date(DAY_START + h * 3600000 + m * 60000).toISOString();
+      const rows = [
+        { id: 'a1', source: 'auto', rawSource: 'client', date: DAY, minutes: 60, personUid: null, startTime: T(8, 0), endTime: T(9, 0) },
+        { id: 'm1', source: 'manual', gapAnswer: true, date: DAY, minutes: 30, personUid: null, startTime: T(9, 0), endTime: T(9, 30) },
+        { id: 'a2', source: 'auto', rawSource: 'client', date: DAY, minutes: 60, personUid: null, startTime: T(9, 30), endTime: T(10, 30) },
+        // Half covered: a row that landed later over the back half.
+        { id: 'm2', source: 'manual', gapAnswer: true, date: DAY, minutes: 40, personUid: null, startTime: T(11, 0), endTime: T(11, 40) },
+        { id: 'a3', source: 'auto', rawSource: 'client', date: DAY, minutes: 20, personUid: null, startTime: T(11, 20), endTime: T(11, 40) },
+      ];
+      const out = _tlBlendManual(rows);
+      const by = id => out.find(x => x.id === id);
+      return { m1: by('m1').minutes, m2: by('m2').minutes, m2d: !!by('m2').dismissed, sites: out.filter(x => x.rawSource === 'clock-span').length,
+        total: _tlPaidMin(out) };
+    }, [DAY, DAY_START]);
+    expect(r.m1, 'nothing else claims it, so it is all his').toBe(30);
+    expect(r.m2, 'the covered half goes, his half stays').toBe(20);
+    expect(r.m2d).toBe(false);
+    expect(r.sites, 'an answer is not a clock, so it hands nothing to a "Clocked in" row').toBe(0);
+    expect(r.total).toBe(60 + 30 + 60 + 20 + 20);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'blend'); });
 });
 

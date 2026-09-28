@@ -1598,6 +1598,46 @@ test.describe('geo-derive wiring', () => {
       expect(r.l).toBe(2);
     });
 
+    // Jack, 2026-09-28: a healthy log never asked the server for anything, so
+    // the fence entry that went straight up at 9:21:49 never reached this
+    // derive. The phone dated his arrival to the walk at 9:28:33, the server
+    // to the crossing, and the Time log asked him about the seven minutes in
+    // between. The crossings are fetched every time now, like the tape.
+    test('a log that already knows the day still asks the server for its crossings', async () => {
+      await seed();
+      const r = await page.evaluate(async ([DAY, SHOP, T, ENTER]) => {
+        window.mileage = [];
+        localStorage.removeItem('zp3_geo_reglog');
+        for (let i = 0; i < 30; i++) _geoFixLogPush(T + i * 60000, SHOP.lat, SHOP.lng, 5);
+        const realFx = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        const realRg = window.__realServerRegions = window.__realServerRegions || _geoDeriveServerRegions;
+        let fx = 0; const rgCalls = [];
+        window._geoDeriveServerFixes = async () => { fx++; const o = []; o.appEvents = []; o.regions = []; return o; };
+        const run = async (list) => {
+          window._geoDeriveServerRegions = async (a, b) => { rgCalls.push([a, b]); const o = list.slice(); o.complete = true; return o; };
+          const res = await _geoDeriveDayNow(DAY, null);
+          const doe = res.dwells.find(d => /Doe/.test(d.name || (d.fence && d.fence.name) || ''));
+          return doe ? doe.startTs : null;
+        };
+        try {
+          const without = await run([]);
+          const withIt = await run([{ ts: ENTER, id: 'client-1788214075432', enter: true }]);
+          const again = await run([{ ts: ENTER, id: 'client-1788214075432', enter: true }]);
+          const log = _geoRegLogRead().filter(e => e.id === 'client-1788214075432');
+          return { fx, rg: rgCalls.length, without, withIt, again, logged: log.length };
+        } finally {
+          window._geoDeriveServerFixes = realFx; window._geoDeriveServerRegions = realRg;
+          localStorage.removeItem('zp3_geo_reglog');
+        }
+      }, [DAY, SHOP, T(13, 5), T(7, 58)]);
+      expect(r.fx, 'the fixes are still not fetched for a healthy log').toBe(0);
+      expect(r.rg, 'the crossings are, on every derive').toBe(3);
+      expect(r.withIt, 'the arrival is the crossing the server has').toBe(T(7, 58));
+      expect(r.without, 'without it the phone dates the arrival later, which is the hole').toBeGreaterThan(T(7, 58));
+      expect(r.again, 'asking twice changes nothing').toBe(T(7, 58));
+      expect(r.logged, 'one copy of the crossing, however many times it is fetched').toBe(1);
+    });
+
     test('the seed is bounded: eight days, the newest six thousand, and junk is ignored', async () => {
       const r = await page.evaluate(() => {
         localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
