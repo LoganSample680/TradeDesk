@@ -570,7 +570,7 @@
     "expect": [
       "Leak search with the sniffer and bubbles",
       "If it's the Schrader cores, replace them",
-      "Recharge with R410A about 2 pounds"
+      "Recharge with R-410A about 2 pounds"
     ],
     "heard": [
       { "said": "shrader", "means": "Schrader" }

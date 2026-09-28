@@ -1134,6 +1134,40 @@ const _TIMK_HEARD=[
   [/\b(one|three|five|seven)\s+eighths?\b/gi,(m,n)=>({one:1,three:3,five:5,seven:7}[n.toLowerCase()])+'/8'],
   [/\b(one|three)\s+quarters?(?=\s+(?:inch|thick|plywood|ply|osb|sheathing|advantech)\b)/gi,(m,n)=>({one:1,three:3}[n.toLowerCase()])+'/4'],
   [/\bmalarky\b/gi,'Malarkey'],
+  // Set E (2026-09-28): supply house words.
+  [/\bho\s+tee\b/gi,'Oatey'],
+  [/\bnumber\s+(\d+)(?=\s+(?:rebar|bar|bars|wire|screws?))/gi,'#$1'],
+  [/\bbro\s+and\b(?=\s+(?:\d+\s*cfm|fan|exhaust|bath))/gi,'Broan'],
+  [/\bsica\s+flex\b/gi,'Sikaflex'],
+  [/\bdream\s+line\b/gi,'DreamLine'],
+  [/\bwing\s+its\b/gi,'WingIts'],
+  [/\bfasten\s+master\b/gi,'FastenMaster'],
+  [/\bthru\s+lock\b|\bthrough\s+lok\b/gi,'ThruLOK'],
+  [/\b(Simpson\s+|the\s+simpson\s+)?abu\s+(\d{2})\b/gi,(m,a,n)=>(a||'')+'ABU'+n],
+  [/\bledger\s+lo(?:c)?ks\b/gi,'LedgerLOKs'],
+  [/\bmin\s+wax\b/gi,'Minwax'],
+  [/\bprison(?=\s+grout\b)/gi,'Prism'],
+  [/\bhardy\s+plank\b/gi,'HardiePlank'],[/\bhardy\s+trim\b/gi,'HardieTrim'],
+  [/\bcolor\s+match(?=\s+caulk\b)/gi,'ColorMatch'],
+  [/\b(?:(?:r\s*)?(?:410|four\s+ten)\s*a)\b/gi,'R-410A'],
+  [/\bq\s+o\b(?=\s+(?:\d|panel|breakers?|plug))/gi,'QO'],
+  [/\bnew\s+cal\s+gone\b|\bnu\s+calgon\b/gi,'Nu-Calgon'],
+  [/\bbeen\s+(?=shellac\b)/gi,'BIN '],
+  [/\b(?:coaler|coler|cooler)(?=\s+(?:\w+\s+)?(?:tub|bellwether|archer|shower|cimarron|highline|toilet|sink)\b)/gi,'Kohler'],
+  [/\bgeo\s+sell?\b/gi,'Geocel'],
+  [/\bn\s*p\s+one\b/gi,'NP1'],
+  [/\bi\s+k\s+o\b/gi,'IKO'],
+  [/\btri\s+corn\b/gi,'Tricorn'],
+  [/\bbel+\s+guard\b/gi,'Belgard'],
+  [/\brocky\s+oh?\b/gi,'Rachio'],
+  [/\bfrog\s+tape\b/gi,'FrogTape'],
+  [/\bwacos?\b(?=\s*(?:221|222|lever|connectors?|nuts?|'s|s\b))/gi,'Wago'],
+  [/\bwaco's\b/gi,"Wagos"],
+  [/\bhoney\s+well\b/gi,'Honeywell'],
+  [/\bwhite\s+rogers?\b|\bwhite\s+rodgers\b/gi,'White-Rodgers'],
+  [/\bshantilly\b/gi,'Chantilly'],
+  [/\b(of\s+)cab\s+it\b/gi,'$1Cabot'],
+  [/\b(\d+|one|two|three|four)\s+and\s+a\s+quarter\b/gi,(m,n)=>({one:1,two:2,three:3,four:4}[String(n).toLowerCase()]||n)+' 1/4'],
   // Set C (2026-09-28).
   [/\bcontact\s+her\b/gi,'contactor'],
   [/\bfew\s+jitsu\b|\bfu\s+jitsu\b/gi,'Fujitsu'],
@@ -1880,7 +1914,20 @@ function timScopeFrom(text){
 // than something that happens to his words while he watches.
 function timScopeBuild(text,opts){
   const said=String(text||'');
-  const priced=_timkFoldPrices(timScopeFrom(said).map(timStepPrice));
+  // What he is buying goes to Materials, and a line that is nothing but a
+  // shopping list is not a step on the contract ("figure 40 bags of Quikrete
+  // and 6 sticks of rebar"). Work that uses a material stays a step.
+  let materials=[];
+  try{materials=timSaidMaterials(said);}catch(_e){materials=[];}
+  const priced=_timkFoldPrices(timScopeFrom(said).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
+    // "Pour the pad, figure 40 bags of Quikrete and 6 sticks of rebar": the
+    // shopping list after the comma comes off the step.
+    const bits=String(p.text).split(/,\s+/);
+    if(bits.length<2)return p;
+    const shoppy=b=>/^(?:and\s+)?(?:figure|figuring|grab|get|we\s+need|i\s+need|need|plus|materials?|parts?)\b/i.test(b.trim());
+    const keep=bits.filter((b,i)=>i===0||!(shoppy(b)&&_timkOnlyMaterials(b)));
+    return keep.length===bits.length?p:Object.assign({},p,{text:keep.join(', ')});
+  });
   const steps=priced.map(p=>p.text);
   const staged=timOrderScope(steps);
   const byText={};
@@ -1895,6 +1942,7 @@ function timScopeBuild(text,opts){
   return {
     said,
     steps:mine,
+    materials,
     implied,
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
@@ -3169,6 +3217,8 @@ function timReadJob(said,opts){
     order:timOrderScope(withImplied),
     implied,
     materials,
+    // The same words read by shape, for the estimate's Materials section.
+    saidMaterials:(()=>{try{return timSaidMaterials(said);}catch(_e){return [];}})(),
     coverage:timCoverage(materials),
     // What the supplies come to, and how many of them he has no price for yet.
     // Both, always, so a total is never read as covering the whole list.
@@ -3179,4 +3229,304 @@ function timReadJob(said,opts){
     saidHours:Number(plan.hours)||0,
     addedHours:hours-(Number(plan.hours)||0),
   };
+}
+
+// ── WHAT HE SAID HE IS BUYING (owner 2026-09-28) ─────────────────────────────
+//
+// "Material part quantities and actual material is gonna be huge for speed.
+// Talk to Tim stays in the material section as well, in the proposals and the
+// invoices."
+//
+// timMaterials above knows seventeen things by name. This reads any of them by
+// SHAPE, the way a counter reads a pick list: a count, the unit it is sold in,
+// and what it is. "40 bags of Quikrete", "3 sticks of 4 inch PVC", "a case of
+// 45s", "12 GFCI outlets", "a 50 gallon Bradford White". It needs no catalog,
+// so a trade Tim has never heard of still lands, in his words.
+//
+// Two shapes, and the second is the careful one:
+//   1. COUNT UNIT OF THING ("6 sticks of rebar"). A selling unit and "of" say
+//      it is being bought wherever it is said, in a work sentence or not. Only
+//      feet and squares need more: "replace about 60 feet of fascia" is the
+//      work, so those count only in a list.
+//   2. COUNT THING ("12 GFCI outlets", "an expansion tank"), only in a clause
+//      that is a list: one that does not start with work ("grab", "we need",
+//      "figure", or nothing at all in front). "Install 6 recessed lights" is a
+//      scope line, and the lights are left to him.
+// Nothing he said the customer supplies, and nothing he said he is not
+// buying, goes on the list.
+const _TIMK_SELL_UNITS=[
+  [/^(?:bags?|sacks?)$/,'bag'],[/^rolls?$/,'roll'],[/^sticks?$/,'stick'],[/^(?:lengths?|joints?)$/,'length'],
+  [/^sheets?$/,'sheet'],[/^(?:boxes|box|cartons?)$/,'box'],[/^cases?$/,'case'],[/^bundles?$/,'bundle'],
+  [/^squares?$/,'square'],[/^(?:gallons?|gals?)$/,'gallon'],[/^(?:quarts?|qts?)$/,'quart'],[/^(?:buckets?|pails?|5s|fives)$/,'bucket'],
+  [/^tubes?$/,'tube'],[/^cans?$/,'can'],[/^coils?$/,'coil'],[/^spools?$/,'spool'],[/^pallets?$/,'pallet'],
+  [/^(?:yards?|yds?)$/,'yard'],[/^tons?$/,'ton'],[/^(?:packs?|packages?|pkgs?)$/,'pack'],[/^pairs?$/,'pair'],
+  [/^sets?$/,'set'],[/^(?:pieces?|pcs?|boards?)$/,'ea'],[/^(?:feet|foot|ft|lf|lin)$/,'foot'],[/^sqft$/,'sq ft'],[/^kits?$/,'kit'],
+  [/^(?:tubs?)$/,'tub'],[/^(?:5|5s)$/,'bucket'],[/^(?:jugs?)$/,'jug'],[/^(?:reels?)$/,'reel'],[/^(?:panels?)$/,'panel'],
+];
+function _timkSellUnit(w){const x=String(w||'').toLowerCase().replace(/[^a-z0-9]/g,'');for(const [re,u] of _TIMK_SELL_UNITS)if(re.test(x))return u;return null;}
+// A number straight after the count that is the SIZE of the thing, not how many.
+const _TIMK_SIZE_WORD=/^(?:inch|inches|in|gallon|gal|amp|amps|ton|volt|volts|v|watt|watts|w|btu|mil|gauge|ga|foot|ft|kw|horse|hp|psi|pound|lb|mm|oz|ounce|space|circuit|pole|way|piece|cfm|seer|lumen|k)$/i;
+const _TIMK_MAT_LEAD=/^(?:(?:okay|ok|so|alright|um|uh|and|plus|also|then|oh|yeah|well)\s+)*(?:(?:we'll|we\s+will|i'll|we're\s+gonna|gonna|we|i|you)\s+)?(?:(?:need|needs|want|wanna|have\s+to|gotta|got\s+to)\s+(?:to\s+)?)?(?:grab|get|pick\s+up|picking\s+up|buy|order|bring|throw\s+in|add|figure|figuring|call\s+it|about|around|roughly|maybe|like|need|we\s+need|i\s+need|used|we\s+used|i\s+used|went\s+through|materials?|parts?|supplies|for\s+materials|with|plus|another|also)?\b[\s:,]*/i;
+const _TIMK_MAT_QTY=/^(a\s+couple(?:\s+of)?|couple(?:\s+of)?|a\s+dozen|dozen|half\s+of\s+an?|half\s+an?|a\s+half|a\s+few|few|\d+(?:\.\d+)?|\d+\/\d+|an?|one)\s+/i;
+function _timkQtyVal(q){
+  const s=String(q||'').toLowerCase().trim().replace(/\s+of$/,'');
+  if(/^\d+\/\d+$/.test(s)){const [a,b]=s.split('/').map(Number);return b?a/b:1;}
+  if(/^\d/.test(s))return parseFloat(s);
+  if(/couple/.test(s))return 2;
+  if(/dozen/.test(s))return 12;
+  if(/half/.test(s))return 0.5;
+  if(/few/.test(s))return 3;
+  return 1;
+}
+function _timkMatItem(t){
+  let v=String(t||'').trim();
+  // What comes after the thing is not the thing: a price, "each", "for the
+  // pad", "to match", a trailing "too".
+  v=v.replace(/[,\s]+(?:at|for|@)\s+\$?\d[\d,.]*(?:\s+(?:a|an|per|each)\s+[a-z]+)?.*$/i,'')
+    .replace(/[,\s]+\$\d[\d,.]*.*$/,'')
+    .replace(/[,\s]+(?:each|apiece|too|as\s+well|total|or\s+so|give\s+or\s+take)$/i,'')
+    .replace(/[,\s]+(?:for|to)\s+(?:the|this|that|it|them)\b.*$/i,'')
+    .replace(/\s+(?:plus|and)\s+(?:the|a|an|some|our|his|her)\s+.*$/i,'')
+    .replace(/[,\s]+(?:no|not)\s*$/i,'')
+    .replace(/^(?:(?:of|the)\s+)+/i,'').replace(/[.,;:!?]+$/,'').trim();
+  // A run with no commas: the thing stops where the next clause starts, at a
+  // verb or a filler word ("zoysia grade it first", "brown mulch applied
+  // pre-emergent", "12-2 for those oh and put a GFCI").
+  {const w=v.split(/\s+/);let cut=-1;
+   for(let i=1;i<w.length;i++){
+     const x=w[i].toLowerCase().replace(/[^a-z']/g,'');const nx=(w[i+1]||'').toLowerCase();
+     if(/^(?:was|is|were|are|runs|costs|used|using)$/.test(x)&&i>=1){cut=i;break;}
+     if(/^(?:figure|figuring|so|oh|like|whatever|then|also|i|we|you|we're|i'm|she|he|they|and|for|plus)$/.test(x)&&!(x==='and'&&/^(?:water|shield|ridge|hip|nuts|bolts|tee|cement)$/.test(nx))){if(x==='and'||x==='for'){if(/^(?:the|a|an|then|put|swap|grab|those|that|it|them|we|i)$/.test(nx)||_timkVerbLike(nx)){cut=i;break;}continue;}cut=i;break;}
+     if(i<w.length-1&&_timkVerbLike(x)&&!_TIMK_NOUNISH.has(x)&&!/^[A-Z]/.test(w[i])&&(/^(?:the|a|an|it|all|them|in|out|up|down|off|first|those|it's)$/.test(nx)||_TIMK_STRONG.has(x)&&!/(?:ed|ing)$/.test(x))&&!/^(?:trim|finish|coat|seal|stain|primer|cap|plug|level|set|fill|cover|mount|light|flush|vent|wire|pipe|tape|guard|lock|coil|wrap|screw|bolt|nail|glue|roll|drain|pump|plane)s?$/.test(x)){cut=i;break;}
+   }
+   if(cut>0)v=w.slice(0,cut).join(' ');}
+  v=v.replace(/\b(\d+)\.(5|25|75)(?=\s*(?:inch|in|"))/g,(m,a,b)=>a+' '+({5:'1/2',25:'1/4',75:'3/4'}[b]));
+  return v;
+}
+function _timkMatGood(item){
+  const w=String(item||'').toLowerCase().split(/\s+/).filter(Boolean);
+  // "a case of 45s", "a box of 90s": fittings by their angle.
+  if(w.length===1&&/^(?:\d{2,3}s|\d+\/\d+s?|\d+-\d+(?:-\d+)*|\d+\/\d+-\d+)$/.test(w[0]))return true;
+  if(!w.length||w.join('').replace(/[^a-z]/g,'').length<2)return false;
+  if(/^(?:like|whatever|no|of\s+no|actually|of|some|more|them|of\s+them|ones?|stairs|steps|risers?\s+high)$/.test(w.join(' ')))return false;
+  if(/\b(?:customer|customer's|homeowner's|supplied\s+by)\b/.test(w.join(' '))||/\b(?:driver|ladder)$/.test(w.join(' ')))return false;
+  if(/^(?:it|them|that|this|those|these|those|hours?|days?|minutes?|weeks?|coats?|times?|trips?|guys?|men|people|of\s+them|bedrooms?|rooms?|sides?|steps?|stories|story|walls?|windows?\s+on|years?|months?|percent|dollars?|bucks|grand)$/.test(w.join(' ')))return false;
+  if(/^(?:hours?|days?|weeks?|minutes?|coats?|times?|trips?|guys?|men|people|years?|percent|dollars?|bucks|of\s+them|more|less|each|total|to|or|through|thru|x|by|and|inch|inches|foot|feet)\b/.test(w[0]))return false;
+  // Not something he buys at a counter: a dumpster, a permit, labor, a fee.
+  if(/\b(?:dumpster|permit|permits|labor|trip\s+charge|fee|fees|disposal|rental|inspection|crane|lift|scaffold)\b/.test(w.join(' ')))return false;
+  return true;
+}
+// Is this line only a shopping list? Every material taken out, and what is
+// left is filler.
+function _timkOnlyMaterials(line){
+  const t=String(line||'');
+  let m;try{m=timSaidMaterials(t);}catch(_e){m=[];}
+  if(!m.length)return false;
+  // "A 4 foot walk gate": a thing he sells as a line, said with "a", stays a
+  // line. It is a shopping list when he said it like one: a selling unit on
+  // every item, or "grab", "figure", "we need" in front.
+  const lead=/^\s*(?:(?:okay|ok|so|and|plus|also|then|um|uh)[,\s]+)*(?:figure|figuring|grab|get|pick\s+up|buy|order|we\s+need|i\s+need|need|we'll\s+need|materials?|parts?|supplies|shopping\s+list|used|we\s+used|i\s+used|went\s+through)\b/i.test(t)||/^\s*(?:\d+(?:\.\d+)?|an?|one|a\s+couple|a\s+dozen)\s+[a-z]+\s+of\s/i.test(_timkClean(t))&&_timkSellUnit((_timkClean(t).match(/^\s*\S+(?:\s+\S+)?\s+([a-z]+)\s+of\s/i)||[])[1]);
+  if(!lead&&!m.every(r=>r.unit!=='ea'))return false;
+  let rest=' '+_timkClean(t).toLowerCase()+' ';
+  m.forEach(r=>{rest=rest.split(String(r.said||'').toLowerCase()).join(' ');});
+  rest=rest.replace(/\b(?:and|plus|also|then|with|figure|figuring|grab|get|pick\s+up|we\s+need|i\s+need|need|we'll|we|i|about|around|roughly|maybe|like|of|the|materials?|parts?|supplies|for|used|another|call\s+it|some|sq|ft|feet|inch|inches|to|by|x|each|on\s+top)\b/g,' ').replace(/[^a-z]/g,'');
+  return rest.length<3;
+}
+// The list seams inside a sentence. Commas, but never the one inside
+// "40,000". "And" and "plus" in front of a count. And in a list said with no
+// commas at all, in front of every count that follows a thing: "a box of red
+// wire nuts a box of tan ones half a box of staples 6 Decora outlets".
+const _TIMK_MAT_COUNT='(?:a\\s+couple(?:\\s+of)?|a\\s+dozen|half\\s+an?|a\\s+half|an?|one|\\d+(?:\\.\\d+)?|\\d+\\/\\d+)';
+function _timkMatClauses(sent,listy){
+  let v=String(sent||'');
+  // A correction starts its own piece: "4 gallons of Emerald actually just make
+  // it a 5", "8 Rain Bird rotors, no, 10 of them".
+  v=v.replace(/\s+(?=(?:no\s+wait|actually|no|i\s+mean|sorry|eh|uh)[,]?\s+(?:just\s+)?(?:make\s+(?:it|that)\s+|grab\s+|get\s+)?(?:the\s+whole|a\s+full|full|an?\s+\d|\d|one|two|three|half|a\s+couple|a\s+dozen)\b)/gi,', ');
+  v=v.replace(/\s+(?=(?:figure|figuring)\s+(?:about\s+|around\s+|like\s+)?(?:\d|an?\s|one\s|a\s+couple|a\s+dozen))/gi,', ');
+  const parts=v.split(/\s*,(?!\d{3}\b)\s*(?:and\s+|plus\s+|also\s+)?|\s+(?:and|plus|also|then|along\s+with|with)\s+(?=(?:\d|an?\s|one\s|a\s+couple|couple|a\s+dozen|dozen|half|some\s))/i);
+  const out=[];
+  const unitOf=new RegExp('\\s+(?='+_TIMK_MAT_COUNT+'\\s+[a-z0-9]+\\s+of\\s)','gi');
+  parts.forEach(p=>{
+    // A count with its unit and "of" always starts a new thing, unless it is
+    // the start of the piece already.
+    let bits=String(p).split(unitOf).filter(b=>b&&b.trim());
+    bits=bits.reduce((a,b)=>{
+      const m=b.match(new RegExp('^'+_TIMK_MAT_COUNT+'\\s+([a-z0-9]+)\\s+of\\s','i'));
+      // Not after "about" or a verb: "replace about 60 feet of fascia" is the
+      // work, one piece.
+      const pl=a.length?(String(a[a.length-1]).trim().split(/\s+/).pop()||'').toLowerCase().replace(/[^a-z]/g,''):'';
+      const glue=a.length&&(/^(?:about|around|roughly|approximately|like|with|over|under|by|to|all|another|some|maybe|probably)$/.test(pl)||_timkVerbLike(pl)&&!_TIMK_NOUNISH.has(pl));
+      if(a.length&&(glue||!(m&&_timkSellUnit(m[1]))))a[a.length-1]+=' '+b;else a.push(b);
+      return a;
+    },[]);
+    if(listy){
+      // No commas: a count after a thing starts the next thing.
+      bits=bits.reduce((a,b)=>{
+        const w=b.split(/\s+/);let start=0;const segs=[];
+        for(let i=1;i<w.length-1;i++){
+          const prev=w[i-1].toLowerCase().replace(/[^a-z0-9\/'-]/g,''),cur=w[i].toLowerCase(),nx=(w[i+1]||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const isCount=/^(?:an?|one|half|\d+)$/.test(cur)&&!(/^\d+$/.test(cur)&&(+cur>200||/^[A-Z]/.test(w[i-1])));
+          if(!isCount)continue;
+          if(/^(?:of|the|a|an|and|or|to|by|x|for|with|in|on|at|about|around|half|dozen|couple|\d.*|inch|foot|gallon|amp|ton|grab|get|need|order|buy|pick|up|figure|some|another|just|make|it|that|full|whole|sorry|actually|no|wait)$/.test(prev))continue;
+          if(_timkSellUnit(prev)||_TIMK_SIZE_WORD.test(prev))continue;
+          if(cur==='half'&&!/^an?$/.test(nx))continue;
+          if(/^\d+$/.test(cur)&&/^\d+\/\d+$/.test(w[i+1]||''))continue;
+          if(/^\d+$/.test(cur)&&/^(?:inch|in|amp|volt|gauge|foot|ft|x|by)$/.test(nx)&&!/s$/.test(prev))continue;
+          segs.push(w.slice(start,i).join(' '));start=i;
+        }
+        segs.push(w.slice(start).join(' '));
+        return a.concat(segs);
+      },[]);
+    }
+    bits.forEach(b=>out.push(b));
+  });
+  // "8 sheets of remesh, no, 10 sheets": the lone "no" belongs to the fix.
+  for(let i=0;i<out.length-1;i++){
+    if(/^(?:no|nope|wait|no\s+wait|actually|sorry|i\s+mean|eh|uh|oh)$/i.test(String(out[i]).trim())){out[i+1]=out[i].trim()+' '+out[i+1];out.splice(i,1);i--;}
+  }
+  return out;
+}
+// The thing a piece of speech names, for a count said after it: "put down
+// fabric" -> "fabric", "insulate with R8 wrap" -> "R8 wrap", "Poly sand" ->
+// "Poly sand". Null when it names nothing.
+function _timkMatThing(t){
+  let v=String(t||'').trim().replace(/[.,;:!?]+$/,'');
+  v=v.replace(_TIMK_MAT_LEAD,'');
+  const w=v.split(/\s+/).filter(Boolean);
+  if(!w.length)return null;
+  // After the verb and its particle, or after "with".
+  let i=0;
+  const withAt=w.map(x=>x.toLowerCase()).lastIndexOf('with');
+  if(withAt>=0&&withAt<w.length-1)i=withAt+1;
+  else if(_timkVerbLike(w[0].toLowerCase())&&!_TIMK_NOUNISH.has(w[0].toLowerCase())){i=1;while(i<w.length-1&&/^(?:down|up|in|out|on|off|the|a|an|new|some)$/i.test(w[i]))i++;}
+  let thing=w.slice(i).join(' ').replace(/^(?:the|a|an)\s+/i,'').replace(/\s+(?:in|on|at|over|under|around|along)\s+(?:the\s+)?\S+.*$/i,'');
+  // A long run: the thing is its tail, after the last measure ("tile the floor
+  // about 60 square feet 12 by 24 porcelain" -> "12 by 24 porcelain").
+  if(thing.split(/\s+/).length>5){const tw=thing.split(/\s+/);let k=tw.length;while(k>0&&tw.length-k<5&&!/^(?:feet|foot|sqft|lf|squares?|about|around|of|the|with)$/i.test(tw[k-1])&&!(_timkVerbLike(tw[k-1].toLowerCase())&&!_TIMK_NOUNISH.has(tw[k-1].toLowerCase())))k--;thing=tw.slice(k).join(' ');}
+  if(!thing||thing.split(/\s+/).length>5||/\d{4,}/.test(thing))return null;
+  if(!_timkMatGood(thing))return null;
+  return thing.charAt(0).toUpperCase()+thing.slice(1);
+}
+// "no, 10 of them" -> {qty:10}; "three boxes actually" -> {qty:3,unit:'box'};
+// "make it a full box" -> {qty:1,unit:'box'}; "actually just make it a 5" ->
+// one bucket. Null when the piece is not a correction.
+function _timkMatFix(cl){
+  const t=String(cl||'').trim().toLowerCase().replace(/[,.]+/g,' ').replace(/\s+/g,' ').trim().replace(/\s+the\s+(?=\d)/,' ').replace(/^the\s+(?=\d)/,'');
+  if(/^(?:no\s+)?scratch\s+that$/.test(t))return {drop:true};
+  return _timkMatFix2(t.replace(/\s+(?:it's|its|since|because|cause|cuz|for\s+waste|to\s+be\s+safe|in\s+case)\b.*$/,''));
+}
+function _timkMatFix2(t){
+  const m=t.match(/^((?:(?:no|nope|wait|actually|i\s+mean|sorry|eh|uh|oh)\s+)*)(?:just\s+)?(?:(?:make|change)\s+(?:it|that)\s+(?:to\s+)?|grab\s+|get\s+|go\s+with\s+)?(?:(the\s+whole|a\s+full|full)\s+)?(a\s+couple|a\s+dozen|half\s+an?|an?|one|\d+(?:\.\d+)?)?\s*([a-z0-9]+)?(\s+of\s+(?:them|those|em|these))?((?:\s+(?:actually|instead|then))*)$/);
+  if(!m)return null;
+  const fixWord=!!m[1].trim()||!!m[6].trim()||/^(?:make|change|just|grab|get|go)/.test(t);
+  if(!fixWord&&!m[5])return null;
+  if(!m[3]&&!m[2])return null;
+  let qty=m[2]?1:_timkQtyVal(m[3]);
+  let unit=null;
+  if(m[4]){
+    if(m[3]&&/^an?$/.test(m[3].trim())&&/^5s?$|^fives?$/.test(m[4]))return {qty:1,unit:'bucket'};
+    unit=_timkSellUnit(m[4]);
+    if(!unit&&!/^(?:ones?|of)$/.test(m[4]))return null;
+  }
+  return {qty,unit};
+}
+function timSaidMaterials(text){
+  // Heard and numbers, not the scope's corrections: a correction in a list is
+  // about a count, and _timkMatFix reads it against the item it corrects.
+  const src=String(text||'').split(/\r?\n+/).map(seg=>_timkNumbers(_timkUnfill(_timkHeard(seg)))).join('. ').replace(/\b(?:no[,]?\s+)?scratch\s+that\b[,.]?/gi,', scratch that,');
+  if(!src.trim())return [];
+  const out=[];
+  let prevText='';
+  const listy=/^\s*(?:(?:okay|ok|so|alright|um|uh)[,\s]+)*(?:grab|get|pick\s+up|buy|order|materials?|parts?|supplies|for\s+materials|we\s+need|i\s+need|need|shopping\s+list|pick\s+list|supply\s+list)\b/i.test(src);
+  // Sentences, then the list seams inside them.
+  // Two-word units read as one: "300 square feet of LVP", "40 linear feet of".
+  const src2=src.replace(/\b(square|sq\.?)\s+(?:feet|foot|ft)\b/gi,'sqft').replace(/\b(?:linear|lin\.?|lineal)\s+(?:feet|foot|ft)\b/gi,'lf').replace(/\bcubic\s+yards?\b/gi,'yards');
+  src2.split(/(?<=[.;!?])\s+/).forEach(sent=>{
+    if(/\b(?:customer|homeowner|owner|client|she|he|they)(?:'s|\s+is)?\s+(?:supplies|supplying|provides|providing|bought|buying|has|have|got|picked|picking\s+out|getting)\b/i.test(sent)&&!/\b(?:we|i)\s+(?:need|grab|get|buy)\b/i.test(sent))return;
+    const clauses=_timkMatClauses(sent.replace(/[.;!?]+$/,''),listy);
+    let prevWasMat=false;
+    clauses.forEach((cl0,ci)=>{
+      let cl=String(cl0||'').trim();
+      if(!cl)return;
+      try{
+      // "no, 10 of them", "three boxes actually", "make it a full box": the
+      // count on the thing just said, corrected.
+      {const fx=_timkMatFix(cl);
+       if(fx&&fx.drop){if(out.length)out.pop();return;}
+       if(fx&&out.length){
+         let last=out[out.length-1];
+         // "2 gallons of Aura and a quart of, no, just the 2 gallons": the fix
+         // names an earlier item's unit, so the last one is what he took back.
+         if(fx.unit&&last.unit!==fx.unit){const k=out.map(r=>r.unit).lastIndexOf(fx.unit);if(k>=0&&k<out.length-1){out.pop();last=out[k];}}
+         if(fx.qty!=null)last.qty=fx.qty;if(fx.unit)last.unit=fx.unit;return;}
+       if(fx)return;}
+      // "4 pipe boots, 3 inch", "6 roller covers, 3/8 nap", "hinges, satin
+      // nickel": what the thing just said is, not another thing.
+      if(prevWasMat&&out.length&&(/^\d+(?:\/\d+)?(?:\s+\d\/\d)?\s*(?:inch|inches|in|nap|foot|ft|footers?|gauge|amp|mil|volt|ton)\b/i.test(cl)&&cl.split(/\s+/).length<=4||!/\d/.test(cl)&&!/^(?:an?|one|the\s+\w+\s+\w+\s+\w+)\b/i.test(cl)&&cl.split(/\s+/).length<=3&&!cl.split(/\s+/).some(x=>_timkVerbLike(x.toLowerCase())&&!_TIMK_NOUNISH.has(x.toLowerCase()))&&!/\b(?:customer|she|he|they|we|i|permit|labor|dumpster)\b/i.test(cl))){
+        const last=out[out.length-1];last.item=last.item+' '+cl.replace(/^(?:the|in)\s+/i,'');return;
+      }
+      if(/\b(?:not|don't|dont|no\s+need|skip|already\s+(?:have|got))\b/i.test(cl))return;
+      const workStart=(()=>{const w=_timkTidy(cl).toLowerCase().split(/\s+/)[0]||'';return _timkVerbLike(w)&&!_TIMK_NOUNISH.has(w)&&!/^(?:grab|get|pick|buy|order|bring|need|add|use|used|figure|throw)$/.test(w);})();
+      // "put down fabric, figure 2 rolls", "Poly sand, 4 bags", "6-3 NM, about
+      // 60 feet": a count and a unit with no thing is the thing just named.
+      {const bare=cl.replace(_TIMK_MAT_LEAD,'').match(/^(\d+(?:\.\d+)?|an?|a\s+couple|a\s+dozen)\s+([a-z0-9]+)\s*$/i);
+       if(bare&&_timkSellUnit(bare[2])&&prevText&&(!/^(?:foot|square|sq ft)$/.test(_timkSellUnit(bare[2]))||prevWasMat||listy)){
+         const thing=_timkMatThing(prevText);
+         if(thing){
+           const q=_timkQtyVal(bare[1]),u=_timkSellUnit(bare[2]);
+           const same=out.length&&out[out.length-1].item.toLowerCase()===thing.toLowerCase();
+           if(same){out[out.length-1].qty=q;out[out.length-1].unit=u;}else out.push({qty:q,unit:u,item:thing,said:cl});
+           prevWasMat=true;prevText=cl;return;}
+       }}
+      // Shape 1, anywhere: COUNT UNIT of THING.
+      const re1=/(?:^|\s)(a\s+couple(?:\s+of)?|couple(?:\s+of)?|a\s+dozen|dozen|half\s+an?|a\s+half|a\s+few|\d+(?:\.\d+)?|\d+\/\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s+([a-z0-9]+)\s+(?:of\s+)(.+)$/i;
+      const m1=cl.match(re1);
+      if(m1&&_timkSellUnit(m1[2])){
+        const unit=_timkSellUnit(m1[2]);
+        const soft=/^(?:foot|square|sq ft)$/.test(unit);
+        const item=_timkMatItem(m1[3]);
+        if(_timkMatGood(item)&&(!soft||!workStart||listy)&&!(soft&&/\b(?:it|them|that|this)$/i.test(item))){
+          const n=/^(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve)$/i.test(m1[1])?_TIMK_ONES[m1[1].toLowerCase()]:_timkQtyVal(m1[1]);
+          out.push({qty:n,unit:unit==='foot'?'foot':unit,item,said:m1[0].trim()});prevWasMat=true;return;
+        }
+      }
+      // "4 rolls synthetic underlayment", "2 bags thinset": the unit with no "of".
+      {const m=cl.replace(_TIMK_MAT_LEAD,'').match(/^(\d+(?:\.\d+)?|an?|a\s+couple|couple|a\s+dozen|dozen)\s+([a-z]+)\s+(.+)$/i);
+       if(m&&_timkSellUnit(m[2])&&!/^(?:foot|square|panel)$/.test(_timkSellUnit(m[2]))&&!workStart){
+         const item=_timkMatItem(m[3]);
+         if(_timkMatGood(item)){out.push({qty:_timkQtyVal(m[1]),unit:_timkSellUnit(m[2]),item,said:m[0].trim()});prevWasMat=true;return;}
+       }}
+      // Shape 2: COUNT THING, only in a list.
+      const lead=cl.replace(_TIMK_MAT_LEAD,'');
+      const listClause=!workStart&&(listy||prevWasMat||lead!==cl||ci>0&&clauses.length>1&&/^(?:\d|an?\s|one\s|a\s+couple|couple|a\s+dozen|dozen)/i.test(cl)||/^(?:\d|an?\s|one\s|a\s+couple|couple|a\s+dozen|dozen)/i.test(cl)&&clauses.length>1);
+      if(!listClause)return;
+      const m2=lead.match(_TIMK_MAT_QTY);
+      if(!m2)return;
+      let rest=lead.slice(m2[0].length);
+      let qty=_timkQtyVal(m2[1]);
+      // "a 50 gallon Bradford White": after "a", a number is the size.
+      if(/^\d/.test(rest)&&!/^an?$|^one$/i.test(m2[1].trim())){
+        // "2 3 inch round downspouts": count, then size.
+      }else if(/^\d/.test(m2[1])){
+        const nx=rest.split(/\s+/)[0]||'';
+        // "6 inch seamless gutters around the house" names a size, not a
+        // count. With no count said, it is a list item only in a list.
+        if(_TIMK_SIZE_WORD.test(nx)){rest=m2[1].trim()+' '+rest;qty=1;if(!listy&&!prevWasMat)return;}
+      }
+      const item=_timkMatItem(rest);
+      if(!_timkMatGood(item))return;
+      // A bare word with no thing in it is not a part: "2 more", "3 of them".
+      if(item.split(/\s+/).length===1&&_timkVerbLike(item.toLowerCase())&&!_TIMK_NOUNISH.has(item.toLowerCase()))return;
+      out.push({qty,unit:'ea',item,said:lead.trim()});prevWasMat=true;
+      }finally{prevText=cl;}
+    });
+  });
+  // One line per thing: "4 rolls of underlayment" said twice is one line.
+  const seen=new Map();
+  out.forEach(r=>{
+    r.item=r.item.charAt(0).toUpperCase()+r.item.slice(1);
+    const k=r.unit+'|'+r.item.toLowerCase();
+    if(!seen.has(k))seen.set(k,r);
+  });
+  return [...seen.values()];
 }

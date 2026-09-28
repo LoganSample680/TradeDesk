@@ -1,0 +1,3746 @@
+[
+  {
+    "id": "E-001",
+    "trade": "plumbing",
+    "style": "supply-run",
+    "said": "Grab me two sticks of 3/4 inch PEX, a bag of 3/4 shark bite couplings, four 3/4 inch ball valves and a tube of pipe dope.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "stick",
+        "item": "3/4 inch PEX"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "3/4 SharkBite couplings"
+      },
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "3/4 inch ball valve"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "pipe dope"
+      }
+    ],
+    "heard": [
+      {
+        "said": "shark bite",
+        "means": "SharkBite"
+      }
+    ]
+  },
+  {
+    "id": "E-002",
+    "trade": "plumbing",
+    "style": "supply-run",
+    "said": "ok supply house run uh six sticks of 2 inch PVC ho tee purple primer and the clear cement a dozen 2 inch 90s and half a box of 2 inch couplings no wait make it a full box",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "stick",
+        "item": "2 inch PVC"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Oatey purple primer"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "clear cement"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "2 inch 90"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "2 inch couplings"
+      }
+    ],
+    "heard": [
+      {
+        "said": "ho tee",
+        "means": "Oatey"
+      }
+    ]
+  },
+  {
+    "id": "E-003",
+    "trade": "plumbing",
+    "style": "supply-run",
+    "said": "Need a reem 50 gallon gas water heater, 40,000 BTU, two 3/4 flex connectors, a 3/4 gas flex, one length of 3/4 copper for the T&P discharge and a couple of dielectric unions. Customer's paying for the haul away, it's like 75 bucks.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Rheem 50 gallon gas water heater"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "3/4 flex connector"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "3/4 gas flex"
+      },
+      {
+        "qty": 1,
+        "unit": "length",
+        "item": "3/4 copper"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "dielectric union"
+      }
+    ],
+    "heard": [
+      {
+        "said": "reem",
+        "means": "Rheem"
+      }
+    ]
+  },
+  {
+    "id": "E-004",
+    "trade": "plumbing",
+    "style": "terse",
+    "said": "Cut out the cast iron stack in the basement. Replace with 4 inch PVC. Three sticks of 4 inch PVC, two no hub couplings, one cleanout tee. Permit included.",
+    "expect": [
+      "Cut out the cast iron stack in the basement",
+      "Replace with 4 inch PVC",
+      "Permit included"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "stick",
+        "item": "4 inch PVC"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "no hub coupling"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "cleanout tee"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-005",
+    "trade": "plumbing",
+    "style": "corrections",
+    "said": "alright so the kitchen sink, um, we're gonna swap the disposal, put in an in sink a rater badger 5, she's got a Waste King in there now it's shot, and uh re-pipe the trap in PVC, figure one and a half inch trap kit, two of em, no wait just one, and a new air gap",
+    "expect": [
+      "Swap the disposal",
+      "Put in an InSinkErator Badger 5",
+      "Re-pipe the trap in PVC"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "InSinkErator Badger 5"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "1 1/2 inch trap kit"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "air gap"
+      }
+    ],
+    "heard": [
+      {
+        "said": "in sink a rater",
+        "means": "InSinkErator"
+      }
+    ]
+  },
+  {
+    "id": "E-006",
+    "trade": "plumbing",
+    "style": "notes",
+    "said": "master bath - replace shower valve with moan posi temp, 1 cartridge 1225, new trim kit brushed nickel. cut access panel from closet side. patch and paint by others",
+    "expect": [
+      "Replace shower valve with Moen Posi-Temp",
+      "New trim kit, brushed nickel",
+      "Cut access panel from closet side",
+      "Patch and paint by others"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Moen Posi-Temp valve"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "1225 cartridge"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "brushed nickel trim kit"
+      }
+    ],
+    "heard": [
+      {
+        "said": "moan",
+        "means": "Moen"
+      }
+    ]
+  },
+  {
+    "id": "E-007",
+    "trade": "plumbing",
+    "style": "invoice",
+    "said": "Replaced the wax ring on the upstairs toilet, used a fluid master fill valve and two supply lines, reset the bowl.",
+    "expect": [
+      "Replaced the wax ring on the upstairs toilet",
+      "Reset the bowl"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "wax ring"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Fluidmaster fill valve"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "supply line"
+      }
+    ],
+    "heard": [
+      {
+        "said": "fluid master",
+        "means": "Fluidmaster"
+      }
+    ]
+  },
+  {
+    "id": "E-008",
+    "trade": "plumbing",
+    "style": "invoice",
+    "said": "went out on the no hot water call replaced the thermocouple used a honey well 24 inch universal relit the pilot put in a new drain valve on the tank service call was 89 part was 22",
+    "expect": [
+      "Replaced the thermocouple",
+      "Relit the pilot",
+      "Put in a new drain valve on the tank"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Honeywell 24 inch universal thermocouple"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "drain valve"
+      }
+    ],
+    "heard": [
+      {
+        "said": "honey well",
+        "means": "Honeywell"
+      }
+    ]
+  },
+  {
+    "id": "E-009",
+    "trade": "hvac",
+    "style": "supply-run",
+    "said": "Grab two 20 by 25 by 1 filters, a 45/5 dual run cap, a 40 amp contactor, and 50 feet of 3/8 by 3/4 line set. Also a roll of foil tape.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "20 by 25 by 1 filter"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "45/5 dual run cap"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "40 amp contactor"
+      },
+      {
+        "qty": 50,
+        "unit": "foot",
+        "item": "3/8 by 3/4 line set"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "foil tape"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-010",
+    "trade": "hvac",
+    "style": "supply-run",
+    "said": "need a case of 16 by 25 by 4 media filters actually make it two cases and a gallon of new cal gone coil cleaner a spool of 18-5 thermostat wire and a honeywell t6 pro",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "case",
+        "item": "16 by 25 by 4 media filter"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Nu-Calgon coil cleaner"
+      },
+      {
+        "qty": 1,
+        "unit": "spool",
+        "item": "18-5 thermostat wire"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Honeywell T6 Pro"
+      }
+    ],
+    "heard": [
+      {
+        "said": "new cal gone",
+        "means": "Nu-Calgon"
+      }
+    ]
+  },
+  {
+    "id": "E-011",
+    "trade": "hvac",
+    "style": "supply-run",
+    "said": "ok for the Johnson job a 25 pound tank of 410 A, uh, three tubes of duct mastic, 2 boxes of sheet metal screws, and a box of 6 inch flex duct",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "25 pound R-410A"
+      },
+      {
+        "qty": 3,
+        "unit": "tube",
+        "item": "duct mastic"
+      },
+      {
+        "qty": 2,
+        "unit": "box",
+        "item": "sheet metal screws"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "6 inch flex duct"
+      }
+    ],
+    "heard": [
+      {
+        "said": "410 A",
+        "means": "R-410A"
+      }
+    ]
+  },
+  {
+    "id": "E-012",
+    "trade": "hvac",
+    "style": "rambling",
+    "said": "so the upstairs unit's shot, we're gonna pull the old train, set a new good man 2 and a half ton heat pump, figure the pad's fine, reuse the line set, new disconnect, new whip, and flush the lines. and she's asking about a smart thermostat, I told her ecobee, she's buying it herself",
+    "expect": [
+      "Pull the old Trane",
+      "Set a new Goodman 2 1/2 ton heat pump",
+      "Reuse the line set",
+      "New disconnect",
+      "New whip",
+      "Flush the lines"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Goodman 2 1/2 ton heat pump"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "disconnect"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "whip"
+      }
+    ],
+    "heard": [
+      {
+        "said": "train",
+        "means": "Trane"
+      },
+      {
+        "said": "good man",
+        "means": "Goodman"
+      }
+    ]
+  },
+  {
+    "id": "E-013",
+    "trade": "hvac",
+    "style": "notes",
+    "said": "attic - replace 8 inch trunk take off, 4 sticks of 8 inch duct pipe, 2 8 inch 90s, seal all joints. insulate with R8 wrap, 2 rolls.",
+    "expect": [
+      "Replace 8 inch trunk take off",
+      "Seal all joints",
+      "Insulate with R8 wrap"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "8 inch trunk take off"
+      },
+      {
+        "qty": 4,
+        "unit": "stick",
+        "item": "8 inch duct pipe"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "8 inch 90"
+      },
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "R8 wrap"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-014",
+    "trade": "hvac",
+    "style": "corrections",
+    "said": "Put a mini split in the garage. Mount the head on the back wall, run the line set out through the wall. Figure a Mitsubishi 12,000 BTU system, 25 feet of line set, no, make it 35, a line hide kit and a wall bracket for the condenser.",
+    "expect": [
+      "Put a mini split in the garage",
+      "Mount the head on the back wall",
+      "Run the line set out through the wall"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Mitsubishi 12,000 BTU system"
+      },
+      {
+        "qty": 35,
+        "unit": "foot",
+        "item": "line set"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "line hide kit"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "wall bracket"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-015",
+    "trade": "hvac",
+    "style": "invoice",
+    "said": "Replaced the dual run capacitor and the contactor on the outdoor unit, used a 45/5 cap and a 30 amp single pole contactor, checked the charge and topped it off.",
+    "expect": [
+      "Replaced the dual run capacitor and the contactor on the outdoor unit",
+      "Checked the charge and topped it off"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "45/5 cap"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "30 amp single pole contactor"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-016",
+    "trade": "hvac",
+    "style": "invoice",
+    "said": "furnace no heat cleaned the flame sensor swapped the igniter used a white rogers 768a-845 also changed the filter 16 by 25 by 1 two of them",
+    "expect": [
+      "Cleaned the flame sensor",
+      "Swapped the igniter",
+      "Changed the filter"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "White-Rodgers 768A-845 igniter"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "16 by 25 by 1 filter"
+      }
+    ],
+    "heard": [
+      {
+        "said": "white rogers",
+        "means": "White-Rodgers"
+      }
+    ]
+  },
+  {
+    "id": "E-017",
+    "trade": "electrical",
+    "style": "supply-run",
+    "said": "grab two rolls of 12-2, a box of single gang old work boxes and ten 20 amp breakers",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "12-2"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "single gang old work boxes"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "20 amp breaker"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-018",
+    "trade": "electrical",
+    "style": "supply-run",
+    "said": "need a 250 foot roll of 14 2 romex no make that two rolls a box of red wire nuts a box of tan ones half a box of 1/2 inch staples and 6 decora outlets white",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "250 foot 14-2 Romex"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "red wire nuts"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "tan wire nuts"
+      },
+      {
+        "qty": 0.5,
+        "unit": "box",
+        "item": "1/2 inch staples"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "white Decora outlet"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-019",
+    "trade": "electrical",
+    "style": "supply-run",
+    "said": "Supply run: one Square D Q O 200 amp panel, a 200 amp main breaker, four 15 amp arc fault breakers, a dozen 20 amp singles, and 3 lengths of 2 inch EMT. Panel's about 280.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Square D QO 200 amp panel"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "200 amp main breaker"
+      },
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "15 amp arc fault breaker"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "20 amp single pole breaker"
+      },
+      {
+        "qty": 3,
+        "unit": "length",
+        "item": "2 inch EMT"
+      }
+    ],
+    "heard": [
+      {
+        "said": "Q O",
+        "means": "QO"
+      }
+    ]
+  },
+  {
+    "id": "E-020",
+    "trade": "electrical",
+    "style": "room-by-room",
+    "said": "In the kitchen add 4 can lights on a new switch by the door, 6 inch halo LED retrofits. In the living room swap the fan for a Hunter 52 inch, customer supplies the fan. Hallway gets 2 hardwired smoke detectors, interconnected.",
+    "expect": [
+      "In the kitchen add 4 can lights on a new switch by the door",
+      "In the living room swap the fan for a Hunter 52 inch",
+      "Customer supplies the fan",
+      "Hallway gets 2 hardwired smoke detectors, interconnected"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "6 inch Halo LED retrofit"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "switch"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "hardwired smoke detector"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-021",
+    "trade": "electrical",
+    "style": "terse",
+    "said": "Run a 50 amp circuit for the EV charger. 6-3 NM, about 60 feet. 50 amp 2 pole breaker. 14-50 outlet. Permit included.",
+    "expect": [
+      "Run a 50 amp circuit for the EV charger",
+      "Permit included"
+    ],
+    "materials": [
+      {
+        "qty": 60,
+        "unit": "foot",
+        "item": "6-3 NM"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "50 amp 2 pole breaker"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "14-50 outlet"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-022",
+    "trade": "electrical",
+    "style": "rambling",
+    "said": "ok so garage sub panel um we're gonna mount a 100 amp sub by the workbench feed it from the main with 2-2-2-4 aluminum I think 40 feet of it and then like four circuits off it so four 20 amp breakers and grab a roll of 12-2 for those oh and put a GFCI at the bench",
+    "expect": [
+      "Mount a 100 amp sub by the workbench",
+      "Feed it from the main with 2-2-2-4 aluminum",
+      "4 circuits off it",
+      "Put a GFCI at the bench"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "100 amp sub"
+      },
+      {
+        "qty": 40,
+        "unit": "foot",
+        "item": "2-2-2-4 aluminum"
+      },
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "20 amp breaker"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "12-2"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "GFCI"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-023",
+    "trade": "electrical",
+    "style": "invoice",
+    "said": "Replaced 3 dead outlets in the bathroom and kitchen with GFCIs, used 3 levitan 20 amp GFCIs, and swapped a bad 15 amp breaker in the panel.",
+    "expect": [
+      "Replaced 3 dead outlets in the bathroom and kitchen with GFCIs",
+      "Swapped a bad 15 amp breaker in the panel"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "Leviton 20 amp GFCI"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "15 amp breaker"
+      }
+    ],
+    "heard": [
+      {
+        "said": "levitan",
+        "means": "Leviton"
+      }
+    ]
+  },
+  {
+    "id": "E-024",
+    "trade": "electrical",
+    "style": "invoice",
+    "said": "troubleshot the dead circuit in the den, remade the burnt splice in the ceiling box with waco's, used four waco 221s, and replaced the switch with a loot ron diva dimmer",
+    "expect": [
+      "Troubleshot the dead circuit in the den",
+      "Remade the burnt splice in the ceiling box with Wagos",
+      "Replaced the switch with a Lutron Diva dimmer"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "Wago 221"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Lutron Diva dimmer"
+      }
+    ],
+    "heard": [
+      {
+        "said": "waco's",
+        "means": "Wagos"
+      },
+      {
+        "said": "waco",
+        "means": "Wago"
+      },
+      {
+        "said": "loot ron",
+        "means": "Lutron"
+      }
+    ]
+  },
+  {
+    "id": "E-025",
+    "trade": "roofing",
+    "style": "supply-run",
+    "said": "order 32 squares of gaff timberline HDZ charcoal 4 bundles of starter 6 bundles of hip and ridge 10 rolls of synthetic underlayment and 2 rolls of ice and water",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 32,
+        "unit": "square",
+        "item": "GAF Timberline HDZ Charcoal"
+      },
+      {
+        "qty": 4,
+        "unit": "bundle",
+        "item": "starter"
+      },
+      {
+        "qty": 6,
+        "unit": "bundle",
+        "item": "hip and ridge"
+      },
+      {
+        "qty": 10,
+        "unit": "roll",
+        "item": "synthetic underlayment"
+      },
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "ice and water"
+      }
+    ],
+    "heard": [
+      {
+        "said": "gaff",
+        "means": "GAF"
+      }
+    ]
+  },
+  {
+    "id": "E-026",
+    "trade": "roofing",
+    "style": "supply-run",
+    "said": "Drop at the Miller house: a box of 1 and a quarter coil nails, uh, three boxes actually, 20 pieces of drip edge, 4 pipe boots, 3 inch, and a case of geo sell",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "box",
+        "item": "1 1/4 coil nails"
+      },
+      {
+        "qty": 20,
+        "unit": "ea",
+        "item": "drip edge"
+      },
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "3 inch pipe boot"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "Geocel"
+      }
+    ],
+    "heard": [
+      {
+        "said": "geo sell",
+        "means": "Geocel"
+      }
+    ]
+  },
+  {
+    "id": "E-027",
+    "trade": "roofing",
+    "style": "rambling",
+    "said": "okay so full tear off, one layer, we're gonna go down to the deck, replace any bad plywood, figure 5 sheets of 7/16 OSB, then ice and water in the valleys and synthetic everywhere else, figure 3 rolls of ice and water and 8 rolls of synthetic, shingle it with owens corning duration, 24 squares, new drip edge, 14 pieces. dumpster's on us.",
+    "expect": [
+      "Full tear off, 1 layer",
+      "Go down to the deck",
+      "Replace any bad plywood",
+      "Ice and water in the valleys",
+      "Synthetic everywhere else",
+      "Shingle it with Owens Corning Duration",
+      "New drip edge"
+    ],
+    "materials": [
+      {
+        "qty": 5,
+        "unit": "sheet",
+        "item": "7/16 OSB"
+      },
+      {
+        "qty": 3,
+        "unit": "roll",
+        "item": "ice and water"
+      },
+      {
+        "qty": 8,
+        "unit": "roll",
+        "item": "synthetic"
+      },
+      {
+        "qty": 24,
+        "unit": "square",
+        "item": "Owens Corning Duration"
+      },
+      {
+        "qty": 14,
+        "unit": "ea",
+        "item": "drip edge"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-028",
+    "trade": "roofing",
+    "style": "terse",
+    "said": "Tear out old step flashing at the chimney. Install new step and counter flashing. Reseal. One coil of aluminum, 2 tubes of n p one.",
+    "expect": [
+      "Tear out old step flashing at the chimney",
+      "Install new step and counter flashing",
+      "Reseal"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "coil",
+        "item": "aluminum"
+      },
+      {
+        "qty": 2,
+        "unit": "tube",
+        "item": "NP1"
+      }
+    ],
+    "heard": [
+      {
+        "said": "n p one",
+        "means": "NP1"
+      }
+    ]
+  },
+  {
+    "id": "E-029",
+    "trade": "roofing",
+    "style": "corrections",
+    "said": "repair on the back slope where the tree came down replace about 2 squares of shingles figure 6 bundles of certain teed landmark weathered wood no wait make it 7 a roll of felt and swap the broken vent for a new 4 inch goose neck",
+    "expect": [
+      "Repair on the back slope where the tree came down",
+      "Replace about 2 squares of shingles",
+      "Swap the broken vent for a new 4 inch gooseneck"
+    ],
+    "materials": [
+      {
+        "qty": 7,
+        "unit": "bundle",
+        "item": "CertainTeed Landmark Weathered Wood"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "felt"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "4 inch gooseneck vent"
+      }
+    ],
+    "heard": [
+      {
+        "said": "certain teed",
+        "means": "CertainTeed"
+      },
+      {
+        "said": "goose neck",
+        "means": "gooseneck"
+      }
+    ]
+  },
+  {
+    "id": "E-030",
+    "trade": "roofing",
+    "style": "notes",
+    "said": "gutters front side - remove and replace, figure 120 feet of 5 inch k style white, 6 downspouts 3 by 4, and a box of hidden hangers",
+    "expect": [
+      "Remove and replace the gutters on the front side"
+    ],
+    "materials": [
+      {
+        "qty": 120,
+        "unit": "foot",
+        "item": "5 inch K style white"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "3 by 4 downspout"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "hidden hangers"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-031",
+    "trade": "roofing",
+    "style": "invoice",
+    "said": "Fixed the leak over the kitchen. Pulled the shingles around the plumbing vent, replaced the pipe boot with a 3 inch Oatey No-Calk, and relaid the shingles. Used a tube of Geocel.",
+    "expect": [
+      "Fixed the leak over the kitchen",
+      "Pulled the shingles around the plumbing vent",
+      "Replaced the pipe boot with a 3 inch Oatey No-Calk",
+      "Relaid the shingles"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "3 inch Oatey No-Calk"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "Geocel"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-032",
+    "trade": "roofing",
+    "style": "invoice",
+    "said": "replaced 14 shingles on the south slope storm damage used a bundle of i k o cambridge dual black resealed the ridge cap with a tube of through the roof",
+    "expect": [
+      "Replaced 14 shingles on the south slope",
+      "Resealed the ridge cap"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "bundle",
+        "item": "IKO Cambridge Dual Black"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "Through the Roof"
+      }
+    ],
+    "heard": [
+      {
+        "said": "i k o",
+        "means": "IKO"
+      }
+    ]
+  },
+  {
+    "id": "E-033",
+    "trade": "painting",
+    "style": "supply-run",
+    "said": "Grab 3 5s of sure win williams Duration exterior, satin, in Alabaster, 2 gallons of Extreme Bond primer, a case of painters tape, and 6 roller covers, 3/8 nap.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "bucket",
+        "item": "Sherwin-Williams Duration exterior satin Alabaster"
+      },
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "Extreme Bond primer"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "painters tape"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "3/8 nap roller cover"
+      }
+    ],
+    "heard": [
+      {
+        "said": "sure win williams",
+        "means": "Sherwin-Williams"
+      }
+    ]
+  },
+  {
+    "id": "E-034",
+    "trade": "painting",
+    "style": "supply-run",
+    "said": "need 4 gallons of emerald interior eggshell agreeable gray actually just make it a 5 and 2 gallons of the ceiling paint flat white a dozen tubes of dap alex plus and a couple rolls of the blue frog tape",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "Emerald interior eggshell Agreeable Gray"
+      },
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "flat white ceiling paint"
+      },
+      {
+        "qty": 12,
+        "unit": "tube",
+        "item": "DAP Alex Plus"
+      },
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "blue FrogTape"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-035",
+    "trade": "painting",
+    "style": "supply-run",
+    "said": "For the cabinet job, a gallon of Advance, pure white, satin, uh, a gallon of been shellac primer, a pack of mini foam rollers, and a pack of 220 sanding sponges. Should be about 150 all in.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Advance pure white satin"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "BIN shellac primer"
+      },
+      {
+        "qty": 1,
+        "unit": "pack",
+        "item": "mini foam rollers"
+      },
+      {
+        "qty": 1,
+        "unit": "pack",
+        "item": "220 sanding sponges"
+      }
+    ],
+    "heard": [
+      {
+        "said": "been",
+        "means": "BIN"
+      }
+    ]
+  },
+  {
+    "id": "E-036",
+    "trade": "painting",
+    "style": "room-by-room",
+    "said": "Living room, walls and ceiling, 2 coats. Hallway, walls only, and patch the nail holes. Master bedroom, walls, trim and doors. Figure 4 gallons of SW Cashmere and 3 gallons of Repose Gray.",
+    "expect": [
+      "Living room walls and ceiling, 2 coats",
+      "Hallway walls only",
+      "Patch the nail holes",
+      "Master bedroom walls, trim and doors"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "gallon",
+        "item": "SW Cashmere"
+      },
+      {
+        "qty": 3,
+        "unit": "gallon",
+        "item": "Repose Gray"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-037",
+    "trade": "painting",
+    "style": "rambling",
+    "said": "so exterior, we're gonna power wash the whole house, scrape and prime the bare spots on the south side, caulk the windows, and two coats on the body, figure uh four 5s of Duration in the body color, and trim's Extra White, a couple gallons, and like 20 tubes of caulk, no, 2 cases, whatever, 2 cases",
+    "expect": [
+      "Power wash the whole house",
+      "Scrape and prime the bare spots on the south side",
+      "Caulk the windows",
+      "2 coats on the body"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "bucket",
+        "item": "Duration body color"
+      },
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "Extra White trim"
+      },
+      {
+        "qty": 2,
+        "unit": "case",
+        "item": "caulk"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-038",
+    "trade": "painting",
+    "style": "terse",
+    "said": "wash and brighten the deck let it dry 48 hours 2 coats semi transparent stain cedar tone figure a 5 of cab it and a gallon of deck brightener",
+    "expect": [
+      "Wash and brighten the deck",
+      "2 coats semi transparent stain, cedar tone"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "Cabot semi transparent cedar tone"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "deck brightener"
+      }
+    ],
+    "heard": [
+      {
+        "said": "cab it",
+        "means": "Cabot"
+      }
+    ]
+  },
+  {
+    "id": "E-039",
+    "trade": "painting",
+    "style": "invoice",
+    "said": "Painted the master bath, walls and ceiling. Used 2 gallons of Benjamin Moore Aura Bath and Spa in shantilly lace and a quart of, no, just the 2 gallons. Patched the drywall around the vanity.",
+    "expect": [
+      "Painted the master bath, walls and ceiling",
+      "Patched the drywall around the vanity"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "Benjamin Moore Aura Bath and Spa Chantilly Lace"
+      }
+    ],
+    "heard": [
+      {
+        "said": "shantilly lace",
+        "means": "Chantilly Lace"
+      }
+    ]
+  },
+  {
+    "id": "E-040",
+    "trade": "painting",
+    "style": "invoice",
+    "said": "repainted the front door and shutters used a gallon of sherwin williams urethane trim enamel tri corn black and a pack of foam brushes",
+    "expect": [
+      "Repainted the front door and shutters"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Sherwin-Williams Urethane Trim Enamel Tricorn Black"
+      },
+      {
+        "qty": 1,
+        "unit": "pack",
+        "item": "foam brushes"
+      }
+    ],
+    "heard": [
+      {
+        "said": "tri corn",
+        "means": "Tricorn"
+      }
+    ]
+  },
+  {
+    "id": "E-041",
+    "trade": "landscaping",
+    "style": "supply-run",
+    "said": "Order 12 yards of double shredded hardwood mulch, 3 tons of 57 stone, 2 pallets of bel guard Holland pavers and 8 bags of polymeric sand.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 12,
+        "unit": "yard",
+        "item": "double shredded hardwood mulch"
+      },
+      {
+        "qty": 3,
+        "unit": "ton",
+        "item": "57 stone"
+      },
+      {
+        "qty": 2,
+        "unit": "pallet",
+        "item": "Belgard Holland pavers"
+      },
+      {
+        "qty": 8,
+        "unit": "bag",
+        "item": "polymeric sand"
+      }
+    ],
+    "heard": [
+      {
+        "said": "bel guard",
+        "means": "Belgard"
+      }
+    ]
+  },
+  {
+    "id": "E-042",
+    "trade": "landscaping",
+    "style": "supply-run",
+    "said": "pick up six 3 gallon boxwoods a dozen 1 gallon hostas four bags of garden soil a roll of landscape fabric the 4 by 100 and a box of sod staples",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "3 gallon boxwood"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "1 gallon hosta"
+      },
+      {
+        "qty": 4,
+        "unit": "bag",
+        "item": "garden soil"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "4 by 100 landscape fabric"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "sod staples"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-043",
+    "trade": "landscaping",
+    "style": "supply-run",
+    "said": "Irrigation parts: a coil of 1 inch poly, uh, 100 foot, 8 Rain Bird 5004 rotors, no, 10 of them, 12 Hunter Pro Spray heads, and a rocky oh 3 controller",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "coil",
+        "item": "100 foot 1 inch poly"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "Rain Bird 5004 rotor"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "Hunter Pro-Spray head"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Rachio 3 controller"
+      }
+    ],
+    "heard": [
+      {
+        "said": "rocky oh",
+        "means": "Rachio"
+      }
+    ]
+  },
+  {
+    "id": "E-044",
+    "trade": "landscaping",
+    "style": "rambling",
+    "said": "alright so the front beds, we're gonna pull all the dead shrubs, edge the beds, put down fabric, figure 2 rolls, and mulch the beds, figure 8 yards of black mulch, and plant 3 knockout roses by the mailbox, the 3 gallon ones, she loves those",
+    "expect": [
+      "Pull all the dead shrubs",
+      "Edge the beds",
+      "Put down fabric",
+      "Mulch the beds",
+      "Plant 3 Knock Out roses by the mailbox"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "roll",
+        "item": "fabric"
+      },
+      {
+        "qty": 8,
+        "unit": "yard",
+        "item": "black mulch"
+      },
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "3 gallon Knock Out rose"
+      }
+    ],
+    "heard": [
+      {
+        "said": "knockout",
+        "means": "Knock Out"
+      }
+    ]
+  },
+  {
+    "id": "E-045",
+    "trade": "landscaping",
+    "style": "terse",
+    "said": "Build a 12 by 16 paver patio. Excavate 6 inches. 4 tons of crusher run. 1 ton of sand. 2 pallets of pavers. Poly sand, 4 bags.",
+    "expect": [
+      "Build a 12 by 16 paver patio",
+      "Excavate 6 inches"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ton",
+        "item": "crusher run"
+      },
+      {
+        "qty": 1,
+        "unit": "ton",
+        "item": "sand"
+      },
+      {
+        "qty": 2,
+        "unit": "pallet",
+        "item": "pavers"
+      },
+      {
+        "qty": 4,
+        "unit": "bag",
+        "item": "poly sand"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-046",
+    "trade": "landscaping",
+    "style": "corrections",
+    "said": "sod the backyard about 2500 square feet figure 4 pallets of zoysia no wait make it 5 pallets grade it first and level the low spots with 3 yards of topsoil",
+    "expect": [
+      "Sod the backyard, about 2500 square feet",
+      "Grade it first",
+      "Level the low spots with 3 yards of topsoil"
+    ],
+    "materials": [
+      {
+        "qty": 5,
+        "unit": "pallet",
+        "item": "zoysia"
+      },
+      {
+        "qty": 3,
+        "unit": "yard",
+        "item": "topsoil"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-047",
+    "trade": "landscaping",
+    "style": "invoice",
+    "said": "Spring cleanup: cut back the perennials, edged all the beds, put down 6 yards of brown mulch, and applied pre-emergent, used 2 bags of Preen.",
+    "expect": [
+      "Cut back the perennials",
+      "Edged all the beds",
+      "Put down 6 yards of brown mulch",
+      "Applied pre-emergent"
+    ],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "yard",
+        "item": "brown mulch"
+      },
+      {
+        "qty": 2,
+        "unit": "bag",
+        "item": "Preen"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-048",
+    "trade": "landscaping",
+    "style": "invoice",
+    "said": "fixed the irrigation leak on zone 3, dug up the broken lateral, replaced 10 feet of 3/4 poly and 2 barbed couplings, and swapped out a busted rainbird 1804 head",
+    "expect": [
+      "Fixed the irrigation leak on zone 3",
+      "Dug up the broken lateral",
+      "Replaced 10 feet of 3/4 poly and 2 barbed couplings",
+      "Swapped out a busted Rain Bird 1804 head"
+    ],
+    "materials": [
+      {
+        "qty": 10,
+        "unit": "foot",
+        "item": "3/4 poly"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "barbed coupling"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Rain Bird 1804 head"
+      }
+    ],
+    "heard": [
+      {
+        "said": "rainbird",
+        "means": "Rain Bird"
+      }
+    ]
+  },
+  {
+    "id": "E-049",
+    "trade": "remodel",
+    "style": "supply-run",
+    "said": "for the bathroom gut, get a 60 inch coler Bellwether tub, a Schluter Kerdi kit, 12 sheets of half inch Durock, 3 bags of thinset, and a box of Durock screws",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "60 inch Kohler Bellwether tub"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Schluter Kerdi kit"
+      },
+      {
+        "qty": 12,
+        "unit": "sheet",
+        "item": "1/2 inch Durock"
+      },
+      {
+        "qty": 3,
+        "unit": "bag",
+        "item": "thinset"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "Durock screws"
+      }
+    ],
+    "heard": [
+      {
+        "said": "coler",
+        "means": "Kohler"
+      }
+    ]
+  },
+  {
+    "id": "E-050",
+    "trade": "remodel",
+    "style": "supply-run",
+    "said": "need 20 2x4s 8 foot a bundle of 2x4 studs actually no just the 20 loose ones 4 sheets of 3/4 plywood a box of 16d nails and a tube of PL premium",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 20,
+        "unit": "ea",
+        "item": "8 foot 2x4"
+      },
+      {
+        "qty": 4,
+        "unit": "sheet",
+        "item": "3/4 plywood"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "16d nails"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "PL Premium"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-051",
+    "trade": "remodel",
+    "style": "room-by-room",
+    "said": "In the kitchen tear out the upper and lower cabinets and remove the soffit. Install the new shaker cabinets, customer supplies the cabinets. Quartz top by others. In the laundry move the washer box 3 feet left, figure one Oatey washer box and 2 sticks of 1/2 PEX.",
+    "expect": [
+      "In the kitchen tear out the upper and lower cabinets",
+      "Remove the soffit",
+      "Install the new shaker cabinets",
+      "Customer supplies the cabinets",
+      "Quartz top by others",
+      "In the laundry move the washer box 3 feet left"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Oatey washer box"
+      },
+      {
+        "qty": 2,
+        "unit": "stick",
+        "item": "1/2 PEX"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-052",
+    "trade": "remodel",
+    "style": "rambling",
+    "said": "so basement finish, we're gonna frame the exterior walls with 2x4s, figure 60 studs, uh, and 10 sticks of treated 2x4 for the bottom plate, then insulate the rim joists with Rmax, 3 sheets, hang drywall, half inch, about 70 sheets, and tape and mud, level 4, figure 8 buckets of mud. Rough electrical's the electrician's problem.",
+    "expect": [
+      "Frame the exterior walls with 2x4s",
+      "Insulate the rim joists with Rmax",
+      "Hang drywall, 1/2 inch",
+      "Tape and mud, level 4"
+    ],
+    "materials": [
+      {
+        "qty": 60,
+        "unit": "ea",
+        "item": "2x4 stud"
+      },
+      {
+        "qty": 10,
+        "unit": "stick",
+        "item": "treated 2x4"
+      },
+      {
+        "qty": 3,
+        "unit": "sheet",
+        "item": "Rmax"
+      },
+      {
+        "qty": 70,
+        "unit": "sheet",
+        "item": "1/2 inch drywall"
+      },
+      {
+        "qty": 8,
+        "unit": "bucket",
+        "item": "mud"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-053",
+    "trade": "remodel",
+    "style": "notes",
+    "said": "hall bath remodel remove tub surround install new fiberglass surround sterling ensemble reuse tub new moan valve and trim new vanity 36 inch customer supplies vanity",
+    "expect": [
+      "Remove tub surround",
+      "Install new fiberglass surround, Sterling Ensemble",
+      "Reuse tub",
+      "New Moen valve and trim",
+      "New vanity, 36 inch",
+      "Customer supplies vanity"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Sterling Ensemble surround"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Moen valve and trim"
+      }
+    ],
+    "heard": [
+      {
+        "said": "moan",
+        "means": "Moen"
+      }
+    ]
+  },
+  {
+    "id": "E-054",
+    "trade": "remodel",
+    "style": "corrections",
+    "said": "Open up the wall between the kitchen and dining. Header's a triple 2x10, so 3 2x10s at 12 feet, actually make it 4 in case one's crowned. Patch the floor where the wall was.",
+    "expect": [
+      "Open up the wall between the kitchen and dining",
+      "Patch the floor where the wall was"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "12 foot 2x10"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-055",
+    "trade": "remodel",
+    "style": "invoice",
+    "said": "Installed the customer's vanity and top, hooked up the faucet and drain, used 2 braided supply lines and a 1 1/4 P-trap, and caulked the backsplash with a tube of GE silicone.",
+    "expect": [
+      "Installed the customer's vanity and top",
+      "Hooked up the faucet and drain",
+      "Caulked the backsplash"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "braided supply line"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "1 1/4 P-trap"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "GE silicone"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-056",
+    "trade": "remodel",
+    "style": "invoice",
+    "said": "removed the old shower door installed a new dream line frameless door 60 inch used a tube of clear silicone door was 640",
+    "expect": [
+      "Removed the old shower door",
+      "Installed a new DreamLine frameless door, 60 inch"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "DreamLine 60 inch frameless door"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "clear silicone"
+      }
+    ],
+    "heard": [
+      {
+        "said": "dream line",
+        "means": "DreamLine"
+      }
+    ]
+  },
+  {
+    "id": "E-057",
+    "trade": "handyman",
+    "style": "supply-run",
+    "said": "Grab a box of 2 1/2 inch GRK screws, a couple tubes of Alex caulk, a pack of E-Z Ancor anchors, a pair of 3 1/2 inch door hinges, satin nickel, and a quick set Tylo knob.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "2 1/2 inch GRK screws"
+      },
+      {
+        "qty": 2,
+        "unit": "tube",
+        "item": "Alex caulk"
+      },
+      {
+        "qty": 1,
+        "unit": "pack",
+        "item": "E-Z Ancor anchors"
+      },
+      {
+        "qty": 1,
+        "unit": "pair",
+        "item": "3 1/2 inch satin nickel door hinges"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Kwikset Tylo knob"
+      }
+    ],
+    "heard": [
+      {
+        "said": "quick set",
+        "means": "Kwikset"
+      }
+    ]
+  },
+  {
+    "id": "E-058",
+    "trade": "handyman",
+    "style": "supply-run",
+    "said": "need a bucket of all purpose mud a roll of mesh tape two bundles of shims a box of 1 5/8 drywall screws and three smoke detectors the first alert 10 year ones",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "all purpose mud"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "mesh tape"
+      },
+      {
+        "qty": 2,
+        "unit": "bundle",
+        "item": "shims"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "1 5/8 drywall screws"
+      },
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "First Alert 10 year smoke detector"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-059",
+    "trade": "handyman",
+    "style": "supply-run",
+    "said": "Hardware store: 4 tubes of Liquid Nails, a gallon of kills, uh, 3 lengths of quarter round, the 8 footers, and half a box of 1 inch brads, eh, grab the whole box",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "tube",
+        "item": "Liquid Nails"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Kilz"
+      },
+      {
+        "qty": 3,
+        "unit": "length",
+        "item": "8 foot quarter round"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "1 inch brads"
+      }
+    ],
+    "heard": [
+      {
+        "said": "kills",
+        "means": "Kilz"
+      }
+    ]
+  },
+  {
+    "id": "E-060",
+    "trade": "handyman",
+    "style": "rambling",
+    "said": "ok honey do list, um, we're gonna rehang the closet door in the back bedroom, it's rubbing, replace the torn screen on the patio door, figure a roll of screen and a roll of spline, patch the hole behind the bathroom door, and put a door stop on there, and hang the TV mount she bought",
+    "expect": [
+      "Rehang the closet door in the back bedroom",
+      "Replace the torn screen on the patio door",
+      "Patch the hole behind the bathroom door",
+      "Put a door stop on there",
+      "Hang the TV mount she bought"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "screen"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "spline"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "door stop"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-061",
+    "trade": "handyman",
+    "style": "terse",
+    "said": "Replace 2 exterior GFCI covers. Re-caulk the kitchen sink. Tighten the loose railing. 2 in-use covers, 1 tube kitchen and bath caulk.",
+    "expect": [
+      "Replace 2 exterior GFCI covers",
+      "Re-caulk the kitchen sink",
+      "Tighten the loose railing"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "in-use cover"
+      },
+      {
+        "qty": 1,
+        "unit": "tube",
+        "item": "kitchen and bath caulk"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-062",
+    "trade": "handyman",
+    "style": "corrections",
+    "said": "install grab bars in the hall bath and by the toilet figure two 24 inch moen grab bars no make that three and a box of wing its anchors",
+    "expect": [
+      "Install grab bars in the hall bath and by the toilet"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "24 inch Moen grab bar"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "WingIts anchors"
+      }
+    ],
+    "heard": [
+      {
+        "said": "wing its",
+        "means": "WingIts"
+      }
+    ]
+  },
+  {
+    "id": "E-063",
+    "trade": "handyman",
+    "style": "invoice",
+    "said": "Replaced the garbage disposal with a customer supplied unit, adjusted the sticking front door, and swapped the bathroom fan. Used a bro and 80 CFM fan and a roll of foil tape.",
+    "expect": [
+      "Replaced the garbage disposal with a customer supplied unit",
+      "Adjusted the sticking front door",
+      "Swapped the bathroom fan"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Broan 80 CFM fan"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "foil tape"
+      }
+    ],
+    "heard": [
+      {
+        "said": "bro and",
+        "means": "Broan"
+      }
+    ]
+  },
+  {
+    "id": "E-064",
+    "trade": "handyman",
+    "style": "invoice",
+    "said": "patched two holes in the living room drywall, used a couple of 6 by 6 patches and a bucket of lightweight mud, then primed and painted to match",
+    "expect": [
+      "Patched 2 holes in the living room drywall",
+      "Primed and painted to match"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "6 by 6 patch"
+      },
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "lightweight mud"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-065",
+    "trade": "flooring",
+    "style": "supply-run",
+    "said": "Order 22 boxes of life proof Sterling Oak, 3 rolls of underlayment, 6 pieces of T-molding, and 4 lengths of quarter round in white.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 22,
+        "unit": "box",
+        "item": "LifeProof Sterling Oak"
+      },
+      {
+        "qty": 3,
+        "unit": "roll",
+        "item": "underlayment"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "T-molding"
+      },
+      {
+        "qty": 4,
+        "unit": "length",
+        "item": "white quarter round"
+      }
+    ],
+    "heard": [
+      {
+        "said": "life proof",
+        "means": "LifeProof"
+      }
+    ]
+  },
+  {
+    "id": "E-066",
+    "trade": "flooring",
+    "style": "supply-run",
+    "said": "need 15 bags of versabond thinset and 4 bags of polyblend grout delorean gray no wait 3 bags a box of 1/8 spacers and a 5 of red guard",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 15,
+        "unit": "bag",
+        "item": "VersaBond thinset"
+      },
+      {
+        "qty": 3,
+        "unit": "bag",
+        "item": "Polyblend grout Delorean Gray"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "1/8 spacers"
+      },
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "RedGard"
+      }
+    ],
+    "heard": [
+      {
+        "said": "red guard",
+        "means": "RedGard"
+      }
+    ]
+  },
+  {
+    "id": "E-067",
+    "trade": "flooring",
+    "style": "supply-run",
+    "said": "For the stairs, 13 oak treads, 36 inch, a dozen risers, uh, primed, a gallon of Bona, and a case of construction adhesive. Treads run about 40 a piece.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 13,
+        "unit": "ea",
+        "item": "36 inch oak tread"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "primed riser"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Bona"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "construction adhesive"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-068",
+    "trade": "flooring",
+    "style": "room-by-room",
+    "said": "In the living room and hall rip out the carpet, install LVP. In the kitchen pull the vinyl and level the floor, figure 4 bags of self leveler. Figure 28 boxes of the LVP.",
+    "expect": [
+      "In the living room and hall rip out the carpet",
+      "Install LVP",
+      "In the kitchen pull the vinyl",
+      "Level the floor"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "bag",
+        "item": "self leveler"
+      },
+      {
+        "qty": 28,
+        "unit": "box",
+        "item": "LVP"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-069",
+    "trade": "flooring",
+    "style": "corrections",
+    "said": "tile the laundry floor about 60 square feet 12 by 24 porcelain figure 5 boxes actually 6 boxes for waste 2 bags of thinset and a bag of grout",
+    "expect": [
+      "Tile the laundry floor, about 60 square feet, 12 by 24 porcelain"
+    ],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "box",
+        "item": "12 by 24 porcelain"
+      },
+      {
+        "qty": 2,
+        "unit": "bag",
+        "item": "thinset"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "grout"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-070",
+    "trade": "flooring",
+    "style": "rambling",
+    "said": "so we're gonna pull up the carpet and pad in all three bedrooms, put down new 8 pound pad, and the customer buys the carpet direct, the carpet place is delivering it tuesday. figure 5 rolls of pad, a box of staples, and 20 sticks of tack strip",
+    "expect": [
+      "Pull up the carpet and pad in all 3 bedrooms",
+      "Put down new 8 pound pad",
+      "Customer buys the carpet direct"
+    ],
+    "materials": [
+      {
+        "qty": 5,
+        "unit": "roll",
+        "item": "pad"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "staples"
+      },
+      {
+        "qty": 20,
+        "unit": "stick",
+        "item": "tack strip"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-071",
+    "trade": "flooring",
+    "style": "invoice",
+    "said": "Refinished the hardwood in the dining room: sanded to bare wood, one coat of min wax Special Walnut stain, three coats of Bona Traffic HD. Used a gallon of stain and 2 gallons of Traffic.",
+    "expect": [
+      "Refinished the hardwood in the dining room",
+      "Sanded to bare wood",
+      "1 coat of Minwax Special Walnut stain",
+      "3 coats of Bona Traffic HD"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Minwax Special Walnut stain"
+      },
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "Bona Traffic HD"
+      }
+    ],
+    "heard": [
+      {
+        "said": "min wax",
+        "means": "Minwax"
+      }
+    ]
+  },
+  {
+    "id": "E-072",
+    "trade": "flooring",
+    "style": "invoice",
+    "said": "replaced 6 cracked tiles in the entry used the leftover tile the customer had so no charge on tile and a bag of prison grout",
+    "expect": [
+      "Replaced 6 cracked tiles in the entry"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "Prism grout"
+      }
+    ],
+    "heard": [
+      {
+        "said": "prison",
+        "means": "Prism"
+      }
+    ]
+  },
+  {
+    "id": "E-073",
+    "trade": "concrete",
+    "style": "supply-run",
+    "said": "Grab 60 bags of 80 pound quickreet, 10 sticks of number 4 rebar, a roll of 6 mil poly, a bag of rebar chairs, and a coil of tie wire.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 60,
+        "unit": "bag",
+        "item": "80 pound Quikrete"
+      },
+      {
+        "qty": 10,
+        "unit": "stick",
+        "item": "#4 rebar"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "6 mil poly"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "rebar chairs"
+      },
+      {
+        "qty": 1,
+        "unit": "coil",
+        "item": "tie wire"
+      }
+    ],
+    "heard": [
+      {
+        "said": "quickreet",
+        "means": "Quikrete"
+      }
+    ]
+  },
+  {
+    "id": "E-074",
+    "trade": "concrete",
+    "style": "supply-run",
+    "said": "order 9 yards of 4000 psi with fiber for thursday 8 sheets of 3/4 form ply 20 2x4 stakes and a 5 of cure and seal",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 9,
+        "unit": "yard",
+        "item": "4000 psi with fiber"
+      },
+      {
+        "qty": 8,
+        "unit": "sheet",
+        "item": "3/4 form ply"
+      },
+      {
+        "qty": 20,
+        "unit": "ea",
+        "item": "2x4 stake"
+      },
+      {
+        "qty": 1,
+        "unit": "bucket",
+        "item": "cure and seal"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-075",
+    "trade": "concrete",
+    "style": "terse",
+    "said": "Form and pour a 10 by 10 shed pad, 4 inches thick. Figure 40 bags of Quikrete and 6 sticks of rebar.",
+    "expect": [
+      "Form and pour a 10 by 10 shed pad, 4 inches thick"
+    ],
+    "materials": [
+      {
+        "qty": 40,
+        "unit": "bag",
+        "item": "Quikrete"
+      },
+      {
+        "qty": 6,
+        "unit": "stick",
+        "item": "rebar"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-076",
+    "trade": "concrete",
+    "style": "rambling",
+    "said": "ok so driveway, we're gonna tear out the old asphalt, haul it, uh, dumpster's separate, then grade and compact, 6 tons of crusher run, and pour 4 inch with wire mesh, figure 8 sheets of remesh, no, 10 sheets, and saw cut the control joints same day",
+    "expect": [
+      "Tear out the old asphalt",
+      "Haul it",
+      "Grade and compact",
+      "Pour 4 inch with wire mesh",
+      "Saw cut the control joints same day"
+    ],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "ton",
+        "item": "crusher run"
+      },
+      {
+        "qty": 10,
+        "unit": "sheet",
+        "item": "remesh"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-077",
+    "trade": "concrete",
+    "style": "notes",
+    "said": "front steps - demo 3 steps, form new steps 48 wide, pour with bagged mix, 25 bags of 80 lb, broom finish, seal the house joint with sica flex, 2 tubes",
+    "expect": [
+      "Demo 3 steps",
+      "Form new steps 48 wide",
+      "Pour with bagged mix",
+      "Broom finish",
+      "Seal the house joint with Sikaflex"
+    ],
+    "materials": [
+      {
+        "qty": 25,
+        "unit": "bag",
+        "item": "80 lb bagged mix"
+      },
+      {
+        "qty": 2,
+        "unit": "tube",
+        "item": "Sikaflex"
+      }
+    ],
+    "heard": [
+      {
+        "said": "sica flex",
+        "means": "Sikaflex"
+      }
+    ]
+  },
+  {
+    "id": "E-078",
+    "trade": "concrete",
+    "style": "corrections",
+    "said": "replace 3 cracked sidewalk squares pour 4 inch figure 2 yards of concrete no wait 1 and a half yards and a bundle of expansion joint",
+    "expect": [
+      "Replace 3 cracked sidewalk squares",
+      "Pour 4 inch"
+    ],
+    "materials": [
+      {
+        "qty": 1.5,
+        "unit": "yard",
+        "item": "concrete"
+      },
+      {
+        "qty": 1,
+        "unit": "bundle",
+        "item": "expansion joint"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-079",
+    "trade": "concrete",
+    "style": "invoice",
+    "said": "Ground down and patched the spalled area on the garage floor. Used 3 bags of Quikrete Vinyl Concrete Patcher and a gallon of bonding adhesive.",
+    "expect": [
+      "Ground down and patched the spalled area on the garage floor"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "bag",
+        "item": "Quikrete Vinyl Concrete Patcher"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "bonding adhesive"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-080",
+    "trade": "concrete",
+    "style": "invoice",
+    "said": "set the customers 4 fence posts in concrete by the gate used 8 bags of quick crete fast setting then poured a small landing 3 by 4 used 6 more bags of the 80 pound",
+    "expect": [
+      "Set the customer's 4 fence posts in concrete by the gate",
+      "Poured a small landing 3 by 4"
+    ],
+    "materials": [
+      {
+        "qty": 8,
+        "unit": "bag",
+        "item": "Quikrete fast setting"
+      },
+      {
+        "qty": 6,
+        "unit": "bag",
+        "item": "80 pound mix"
+      }
+    ],
+    "heard": [
+      {
+        "said": "quick crete",
+        "means": "Quikrete"
+      }
+    ]
+  },
+  {
+    "id": "E-081",
+    "trade": "fencing",
+    "style": "supply-run",
+    "said": "Grab 12 4x4 posts, 8 foot treated, 30 2x4 rails 8 foot, 150 dog ear cedar pickets, 30 bags of sack Crete fast set and a 5 pound box of 2 inch galvanized ring shanks.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "8 foot treated 4x4 post"
+      },
+      {
+        "qty": 30,
+        "unit": "ea",
+        "item": "8 foot 2x4 rail"
+      },
+      {
+        "qty": 150,
+        "unit": "ea",
+        "item": "dog ear cedar picket"
+      },
+      {
+        "qty": 30,
+        "unit": "bag",
+        "item": "Sakrete fast set"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "5 pound 2 inch galvanized ring shanks"
+      }
+    ],
+    "heard": [
+      {
+        "said": "sack Crete",
+        "means": "Sakrete"
+      }
+    ]
+  },
+  {
+    "id": "E-082",
+    "trade": "fencing",
+    "style": "supply-run",
+    "said": "need 10 rolls of 4 foot black welded wire and a box of hog rings actually two boxes and 20 t posts and a t post driver",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 10,
+        "unit": "roll",
+        "item": "4 foot black welded wire"
+      },
+      {
+        "qty": 2,
+        "unit": "box",
+        "item": "hog rings"
+      },
+      {
+        "qty": 20,
+        "unit": "ea",
+        "item": "T-post"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-083",
+    "trade": "fencing",
+    "style": "supply-run",
+    "said": "Chain link: 5 rolls of 4 foot 11 gauge, 6 line posts, 2 terminal posts, uh, 3 lengths of top rail, a bag of tension bands, and a walk gate, 4 foot",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 5,
+        "unit": "roll",
+        "item": "4 foot 11 gauge chain link"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "line post"
+      },
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "terminal post"
+      },
+      {
+        "qty": 3,
+        "unit": "length",
+        "item": "top rail"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "tension bands"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "4 foot walk gate"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-084",
+    "trade": "fencing",
+    "style": "rambling",
+    "said": "so the back line, about 120 feet, we're gonna pull the old chain link, set new posts every 8 feet, 16 posts, 4x4 treated, build a 6 foot privacy fence, board on board, and one gate by the garage, figure 400 pickets and 45 rails, the neighbor's splitting half",
+    "expect": [
+      "Pull the old chain link",
+      "Set new posts every 8 feet",
+      "Build a 6 foot privacy fence, board on board",
+      "1 gate by the garage"
+    ],
+    "materials": [
+      {
+        "qty": 16,
+        "unit": "ea",
+        "item": "4x4 treated post"
+      },
+      {
+        "qty": 400,
+        "unit": "ea",
+        "item": "picket"
+      },
+      {
+        "qty": 45,
+        "unit": "ea",
+        "item": "rail"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-085",
+    "trade": "fencing",
+    "style": "terse",
+    "said": "Replace 3 rotted posts. Reattach the rails. 3 4x4x8 treated, 6 bags of Quikrete, a box of 3 inch deck screws.",
+    "expect": [
+      "Replace 3 rotted posts",
+      "Reattach the rails"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "4x4x8 treated"
+      },
+      {
+        "qty": 6,
+        "unit": "bag",
+        "item": "Quikrete"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "3 inch deck screws"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-086",
+    "trade": "fencing",
+    "style": "corrections",
+    "said": "install aluminum fence around the pool 4 foot black ornamental 14 panels no wait 15 panels 17 posts self closing gate with a magnet latch built to pool code",
+    "expect": [
+      "Install aluminum fence around the pool, 4 foot black ornamental",
+      "Self closing gate with a Magna Latch",
+      "Built to pool code"
+    ],
+    "materials": [
+      {
+        "qty": 15,
+        "unit": "ea",
+        "item": "4 foot black ornamental panel"
+      },
+      {
+        "qty": 17,
+        "unit": "ea",
+        "item": "post"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "self closing gate"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Magna Latch"
+      }
+    ],
+    "heard": [
+      {
+        "said": "magnet latch",
+        "means": "Magna Latch"
+      }
+    ]
+  },
+  {
+    "id": "E-087",
+    "trade": "fencing",
+    "style": "invoice",
+    "said": "Repaired the sagging gate, added an anti-sag kit and replaced the hinges, used a pair of heavy duty strap hinges and a gravity latch.",
+    "expect": [
+      "Repaired the sagging gate",
+      "Added an anti-sag kit",
+      "Replaced the hinges"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "anti-sag kit"
+      },
+      {
+        "qty": 1,
+        "unit": "pair",
+        "item": "heavy duty strap hinges"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "gravity latch"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-088",
+    "trade": "fencing",
+    "style": "invoice",
+    "said": "Replaced 22 broken pickets on the vinyl fence after the storm, used 2 boxes of pickets, 6 foot white, and reset one post, used 2 bags of Quikrete",
+    "expect": [
+      "Replaced 22 broken pickets on the vinyl fence",
+      "Reset 1 post"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "box",
+        "item": "6 foot white pickets"
+      },
+      {
+        "qty": 2,
+        "unit": "bag",
+        "item": "Quikrete"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-089",
+    "trade": "decking",
+    "style": "supply-run",
+    "said": "Order 40 boards of tracks enhance Saddle 16 foot, 12 of the 12 footers, 3 boxes of hidden fasteners, 10 2x10 treated 16s, and a box of Simpson joist hangers.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 40,
+        "unit": "ea",
+        "item": "16 foot Trex Enhance Saddle"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "12 foot Trex Enhance Saddle"
+      },
+      {
+        "qty": 3,
+        "unit": "box",
+        "item": "hidden fasteners"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "16 foot 2x10 treated"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "Simpson joist hangers"
+      }
+    ],
+    "heard": [
+      {
+        "said": "tracks",
+        "means": "Trex"
+      }
+    ]
+  },
+  {
+    "id": "E-090",
+    "trade": "decking",
+    "style": "supply-run",
+    "said": "need 6 post bases the simpson abu 66 a box of structural screws the fasten master thru lock half a box actually and 4 rolls of joist tape",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "Simpson ABU66 post base"
+      },
+      {
+        "qty": 0.5,
+        "unit": "box",
+        "item": "FastenMaster ThruLOK structural screws"
+      },
+      {
+        "qty": 4,
+        "unit": "roll",
+        "item": "joist tape"
+      }
+    ],
+    "heard": [
+      {
+        "said": "fasten master thru lock",
+        "means": "FastenMaster ThruLOK"
+      }
+    ]
+  },
+  {
+    "id": "E-091",
+    "trade": "decking",
+    "style": "supply-run",
+    "said": "For the rail: 8 timber tech rail kits, 6 foot, 10 post sleeves, uh, 10 post caps, and 2 cases of Deckmate screws, no, one case",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 8,
+        "unit": "ea",
+        "item": "6 foot TimberTech rail kit"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "post sleeve"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "post cap"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "Deckmate screws"
+      }
+    ],
+    "heard": [
+      {
+        "said": "timber tech",
+        "means": "TimberTech"
+      }
+    ]
+  },
+  {
+    "id": "E-092",
+    "trade": "decking",
+    "style": "rambling",
+    "said": "so 12 by 16 deck off the back door, we're gonna dig and pour 6 footings, set the posts, frame it 16 on center, deck it, and a set of stairs, 3 steps. figure 6 of the 10 inch sonotubes, 12 bags of Quikrete, three 6x6 posts, 14 2x10s and 32 boards of Trex, customer's picking the color",
+    "expect": [
+      "Dig and pour 6 footings",
+      "Set the posts",
+      "Frame it 16 on center",
+      "Deck it",
+      "A set of stairs, 3 steps"
+    ],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "10 inch Sonotube"
+      },
+      {
+        "qty": 12,
+        "unit": "bag",
+        "item": "Quikrete"
+      },
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "6x6 post"
+      },
+      {
+        "qty": 14,
+        "unit": "ea",
+        "item": "2x10"
+      },
+      {
+        "qty": 32,
+        "unit": "ea",
+        "item": "Trex"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-093",
+    "trade": "decking",
+    "style": "notes",
+    "said": "demo the old stairs. cut 3 new stringers. rail both sides. figure 2 2x12x12 treated and 4 5/4 deck boards for treads",
+    "expect": [
+      "Demo the old stairs",
+      "Cut 3 new stringers",
+      "Rail both sides"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "2x12x12 treated"
+      },
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "5/4 deck board"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-094",
+    "trade": "decking",
+    "style": "corrections",
+    "said": "pressure wash and seal the deck about 400 square feet figure 3 gallons of thompsons no make it 2 gallons its a small deck and replace 5 boards 5/4 by 6 by 12",
+    "expect": [
+      "Pressure wash and seal the deck, about 400 square feet",
+      "Replace 5 boards"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "gallon",
+        "item": "Thompson's"
+      },
+      {
+        "qty": 5,
+        "unit": "ea",
+        "item": "5/4 by 6 by 12 board"
+      }
+    ],
+    "heard": [
+      {
+        "said": "thompsons",
+        "means": "Thompson's"
+      }
+    ]
+  },
+  {
+    "id": "E-095",
+    "trade": "decking",
+    "style": "invoice",
+    "said": "Replaced the rotted ledger board and flashed it, used a 2x10 by 14 treated, a roll of Vycor, and a box of ledger locks.",
+    "expect": [
+      "Replaced the rotted ledger board",
+      "Flashed it"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "2x10 by 14 treated"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "Vycor"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "LedgerLOKs"
+      }
+    ],
+    "heard": [
+      {
+        "said": "ledger locks",
+        "means": "LedgerLOKs"
+      }
+    ]
+  },
+  {
+    "id": "E-096",
+    "trade": "decking",
+    "style": "invoice",
+    "said": "tightened up the railing replaced two balusters and a post cap used 2 black aluminum balusters and a solar post cap",
+    "expect": [
+      "Tightened up the railing",
+      "Replaced 2 balusters and a post cap"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "black aluminum baluster"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "solar post cap"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-097",
+    "trade": "siding",
+    "style": "supply-run",
+    "said": "Order 18 squares of certain teed monogram double 4, Sandtone, 30 pieces of J channel, 12 outside corners, 10 sticks of starter strip, and 3 boxes of 1 1/2 roofing nails.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 18,
+        "unit": "square",
+        "item": "CertainTeed Monogram double 4 Sandtone"
+      },
+      {
+        "qty": 30,
+        "unit": "ea",
+        "item": "J channel"
+      },
+      {
+        "qty": 12,
+        "unit": "ea",
+        "item": "outside corner"
+      },
+      {
+        "qty": 10,
+        "unit": "stick",
+        "item": "starter strip"
+      },
+      {
+        "qty": 3,
+        "unit": "box",
+        "item": "1 1/2 roofing nails"
+      }
+    ],
+    "heard": [
+      {
+        "said": "certain teed",
+        "means": "CertainTeed"
+      }
+    ]
+  },
+  {
+    "id": "E-098",
+    "trade": "siding",
+    "style": "supply-run",
+    "said": "need 40 pieces of hardy plank 8 1/4 cedarmill primed 10 pieces of hardy trim 5/4 by 4 a case of color match caulk and a box of 2 inch stainless siding nails",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 40,
+        "unit": "ea",
+        "item": "HardiePlank 8 1/4 Cedarmill primed"
+      },
+      {
+        "qty": 10,
+        "unit": "ea",
+        "item": "HardieTrim 5/4 by 4"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "ColorMatch caulk"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "2 inch stainless siding nails"
+      }
+    ],
+    "heard": [
+      {
+        "said": "hardy plank",
+        "means": "HardiePlank"
+      },
+      {
+        "said": "hardy trim",
+        "means": "HardieTrim"
+      },
+      {
+        "said": "color match",
+        "means": "ColorMatch"
+      }
+    ]
+  },
+  {
+    "id": "E-099",
+    "trade": "siding",
+    "style": "rambling",
+    "said": "so the back wall where the grill melted it, we're gonna pull the damaged vinyl, like 3 courses, check the wrap underneath, and replace it with matching mastic carved wood, the homeowner's got a partial box in the garage so I only need one more box, and a new mounting block for the light",
+    "expect": [
+      "Pull the damaged vinyl, 3 courses",
+      "Check the wrap underneath",
+      "Replace it with matching Mastic Carvedwood",
+      "New mounting block for the light"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "Mastic Carvedwood"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "mounting block"
+      }
+    ],
+    "heard": [
+      {
+        "said": "mastic carved wood",
+        "means": "Mastic Carvedwood"
+      }
+    ]
+  },
+  {
+    "id": "E-100",
+    "trade": "siding",
+    "style": "terse",
+    "said": "Wrap the house in Tyvek. 3 rolls. Tape all seams. 4 rolls of Tyvek tape. Side with LP SmartSide lap, 22 squares.",
+    "expect": [
+      "Wrap the house in Tyvek",
+      "Tape all seams",
+      "Side with LP SmartSide lap"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "roll",
+        "item": "Tyvek"
+      },
+      {
+        "qty": 4,
+        "unit": "roll",
+        "item": "Tyvek tape"
+      },
+      {
+        "qty": 22,
+        "unit": "square",
+        "item": "LP SmartSide lap"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-101",
+    "trade": "siding",
+    "style": "notes",
+    "said": "on the front gable remove the old cedar shakes, install new vinyl shake, figure 3 boxes, Certainteed Cedar Impressions, plus 2 lengths of gable J",
+    "expect": [
+      "On the front gable remove the old cedar shakes",
+      "Install new vinyl shake"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "box",
+        "item": "CertainTeed Cedar Impressions"
+      },
+      {
+        "qty": 2,
+        "unit": "length",
+        "item": "gable J"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-102",
+    "trade": "siding",
+    "style": "corrections",
+    "said": "wrap the window trim in aluminum 8 windows figure 2 coils of white trim coil no 3 coils and a box of trim nails white and 4 tubes of o s i quad",
+    "expect": [
+      "Wrap the window trim in aluminum, 8 windows"
+    ],
+    "materials": [
+      {
+        "qty": 3,
+        "unit": "coil",
+        "item": "white trim coil"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "white trim nails"
+      },
+      {
+        "qty": 4,
+        "unit": "tube",
+        "item": "OSI Quad"
+      }
+    ],
+    "heard": [
+      {
+        "said": "o s i",
+        "means": "OSI"
+      }
+    ]
+  },
+  {
+    "id": "E-103",
+    "trade": "siding",
+    "style": "invoice",
+    "said": "Replaced 4 cracked pieces of siding by the back door and put in a new J block for the dryer vent. Used 4 pieces of Royal Dutch lap in Wicker and a Mid-America J block.",
+    "expect": [
+      "Replaced 4 cracked pieces of siding by the back door",
+      "Put in a new J block for the dryer vent"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "Royal Dutch lap Wicker"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Mid-America J block"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-104",
+    "trade": "siding",
+    "style": "invoice",
+    "said": "caulked all the butt joints on the hardie south side and touched up the paint used 6 tubes of color match and a gallon of sure win williams emerald",
+    "expect": [
+      "Caulked all the butt joints on the Hardie south side",
+      "Touched up the paint"
+    ],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "tube",
+        "item": "ColorMatch"
+      },
+      {
+        "qty": 1,
+        "unit": "gallon",
+        "item": "Sherwin-Williams Emerald"
+      }
+    ],
+    "heard": [
+      {
+        "said": "color match",
+        "means": "ColorMatch"
+      },
+      {
+        "said": "sure win williams",
+        "means": "Sherwin-Williams"
+      }
+    ]
+  },
+  {
+    "id": "E-105",
+    "trade": "windows and doors",
+    "style": "supply-run",
+    "said": "Pick up two Bella 250 series double hungs, 36 by 60, a roll of 4 inch flashing tape, a case of low expansion foam, a bundle of shims, and 3 tubes of OSI Quad.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "Pella 250 series 36 by 60 double hung"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "4 inch flashing tape"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "low expansion foam"
+      },
+      {
+        "qty": 1,
+        "unit": "bundle",
+        "item": "shims"
+      },
+      {
+        "qty": 3,
+        "unit": "tube",
+        "item": "OSI Quad"
+      }
+    ],
+    "heard": [
+      {
+        "said": "Bella",
+        "means": "Pella"
+      }
+    ]
+  },
+  {
+    "id": "E-106",
+    "trade": "windows and doors",
+    "style": "supply-run",
+    "said": "need a 36 inch prehung left hand inswing six panel steel door and a quick set juno entry and deadbolt combo and a bag of shims and 4 lengths of colonial casing",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "36 inch prehung left hand inswing 6 panel steel door"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Kwikset Juno entry and deadbolt combo"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "shims"
+      },
+      {
+        "qty": 4,
+        "unit": "length",
+        "item": "colonial casing"
+      }
+    ],
+    "heard": [
+      {
+        "said": "quick set",
+        "means": "Kwikset"
+      }
+    ]
+  },
+  {
+    "id": "E-107",
+    "trade": "windows and doors",
+    "style": "room-by-room",
+    "said": "In the kitchen replace the slider with an anderson 400 series gliding door, customer supplies the door. In the front bedroom replace 2 windows, full frame, figure 2 anderson 100 series. On the front door put a new Larsen storm door.",
+    "expect": [
+      "In the kitchen replace the slider with an Andersen 400 series gliding door",
+      "Customer supplies the door",
+      "In the front bedroom replace 2 windows, full frame",
+      "On the front door put a new Larson storm door"
+    ],
+    "materials": [
+      {
+        "qty": 2,
+        "unit": "ea",
+        "item": "Andersen 100 series"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Larson storm door"
+      }
+    ],
+    "heard": [
+      {
+        "said": "anderson",
+        "means": "Andersen"
+      },
+      {
+        "said": "Larsen",
+        "means": "Larson"
+      }
+    ]
+  },
+  {
+    "id": "E-108",
+    "trade": "windows and doors",
+    "style": "rambling",
+    "said": "ok so we're gonna rip out all 4 basement windows, they're rotted, uh, put in new vinyl hoppers, 32 by 14, figure 4 of those, wrap the outside in white coil, one coil should do it, and foam and caulk them",
+    "expect": [
+      "Rip out all 4 basement windows",
+      "Put in new vinyl hoppers, 32 by 14",
+      "Wrap the outside in white coil",
+      "Foam and caulk them"
+    ],
+    "materials": [
+      {
+        "qty": 4,
+        "unit": "ea",
+        "item": "32 by 14 vinyl hopper"
+      },
+      {
+        "qty": 1,
+        "unit": "coil",
+        "item": "white coil"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-109",
+    "trade": "windows and doors",
+    "style": "terse",
+    "said": "Replace front door hardware. Rekey 3 locks to match. Slage Camelot handleset, satin nickel. 3 Slage deadbolts.",
+    "expect": [
+      "Replace front door hardware",
+      "Rekey 3 locks to match"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "Schlage Camelot satin nickel handleset"
+      },
+      {
+        "qty": 3,
+        "unit": "ea",
+        "item": "Schlage deadbolt"
+      }
+    ],
+    "heard": [
+      {
+        "said": "Slage",
+        "means": "Schlage"
+      }
+    ]
+  },
+  {
+    "id": "E-110",
+    "trade": "windows and doors",
+    "style": "corrections",
+    "said": "trim out the new windows in the addition 6 windows figure 12 lengths of 2 1/4 colonial casing no wait 16 lengths and 6 stools primed and a box of 18 gauge brads",
+    "expect": [
+      "Trim out the new windows in the addition, 6 windows"
+    ],
+    "materials": [
+      {
+        "qty": 16,
+        "unit": "length",
+        "item": "2 1/4 colonial casing"
+      },
+      {
+        "qty": 6,
+        "unit": "ea",
+        "item": "primed stool"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "18 gauge brads"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-111",
+    "trade": "windows and doors",
+    "style": "invoice",
+    "said": "Replaced the broken sash cord on 2 double hungs and replaced the balance on the kitchen window. Used 20 feet of sash cord and one block and tackle balance.",
+    "expect": [
+      "Replaced the broken sash cord on 2 double hungs",
+      "Replaced the balance on the kitchen window"
+    ],
+    "materials": [
+      {
+        "qty": 20,
+        "unit": "foot",
+        "item": "sash cord"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "block and tackle balance"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-112",
+    "trade": "windows and doors",
+    "style": "invoice",
+    "said": "adjusted and rehung the sliding door replaced the rollers used a pair of prime line rollers and a new handle set",
+    "expect": [
+      "Adjusted and rehung the sliding door",
+      "Replaced the rollers"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "pair",
+        "item": "Prime-Line rollers"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "handle set"
+      }
+    ],
+    "heard": [
+      {
+        "said": "prime line",
+        "means": "Prime-Line"
+      }
+    ]
+  },
+  {
+    "id": "E-113",
+    "trade": "insulation and drywall",
+    "style": "supply-run",
+    "said": "Order 20 bags of blown in, the Owens Corning attic cat, 8 bags of R-13 batts, 15 inch, and 2 bundles of rafter vents.",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 20,
+        "unit": "bag",
+        "item": "Owens Corning AttiCat"
+      },
+      {
+        "qty": 8,
+        "unit": "bag",
+        "item": "R-13 15 inch batts"
+      },
+      {
+        "qty": 2,
+        "unit": "bundle",
+        "item": "rafter vents"
+      }
+    ],
+    "heard": [
+      {
+        "said": "attic cat",
+        "means": "AttiCat"
+      }
+    ]
+  },
+  {
+    "id": "E-114",
+    "trade": "insulation and drywall",
+    "style": "supply-run",
+    "said": "need 60 sheets of half inch drywall 12 footers 10 sheets of 5/8 type x for the garage ceiling 8 buckets of all purpose mud no make it 10 a box of 1 1/4 screws 4 rolls of paper tape and 20 sticks of corner bead",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 60,
+        "unit": "sheet",
+        "item": "12 foot 1/2 inch drywall"
+      },
+      {
+        "qty": 10,
+        "unit": "sheet",
+        "item": "5/8 type X"
+      },
+      {
+        "qty": 10,
+        "unit": "bucket",
+        "item": "all purpose mud"
+      },
+      {
+        "qty": 1,
+        "unit": "box",
+        "item": "1 1/4 screws"
+      },
+      {
+        "qty": 4,
+        "unit": "roll",
+        "item": "paper tape"
+      },
+      {
+        "qty": 20,
+        "unit": "stick",
+        "item": "corner bead"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-115",
+    "trade": "insulation and drywall",
+    "style": "supply-run",
+    "said": "For the soundproof wall: 6 bags of rock wool safe and sound, uh, a case of Green Glue, 12 tubes, and a couple rolls of resilient channel, no, 20 sticks of resilient channel",
+    "expect": [],
+    "materials": [
+      {
+        "qty": 6,
+        "unit": "bag",
+        "item": "Rockwool Safe'n'Sound"
+      },
+      {
+        "qty": 1,
+        "unit": "case",
+        "item": "Green Glue"
+      },
+      {
+        "qty": 20,
+        "unit": "stick",
+        "item": "resilient channel"
+      }
+    ],
+    "heard": [
+      {
+        "said": "rock wool safe and sound",
+        "means": "Rockwool Safe'n'Sound"
+      }
+    ]
+  },
+  {
+    "id": "E-116",
+    "trade": "insulation and drywall",
+    "style": "rambling",
+    "said": "so the attic, we're gonna air seal the top plates and the can lights first, then blow it up to R49, figure 25 bags of blown fiberglass, put baffles in every bay on the eaves, 2 bundles of baffles, and insulate the hatch with a hatch cover",
+    "expect": [
+      "Air seal the top plates and the can lights first",
+      "Blow it up to R49",
+      "Put baffles in every bay on the eaves",
+      "Insulate the hatch with a hatch cover"
+    ],
+    "materials": [
+      {
+        "qty": 25,
+        "unit": "bag",
+        "item": "blown fiberglass"
+      },
+      {
+        "qty": 2,
+        "unit": "bundle",
+        "item": "baffles"
+      },
+      {
+        "qty": 1,
+        "unit": "ea",
+        "item": "hatch cover"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-117",
+    "trade": "insulation and drywall",
+    "style": "room-by-room",
+    "said": "In the garage hang 5/8 on the ceiling and fire tape the walls. In the bonus room hang half inch, tape and finish level 4. Figure 14 sheets of 5/8 drywall and 30 sheets of half inch drywall, and 12 buckets of mud",
+    "expect": [
+      "In the garage hang 5/8 on the ceiling",
+      "Fire tape the walls",
+      "In the bonus room hang 1/2 inch",
+      "Tape and finish level 4"
+    ],
+    "materials": [
+      {
+        "qty": 14,
+        "unit": "sheet",
+        "item": "5/8 drywall"
+      },
+      {
+        "qty": 30,
+        "unit": "sheet",
+        "item": "1/2 inch drywall"
+      },
+      {
+        "qty": 12,
+        "unit": "bucket",
+        "item": "mud"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-118",
+    "trade": "insulation and drywall",
+    "style": "corrections",
+    "said": "Crawlspace. Encapsulate with 12 mil liner, 4 rolls, no, 5. Seal the vents. Rigid foam on the walls, 10 sheets of 2 inch XPS.",
+    "expect": [
+      "Encapsulate with 12 mil liner",
+      "Seal the vents",
+      "Rigid foam on the walls"
+    ],
+    "materials": [
+      {
+        "qty": 5,
+        "unit": "roll",
+        "item": "12 mil liner"
+      },
+      {
+        "qty": 10,
+        "unit": "sheet",
+        "item": "2 inch XPS"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-119",
+    "trade": "insulation and drywall",
+    "style": "invoice",
+    "said": "Patched the ceiling where the plumber cut in, hung a 2 by 4 piece, taped, mudded and textured to match. Used a sheet of half inch drywall, a bag of Easy Sand 45, and a roll of mesh tape.",
+    "expect": [
+      "Patched the ceiling where the plumber cut in",
+      "Hung a 2 by 4 piece",
+      "Taped, mudded and textured to match"
+    ],
+    "materials": [
+      {
+        "qty": 1,
+        "unit": "sheet",
+        "item": "1/2 inch drywall"
+      },
+      {
+        "qty": 1,
+        "unit": "bag",
+        "item": "Easy Sand 45"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "mesh tape"
+      }
+    ],
+    "heard": []
+  },
+  {
+    "id": "E-120",
+    "trade": "insulation and drywall",
+    "style": "invoice",
+    "said": "blew in the attic over the garage to R38 used 14 bags of certain teed insul safe and weatherstripped the attic hatch used a roll of foam weatherstrip",
+    "expect": [
+      "Blew in the attic over the garage to R38",
+      "Weatherstripped the attic hatch"
+    ],
+    "materials": [
+      {
+        "qty": 14,
+        "unit": "bag",
+        "item": "CertainTeed InsulSafe"
+      },
+      {
+        "qty": 1,
+        "unit": "roll",
+        "item": "foam weatherstrip"
+      }
+    ],
+    "heard": [
+      {
+        "said": "certain teed insul safe",
+        "means": "CertainTeed InsulSafe"
+      }
+    ]
+  }
+]

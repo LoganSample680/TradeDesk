@@ -1642,6 +1642,8 @@ function timSayLines(said){
   const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[]}):null;
   const lines=(built&&Array.isArray(built.steps)?built.steps.map(st=>({text:String(st.text||'').trim(),price:Number(st.price)||0})):[]).filter(l=>l.text);
   if(lines.length)return lines;
+  // Only a shopping list: the materials go to Materials, and there is no step.
+  if(built&&Array.isArray(built.materials)&&built.materials.length)return [];
   const t=String(said||'').trim().replace(/\s+/g,' ');
   return t?[{text:t.charAt(0).toUpperCase()+t.slice(1),price:0}]:[];
 }
@@ -1920,6 +1922,12 @@ function _timAcceptJob(){
     landed+=want.length;
     ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>{if(typeof _renderScopeChips==='function')_renderScopeChips(id);});
     if(typeof _geiRenderScopeCard==='function')_geiRenderScopeCard(_geiIsTM?'tm':'byo');
+  }
+
+  // What he said he is buying, into the estimate's Materials section, the same
+  // way the talk box on the estimate does it (js/materials.js).
+  if(typeof timAddMaterials==='function'&&Array.isArray(job.saidMaterials)&&job.saidMaterials.length){
+    const r=timAddMaterials(job.saidMaterials);landed+=r.rows+r.listed;
   }
 
   // The supply list rides on the bid record, which already saves and syncs, so

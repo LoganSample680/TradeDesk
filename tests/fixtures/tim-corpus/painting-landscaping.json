@@ -295,7 +295,7 @@
       "Paint 14 interior doors both sides and the jambs",
       "Sand between coats",
       "Use Advance satin",
-      "Frog tape on the hinges"
+      "FrogTape on the hinges"
     ],
     "heard": [
       {
@@ -770,11 +770,10 @@
     "expect": [
       "Pull out the old mulch in the front beds",
       "Put down commercial weed fabric",
-      "5 ton of river rock, 1 to 3 inch",
       "Steel edging all along"
     ],
     "heard": [],
-    "note": "\"no wait, make that river rock\" replaces the pebble in place; \"1 to 3 inch\" is a size, not a price"
+    "note": "\"no wait, make that river rock\" replaces the pebble in place. 5 ton of river rock is a material, so it goes to Materials, not the scope (2026-09-28)."
   },
   {
     "id": "land-16",
