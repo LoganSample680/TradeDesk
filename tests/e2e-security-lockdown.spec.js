@@ -28,9 +28,10 @@ async function boot(browser) {
   await mockAllExternal(page);
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await waitForAppBoot(page);
-  // The first cloud load lands ~10s after boot on WebKit. Let it finish before
-  // any test swaps _supa.from for a stub, or the load runs through the stub.
-  await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 20000 }).catch(() => {});
+  // The tests swap _supa.from for a stub. The app's first cloud load lands
+  // ~10s after boot on WebKit and must not run into that stub, so the stub
+  // only goes in once the load has finished.
+  await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, null, { timeout: 20000 });
   return page;
 }
 

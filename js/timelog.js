@@ -483,10 +483,30 @@ function _tlBlendManual(rows){
       if(!x.r.unpaid)return;
       if(manual.some(m=>m.a<=x.a&&m.b>=x.b))x.r.clockPaid=true;
     });
+    // ── AN ANSWERED HOLE KEEPS ONLY WHAT NOTHING ELSE COUNTS (owner 2026-09-28)
+    // Jack answered 9:21 to 9:28 as work at 9:40. The server later placed him
+    // on site from 9:21, so the visit carries those minutes and so does the
+    // clock around them, and the answer kept its own 7 on top of both: the
+    // loop below hands each tracked row to the FIRST clock that overlaps it,
+    // the real clock took the visit, and the answer found nothing left to
+    // subtract. An answer is a claim about a hole, never a bracket, so it is
+    // measured against every span that already counts, the clocks included,
+    // and keeps the rest. Nothing left is the Personal shape: in the rows so
+    // no hole is asked again, on no rail and in no total.
+    const clocks=manual.filter(m=>!m.r.gapAnswer);
+    manual.forEach(m=>{
+      if(!m.r.gapAnswer||!((m.r.minutes||0)>0))return;
+      const covers=list.filter(x=>x!==m&&!x.r.unpaid&&
+        (x.r.source==='manual'?!x.r.gapAnswer:(x.r.minutes||0)>0)).map(x=>[x.a,x.b]);
+      const left=Math.round(_tlSubtractCovered(m.a,m.b,covers).reduce((n,[s,e])=>n+(e-s),0)/60000);
+      if(left>=m.r.minutes)return;
+      m.r.minutes=left;
+      if(!left)m.r.dismissed=true;
+    });
     const autos=list.filter(x=>x.r.source!=='manual'&&!x.r.unpaid&&(x.r.minutes||0)>0);
     if(!autos.length)return;
     const spent=[];
-    manual.forEach(m=>{
+    clocks.forEach(m=>{
       const base=m.r.minutes||0;
       if(base<=0)return;
       let covered=0;
@@ -543,7 +563,7 @@ function _tlBlendManual(rows){
     // the stretch between the two clocks belongs to neither, so it stays a
     // real hole for _tlFillUnaccounted to ask about. Lunch is a clock out, not
     // a guess this code makes.
-    manual.forEach(m=>{
+    clocks.forEach(m=>{
       if(!(m.r.minutes>0))return;
       // Spans, not minutes. A tracked row covers the wall-clock stretch it
       // brackets; how many minutes it claims is a different number and is
@@ -686,6 +706,9 @@ async function _timeLogRows(sinceISO,opts){
       // It stays in the ROWS so _tlFillUnaccounted sees the span covered; the
       // rail is where it disappears (_tlDayRailHtml).
       dismissed:_tlIsPersonalGap(e),
+      // An answered hole is a claim about a stretch INSIDE the day, never a
+      // clock: the rail must not draw it as a clock in and clock out.
+      gapAnswer:_tlIsGapAnswer(e),
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
@@ -1123,7 +1146,7 @@ function _tlPopulateYearSel(years){
   _tlYear=cur;
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>').join('');
 }
-function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
+function setTimeLogYear(yr){_tlYear=String(yr);_tlMotion();renderTimeLog();}
 // Manual entries only, GPS-verified auto entries aren't user-editable, same as
 // every competitor researched (editing GPS-verified data would defeat its
 // purpose). Own entries always editable/deletable; others' only with the same
@@ -2310,7 +2333,12 @@ function _tlDayRailHtml(rows){
   // Only a clock with both ends can bracket anything. An entry still running,
   // or one saved without a time, stays an ordinary row: there is no closing
   // cap to draw and a half-open bracket is worse than no bracket.
-  const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
+  // AN ANSWERED HOLE IS NOT A CLOCK (owner 2026-09-28). Jack clocked in at
+  // 7:58 and never out; at 9:40 he answered "unaccounted time" 9:21 to 9:28 as
+  // work, and his day drew CLOCKED OUT 9:28, because every manual row with two
+  // ends was taken for a shift. The answer is still a row on the day, with its
+  // own minutes, exactly as Personal and Break answers are handled above.
+  const clocks=list.filter(r=>r&&r.source==='manual'&&!r.gapAnswer&&r.startTime&&r.endTime&&
     Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
   // A RUNNING clock has no closing end and so is not in `clocks`, but it is
   // still a cap: it opens the day and nothing closes it yet. Counted here so
@@ -2752,14 +2780,17 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
       floorMin:_TL_MONTH_FLOOR,level:'month',tip:'Tap a week to open it'});
 }
-// "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
-// the dash so a six-column month still fits a 320px phone.
+// "23–29" inside one month, "8/30–9/5" across a boundary. No spaces round
+// the dash so a six-column month still fits a 320px phone. The boundary week
+// said "Aug 30–Sep 5" until the bigger text (#98) wrapped it to two lines on a
+// phone and knocked its hours out of line with every other week (owner
+// 2026-09-27); the numbers still name both months, in the width of one line.
 function _tlWeekRangeLabel(wk){
   const s=new Date(String(wk||'')+'T00:00:00');
   if(isNaN(s.getTime()))return String(wk||'');
   const e=new Date(s);e.setDate(e.getDate()+6);
   if(s.getMonth()===e.getMonth())return s.getDate()+'\u2013'+e.getDate();
-  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const f=d=>(d.getMonth()+1)+'/'+d.getDate();
   return f(s)+'\u2013'+f(e);
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
@@ -2788,6 +2819,17 @@ function _tlWeekShortLabel(wk){
 // cleared by anything else. Declared beside the selection it belongs to and
 // ABOVE setTimeLogMonth, which writes it.
 let _tlMonthDir='';
+// MOTION BELONGS TO A TAP, NOT TO A REPAINT (owner 2026-09-27: "why do the bar
+// graphs glitch out quickly 3 times when going back into the app?"). Coming
+// back into the app repaints this screen about three times as fresh hours,
+// the timesheet status and place names land, and every repaint rebuilt the
+// chart, so the bars grew again and the last drill's zoom played again each
+// time. The zoom, slide and bar-rise now play only on the render that follows
+// something the person did (open the screen, tap a bar, arrow a month, switch
+// Me/Team or the year). Every other repaint swaps the numbers in place.
+let _tlAnimNext=true;
+function _tlMotion(){_tlAnimNext=true;}
+function _tlBodyCls(anim){return anim?(_tlMonthDir?' tl-mbars-'+_tlMonthDir:''):' tl-still';}
 // Kept as the public way to jump to a month. It routes through the drill so
 // there is still exactly one path that changes what month is on screen.
 function setTimeLogMonth(mo,dir){
@@ -2952,6 +2994,7 @@ function _tlDrillTo(level,key,dir){
   // tap picks a different SLICE of rows the page is already holding. So it
   // paints from the rows it already has, synchronously, in the same task as
   // the tap, and _tlRevalidateRows checks the server afterwards.
+  _tlMotion();
   renderTimeLog({cached:true});
 }
 // Into one crew member's week. The ONLY way uid is ever set, so there is one
@@ -3716,6 +3759,7 @@ function setTimeLogScope(scope){
   // simply being dead.
   _tlDrill.uid=null;
   _tlScope=scope;
+  _tlMotion();
   renderTimeLog();
 }
 // "Share this week's hours" (Me scope only, any role): the current Sun–Sat
@@ -3910,6 +3954,7 @@ async function _tlRevalidateRows(paintedRows,gen,force){
 async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
   const _gen=++_tlRenderGen;
+  const _anim=_tlAnimNext;_tlAnimNext=false;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
@@ -4068,7 +4113,7 @@ async function renderTimeLog(opts){
         backLabel:'All crew',share:false}):null;
       if(lv){
         el.innerHTML=lv.head+
-          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
+          '<div class="tl-drill-body'+_tlBodyCls(_anim)+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
         if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
         return;
       }
@@ -4102,7 +4147,7 @@ async function renderTimeLog(opts){
       // like any other, and arrowing between months is a sideways like any
       // other: without the class, the one screen you return to was the one
       // screen that just appeared.
-      '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
+      '<div class="tl-drill-body'+_tlBodyCls(_anim)+
         '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo,owe)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
@@ -4117,7 +4162,7 @@ async function renderTimeLog(opts){
   // The slide direction rides as a class so the animation is pure CSS and the
   // JS never touches a style property (§8.5).
   el.innerHTML=head+
-    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+body+'</div>';
+    '<div class="tl-drill-body'+_tlBodyCls(_anim)+'"'+_tlDrillXStyle()+'>'+body+'</div>';
   // The page-level Share button is GONE. It said "this calendar week", which
   // on a screen that now carries Send this month and Send this week (the one
   // you are actually looking at) was a third Send button meaning a fourth
