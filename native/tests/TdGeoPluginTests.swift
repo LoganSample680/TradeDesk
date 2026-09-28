@@ -2775,6 +2775,18 @@ extension TdGeoPluginTests {
 
     // MARK: - The event flush: one upload per batch, and the background session's completion handoff (2026-09-02)
 
+    // The flush tests post to a closed local port, and the refusal lands on the
+    // session's own queue whenever it lands: on a loaded runner, fast enough to
+    // retire a batch before the test reads it (twoBatches, 2026-09-28). Parking
+    // both sessions' delegate queues holds every completion until the test has
+    // looked.
+    private func withUploadsParked(_ body: () -> Void) {
+        let queues = [plugin.liveSessionForTest.delegateQueue, plugin.flushSessionForTest.delegateQueue]
+        queues.forEach { $0.isSuspended = true }
+        defer { queues.forEach { $0.isSuspended = false } }
+        body()
+    }
+
     private func seedFlushConfig() {
         let d = UserDefaults.standard
         d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"], forKey: plugin.flushCfgKeyForTest)
@@ -2785,12 +2797,14 @@ extension TdGeoPluginTests {
 
     func testFlushNow_twiceForTheSameBatchStartsOneUpload() {
         seedFlushConfig()
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.count, 1, "the batch already on its way is not sent again")
-        XCTAssertEqual(inflight.values.first, 1_700_000_000_000.0)
+        withUploadsParked {
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.count, 1, "the batch already on its way is not sent again")
+            XCTAssertEqual(inflight.values.first, 1_700_000_000_000.0)
+        }
         UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
@@ -2798,14 +2812,16 @@ extension TdGeoPluginTests {
 
     func testFlushNow_aNewerEventIsANewBatchAndDoesUpload() {
         seedFlushConfig()
-        plugin.flushNowForTest()
-        var buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
-        buf.append(["type": "fix", "ts": 1_700_000_005_000.0, "lat": 39.0, "lng": -95.0])
-        UserDefaults.standard.set(buf, forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.count, 2)
-        XCTAssertEqual(Set(inflight.values), Set([1_700_000_000_000.0, 1_700_000_005_000.0]))
+        withUploadsParked {
+            plugin.flushNowForTest()
+            var buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            buf.append(["type": "fix", "ts": 1_700_000_005_000.0, "lat": 39.0, "lng": -95.0])
+            UserDefaults.standard.set(buf, forKey: plugin.bufferKeyForTest)
+            plugin.flushNowForTest()
+            let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.count, 2)
+            XCTAssertEqual(Set(inflight.values), Set([1_700_000_000_000.0, 1_700_000_005_000.0]))
+        }
         UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
         UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
@@ -3911,9 +3927,11 @@ extension TdGeoPluginTests {
         d.set(41.0, forKey: plugin.flushSeqMarkKeyForTest)
         d.set([["type": "motion", "ts": 1_790_172_067_000.0, "kind": "onFoot", "hist": true, "seq": 42.0]],
               forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        withUploadsParked {
+            plugin.flushNowForTest()
+            let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(inflight.values.first, 42.0, "the recovered flip went out on this wake")
+        }
         clearSeqState()
     }
 
@@ -3925,18 +3943,20 @@ extension TdGeoPluginTests {
         d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
               forKey: plugin.flushCfgKeyForTest)
         d.set([["type": "fix", "ts": 5_000.0, "seq": 1.0]], forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
-        buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
-        d.set(buf, forKey: plugin.bufferKeyForTest)
-        plugin.flushNowForTest()
-        let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
-        // And the same batch twice is still one upload.
-        plugin.flushNowForTest()
-        plugin.flushNowForTest()
-        let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
-        XCTAssertEqual(again.count, 2)
+        withUploadsParked {
+            plugin.flushNowForTest()
+            var buf = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            buf.append(["type": "motion", "ts": 5_000.0, "seq": 2.0, "hist": true])
+            d.set(buf, forKey: plugin.bufferKeyForTest)
+            plugin.flushNowForTest()
+            let inflight = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(Set(inflight.values), Set([1.0, 2.0]))
+            // And the same batch twice is still one upload.
+            plugin.flushNowForTest()
+            plugin.flushNowForTest()
+            let again = (d.dictionary(forKey: plugin.flushInflightSeqKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertEqual(again.count, 2)
+        }
         clearSeqState()
     }
 
