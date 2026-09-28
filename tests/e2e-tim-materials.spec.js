@@ -42,7 +42,8 @@ test.describe('Tim reads materials by shape', () => {
       'grab six 4 inch wyes, a case of 45s and 3 sticks of 4 inch pvc',
     ]);
     expect(r[0]).toEqual(['40 bag quikrete', '6 stick rebar', '2 roll wire mesh']);
-    expect(r[1]).toEqual(['10 sheet half inch drywall', '3 box mud', '1 roll tape']);
+    // A size is written the way it is ordered: "half inch" is 1/2 inch.
+    expect(r[1]).toEqual(['10 sheet 1/2 inch drywall', '3 box mud', '1 roll tape']);
     expect(r[2]).toEqual(['28 square timberline hdz', '4 roll synthetic underlayment', '2 bundle ridge cap']);
     expect(r[3]).toEqual(['100 foot 3/4 pex', '12 ea sharkbite couplings', '4 ea stub outs']);
     expect(r[4]).toEqual(['300 sq ft lvp', '4 box quarter round']);
@@ -90,6 +91,54 @@ test.describe('Tim reads materials by shape', () => {
     expect(r.am).toBe(2);
     expect(r.b).toEqual([]);
     expect(r.bm).toBe(2);
+  });
+
+  test('notes: the thing first, the count after it', async () => {
+    const r = await read([
+      'Back hill. Retaining wall, 30 foot, 3 courses. Versa lock blocks, 90. Caps, 30. Drain rock 4 ton. Geogrid, one roll. Backfill and compact.',
+      'Shed pad. 10 by 12. 4 inch. Mesh, 3 sheets. 2 yards 3000. Gravel base 2 ton. Anchor bolts, 6.',
+      'Crawl space. Vapor barrier 20 mil, 1,200 sq ft, 3 rolls. Seal seams. Foam board on walls, 2 inch, 24 sheets.',
+    ]);
+    expect(r[0]).toEqual(['90 ea versa-lok blocks', '30 ea caps', '4 ton drain rock', '1 roll geogrid']);
+    expect(r[1]).toEqual(['3 sheet mesh', '2 yard 3000', '2 ton gravel base', '6 ea anchor bolts']);
+    expect(r[2]).toEqual(['3 roll vapor barrier 20 mil', '24 sheet 2 inch foam board']);
+  });
+
+  test('parts said the short way are on the list, and a list about something else leaves them', async () => {
+    const r = await read([
+      'Guest bath. Reset toilet. Replace flange, 4 inch. Two wax rings with horn. Swap flapper. Check shutoff. Maybe 90 minutes.',
+      'Rooftop unit 2. Replace belt, A48. Filters, 20 by 20 by 2, eight of em. Grease bearings.',
+      'exterior replace photocell two flood lamps par 38 check timer customer supplying the bulbs for the porch',
+    ]);
+    expect(r[0]).toEqual(['1 ea flange 4 inch', '2 ea wax rings with horn', '1 ea flapper']);
+    expect(r[1]).toEqual(['1 ea belt a48', '8 ea 20x20x2 filters']);
+    expect(r[2]).toEqual(['1 ea photocell', '2 ea flood lamps']);
+  });
+
+  test('how a count is said: "a couple three", "a dozen and a half", "skip the quart", "actually the"', async () => {
+    const r = await read([
+      'get me a couple three sticks of half inch emt',
+      'grab a box of 6 inch collars, a dozen and a half 6 inch 90 degree adjustable elbows',
+      'two tubes of caulk, a quart, no, skip the quart. a roll of tape',
+      'Grab 3 bags of thinset, actually the large format mortar, 3 bags.',
+      'so 30 sheets no 34 sheets of half inch and 4 sheets of green board',
+    ]);
+    expect(r[0]).toEqual(['3 stick 1/2 inch emt']);
+    expect(r[1]).toEqual(['1 box 6 inch collars', '18 ea 6 inch 90 degree adjustable elbows']);
+    expect(r[2]).toEqual(['2 tube caulk', '1 roll tape']);
+    expect(r[3]).toEqual(['3 bag large format mortar']);
+    expect(r[4]).toEqual(['34 sheet 1/2 inch', '4 sheet green board']);
+  });
+
+  test('small talk and what the customer has stay off the list', async () => {
+    const r = await read([
+      'Oh and his dog, a big Newfie, drooled on my clipboard. 20 bags of concrete.',
+      'need 4 sticks of 3/4 EMT customer has the charger already 3 hours',
+      'two of the pilings are leaning, we need 2 bags of quikrete',
+    ]);
+    expect(r[0]).toEqual(['20 bag concrete']);
+    expect(r[1]).toEqual(['4 stick 3/4 emt']);
+    expect(r[2]).toEqual(['2 bag quikrete']);
   });
 
   test('junk in never throws', async () => {

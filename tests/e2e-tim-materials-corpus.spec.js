@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * TIM'S MATERIALS AGAINST 120 SPOKEN LISTS (owner 2026-09-28)
+ * TIM'S MATERIALS AGAINST 270 SPOKEN LISTS (owner 2026-09-28)
  *
  * "Material part quantities and actual material is gonna be huge for speed."
  *
@@ -9,7 +9,9 @@
  * invoice, run-ons with no commas, corrections ("no, 10 of them"), sizes before
  * the thing ("a 50 gallon Bradford White"), and brands the phone mishears.
  * Each carries the materials an estimator would put on the list: count, the
- * unit it is sold in, and the thing.
+ * unit it is sold in, and the thing. Set F (150) was written blind by someone
+ * who never saw Tim's code and scored before any tuning (55% of items right);
+ * it moved in here once Tim was tuned on it.
  *
  * The same ratchet as the scope corpus (tests/e2e-tim-corpus.spec.js):
  *   - every walk in tim-materials-passing.json keeps its list exactly right;
@@ -53,7 +55,7 @@ test.describe('Tim against the materials corpus', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('the corpus is there and every walk lists materials', async () => {
-    expect(WALKS.length).toBeGreaterThanOrEqual(100);
+    expect(WALKS.length).toBeGreaterThanOrEqual(250);
     expect(new Set(WALKS.map(w => w.id)).size).toBe(WALKS.length);
     for (const w of WALKS) expect(Array.isArray(w.materials) && w.materials.length > 0, w.id).toBe(true);
   });
