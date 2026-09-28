@@ -1458,7 +1458,7 @@ function executeQuickAction(actionType,clientId,bidId,jobId,addr){
   } else if(actionType==='estimate'){
     closeTopModal();
     currentClientId=clientId;
-    openEstimateForClient();
+    openEstimateForClient(addr);
   } else if(actionType==='schedule'){
     closeTopModal();
     if(bidId){schedFromBid(bidId);}
