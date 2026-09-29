@@ -683,7 +683,16 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
-  const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
+  // ── THE FIRST STOP OF THE DAY IS SOMETHING TO ADD (owner 2026-09-29) ─────
+  // "clocked in at 7:38 ... not seeing a time that indicates he's at JS
+  // Solutions shop." Jack drove from his home office to the shop and was still
+  // there: the deriver knew (res.open, the shop since 7:35), the commute from
+  // a home office is not a mileage leg, and no stop had closed yet. This line
+  // counted only the closed arrays, called the day empty and returned before
+  // the writer, so the open shop row that geoDeriveRows had built for exactly
+  // this moment never reached the timesheet until he left.
+  const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length &&
+    !(Array.isArray(rows.open) && rows.open.length);
   // ── AN EMPTY DAY IS AN ANSWER, WHEN THIS CALL MAY SWEEP (owner 2026-09-21) ─
   // This used to return unconditionally, and the comment on it said why:
   // "nothing to add, and this call may never retire, so a write would be a
