@@ -780,19 +780,52 @@ test.describe('Invoice: the customer copy', () => {
   });
 
   // Owner 2026-09-29: "Bill at versus true hourly rate is different things."
-  test('each person shows what they bill and what they really cost: pay plus the burden, and what the hour keeps', async ({ page }) => {
+  // Earl: pay lived in the Edit screen and the rate on the row; both are on the row now.
+  test('each person shows what they bill and what they are paid, side by side; the line under says what an hour really costs and keeps', async ({ page }) => {
     await boot(page, 390);
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate(async () => {
       S.laborBurden = 1.3; S.ownerPayType = 'hourly'; S.ownerPayRate = 0;
-      _teamComp['jack@x.com'] = { pay_type: 'hourly', pay_rate: 25 };
+      _teamComp['jack@x.com'] = { pay_type: 'hourly', pay_rate: 25 }; window._teamCompLoaded = true;
       goPg('pg-team'); renderTeam();
-      const cost = [...document.querySelectorAll('#team-page-list .td-rate-cost')].map(b => b.innerText.replace(/\s+/g, ' ').trim());
-      return { cost, bleed: document.documentElement.scrollWidth - innerWidth };
+      const lines = () => [...document.querySelectorAll('#team-page-list .td-rate-cost')].map(b => b.textContent.trim());
+      const before = lines();
+      const chips = [...document.querySelectorAll('#team-page-list .td-rate-row')][1].querySelectorAll('.td-rate-chip');
+      // Your own pay, from your row.
+      const own = document.getElementById('team-owner-pay');
+      own.value = '40'; own.dispatchEvent(new Event('change'));
+      // Jack's, from his.
+      const updates = [];
+      window._supa = { from: (t) => ({ update: (row) => ({ eq: (k1, v1) => ({ eq: async (k2, v2) => { updates.push({ t, row, [k1]: v1, [k2]: v2 }); return { error: null }; } }) }) }) };
+      window._supaUser = { id: 'boss-uid' };
+      await _teamPaySet(0, '27');
+      return { before, chips: [...chips].map(c => c.textContent.replace(/\s+/g, '')), ownerPay: S.ownerPayRate, jack: _teamComp['jack@x.com'], updates, after: lines(),
+        bleed: document.documentElement.scrollWidth - innerWidth };
     });
-    expect(r.cost[0], 'the owner has no pay set yet').toBe('Costs you ? Add your pay to see what an hour earns');
-    expect(r.cost[1]).toBe('Costs you $32.50/hr pay $25 + 30% taxes and insurance · you keep $42.50/hr');
+    expect(r.before[0], 'no pay of your own yet').toBe('Put in pay to see what an hour earns you');
+    expect(r.before[1]).toBe('Costs you $32.50/hr with 30% for taxes and insurance · you keep $42.50/hr');
+    expect(r.chips, 'Bills and Pays, side by side').toEqual(['Bills$/hr', 'Pays$/hr']);
+    expect(r.ownerPay).toBe(40);
+    expect(r.jack).toEqual({ pay_type: 'hourly', pay_rate: 27 });
+    expect(r.updates).toEqual([{ t: 'team_members', row: { pay_type: 'hourly', pay_rate: 27 }, contractor_user_id: 'boss-uid', email: 'jack@x.com' }]);
+    expect(r.after[0]).toBe('Costs you $52.00/hr with 30% for taxes and insurance · you keep $73.00/hr');
+    expect(r.after[1]).toBe('Costs you $35.10/hr with 30% for taxes and insurance · you keep $39.90/hr');
     expect(r.bleed).toBeLessThanOrEqual(1);
   });
+
+  test('pay from the row: junk and a negative are refused; crew who may not see pay get no pay chip', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(async () => {
+      const a = [await _teamPaySet(99, '10'), await _teamPaySet(0, 'abc'), await _teamPaySet(0, '-5'), _teamOwnerPaySet('x')];
+      const keep = window._canViewComp; window._canViewComp = () => false;
+      goPg('pg-team'); renderTeam();
+      const pays = document.querySelectorAll('#team-page-list .td-pay-chip').length;
+      window._canViewComp = keep;
+      return { a, pays };
+    });
+    expect(r.a).toEqual([false, false, false, false]);
+    expect(r.pays).toBe(0);
+  });
+
 
   // Owner 2026-09-29: "streamline how T&M proposals look so invoices look the
   // exact same ... what do we call the payment step in the other things?"
