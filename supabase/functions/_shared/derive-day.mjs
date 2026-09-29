@@ -246,6 +246,126 @@ async function pageAll(build) {
   return out;
 }
 
+// The day's evidence rows, through geo_day_evidence (migration 20261054).
+//
+// HOW THEY TRAVEL: short arrays in one call instead of up to twelve pages of
+// objects that repeat every key name. On 2026-09-27 the paged read pulled 6.4
+// million rows, about 1 GB, and helped get every request on the project
+// dropped.
+//
+// WHICH ONES TRAVEL: this function re-reads a person's whole day on every
+// upload that carries a trigger event, and almost all of that day has not
+// changed since the last upload. So the day is kept here while the worker
+// stays warm, and the next read asks only for rows added since: an id past
+// the last one seen, or stored within DAY_OVERLAP_MS before the last read,
+// which is what catches a row another upload inserted first but committed
+// later. The result is the same rows, in the same order, under the same cap
+// as a full read, which a test proves by deriving both ways.
+//
+// Anything unusual reads the whole day again: no cache, an old one, an error,
+// a delta big enough to have hit the cap, or a caller asking for it fresh (the
+// ops portal's Rebuild). The server never sweeps (see p_sweep above), so even
+// a row this somehow missed would cost an add, never a row, until the next
+// full read.
+//
+// If the RPC is not deployed yet the paged read still runs.
+const DAY_CACHE = new Map();
+const DAY_CACHE_TTL_MS = 10 * 60000;
+const DAY_OVERLAP_MS = 2 * 60000;
+const DAY_CACHE_MAX = 64;
+export function _dayCacheClear() { DAY_CACHE.clear(); }
+
+function decodeEvidence(data) {
+  const out = [];
+  for (const r of data) {
+    if (!Array.isArray(r)) continue;
+    const ms = Number(r[0]);
+    if (!(ms > 0)) continue;
+    out.push({ ms, id: Number(r[7]) || 0, row: { ts: new Date(ms).toISOString(), type: r[1], kind: r[2],
+      lat: r[3], lon: r[4], region_id: r[5], detail: r[6] } });
+  }
+  return out;
+}
+
+export async function dayEvents(svc, uid, fromIso, toIso, opts = null) {
+  const cap = PAGE * MAX_PAGES;
+  const key = uid + "|" + fromIso + "|" + toIso;
+  const now = Date.now();
+  try {
+    const hit = (opts && opts.fresh) ? null : DAY_CACHE.get(key);
+    if (hit && now - hit.readAt < DAY_CACHE_TTL_MS) {
+      const { data, error } = await svc.rpc("geo_day_evidence", {
+        p_uid: uid, p_from: fromIso, p_to: toIso, p_types: READ_TYPES, p_limit: cap,
+        p_after_id: hit.maxId, p_since: new Date(hit.readAt - DAY_OVERLAP_MS).toISOString(),
+      });
+      if (!error && Array.isArray(data) && data.length < cap) {
+        for (const e of decodeEvidence(data)) {
+          hit.byId.set(e.id, e);
+          if (e.id > hit.maxId) hit.maxId = e.id;
+        }
+        hit.readAt = now;
+        return sliceDay(hit.byId, cap);
+      }
+      DAY_CACHE.delete(key);
+    }
+    const { data, error } = await svc.rpc("geo_day_evidence", {
+      p_uid: uid, p_from: fromIso, p_to: toIso, p_types: READ_TYPES, p_limit: cap,
+    });
+    if (!error && Array.isArray(data)) {
+      const rows = decodeEvidence(data);
+      const byId = new Map();
+      let maxId = 0;
+      let ids = true;
+      for (const e of rows) {
+        if (!(e.id > 0)) ids = false;
+        byId.set(e.id, e);
+        if (e.id > maxId) maxId = e.id;
+      }
+      // Rows without an id (an RPC older than 20261054) cannot be merged, so
+      // they are used once and not kept.
+      if (ids) {
+        if (DAY_CACHE.size >= DAY_CACHE_MAX) DAY_CACHE.delete(DAY_CACHE.keys().next().value);
+        DAY_CACHE.set(key, { byId, maxId, readAt: now });
+      }
+      return rows.map((e) => e.row);
+    }
+  } catch { DAY_CACHE.delete(key); }
+  return pageAll((f, t) => svc.from("geo_events")
+    .select("ts,type,kind,lat,lon,region_id,detail")
+    .eq("employee_user_id", uid).in("type", READ_TYPES)
+    .gte("ts", fromIso).lt("ts", toIso)
+    .order("ts", { ascending: true }).range(f, t));
+}
+
+// A full read's answer out of the kept rows: ordered by ts then id, the same
+// order the RPC uses, under the same cap.
+function sliceDay(byId, cap) {
+  return [...byId.values()]
+    .sort((x, y) => (x.ms - y.ms) || (x.id - y.id))
+    .slice(0, cap)
+    .map((e) => e.row);
+}
+
+// The two settings the deriver uses, workHours and timeOff, and nothing else.
+// This used to select the whole zj_data.settings blob on every ingest, and on
+// 2026-09-28 that blob carried a 1.5 MB logo about 1,000 times a day, which
+// used up the project's egress quota and got every request dropped
+// (migration 20261053). The RPC returns a few hundred bytes. If the RPC is not
+// there yet (functions deployed ahead of the migration) the old read still
+// runs, so the day never derives without its Time off.
+export async function workSettings(svc, cid) {
+  try {
+    const { data, error } = await svc.rpc("geo_work_settings", { p_user: cid });
+    if (!error) return data || null;
+  } catch { /* fall through */ }
+  try {
+    const { data } = await svc.from("zj_data").select("settings").eq("user_id", cid).maybeSingle();
+    const raw = data?.settings;
+    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return s ? { workHours: s.workHours, timeOff: s.timeOff } : null;
+  } catch { return null; }
+}
+
 // An outcome is { day, wrote, reason?, dwells?, legs?, time?, shop?, miles?,
 // held? }: enough for the caller to log why a day produced nothing without
 // having to guess.
@@ -335,18 +455,16 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   // does: a drive that began at 11:40pm is the previous day's departure and
   // this day's arrival, and the flip that opened it is on the other side.
   const [evRows, pingRows, fenceRes, clockRes, cfgRes] = await Promise.all([
-    pageAll((f, t) => svc.from("geo_events")
-      .select("ts,type,kind,lat,lon,region_id,detail")
-      .eq("employee_user_id", uid).in("type", READ_TYPES)
-      .gte("ts", fromIso).lt("ts", toIso)
-      .order("ts", { ascending: true }).range(f, t)),
+    // rebuild-day is the only caller that passes opts: a person asked for
+    // this day again, so it is read whole, never from the kept copy.
+    dayEvents(svc, uid, fromIso, toIso, { fresh: !!opts }),
     pageAll((f, t) => svc.from("location_pings")
       .select("ts,lat,lon,accuracy")
       .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
       .order("ts", { ascending: true }).range(f, t)),
     svc.rpc("geo_fences_for", { p_contractor: cid, p_day: day }),
     svc.from("td_time_entries").select("data").eq("user_id", cid).is("deleted_at", null),
-    svc.from("zj_data").select("settings").eq("user_id", cid).maybeSingle(),
+    workSettings(svc, cid),
   ]);
 
   const tape = [];
@@ -463,15 +581,14 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
   }
 
   // One reading of the setting, shared with the terminate wake (terminate-wake.mjs).
-  const workHours = workHoursFromSettings(cfgRes?.data?.settings);
+  // cfgRes is already just { workHours, timeOff } (workSettings).
+  const workHours = workHoursFromSettings(cfgRes);
   // Rule 25: the account's Time off blocks (Settings, js/settings.js). Read
   // from the same settings row as the working hours, so the phone and the
   // server hold the same days.
   let timeOff = [];
   try {
-    const raw = cfgRes?.data?.settings;
-    const s = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (Array.isArray(s?.timeOff)) timeOff = s.timeOff;
+    if (Array.isArray(cfgRes?.timeOff)) timeOff = cfgRes.timeOff;
   } catch { /* none */ }
 
   const res = geoDeriveDay({
