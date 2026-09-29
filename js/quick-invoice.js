@@ -309,9 +309,13 @@ function _qiFixHours(lines){
   const H=(_qi&&_qi.riderMins)||{};
   lines.forEach(l=>{
     if(l.kind!=='time'||l.rider||l.extra)return;
-    const m=H[l.day+'|'+l.who];
-    if(!(m>=0)||m===l.mins)return;
-    l.orig=l.mins;l.mins=m;l.edited=true;l.amount=Math.round(m/60*l.rate*100)/100;
+    // What he types is the person's whole day, as the one line shows it:
+    // their own time plus the runs between visits folded into it.
+    const ex=lines.filter(x=>x.kind==='time'&&x.extra&&x.day===l.day&&x.who===l.who&&!x.rider).reduce((s2,x)=>s2+x.mins,0);
+    const t=H[l.day+'|'+l.who];
+    if(!(t>=0)||t===l.mins+ex)return;
+    const m=Math.max(0,t-ex);
+    l.orig=l.mins;l.origTotal=l.mins+ex;l.mins=m;l.edited=true;l.amount=Math.round(m/60*l.rate*100)/100;
     l.detail=_qiMins(m)+' (tracked '+_qiMins(l.orig)+')';l.desc=l.who+': '+_qiMins(m);
   });
   return lines.filter(l=>!(l.kind==='time'&&l.edited&&!(l.mins>0)));
@@ -327,6 +331,9 @@ function _qiRiderSet(day,who,v){
   // A minus sign is refused, not dropped: "-3" is not 3 hours.
   const h=parseFloat(String(v).replace(/[^0-9.\-]/g,''));
   if(!(h>=0)||h>24)return;
+  // The box shows tenths of an hour. Typing back what it shows is not a change.
+  const now=_qi.tracked.filter(l=>l.kind==='time'&&l.day===day&&l.who===who).reduce((s2,l)=>s2+l.mins,0);
+  if(Math.round(now/6)/10===Math.round(h*10)/10)return;
   _qi.riderMins=Object.assign({},_qi.riderMins||{},{[day+'|'+who]:Math.round(h*60)});
   _qiRebuild();renderQuickInvoice();
 }
@@ -756,28 +763,45 @@ function renderQuickInvoice(){
   // 30 minutes mean"). The hours and the rate are both boxes he can tap, the
   // amount is on the right, and one small line under says where the hours
   // came from: the phone, the phone but he changed it, or nobody's phone.
-  const row=(l,i)=>{
+  // ONE LINE PER PERSON PER DAY (owner 2026-09-29, a screenshot of four
+  // "Logan Sample" rows with four rate boxes: "I'm just so lost on this I
+  // don't even know what this means and I developed the app"). Their own
+  // time and any run between visits are one line: one hours box, one rate
+  // box, one amount. Under it, in words, where the hours came from.
+  const personRow=(items)=>{
+    const base=items.find(x=>!x.l.extra)||items[0];
+    const l=base.l,i=base.i;
     const qk=escHtml(l.who||'').replace(/'/g,'&#39;');
-    const need=l.kind==='time'&&!(Number(l.rate)>0);
-    const guess=l.kind==='time'&&!need&&!l.rateSet&&!(personBillRate(l.who)>0);
-    const rateBox='<span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
+    const mins=items.reduce((s2,x)=>s2+x.l.mins,0);
+    const amount=Math.round(items.reduce((s2,x)=>s2+(Number(x.l.amount)||0),0)*100)/100;
+    const ex=items.filter(x=>x.l.extra);
+    const exMins=ex.reduce((s2,x)=>s2+x.l.mins,0);
+    const need=!(Number(l.rate)>0);
+    const rateBox='<span class="qi-rate'+(need?' need':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr</span>'+
       // $0 with a flag to change it (owner 2026-09-29), never a blank box.
       (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'');
-    const hrsBox=l.extra
-      ?'<span class="qi-hrs-fixed">'+escHtml(_qiMins(l.mins))+'</span>'
-      :'<span class="qi-hrs" data-key="'+escHtml(l.day+'|'+l.who)+'"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>';
-    // Where the hours came from, in words.
-    const from=l.kind!=='time'?escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:''))):
-      l.extra?escHtml(String(l.detail||'').replace(/ · [0-9hm ]+(?=,|$)/,'')):
-      l.rider?'No app. Same hours as '+escHtml(String(l.rider).split(' ')[0]):
-      l.edited?'<span class="qi-edited">You changed this. The phone said '+escHtml(_qiMins(l.orig))+'.</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Put it back</button>':
-      'From the phone: '+escHtml(l.detail||(_qiMins(l.mins)+' on site'));
-    const name=l.kind==='time'?l.who:l.desc;
-    return '<div class="ios-row qi-line'+(l.kind==='time'?' qi-time':'')+'"><span class="ios-lbl">'+escHtml(name)+
-        (l.kind==='time'?'<span class="qi-math">'+hrsBox+' × '+rateBox+'</span>':'')+
+    const hrsBox='<span class="qi-hrs" data-key="'+escHtml(l.day+'|'+l.who)+'"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>';
+    // The runs between visits, said once: where to, and how long.
+    const places=[...new Set(ex.map(x=>String(x.l.detail||'').match(/^At (.+?)(?:,| ·|$)/)).filter(Boolean).map(m=>m[1]))];
+    const runs=exMins>0?' + '+_qiMins(exMins)+' '+(places.length?places.map(p=>p==='the shop'?'shop':p).join(' and ')+' run':'driving between visits'):'';
+    const from=l.rider?'No app. Same hours as '+escHtml(String(l.rider).split(' ')[0]):
+      l.edited?'<span class="qi-edited">You changed this. The phone said '+escHtml(_qiMins(l.origTotal!=null?l.origTotal:l.orig))+'.</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Put it back</button>':
+      'From the phone: '+escHtml((l.extra?'':(l.detail||(_qiMins(l.mins)+' on site')))+runs);
+    return '<div class="ios-row qi-line qi-time"><span class="ios-lbl">'+escHtml(l.who)+
+        '<span class="qi-math">'+hrsBox+' at '+rateBox+'</span>'+
         '<small class="qi-from">'+from+'</small></span>'+
-      '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+_qiMoney(l.amount)+'</span>'+
-      '<button type="button" class="qi-x" aria-label="Leave off" onclick="_qiDropTracked('+i+')">×</button></div>';
+      '<span class="ios-fact qi-amt qi-pamt" data-day="'+l.day+'" data-who="'+escHtml(l.who)+'" id="qi-amt-'+i+'">'+_qiMoney(amount)+'</span>'+
+      '<button type="button" class="qi-x" aria-label="Take '+escHtml(l.who)+' off this day" onclick="_qiDropPerson(\''+l.day+'\',\''+qk+'\')">×</button></div>';
+  };
+  // A receipt line: what was bought that day.
+  const row=(l,i)=>'<div class="ios-row qi-line"><span class="ios-lbl">'+escHtml(l.desc)+
+      '<small class="qi-from">'+escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')))+'</small></span>'+
+    '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+_qiMoney(l.amount)+'</span>'+
+    '<button type="button" class="qi-x" aria-label="Leave off" onclick="_qiDropTracked('+i+')">×</button></div>';
+  const dayRows=(mine)=>{
+    const people=[...new Set(mine.filter(x=>x.l.kind==='time').map(x=>x.l.who))];
+    return people.map(w=>personRow(mine.filter(x=>x.l.kind==='time'&&x.l.who===w))).join('')+
+      mine.filter(x=>x.l.kind!=='time').map(x=>row(x.l,x.i)).join('');
   };
   // ONE CARD A DAY (owner 2026-09-29, "three days at Tagen's, each day we do
   // something different"): each day with who was there and what it came to,
@@ -810,7 +834,7 @@ function renderQuickInvoice(){
         '<button type="button" class="ios-del qi-billed" tabindex="-1" onclick="qiBilledElsewhere(\''+day+'\')">Already billed</button></div>'+
       (open?'<div class="ios-row qi-note-row"><input class="qi-desc" type="text" aria-label="What was done '+escHtml(_qiDayLabel(day))+'" placeholder="What was done this day" value="'+escHtml(_qi.dayNote[day]||'')+'" oninput="_qiDayNoteTyped(\''+day+'\',this.value)"></div>'+
         // People first, then what was bought that day.
-        mine.filter(x=>x.l.kind==='time').concat(mine.filter(x=>x.l.kind!=='time')).map(x=>row(x.l,x.i)).join('')+_qiExtraHtml(day):'')+
+        dayRows(mine)+_qiExtraHtml(day):'')+
     '</div>';
   }).join('');
   // A part has a count (Jack 2026-09-29: "a quantity selector for materials
@@ -927,6 +951,10 @@ function _qiTotalsPaint(){
   const m=_qiMoney(_qiTotal());
   ['qi-total','qi-send-total'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=m;});
   _qiGoPaint();
+  document.querySelectorAll('#qi-page .qi-pamt').forEach(e=>{
+    const d=e.getAttribute('data-day'),w=e.getAttribute('data-who');
+    e.textContent=_qiMoney(_qi.tracked.filter(l=>l.kind==='time'&&l.day===d&&l.who===w).reduce((s2,l)=>s2+(Number(l.amount)||0),0));
+  });
   const M=_qiMath();
   [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
 }
@@ -993,6 +1021,14 @@ function _qiPartLabel(l){
   // "2 supply lines": no unit, so the part itself takes the plural.
   if(!u)return _qiMatDesc({qty:q,unit:'',item:/s$/i.test(item)?item:item+'s'});
   return _qiMatDesc({qty:q,unit:u,item});
+}
+// The × on a person's line: that person off that day, runs and all.
+function _qiDropPerson(day,who){
+  if(!_qi)return;
+  _qi.tracked.filter(l=>l.day===day&&l.who===who&&l.kind==='time').forEach(l=>{
+    if(l.extra){_qi.xOn.delete(l.extra);_qi.xOff.add(l.extra);}else _qi.dropped.add(_qiLineKey(l));
+  });
+  _qiRebuild();renderQuickInvoice();
 }
 function _qiDropTracked(i){
   if(!_qi)return;
