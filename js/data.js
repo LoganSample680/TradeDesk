@@ -644,8 +644,20 @@ function _personIsOwner(k){
 function _personFind(key){
   const k=String(key||'').trim().toLowerCase();
   if(!k||typeof S==='undefined'||!S)return {k,e:null};
-  const e=(S.employees||[]).find(x=>x&&(String(x.email||'').toLowerCase()===k||String(x.name||'').trim().toLowerCase()===k));
+  const e=(S.employees||[]).find(x=>x&&(String(x.email||'').toLowerCase()===k||String(x.name||'').trim().toLowerCase()===k))
+    // Crew with no app (owner 2026-09-29, John): a name and a rate, typed on
+    // an invoice, kept so next time it is just the name.
+    ||crewNoApp().find(x=>String(x.name||'').trim().toLowerCase()===k);
   return {k,e:e||null};
+}
+function crewNoApp(){return (typeof S!=='undefined'&&S&&Array.isArray(S.crewNoApp))?S.crewNoApp.filter(x=>x&&x.name):[];}
+function addCrewNoApp(name,rate){
+  const n=String(name||'').replace(/\s+/g,' ').trim();
+  if(!n||typeof S==='undefined'||!S)return false;
+  if(_personFind(n).e||_personIsOwner(n.toLowerCase()))return false;
+  S.crewNoApp=crewNoApp().concat([{name:n,billRate:Math.max(0,Number(rate)||0)}]);
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
 }
 function personBillRate(key){
   const {k,e}=_personFind(key);

@@ -1617,10 +1617,18 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 :is(#qi-page,#gei-tm-page) .qi-rate.need input{width:5ch}
 :is(#qi-page,#gei-tm-page) .qi-rate.guess{background:#FFF7ED;color:#B45309}
 :is(#qi-page,#gei-tm-page) .qi-need-lbl{color:#B45309;font-weight:600}
-#qi-page .qi-ask{margin-bottom:12px;box-shadow:inset 0 0 0 1.5px var(--ios-tint)}
-#qi-page .qi-ask .ios-lbl b{font-weight:700}
-#qi-page .qi-ask .qi-pb{padding:0 12px 12px}
-#qi-page .qi-ask .qi-ask-no{background:none;box-shadow:inset 0 0 0 1px var(--ios-sep);color:var(--ios-2)}
+#qi-page .qi-people{margin-bottom:12px}
+#qi-page .qi-people-row{align-items:flex-start;gap:10px}
+#qi-page .qi-people-row .ios-lbl b{display:block;font-weight:700;margin-bottom:6px}
+#qi-page .qi-person-list{display:flex;flex-wrap:wrap;gap:6px}
+#qi-page .qi-person{display:inline-flex;align-items:center;gap:2px;height:28px;padding:0 10px;border-radius:14px;background:var(--blue-lt);color:var(--ios-tint);font-size:14px;font-weight:600}
+#qi-page .qi-person button{border:0;background:none;color:inherit;font:inherit;font-size:17px;line-height:1;padding:0 0 0 4px;cursor:pointer;min-width:24px;min-height:28px}
+#qi-page .qi-add-person{flex-shrink:0;border:0;background:none;color:var(--ios-tint);font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;padding:4px 0;white-space:nowrap}
+#qi-page .qi-add-sheet{background:var(--ios-grp);padding-top:4px}
+#qi-page .qi-new{gap:8px}
+#qi-page .qi-new .qi-desc{flex:1;min-width:0}
+#qi-page .qi-new .ios-val input{width:4ch;text-align:right}
+#qi-page .qi-set-rate{border:0;background:none;padding:0 0 0 6px;font:inherit;font-weight:700;color:#B45309;cursor:pointer}
 #qi-page .qi-hrs{display:inline-flex;align-items:center;padding:2px 6px;border-radius:8px;background:var(--bg2);box-shadow:inset 0 0 0 1px var(--ios-sep)}
 #qi-page .qi-hrs input{width:3.4ch;border:0;background:none;font:inherit;color:var(--text);text-align:right;padding:0;outline:none}
 #qi-page .qi-x{margin-left:8px;min-width:44px;min-height:44px}
