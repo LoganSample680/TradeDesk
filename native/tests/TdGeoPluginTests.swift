@@ -3977,4 +3977,99 @@ extension TdGeoPluginTests {
         XCTAssertTrue(true)
         clearSeqState()
     }
+
+    // MARK: - Re-reading the motion history while awake (owner 2026-09-28)
+
+    func testMotionPollInterval_offForNothingAndJunk() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(nil), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(0), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(-15_000), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.nan), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.infinity), 0)
+    }
+
+    func testMotionPollInterval_clampedSoItCanNeverBeABusyLoop() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1), 10_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(15_000), 15_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1e12), 300_000)
+    }
+
+    func testSetMotionPoll_armsOneTimerAndRemembersIt() {
+        let d = UserDefaults.standard
+        plugin.setMotionPollForTest(15_000)
+        XCTAssertEqual(plugin.motionPollMsForTest, 15_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollTimerForTest?.timeInterval ?? 0, 15, accuracy: 0.001)
+        XCTAssertEqual(d.double(forKey: plugin.motionPollKeyForTest), 15_000)
+        XCTAssertGreaterThan(plugin.motionPollTimerForTest?.tolerance ?? 0, 0, "slack lets iOS fold the wakes")
+        plugin.setMotionPollForTest(0)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertNil(d.object(forKey: plugin.motionPollKeyForTest), "off is forgotten, not remembered as zero")
+    }
+
+    func testSetMotionPoll_junkTurnsItOff() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.setMotionPollForTest(Double.nan)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollMsForTest, 0)
+    }
+
+    func testSetMotionPoll_rapidRepeatsLeaveExactlyOneLiveTimer() {
+        var seen: [Timer] = []
+        for i in 0..<25 {
+            plugin.setMotionPollForTest(Double(10_000 + i * 1_000))
+            if let t = plugin.motionPollTimerForTest { seen.append(t) }
+        }
+        XCTAssertEqual(seen.filter { $0.isValid }.count, 1, "every replaced timer is invalidated")
+        XCTAssertEqual(plugin.motionPollMsForTest, 34_000)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testSetMotionPoll_fromAnotherQueueStillLandsOnMain() {
+        let done = expectation(description: "off-main arm")
+        DispatchQueue.global().async {
+            self.plugin.setMotionPollForTest(20_000)
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(plugin.motionPollMsForTest, 20_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testMotionPoll_endsWithTheShiftBeat() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.hbStopForTest()
+        XCTAssertNil(plugin.motionPollTimerForTest, "the poll lives inside the shift")
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollKeyForTest))
+    }
+
+    func testMotionPoll_aQuietTickUploadsNothing() {
+        // The egress promise: a poll that finds nothing sends nothing. On the
+        // simulator there is no coprocessor, so this is also the guard path.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        withUploadsParked {
+            for _ in 0..<20 { plugin.backfillMotionPollForTest() }
+            let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertTrue(inflight.isEmpty, "no upload for a poll with nothing new")
+        }
+        clearSeqState()
+    }
+
+    func testMotionPoll_manyTicksFromTwoQueuesNeverCrash() {
+        clearSeqState()
+        let done = expectation(description: "poll ticks")
+        DispatchQueue.global().async {
+            for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+            DispatchQueue.main.async {
+                for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 30)
+        clearSeqState()
+    }
 }
