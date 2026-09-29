@@ -282,7 +282,7 @@ function _qiSetBillDrive(on){
 function _qiRebuild(){
   if(!_qi)return;
   const lines=(_qi.base||[]).map(l=>Object.assign({},l));
-  _qi.tracked=_qiRiderHours(_qiWithAdded(_qiKeepRates(_qiWithExtras(lines)))).filter(l=>!_qi.dropped.has(_qiLineKey(l)));
+  _qi.tracked=_qiRiderHours(_qiWithAdded(_qiFixHours(_qiKeepRates(_qiWithExtras(lines))))).filter(l=>!_qi.dropped.has(_qiLineKey(l)));
 }
 // A rider's hours are a guess: the same as the person he rode with, because
 // nothing logged his (owner 2026-09-29: "did he spend the same amount of time
@@ -299,10 +299,37 @@ function _qiRiderHours(lines){
   });
   return lines.filter(l=>!(l.kind==='time'&&l.rider&&!(l.mins>0)));
 }
+// FIX HOURS (owner 2026-09-29: "a hidden obvious way to put corrected
+// manual time in if you don't agree, as a last minute override"). The
+// tracked hours stay the default; what he types for a person on a day wins
+// on this invoice, the line says it was edited and what was tracked, and
+// anybody added beside that person follows the fixed hours. The Time Log
+// itself is never changed.
+function _qiFixHours(lines){
+  const H=(_qi&&_qi.riderMins)||{};
+  lines.forEach(l=>{
+    if(l.kind!=='time'||l.rider||l.extra)return;
+    const m=H[l.day+'|'+l.who];
+    if(!(m>=0)||m===l.mins)return;
+    l.orig=l.mins;l.mins=m;l.edited=true;l.amount=Math.round(m/60*l.rate*100)/100;
+    l.detail=_qiMins(m)+' (tracked '+_qiMins(l.orig)+')';l.desc=l.who+': '+_qiMins(m);
+  });
+  return lines.filter(l=>!(l.kind==='time'&&l.edited&&!(l.mins>0)));
+}
+function _qiFixOpen(day,who){if(!_qi)return;_qi.fixKey=_qi.fixKey===day+'|'+who?null:day+'|'+who;renderQuickInvoice();
+  setTimeout(()=>{const i=document.querySelector('#qi-page .qi-hrs[data-key="'+(day+'|'+who).replace(/"/g,'\\"')+'"] input');if(i){i.focus();i.select();}},30);}
+function _qiFixReset(day,who){
+  if(!_qi)return;
+  const H=Object.assign({},_qi.riderMins||{});delete H[day+'|'+who];
+  _qi.riderMins=H;_qi.fixKey=null;
+  _qiRebuild();renderQuickInvoice();
+}
 function _qiRiderSet(day,who,v){
   if(!_qi)return;
-  const h=parseFloat(String(v).replace(/[^0-9.]/g,''));
+  // A minus sign is refused, not dropped: "-3" is not 3 hours.
+  const h=parseFloat(String(v).replace(/[^0-9.\-]/g,''));
   if(!(h>=0)||h>24)return;
+  _qi.fixKey=null;
   _qi.riderMins=Object.assign({},_qi.riderMins||{},{[day+'|'+who]:Math.round(h*60)});
   _qiRebuild();renderQuickInvoice();
 }
@@ -720,8 +747,21 @@ function renderQuickInvoice(){
     // width of the row on a phone. Hours times rate, so he can see which rate
     // won (Earl: "which rate wins?").
     // A rider's hours are the guess, so they are the thing he can change.
+    const k=l.day+'|'+l.who,qk=escHtml(l.who).replace(/'/g,'&#39;');
+    const hrsBox='<span class="qi-hrs" data-key="'+escHtml(k)+'"><input';
+    // His own tracked time: the hours read as tracked, with a quiet "fix
+    // hours" beside them. Open or edited, they are a box like a rider's.
+    const fixing=l.kind==='time'&&!l.rider&&!l.extra&&(l.edited||_qi.fixKey===k);
+    const fixHrs=fixing
+      ?hrsBox+' type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>'
+      :'';
+    // After the rate, so the line still reads "6h on site at $75/hr".
+    const fixLink=(l.kind==='time'&&!l.rider&&!l.extra)
+      ?(l.edited?'<span class="qi-edited-row"><span class="qi-edited">Edited, tracked '+escHtml(_qiMins(l.orig))+'</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Undo</button></span>'
+        :fixing?'':' <button type="button" class="qi-fix" onclick="_qiFixOpen(\''+l.day+'\',\''+qk+'\')">fix hours</button>')
+      :'';
     const riderHrs=(l.kind==='time'&&l.rider&&!l.extra)
-      ?'<span class="qi-hrs"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',this.value)">h</span> with '+escHtml(String(l.rider).split(' ')[0])
+      ?hrsBox.replace('<input','')+'<input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',this.value)">h</span> with '+escHtml(String(l.rider).split(' ')[0])
       :'';
     // No rate yet (a first invoice for somebody): the box is orange and asks,
     // rather than billing them at $0 (owner 2026-09-29: "first time people
@@ -733,9 +773,9 @@ function renderQuickInvoice(){
     const need=l.kind==='time'&&!(Number(l.rate)>0);
     const guess=l.kind==='time'&&!need&&!l.rateSet&&!(personBillRate(l.who)>0);
     const sub=l.kind==='time'
-      ?(riderHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
+      ?(riderHrs||fixHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
         // $0 with a flag to change it (owner 2026-09-29), never a blank box.
-        (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'')
+        (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'')+fixLink
       :escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')));
     const name=l.kind==='time'?l.who:l.desc;
     return '<div class="ios-row"><span class="ios-lbl">'+escHtml(name)+'<small>'+sub+'</small></span>'+

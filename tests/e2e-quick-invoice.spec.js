@@ -57,6 +57,9 @@ test.describe('Quick invoice', () => {
   test('the picker lists every customer with their street and status, working now first, search on top', async ({ page }) => {
     await boot(page);
     await page.click('#qa-invoice-btn');
+    // A slow WebKit runner can still be painting when evaluate runs: wait for
+    // the sheet itself rather than assuming the tap has already drawn it.
+    await page.waitForSelector('.zmodal', { timeout: 10000 });
     const r = await page.evaluate(() => {
       const box = document.querySelector('.zmodal');
       // Ready to bill houses lead the list (e2e-ready-to-bill.spec.js); this
@@ -637,7 +640,12 @@ test.describe('Quick invoice', () => {
         const q = { select: () => q, is: () => q, eq: () => q, gte: () => q, or: (x) => { c.or = x; return q; },
           then: (res, rej) => { open++; peak = Math.max(peak, open); return new Promise(r => setTimeout(r, 30)).then(() => { open--; return { data: [] }; }).then(res, rej); } };
         return q; };
-      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser };
+      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser, tb: window._tbLoad };
+      // Home's Ready to bill card reads the same tables in the background
+      // once supaEnabled is true; on a slow runner its read landed inside
+      // this count (peak 4, WebKit CI 2026-09-29). This test counts only its
+      // own calls.
+      window._tbLoad = () => {};
       window._supa = { from: mk }; window.supaEnabled = () => true; window._supaUser = { id: 'owner-uid' };
       const c = clients.find(x => x.id === 901);
       c.extraAddresses = [{ label: 'Rental', addr: '9 "Quoted" Ln, Springfield, IL' }];
@@ -647,7 +655,7 @@ test.describe('Quick invoice', () => {
       await _fetchCrewLabor('2026-09-01T00:00:00Z');
       const all = { tables: calls.map(x => x.t).sort(), or: calls.find(x => x.t === 'job_time_entries').or, peak };
       const none = await _fetchCrewLabor(null, { only: { jobIds: [], places: [] } });
-      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su });
+      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su, _tbLoad: saved.tb });
       return { one, all, none: none.entries.length, esc: _crewOnlyOr({ jobIds: ['j9', 'x;drop'], places: ['A "B" (C)'] }) };
     });
     expect(r.one.tables).not.toContain('shop_time_entries');
