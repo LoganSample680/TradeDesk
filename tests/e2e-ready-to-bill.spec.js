@@ -445,6 +445,20 @@ test.describe('Ready to bill', () => {
     expect(r.after).toEqual({ need: false, missing: [], kept: 75 });
   });
 
+  // Owner 2026-09-29, screenshot: "why does it say jack jack jack jack".
+  // Six trips on one day are six lines for one man; the folded day names him once.
+  test('a day with several of his lines names him once', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
+      const one = _qi.tracked.find(l => l.day === '2026-09-23' && l.kind === 'time');
+      for (let i = 0; i < 5; i++) _qi.tracked.push(Object.assign({}, one, { id: 'dup' + i, mins: 10, amount: 10 }));
+      renderQuickInvoice();
+      return document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-day-open-btn small').textContent;
+    });
+    expect(r.match(/Jack/g).length).toBe(1);
+  });
+
   test('billed at the business default: the box is orange with a question mark until he looks at it once, then the rate is theirs', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {

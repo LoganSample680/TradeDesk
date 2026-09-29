@@ -731,7 +731,8 @@ function renderQuickInvoice(){
     const on=!_qi.off.has(day);
     const mine=_qi.tracked.map((l,i)=>({l,i})).filter(x=>x.l.day===day);
     const who=mine.filter(x=>x.l.kind==='time');
-    const hrs=who.length?who.map(x=>x.l.who.split(' ')[0]).join(', '):'Materials only';
+    // Each name once: a day with six visits is still just Jack.
+    const hrs=who.length?[...new Set(who.map(x=>x.l.who.split(' ')[0]))].join(', '):'Materials only';
     const canAdd=on&&who.some(x=>!x.l.rider);
     const addable=people.filter(n=>!mine.some(x=>x.l.who===n));
     // Folded to one line (Earl 2026-09-29: "three SE screens before the Text
