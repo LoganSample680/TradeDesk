@@ -135,7 +135,7 @@ test.describe('Quick invoice', () => {
       send: document.getElementById('qi-send').textContent,
     }));
     expect(r.active).toBe('pg-qi');
-    expect(r.seg).toBe('Hourly');
+    expect(r.seg).toBe('By the hour');
     expect(r.text).toContain('Jack Sample');
     expect(r.text).toContain('From the phone: 6h 30m on site');  // where the hours came from, in words (owner 2026-09-29)
     expect(r.text).toContain('$552.50');           // 6.5h x $85
@@ -228,7 +228,7 @@ test.describe('Quick invoice', () => {
       return { off, offText, on, checked, setting, back, saves };
     });
     expect(r.off).toEqual([{ who: 'Mike Sample', mins: 240, detail: '4h on site' }]);
-    expect(r.offText).toContain('Bill drive time');
+    expect(r.offText).toContain('Charge for drive time');   // plain words, in the Time step (owner 2026-09-29)
     expect(r.offText).toContain('From the phone: 4h on site');
     expect(r.offText).not.toMatch(/shop/i);
     // Only the first drive there counts by itself (owner 2026-09-29: "the
@@ -511,7 +511,7 @@ test.describe('Quick invoice', () => {
       const out = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { seg, sent: !!out, grew: bids.length !== n };
     });
-    expect(r.seg).toBe('Set price');
+    expect(r.seg).toBe('Flat price');
     expect(r.sent).toBe(false);
     expect(r.grew).toBe(false);
   });
