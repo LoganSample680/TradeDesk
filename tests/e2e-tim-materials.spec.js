@@ -249,11 +249,14 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
       openQuickInvoice(99951); _qiSetMode('set');
       document.getElementById('qi-say').value = 'Poured the step. Used 12 bags of quikrete and 2 sticks of rebar.';
       _qiSayBuild();
-      return _qi.typed.map(l => l.desc + ' = ' + l.amount);
+      // A part is its own line with its count on the stepper and the price of
+      // one (Jack 2026-09-29: a quantity selector); the customer reads it as
+      // "12 bags Quikrete".
+      return _qi.typed.map(l => l.desc + ' = ' + l.amount + (l.part ? ' x' + l.qty + ' ' + (l.unit || 'ea') + ' | ' + _qiPartLabel(l) : ''));
     });
     expect(r).toContain('Poured the step = ');
-    expect(r).toContain('12 bags Quikrete = 78');
-    expect(r).toContain('2 sticks rebar = ');
+    expect(r).toContain('Quikrete = 6.5 x12 bag | 12 bags Quikrete');
+    expect(r).toContain('Rebar =  x2 stick | 2 sticks rebar');
     expect(r.some(l => /used 12 bags/i.test(l))).toBe(false);
   });
 

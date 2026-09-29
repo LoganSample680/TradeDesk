@@ -3633,9 +3633,7 @@ function _billRateFor(email){
   if(!k)return 0;
   const own=Number(_estCrewRates&&_estCrewRates[k]);
   if(own>0)return own;
-  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-  const def=Number(e&&e.billRate);
-  return def>0?def:0;
+  return personBillRate(k);                      // the one lookup (js/data.js)
 }
 // What the crew on site bills, per hour, all in. Zero when nobody on this job
 // has a rate of their own, which is the signal to fall back to crew × flat.
@@ -3658,10 +3656,7 @@ function _setBillRate(email,rate,asDefault){
   const r=Math.max(0,Number(rate)||0);
   if(!k)return;
   if(r>0)_estCrewRates[k]=r;else delete _estCrewRates[k];
-  if(asDefault){
-    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-    if(e){e.billRate=r||0;if(typeof _settingsChanged==='function')_settingsChanged();}
-  }
+  if(asDefault)setPersonBillRate(k,r);
   if(_geiIsTM&&typeof _tmInputChange==='function')_tmInputChange();
   else{if(typeof _byoUpdateRail==='function')_byoUpdateRail();if(typeof _byoAutosave==='function')_byoAutosave();}
 }
@@ -5194,7 +5189,7 @@ function _tmStateName(st){
 // the terms and the Rate row on the document.
 function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
 function _tmHideRateDefault(){
-  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+  try{return typeof copyShows==='function'?!copyShows('proposal','rate'):!!(typeof S!=='undefined'&&S&&S.tmHideRate);}catch(_e){return false;}
 }
 function _tmSetHideRate(v){
   if(!_tmCanHideRate()){_tmHideRate=false;}
@@ -5203,7 +5198,8 @@ function _tmSetHideRate(v){
   // An assignment alone lives until the tab closes, which is not "remembered"
   // and is certainly not "follows him to the tablet in the truck".
   try{
-    if(typeof S!=='undefined'&&S){
+    if(typeof setCopyShows==='function')setCopyShows('proposal','rate',!_tmHideRate);
+    else if(typeof S!=='undefined'&&S){
       S.tmHideRate=_tmHideRate;
       if(typeof _settingsChanged==='function')_settingsChanged();
     }

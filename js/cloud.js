@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.28.26.7';
+const APP_VERSION='09.29.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4001,6 +4001,40 @@ async function _denyPermissionRequest(reqId){
   }catch(e){console.warn('deny failed:',e);}
 }
 
+// RATES LIVE WITH THE PEOPLE (owner 2026-09-29: "I don't even think Settings
+// is the right spot for your hourly rate. I think it belongs under team").
+// What the owner bills, and the default for anyone without a rate of their
+// own. Each crew member's rate is on their own card (emp-bill-rate). Read by
+// the one lookup every estimate and invoice uses (personBillRate, js/data.js).
+// WHAT EACH PERSON BILLS AN HOUR sits on that person's row (owner 2026-09-29:
+// "rate should go on the person right?"). A separate "You / Everyone else"
+// box read as two more people. The sell rate is personBillRate (js/data.js);
+// what they cost is pay_rate, shown beside it and never mixed (CLAUDE.md 18.2).
+function _teamRateChip(id,label,val,ph,onchange){
+  return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
+    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" onchange="'+onchange+'">/hr</label>';
+}
+function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
+// The default for anyone without their own rate: one quiet line, not a person.
+function _teamRatesHtml(){
+  if(!(typeof _ownerUI==='function'&&_ownerUI()))return '';
+  return '<div id="team-rates" class="td-rate-default">Anyone without a rate bills '+
+    _teamRateChip('team-labor-rate','','' +_teamRateVal(S.laborRate),'75',"_teamRateSet('laborRate',this.value)")+'</div>';
+}
+function _teamRateSet(key,val){
+  const r=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
+  if(key==='laborRate'&&!(r>0))return;
+  S[key]=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
+function _teamBillSet(i,val){
+  const e=(S.employees||[])[i];if(!e)return;
+  const r=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
+  if(typeof setPersonBillRate==='function'&&e.email)setPersonBillRate(e.email,r);
+  else{e.billRate=r;if(typeof _settingsChanged==='function')_settingsChanged();}
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
@@ -4054,13 +4088,15 @@ function renderTeam(){
   //
   // No Edit button, no invite badge, no permissions line: those belong to
   // someone you hired, and on your own row they read as nonsense.
-  const _ownerRowHtml=(function(){
+  // The Team page also carries your bill rate on this row, so the row shows
+  // there even when tracking is off (rateOn); the Settings list keeps the old
+  // rule and shows it only for tracking.
+  const _ownerRow=rateOn=>{
     if(typeof _isEmployee!=='undefined'&&_isEmployee)return '';
-    if(!S.teamTracking)return '';
+    if(rateOn&&!(typeof _ownerUI==='function'&&_ownerUI()))rateOn=false;
     const email=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
-    if(!email)return '';
-    const g=(typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
-    if(!g)return '';
+    const g=(S.teamTracking&&email&&typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
+    if(!g&&!rateOn)return '';
     const name=(S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'You');
     const pal=(typeof _tlAvatarPalette==='function')?_tlAvatarPalette(name):{bg:'var(--bg3)',fg:'var(--text2)'};
     const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
@@ -4072,13 +4108,15 @@ function renderTeam(){
         '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
           ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+      (rateOn?'<div class="td-rate-row">'+_teamRateChip('team-owner-rate','Bills',_teamRateVal(S.ownerBillRate),_teamRateVal(S.laborRate)||'95',"_teamRateSet('ownerBillRate',this.value)")+'</div>':'')+
+      (g?'<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
         '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
       ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
       (g.ping?_sub(g.ping):'')+
-      (g.fix?_sub(g.fix):'')+
+      (g.fix?_sub(g.fix):''):'')+
     '</div>';
-  })();
+  };
+  const _ownerRowHtml=_ownerRow(false);
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -4088,7 +4126,9 @@ function renderTeam(){
       const _roleLabel={tech:'Field Tech',office:'Office / CSR',manager:'Manager',owner:'Owner'}[e.role]||e.role;
       const _classTag=e.classification?'<span style="font-size:10px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text2);padding:1px 7px;border-radius:8px;margin-left:4px">'+escHtml(e.classification)+'</span>':'';
       const _ec=_teamComp[(e.email||'').toLowerCase()];
-      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
+      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+'Costs '+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
+      const _billChip=(e.role!=='owner'&&typeof _ownerUI==='function'&&_ownerUI())
+        ?'<div class="td-rate-row">'+_teamRateChip('team-bill-'+i,'Bills',_teamRateVal(e.billRate),_teamRateVal(S.laborRate)||'75','_teamBillSet('+i+',this.value)')+'</div>':'';
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4098,6 +4138,7 @@ function renderTeam(){
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:13px;min-height:44px;min-width:44px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
+        '<!--rate-->'+_billChip+'<!--/rate-->'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+'</div>':'')+
         (e.role!=='owner'?(function(){
@@ -4143,8 +4184,9 @@ function renderTeam(){
         })()+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  // Rates only on the Team page; the Settings list stays a roster.
+  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml.replace(/<!--rate-->[\s\S]*?<!--\/rate-->/g,'');
+  if(el2)el2.innerHTML=_reqHtml+_ownerRow(true)+empHtml.replace(/<!--\/?rate-->/g,'')+_teamRatesHtml();
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
@@ -4722,6 +4764,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
+    // What this person's hour is SOLD for (Earl 2026-09-29: "Jack's rate goes
+    // on Jack, in the Team screen"). The one bill rate every estimate and
+    // invoice reads (personBillRate, js/data.js). Never the pay rate above.
+    '<div class="f" style="margin:0 0 14px"><label for="emp-bill-rate">Bills customers (per hour)</label>'+
+      '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+      '<input id="emp-bill-rate" type="text" inputmode="decimal" value="'+(Number(e.billRate)>0?String(e.billRate):'')+'" placeholder="Your labor rate" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
@@ -4831,6 +4879,8 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
+  const _billEl=document.getElementById('emp-bill-rate');
+  const _billRate=_billEl?(parseFloat(String(_billEl.value).replace(/[^0-9.]/g,''))||0):null;
   // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
   // alone, so every field the form does not show was dropped on save: editing
   // somebody's phone number mid-morning silently wiped truckDay, their vehicle
@@ -4841,6 +4891,7 @@ async function _saveEmployee(idx){
   const _usualEl=document.getElementById('emp-usual-vehicle');
   const _usualVal=_usualEl?_usualEl.value:'';
   const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  if(_billRate!=null)emp.billRate=_billRate;
   // The standing vehicle answer. '' means nobody has said yet, which the
   // dispatch board reports as a gap rather than guessing.
   if(_usualEl){
