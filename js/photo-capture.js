@@ -202,6 +202,10 @@ async function _pcUploadRow(row,file){
     delete row.pendingUpload;delete row.outboxWait;delete row._uploadExt;delete row._uploadMime;
     _pcFinishTwin(row);
     saveAll();
+    // The file is up, so the record goes now rather than after the 2 second
+    // wait: on one bar the upload alone ate the time before the phone went in
+    // a pocket (Jack at Bill Lorson's, 2026-09-29). js/cloud.js _pocketFlush.
+    if(typeof _syncTimer!=='undefined'&&_syncTimer&&typeof _flushSaveNow==='function')_flushSaveNow();
     _pcOutboxDel(row.id);
     _pcTel('photo_uploaded',row);
     if(clientId!=null&&typeof _uploadClientHub==='function')_uploadClientHub(clientId).catch(()=>{});

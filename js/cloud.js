@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.29.26.1';
+const APP_VERSION='09.29.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -7172,6 +7172,57 @@ function _flushSaveNow(){
   return _pendingSavePromise;
 }
 
+// ── PUT IN THE POCKET, STILL SENT (owner 2026-09-29) ────────────────────────
+// "it should send it right away, how can we wake the flush up."
+//
+// Jack at Bill Lorson's, 12:10: shot a photo at :25, the upload crawled over
+// one bar until :40, the 2 second save wait ran out at :42, and he pocketed
+// the phone at :44. The picture reached storage; the record that shows it in
+// the app did not, because iOS froze the page mid-save and nothing woke it.
+// Backgrounding only ever stashed unsynced work on the phone.
+//
+// So the moment the page is hidden, any record the server has never seen (a
+// new photo, a new punch) is handed to iOS's background uploader (TdBgUp,
+// js/bg-upload.js), which finishes the transfer with the app asleep or
+// closed. It is the same upsert supaSaveToCloud sends, so whichever lands
+// second changes nothing. A save still waiting out its 2 seconds goes now as
+// well. Only NEW rows ride the hand-off: an edit to a row already on the
+// server keeps going through the normal save, which knows about locked rows.
+function _pocketNewRows(){
+  const out=[];
+  const skip=(typeof _employeeRedactedTables==='function')?_employeeRedactedTables():new Set();
+  for(const {t,get,tx} of _TD_TABLES){
+    if(skip.has(t))continue;
+    let rows;
+    try{rows=(tx?tx(get()):get())||[];}catch(_e){continue;}
+    const known=_lastKnownIds[t]||new Set(),synced=_syncedHash[t];
+    // A GPS leg is the server's (CLAUDE.md 17, geo_replace_day is its only
+    // writer) and is never in the known set on purpose, so it would look new.
+    const fresh=rows.filter(r=>r&&r.id!=null&&!known.has(String(r.id))&&!(synced&&synced.has(String(r.id)))&&!_sweepGuarded(t,r));
+    if(fresh.length)out.push({t,rows:fresh.slice(0,50)});
+  }
+  return out;
+}
+async function _pocketFlush(){
+  try{
+    if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+    if(_deliberateSignOut||!supaEnabled()||!_supa||!_supaUser||!_supaCloudLoaded)return;
+    const fresh=_pocketNewRows();
+    // Speed up a save that is only waiting on its timer. Never start a second
+    // one beside a save already in flight.
+    if(_syncTimer)_flushSaveNow();
+    if(!fresh.length||typeof _bgUpRows!=='function')return;
+    const s=await _supa.auth.getSession();
+    const token=s&&s.data&&s.data.session&&s.data.session.access_token;
+    const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser.id;
+    if(!token||!uid)return;
+    const ts=new Date().toISOString();
+    for(const {t,rows} of fresh){
+      await _bgUpRows(t,rows.map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null,archived_at:null})),token);
+    }
+  }catch(_e){}
+}
+
 // ── Offline / reconnect watcher ────────────────────────────────────────────
 function _showOfflineBanner(syncing){
   const b=document.getElementById('offline-banner');if(!b)return;
@@ -7391,6 +7442,7 @@ function _startOfflineWatcher(){
       if(_hasUnsaved){
         try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
       }
+      _pocketFlush();
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
     // Coming back from the share sheet is the MOST likely moment something is
