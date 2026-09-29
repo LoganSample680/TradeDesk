@@ -316,12 +316,10 @@ function _qiFixHours(lines){
   });
   return lines.filter(l=>!(l.kind==='time'&&l.edited&&!(l.mins>0)));
 }
-function _qiFixOpen(day,who){if(!_qi)return;_qi.fixKey=_qi.fixKey===day+'|'+who?null:day+'|'+who;renderQuickInvoice();
-  setTimeout(()=>{const i=document.querySelector('#qi-page .qi-hrs[data-key="'+(day+'|'+who).replace(/"/g,'\\"')+'"] input');if(i){i.focus();i.select();}},30);}
 function _qiFixReset(day,who){
   if(!_qi)return;
   const H=Object.assign({},_qi.riderMins||{});delete H[day+'|'+who];
-  _qi.riderMins=H;_qi.fixKey=null;
+  _qi.riderMins=H;
   _qiRebuild();renderQuickInvoice();
 }
 function _qiRiderSet(day,who,v){
@@ -329,7 +327,6 @@ function _qiRiderSet(day,who,v){
   // A minus sign is refused, not dropped: "-3" is not 3 hours.
   const h=parseFloat(String(v).replace(/[^0-9.\-]/g,''));
   if(!(h>=0)||h>24)return;
-  _qi.fixKey=null;
   _qi.riderMins=Object.assign({},_qi.riderMins||{},{[day+'|'+who]:Math.round(h*60)});
   _qiRebuild();renderQuickInvoice();
 }
@@ -468,7 +465,7 @@ function _qiExtraHtml(day){
   const X=_qiExtras(day).filter(x=>!x.auto);
   if(!X.length)return '';
   const open=_qi.xOpen===day;
-  return '<button type="button" class="ios-row ios-link" id="qi-addtime-'+day+'" onclick="_qiExtraOpen(\''+day+'\')">Add time from this day ('+X.length+')</button>'+
+  return '<button type="button" class="ios-row ios-link" id="qi-addtime-'+day+'" onclick="_qiExtraOpen(\''+day+'\')">Other time that day ('+X.length+')</button>'+
     (open?'<div class="qi-xlist">'+
       X.map(x=>{const on=_qi.xOn.has(x.key);
         return '<button type="button" class="ios-row qi-x-row" onclick="_qiExtraToggle(\''+x.key+'\')" aria-pressed="'+on+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span>'+
@@ -754,43 +751,31 @@ function renderQuickInvoice(){
   const host=document.getElementById('qi-page');if(!host||!_qi)return;
   const c=getClientById(_qi.cid)||{};
   const hourly=_qi.mode==='hourly';
+  // ONE PERSON, ONE LINE (owner 2026-09-29: "stupid simple for a complex
+  // thing"; "what the hell does fix hours mean, what does edited tracked 3 hr
+  // 30 minutes mean"). The hours and the rate are both boxes he can tap, the
+  // amount is on the right, and one small line under says where the hours
+  // came from: the phone, the phone but he changed it, or nobody's phone.
   const row=(l,i)=>{
-    // The rate sits in the line under the name, small, so the name keeps the
-    // width of the row on a phone. Hours times rate, so he can see which rate
-    // won (Earl: "which rate wins?").
-    // A rider's hours are the guess, so they are the thing he can change.
-    const k=l.day+'|'+l.who,qk=escHtml(l.who).replace(/'/g,'&#39;');
-    const hrsBox='<span class="qi-hrs" data-key="'+escHtml(k)+'"><input';
-    // His own tracked time: the hours read as tracked, with a quiet "fix
-    // hours" beside them. Open or edited, they are a box like a rider's.
-    const fixing=l.kind==='time'&&!l.rider&&!l.extra&&(l.edited||_qi.fixKey===k);
-    const fixHrs=fixing
-      ?hrsBox+' type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>'
-      :'';
-    // After the rate, so the line still reads "6h on site at $75/hr".
-    const fixLink=(l.kind==='time'&&!l.rider&&!l.extra)
-      ?(l.edited?'<span class="qi-edited-row"><span class="qi-edited">Edited, tracked '+escHtml(_qiMins(l.orig))+'</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Undo</button></span>'
-        :fixing?'':' <button type="button" class="qi-fix" onclick="_qiFixOpen(\''+l.day+'\',\''+qk+'\')">fix hours</button>')
-      :'';
-    const riderHrs=(l.kind==='time'&&l.rider&&!l.extra)
-      ?hrsBox.replace('<input','')+'<input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',this.value)">h</span> with '+escHtml(String(l.rider).split(' ')[0])
-      :'';
-    // No rate yet (a first invoice for somebody): the box is orange and asks,
-    // rather than billing them at $0 (owner 2026-09-29: "first time people
-    // may not have a rate ... how do you make that smart?"). What he types is
-    // theirs from then on (_qiRememberRate).
-    // Billed at the business default because they have no rate of their own:
-    // still orange, with a question mark, until he looks at it once. Leaving
-    // the box keeps what is in it as theirs.
+    const qk=escHtml(l.who||'').replace(/'/g,'&#39;');
     const need=l.kind==='time'&&!(Number(l.rate)>0);
     const guess=l.kind==='time'&&!need&&!l.rateSet&&!(personBillRate(l.who)>0);
-    const sub=l.kind==='time'
-      ?(riderHrs||fixHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
-        // $0 with a flag to change it (owner 2026-09-29), never a blank box.
-        (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'')+fixLink
-      :escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')));
+    const rateBox='<span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
+      // $0 with a flag to change it (owner 2026-09-29), never a blank box.
+      (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'');
+    const hrsBox=l.extra
+      ?'<span class="qi-hrs-fixed">'+escHtml(_qiMins(l.mins))+'</span>'
+      :'<span class="qi-hrs" data-key="'+escHtml(l.day+'|'+l.who)+'"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>';
+    // Where the hours came from, in words.
+    const from=l.kind!=='time'?escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:''))):
+      l.extra?escHtml(String(l.detail||'').replace(/ · [0-9hm ]+(?=,|$)/,'')):
+      l.rider?'No app. Same hours as '+escHtml(String(l.rider).split(' ')[0]):
+      l.edited?'<span class="qi-edited">You changed this. The phone said '+escHtml(_qiMins(l.orig))+'.</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Put it back</button>':
+      'From the phone: '+escHtml(l.detail||(_qiMins(l.mins)+' on site'));
     const name=l.kind==='time'?l.who:l.desc;
-    return '<div class="ios-row"><span class="ios-lbl">'+escHtml(name)+'<small>'+sub+'</small></span>'+
+    return '<div class="ios-row qi-line'+(l.kind==='time'?' qi-time':'')+'"><span class="ios-lbl">'+escHtml(name)+
+        (l.kind==='time'?'<span class="qi-math">'+hrsBox+' × '+rateBox+'</span>':'')+
+        '<small class="qi-from">'+from+'</small></span>'+
       '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+_qiMoney(l.amount)+'</span>'+
       '<button type="button" class="qi-x" aria-label="Leave off" onclick="_qiDropTracked('+i+')">×</button></div>';
   };
@@ -824,7 +809,8 @@ function renderQuickInvoice(){
           '<span class="ios-chev qi-day-chev" aria-hidden="true">›</span></button></div>'+
         '<button type="button" class="ios-del qi-billed" tabindex="-1" onclick="qiBilledElsewhere(\''+day+'\')">Already billed</button></div>'+
       (open?'<div class="ios-row qi-note-row"><input class="qi-desc" type="text" aria-label="What was done '+escHtml(_qiDayLabel(day))+'" placeholder="What was done this day" value="'+escHtml(_qi.dayNote[day]||'')+'" oninput="_qiDayNoteTyped(\''+day+'\',this.value)"></div>'+
-        mine.map(x=>row(x.l,x.i)).join('')+_qiExtraHtml(day):'')+
+        // People first, then what was bought that day.
+        mine.filter(x=>x.l.kind==='time').concat(mine.filter(x=>x.l.kind!=='time')).map(x=>row(x.l,x.i)).join('')+_qiExtraHtml(day):'')+
     '</div>';
   }).join('');
   // A part has a count (Jack 2026-09-29: "a quantity selector for materials
@@ -859,29 +845,31 @@ function renderQuickInvoice(){
       _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
         escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
         '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
+      // FOUR STEPS (owner 2026-09-29: "stupid simple for a complex thing").
+      // 1 The work, 2 Time, 3 Materials and extras, 4 Review. The settings
+      // that are about every invoice, not this job, sit under Options in 4.
+      _qiStep(1,'The work')+
       _qiSayHtml()+
-      (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-h"><span>Work done</span></div><div class="ios-group">'+
+      (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-group">'+
         _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
-      (hourly?'<div class="ios-sec"><div class="ios-h"><span>'+(dayList.length>1?'Days at this house':'Since the last invoice')+'</span>'+
+      _qiPhotosHtml()+
+      (hourly?_qiStep(2,'Time')+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days since the last invoice</span>':'<div class="ios-h" style="display:none"><span></span>')+
           (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
         (tracked&&!_qi.loading?_qiPeopleHtml():'')+
         (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
         (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
-        '<div class="ios-group"><label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
-          '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label>'+
-          '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Charge a set price<small>The hours stay on your records</small></span>'+
-          '<input type="checkbox" class="ios-switch" id="qi-fixed-on" '+(_qi.fixed!=null?'checked':'')+' onchange="_qiSetFixed(this.checked)"></label>'+
-          (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">Set price</span><span class="ios-val">$<input id="qi-fixed" type="text" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':'')+
-        '</div>'+
+        (tracked?'<div class="ios-foot">Tap the hours or the rate to change them. Changing hours here never changes the time log.</div>':'')+
       '</div>':'')+
-      '<div class="ios-sec"><div class="ios-h"><span>'+(hourly?'Parts and charges':'What you did')+'</span></div><div class="ios-group">'+typed+
+      _qiStep(hourly?3:2,hourly?'Materials and extras':'What you did')+
+      '<div class="ios-sec"><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" id="qi-add-part" onclick="_qiAddPart()">Add a part</button>'+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a charge</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
-      '</div>'+pbHtml+'</div>'+_qiCopyHtml()+
-      '<div class="ios-sec"><div class="ios-group"><div class="ios-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div></div>'+
-        '<div class="ios-foot">'+(hourly?(dayList.length>1?'The customer gets one invoice with each day listed. Once sent, those days are billed; an unchecked day stays for next time.':'Once sent, these hours and receipts are marked billed and the next invoice starts after them.'):'Your tracked time and receipts are not on this bill.')+'</div></div>'+
+      '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already on their day in step 2.</div>':'')+'</div>'+
+      _qiStep(hourly?4:3,'Review')+
+      _qiMathHtml(total)+
+      _qiOptionsHtml(hourly)+
       // Pinned to the bottom of the screen (Earl): Send is never three
       // screens down on a small phone.
       // The bar is the T&M estimate's bar (owner 2026-09-29: "it all needs to
@@ -890,7 +878,6 @@ function renderQuickInvoice(){
       // The lesser things are the same plain links under the page.
       '<div class="ios-links qi-links">'+
         '<button type="button" id="qi-preview" onclick="qiSeeIt()">See what they get</button>'+
-        (hourly&&_qi.tracked.some(l=>!_qi.off.has(l.day))?'<button type="button" id="qi-elsewhere" onclick="qiBilledElsewhere()">Already billed outside TradeDesk</button>':'')+
       '</div>'+
       '<div class="qi-actions" id="qi-dock">'+
         (typeof openTim==='function'?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'')+
@@ -938,6 +925,54 @@ function _qiTyped(i,k,v){
 function _qiTotalsPaint(){
   const m=_qiMoney(_qiTotal());
   ['qi-total','qi-send-total'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=m;});
+  const M=_qiMath();
+  [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
+}
+// THE MATH, SPELLED OUT (owner 2026-09-29: "can they trust the numbers").
+// Labor hours and dollars, materials, parts and charges, and the total, from
+// the same lines the invoice sends, so the review cannot disagree with it.
+function _qiMath(){
+  const L=_qiLines();
+  const sum=f=>Math.round(L.filter(f).reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;
+  return {
+    mins:L.filter(l=>l.kind==='time').reduce((s,l)=>s+(Number(l.mins)||0),0),
+    people:new Set(L.filter(l=>l.kind==='time').map(l=>l.who)).size,
+    labor:sum(l=>l.kind==='time'),mat:sum(l=>l.kind==='receipt'),extra:sum(l=>l.kind==='line'),
+    fixed:L.some(l=>l.kind==='fixed')?sum(l=>l.kind==='fixed'):null,
+  };
+}
+function _qiMathHtml(total){
+  const M=_qiMath();
+  const r=(id,lbl,sub,v,cls)=>'<div class="ios-row'+(cls?' '+cls:'')+'"><span class="ios-lbl">'+lbl+(sub?'<small>'+escHtml(sub)+'</small>':'')+'</span><span class="ios-fact"'+(id?' id="'+id+'"':'')+'>'+_qiMoney(v)+'</span></div>';
+  return '<div class="ios-sec"><div class="ios-group qi-math-box">'+
+    (M.fixed!=null?r('','Set price','The hours stay on your records',M.fixed):
+      (M.mins>0?r('qi-m-labor','Labor',_qiMins(M.mins)+(M.people>1?' across '+M.people+' people':''),M.labor):''))+
+    (M.mat>0?r('qi-m-mat','Materials','From store receipts',M.mat):'')+
+    (M.extra>0?r('qi-m-extra','Parts and charges','',M.extra):'')+
+    '<div class="ios-row qi-total-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div>'+
+  '</div></div>';
+}
+function _qiStep(n,t){return '<div class="ios-stephead" data-state="todo"><span class="n">'+n+'</span><span class="t">'+escHtml(t)+'</span></div>';}
+// Settings that are about every invoice, not this job: one row, folded.
+function _qiOptionsHtml(hourly){
+  const open=!!(_qi&&_qi.optOpen);
+  const on=[];
+  if(hourly&&_qiBillDrive())on.push('drive time billed');
+  if(_qi.fixed!=null)on.push('set price');
+  if(_qiShowRate())on.push('rate shown');
+  return '<div class="ios-sec"><div class="ios-group qi-opts'+(open?' open':'')+'">'+
+    '<button type="button" class="ios-row qi-opts-row" id="qi-opts" onclick="_qi.optOpen=!_qi.optOpen;renderQuickInvoice()" aria-expanded="'+open+'">'+
+      '<span class="ios-lbl">Options<small>'+escHtml(on.length?on.join(', '):'Drive time, set price, what the customer sees')+'</small></span>'+
+      '<span class="ios-chev" style="transform:rotate('+(open?'90':'0')+'deg);transition:transform .18s ease" aria-hidden="true">\u203a</span></button>'+
+    '<div class="qi-opts-body">'+
+      (hourly?'<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
+        '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label>'+
+      '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Charge a set price<small>The hours stay on your records</small></span>'+
+        '<input type="checkbox" class="ios-switch" id="qi-fixed-on" '+(_qi.fixed!=null?'checked':'')+' onchange="_qiSetFixed(this.checked)"></label>'+
+      (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">Set price</span><span class="ios-val">$<input id="qi-fixed" type="text" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':''):'')+
+      _qiCopyHtml()+
+      (hourly&&_qi.tracked.some(l=>!_qi.off.has(l.day))?'<button type="button" class="ios-row ios-link" id="qi-elsewhere" onclick="qiBilledElsewhere()">Already billed outside TradeDesk</button>':'')+
+    '</div></div></div>';
 }
 function _qiAddLine(){if(!_qi)return;_qi.typed.push({desc:'',amount:''});renderQuickInvoice();}
 function _qiAddPart(){if(!_qi)return;_qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);_qi.typed.push({desc:'',amount:'',qty:1,part:true});renderQuickInvoice();}
@@ -1363,23 +1398,26 @@ function _qiCustomerHtml(){
 function _qiCopyHtml(){
   const locked=_qiRateLocked(),rate=_qiShowRate(),pm=_qiPartsMode(),word=_qiPartsWord();
   const always=(k,now,def)=>now!==def?'<button type="button" class="qi-always" onclick="_qiShowAlways(\''+k+'\')">Always</button>':'';
-  const pr=_qiPhotoPair();
-  const ph=pr?'<div class="ios-row qi-photos'+(_qi.photos.on?'':' off')+'">'+
-      ['before','after'].map(t=>'<button type="button" class="qi-ph" onclick="_qiPhotoNext(\''+t+'\')" aria-label="'+(t==='before'?'Before':'After')+' photo, tap for another">'+
-        '<img src="'+escHtml(_qiPhotoSrc(pr[t]))+'" alt=""><span>'+(t==='before'?'Before':'After')+(_qiPhotoList(t).length>1?' ›':'')+'</span></button>').join('')+'</div>'
-    :'';
-  return '<div class="ios-sec"><div class="ios-h"><span>On the customer\'s copy</span></div><div class="ios-group">'+
-    '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state requires it on a time and materials bill':'Off: they see the hours and the total')+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
+  return '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state requires it on a time and materials bill':'Off: they see the hours and the total')+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
       '<input type="checkbox" class="ios-switch" id="qi-show-rate" '+(rate?'checked':'')+(locked?' disabled':'')+' onchange="_qiSetShow(\'showRate\',this.checked)"></label>'+
     // Three ways, the default first (owner 2026-09-29).
-    '<div class="ios-row qi-parts-row"><span class="ios-lbl">'+word+'<small>'+
+    '<div class="ios-row qi-parts-row"><span class="ios-lbl">'+word+' on their copy<small>'+
       (pm==='total'?'In the total, not listed':pm==='items'?'Listed with counts, no prices':'Listed with counts and prices')+
       (pm!==copyPartsMode('invoice')?' <button type="button" class="qi-always" onclick="_qiPartsAlways()">Always</button>':'')+'</small></span></div>'+
     '<div class="ios-row qi-parts-seg"><div class="ios-seg" role="tablist" id="qi-parts-mode">'+
       [['total','Total only'],['items','List them'],['priced','With prices']].map(([k,l])=>'<button type="button" role="tab" data-mode="'+k+'" class="'+(pm===k?'on':'')+'" onclick="_qiSetPartsMode(\''+k+'\')">'+l+'</button>').join('')+
-    '</div></div>'+
-    (pr?'<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Before and after photos<small>From TrueShot at this house. Tap a photo for another.</small></span>'+
-      '<input type="checkbox" class="ios-switch" id="qi-photos-on" '+(_qi.photos.on?'checked':'')+' onchange="_qi.photos.on=this.checked;renderQuickInvoice()"></label>'+ph:'')+
+    '</div></div>';
+}
+// Before and after: part of the work, step 1, attached by themselves.
+function _qiPhotosHtml(){
+  const pr=_qiPhotoPair();
+  if(!pr)return '';
+  return '<div class="ios-sec"><div class="ios-group">'+
+    '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Before and after photos<small>From TrueShot at this house. Tap a photo for another.</small></span>'+
+      '<input type="checkbox" class="ios-switch" id="qi-photos-on" '+(_qi.photos.on?'checked':'')+' onchange="_qi.photos.on=this.checked;renderQuickInvoice()"></label>'+
+    '<div class="ios-row qi-photos'+(_qi.photos.on?'':' off')+'">'+
+      ['before','after'].map(t=>'<button type="button" class="qi-ph" onclick="_qiPhotoNext(\''+t+'\')" aria-label="'+(t==='before'?'Before':'After')+' photo, tap for another">'+
+        '<img src="'+escHtml(_qiPhotoSrc(pr[t]))+'" alt=""><span>'+(t==='before'?'Before':'After')+(_qiPhotoList(t).length>1?' ›':'')+'</span></button>').join('')+'</div>'+
   '</div></div>';
 }
 // ── BEFORE AND AFTER (owner 2026-09-29: "do we incorporate TrueShot into the

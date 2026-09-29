@@ -104,7 +104,7 @@ test.describe('Ready to bill', () => {
     expect(r.days).toEqual(['Tue, Sep 22', 'Wed, Sep 23', 'Thu, Sep 24']);
     expect(r.dayTotals).toEqual(['$636.00', '$262.50', '$150.00']);
     expect(r.total).toBe('$1,048.50');
-    expect(r.text).toContain('Days at this house');
+    expect(r.text).toContain('3 days since the last invoice');
     expect(r.text).toContain('Ferguson $120.00, Menards $66.00');   // his screen names the stores
   });
 
@@ -401,16 +401,17 @@ test.describe('Ready to bill', () => {
   });
 
   // Owner 2026-09-29: "a hidden obvious way to put corrected manual time in
-  // if you don't agree, as a last minute override".
-  test('fix hours: his tracked hours are overridden for this invoice, the line says edited and what was tracked, Undo puts them back', async ({ page }) => {
+  // if you don't agree", then: "what the hell does fix hours mean, what does
+  // edited tracked 3 hr 30 minutes mean". CHANGED (§10.4): no "fix hours"
+  // link; the hours are a box like the rate, and a change says so in words.
+  test('changing hours: tap the hours, type, the line says the phone said otherwise, Put it back restores them', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
       _qiDayOpen('2026-09-22');
       const day = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
-      const link = [...day().querySelectorAll('.qi-fix')].map(b => b.textContent);
-      [...day().querySelectorAll('.qi-fix')].find(b => b.textContent === 'fix hours').click();
-      const inp = day().querySelector('.qi-hrs input');
+      const before = day().querySelector('.qi-time .qi-from').textContent;
+      const inp = day().querySelector('.qi-time .qi-hrs input');
       inp.value = '5'; inp.dispatchEvent(new Event('change'));
       const jack = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'Jack Sample');
       const note = day().querySelector('.qi-edited').textContent;
@@ -418,17 +419,34 @@ test.describe('Ready to bill', () => {
       _qiAddPerson('John Miller');
       const john = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'John Miller').mins;
       const doc = _qiDocHtml();
-      [...day().querySelectorAll('.qi-fix')].find(b => b.textContent === 'Undo').click();
+      [...day().querySelectorAll('.qi-fix')].find(b => b.textContent === 'Put it back').click();
       const back = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'Jack Sample');
-      return { link, jack: [jack.mins, jack.amount, jack.orig], note, other, john, doc5: doc.includes('5 hrs'), back: [back.mins, !!back.edited] };
+      return { before, jack: [jack.mins, jack.amount, jack.orig], note, other, john, doc5: doc.includes('5 hrs'), back: [back.mins, !!back.edited],
+        gone: [...document.querySelectorAll('#qi-page button')].some(b => /fix hours/i.test(b.textContent)) };
     });
-    expect(r.link).toEqual(['fix hours']);
+    expect(r.before).toBe('From the phone: 6h on site');
     expect(r.jack).toEqual([300, 375, 360]);
-    expect(r.note).toBe('Edited, tracked 6h');
+    expect(r.note).toBe('You changed this. The phone said 6h.');
     expect(r.other, 'only that day').toBe(210);
-    expect(r.john, 'someone added beside him follows the fixed hours').toBe(300);
-    expect(r.doc5, 'the customer copy bills the fixed hours').toBe(true);
+    expect(r.john, 'someone added beside him follows the changed hours').toBe(300);
+    expect(r.doc5, 'the customer copy bills the changed hours').toBe(true);
     expect(r.back).toEqual([360, false]);
+    expect(r.gone, 'no "fix hours" jargon').toBe(false);
+  });
+
+  test('the invoice is four numbered steps: The work, Time, Materials and extras, Review with the math', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => ({
+      steps: [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent),
+      math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
+      send: document.getElementById('qi-send-total').textContent,
+      optsHidden: getComputedStyle(document.querySelector('#qi-page .qi-opts-body')).display === 'none',
+    }));
+    expect(r.steps).toEqual(['The work', 'Time', 'Materials and extras', 'Review']);
+    expect(r.math).toEqual(['Labor=$862.50', 'Materials=$186.00', 'Total=$1,048.50']);
+    expect(r.send).toBe('$1,048.50');
+    expect(r.optsHidden, 'settings about every invoice are folded under Options').toBe(true);
   });
 
   test('fix hours refuses junk, a negative and more than a day', async ({ page }) => {
@@ -882,7 +900,7 @@ test.describe('Invoice: add time from the day', () => {
       return { lines: f(), text: document.getElementById('qi-page').textContent, total: _qiTotal() };
     }, jack.toString());
     expect(r.lines).toEqual([{ mins: 260, extra: null }, { mins: 15, extra: 'e103' }, { mins: 20, extra: 'e104' }, { mins: 15, extra: 'e105' }]);
-    expect(r.text).toContain('At Ferguson · 20m, between visits');
+    expect(r.text).toContain('At Ferguson, between visits');
     expect(r.total).toBe(387.5);                               // 310 minutes at $75
   });
 
@@ -903,7 +921,7 @@ test.describe('Invoice: add time from the day', () => {
       document.querySelectorAll('#qi-page .qi-x-row')[1].click();       // this time the shop was his
       return { label, rows, total, after: _qiTotal() };
     });
-    expect(r.label).toBe('Add time from this day (2)');
+    expect(r.label).toBe('Other time that day (2)');
     expect(r.rows).toEqual([{ t: "Drive, Tagen's to the shop", on: 'false' }, { t: 'At the shop', on: 'false' }]);
     expect(r.total, 'opening it adds nothing').toBe(387.5);
     expect(r.after).toBe(425);                                  // + 30m at $75
@@ -920,7 +938,7 @@ test.describe('Invoice: add time from the day', () => {
     await openIt(page);
     const r = await page.evaluate(() => ({ extras: _qi.tracked.filter(l => l.extra).map(l => l.extra), text: document.getElementById('qi-page').textContent, total: _qiTotal() }));
     expect(r.extras).toEqual(['e103', 's202', 'e105']);
-    expect(r.text).toContain('At the shop · 20m, between visits');
+    expect(r.text).toContain('At the shop, between visits');
     expect(r.total).toBe(387.5);                               // the same 310 minutes, shop instead of Ferguson
   });
 
