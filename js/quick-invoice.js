@@ -848,26 +848,26 @@ function renderQuickInvoice(){
       // FOUR STEPS (owner 2026-09-29: "stupid simple for a complex thing").
       // 1 The work, 2 Time, 3 Materials and extras, 4 Review. The settings
       // that are about every invoice, not this job, sit under Options in 4.
-      _qiStep(1,'The work')+
+      _qiStep(1,DOC_STEP.work)+
       _qiSayHtml()+
       (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-group">'+
         _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       _qiPhotosHtml()+
-      (hourly?_qiStep(2,'Time')+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days since the last invoice</span>':'<div class="ios-h" style="display:none"><span></span>')+
+      (hourly?_qiStep(2,DOC_STEP.time)+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days since the last invoice</span>':'<div class="ios-h" style="display:none"><span></span>')+
           (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
         (tracked&&!_qi.loading?_qiPeopleHtml():'')+
         (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
         (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
         (tracked?'<div class="ios-foot">Tap the hours or the rate to change them. Changing hours here never changes the time log.</div>':'')+
       '</div>':'')+
-      _qiStep(hourly?3:2,hourly?'Materials and extras':'What you did')+
+      _qiStep(hourly?3:2,hourly?DOC_STEP.materials:'What you did')+
       '<div class="ios-sec"><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" id="qi-add-part" onclick="_qiAddPart()">Add a part</button>'+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a charge</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
       '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already on their day in step 2.</div>':'')+'</div>'+
-      _qiStep(hourly?4:3,'Review')+
+      _qiStep(hourly?4:3,DOC_STEP.review)+
       _qiMathHtml(total)+
       _qiOptionsHtml(hourly)+
       // Pinned to the bottom of the screen (Earl): Send is never three
@@ -952,7 +952,7 @@ function _qiMathHtml(total){
     '<div class="ios-row qi-total-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div>'+
   '</div></div>';
 }
-function _qiStep(n,t){return '<div class="ios-stephead" data-state="todo"><span class="n">'+n+'</span><span class="t">'+escHtml(t)+'</span></div>';}
+function _qiStep(n,t){return docStepHtml(n,t,'todo');}   // the shared steps (js/doc-steps.js)
 // Settings that are about every invoice, not this job: one row, folded.
 function _qiOptionsHtml(hourly){
   const open=!!(_qi&&_qi.optOpen);

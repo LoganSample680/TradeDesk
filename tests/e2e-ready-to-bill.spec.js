@@ -434,7 +434,7 @@ test.describe('Ready to bill', () => {
     expect(r.gone, 'no "fix hours" jargon').toBe(false);
   });
 
-  test('the invoice is four numbered steps: The work, Time, Materials and extras, Review with the math', async ({ page }) => {
+  test('the invoice is four numbered steps: The work, Time, Materials, Review with the math', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(() => ({
@@ -443,7 +443,7 @@ test.describe('Ready to bill', () => {
       send: document.getElementById('qi-send-total').textContent,
       optsHidden: getComputedStyle(document.querySelector('#qi-page .qi-opts-body')).display === 'none',
     }));
-    expect(r.steps).toEqual(['The work', 'Time', 'Materials and extras', 'Review']);
+    expect(r.steps).toEqual(['The work', 'Time', 'Materials', 'Review']);
     expect(r.math).toEqual(['Labor=$862.50', 'Materials=$186.00', 'Total=$1,048.50']);
     expect(r.send).toBe('$1,048.50');
     expect(r.optsHidden, 'settings about every invoice are folded under Options').toBe(true);

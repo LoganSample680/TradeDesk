@@ -3088,15 +3088,11 @@ function _byoDepositState(total){
 }
 function _byoRenderSteps(){
   const st=_byoState();
-  const head=(id,n,title,state,status)=>{
-    const el=document.getElementById(id);if(!el)return;
-    el.setAttribute('data-state',state);
-    el.innerHTML='<span class="n">'+(state==='done'?_TM_TICK:n)+'</span><span class="t">'+escHtml(title)+'</span>'+(status?'<span class="s">'+escHtml(status)+'</span>':'');
-  };
+  const head=docStepHead;   // the shared steps (js/doc-steps.js)
   const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
-  head('byo-step-1',1,'The work',one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
+  head('byo-step-1',1,DOC_STEP.work,one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
   // Not ticked until he has looked at the total and the deposit.
-  head('byo-step-2',2,'The price',two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  head('byo-step-2',2,DOC_STEP.review,two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }
@@ -5587,7 +5583,8 @@ function _tmFoldAll(){
   // _geiLines that is not the labor line.
   const mats=(typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))
     ?_geiLines.filter(l=>l&&!l._tmLabor).length:0;
-  _tmFold('tm-blk-mat','Materials',mats?(mats+' categor'+(mats>1?'ies':'y')):'');
+  // The step heading already says Materials (js/doc-steps.js).
+  _tmFold('tm-blk-mat','The list',mats?(mats+' categor'+(mats>1?'ies':'y')):'');
   const ex=(typeof _geiExclusions!=='undefined'&&Array.isArray(_geiExclusions))?_geiExclusions.length:0;
   _tmFold('tm-blk-excl','Not included',ex?(ex+' item'+(ex>1?'s':'')):'');
 }
@@ -5972,7 +5969,7 @@ function _tmToggleMore(){_tmMoreOpen=!_tmMoreOpen;_tmApplyLayers();}
 // it stands, so the page answers "where am I" at a glance, and Tim can talk
 // about "step 2" and mean one thing (data-tim-step on each heading). Step 3
 // reads back what the customer will get as facts, the list Tim reads aloud.
-const _TM_TICK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const _TM_TICK=DOC_TICK;   // the one tick, js/doc-steps.js
 function _tmStepsState(all){
   all=all||_tmSteps();
   const L=_tmLayers;
@@ -5999,14 +5996,9 @@ function _tmRenderSteps(all,rule){
   const st=_tmStepsState(all);
   rule=rule||_tmStateRule();
   const blocked=rule.rule==='block';
-  const head=(id,n,title,state,status)=>{
-    const el=document.getElementById(id);if(!el)return;
-    el.setAttribute('data-state',state);
-    el.innerHTML='<span class="n">'+(state==='done'?_TM_TICK:n)+'</span>'+
-      '<span class="t">'+escHtml(title)+'</span>'+(status?'<span class="s">'+escHtml(status)+'</span>':'');
-  };
+  const head=docStepHead;   // the shared steps (js/doc-steps.js)
   const cur=!st.one?1:!st.two?2:3;
-  head('tm-step-1',1,'The job',st.one?'done':'now','');
+  head('tm-step-1',1,DOC_STEP.work,st.one?'done':'now','');
   // Edit sits where iOS puts it, on the right of the title of the list it
   // edits. A line of its own under "The job" was a row for one word.
   if((_geiScopeChips||[]).length){
@@ -6016,8 +6008,13 @@ function _tmRenderSteps(all,rule){
   // Not ticked until he has looked at the numbers: a pre-filled rate is not a
   // checked one.
   const chk=!_tmLayers.has('rate')||_tmRateChecked();
-  head('tm-step-2',2,_hasEmployees()?'Who\'s going':'Your rate',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
-  head('tm-step-3',3,'Getting paid',blocked?'todo':_tmPayAttention()?'now':(st.one&&st.two&&chk)?'done':'todo','');
+  head('tm-step-2',2,DOC_STEP.time,blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  // 3 Materials: optional on T&M, so it is never "now"; a row offers it.
+  const matOn=_tmLayers.has('mat');
+  head('tm-step-3',3,DOC_STEP.materials,matOn?'done':'todo',matOn?'':'Optional');
+  const ma=document.getElementById('tm-mat-add');
+  if(ma){ma.style.display=(matOn||blocked)?'none':'';}
+  head('tm-step-4',4,DOC_STEP.review,blocked?'todo':_tmPayAttention()?'now':(st.one&&st.two&&chk)?'done':'todo','');
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────

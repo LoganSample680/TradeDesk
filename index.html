@@ -3625,7 +3625,16 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- GETTING PAID (owner 2026-09-29): one summary line, filled in, tap
              to change. The limit, up front, how often it bills: all of it was
              open at once and he went back and forth down the page. _tmRenderPay. -->
+        <!-- 3 MATERIALS (owner 2026-09-29: the same four steps on every
+             document, js/doc-steps.js). Optional on T&M: a row turns it on. -->
         <div class="ios-stephead" id="tm-step-3"></div>
+        <div class="ios-sec" id="tm-mat-add"><div class="ios-group">
+          <button type="button" class="ios-row ios-link" onclick="_tmStepAct('mat')">Add materials</button></div></div>
+        <!-- Materials: the same card BYO draws (js/materials.js). -->
+        <div id="tm-blk-mat" style="display:none"><div id="tm-mat-list"></div></div>
+
+        <!-- 4 REVIEW: how they pay, then the bar sends it. -->
+        <div class="ios-stephead" id="tm-step-4"></div>
         <div class="ios-sec" id="tm-sec-pay">
           <div class="ios-group" id="tm-pay-group">
             <div id="tm-pay-sum"></div>
@@ -3660,8 +3669,6 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="ios-foot" id="tm-nte-sub"></div>
         </div>
 
-        <!-- Materials: the same card BYO draws (js/materials.js). -->
-        <div id="tm-blk-mat" style="display:none"><div id="tm-mat-list"></div></div>
 
         <!-- Same rule as BYO: exclusions come after the work. -->
         <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
@@ -5927,6 +5934,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/timelog.js"></script>
 <script src="js/lifecycle.js"></script>
 <script src="js/payroll-summary.js"></script>
+<script src="js/doc-steps.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/materials.js"></script>
 <script src="js/supply-list.js"></script>
