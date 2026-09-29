@@ -45,6 +45,11 @@ async function tdSavePhoto(opts){
   const jobId=opts.jobId!=null?opts.jobId:null;
   const bidId=opts.bidId!=null?opts.bidId:null;
   let clientId=opts.clientId!=null?opts.clientId:null;
+  // Shot with nothing to file it under while standing on a customer's
+  // property: it is theirs (_pcOnSiteFor). Never on an import: an old photo
+  // pulled from the library says nothing about where the phone is now.
+  const autoFiled=(clientId==null&&jobId==null&&bidId==null&&!opts.imported)?_pcOnSiteFor(opts.lat,opts.lon):null;
+  if(autoFiled)clientId=autoFiled.clientId;
 
   const j=jobId!=null?jobs.find(x=>x.id===jobId):null;
   const b=bidId!=null?bids.find(x=>x.id===bidId):null;
@@ -71,7 +76,7 @@ async function tdSavePhoto(opts){
     job_id:jobId,job_name:j?j.name||'':'',
     // The property this was shot at. A job or a proposal usually says it, but
     // a customer with three houses and no job open still has to know which.
-    addr:opts.addr||(j?j.addr||'':'')||(b?b.addr||'':'')||(c?c.addr||'':''),
+    addr:opts.addr||(autoFiled&&autoFiled.addr)||(j?j.addr||'':'')||(b?b.addr||'':'')||(c?c.addr||'':''),
     // The fix the photo was taken at, KEPT, not just used for the stamp.
     // It was passed in for the stamp text and then thrown away, so only
     // photos shot through the capture sheet (which stamps the row
@@ -86,7 +91,10 @@ async function tdSavePhoto(opts){
     // An imported photo keeps the moment it was TAKEN, from its own file,
     // so it sorts and reads as the day it happened, not the day it came in.
     uploadedAt:(opts.when&&!isNaN(new Date(opts.when)))?new Date(opts.when).toISOString():new Date().toISOString(),
-    ...(opts.imported?{imported:true}:{})
+    ...(opts.imported?{imported:true}:{}),
+    // Local only (not in td_photos' sync list): lets the end of the shoot say
+    // "Filed to Bill Lorson" with an Undo instead of asking whose it is.
+    ...(autoFiled?{autoFiled:true}:{})
   };
 
   // ── The stamp is burned in BEFORE anything else sees the bytes ──────────
@@ -697,6 +705,54 @@ function _pcMeters(a1,o1,a2,o2){
   const x=Math.sin(dLat/2)**2+Math.cos(a1*t)*Math.cos(a2*t)*Math.sin(dLon/2)**2;
   return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
 }
+// ── ON SITE AT ONE CUSTOMER, THE PHOTO IS THEIRS (owner 2026-09-29) ──────────
+// "it should've went to bill." Jack was on site at Bill Lorson's from 10:22,
+// shot two photos from the Home camera at 12:10 and pocketed the phone before
+// the "whose is this?" sheet. Both went to the unfiled tray although the app
+// already knew exactly where he was: the same on-site verdict his timesheet
+// is built on (window._geoOpenDwell, js/geo-track.js).
+//
+// So a shot with nothing to file it under goes to the customer he is on site
+// at, when the photo's own fix agrees (tdGuessPlaceFor: that customer's
+// property is the nearest within 150m). No fix at all: the on-site verdict,
+// itself proven by GPS, is enough. A fix that points anywhere else: unfiled,
+// and the sheet asks, because a wrong guess on a customer's hub is still worse
+// than an unfiled photo (the rule above tdGuessPlaceFor). His own house never
+// files anything.
+function _pcOnSiteFor(lat,lon){
+  try{
+    const o=(typeof window!=='undefined')?window._geoOpenDwell:null;
+    if(!o||o.atHome||o.counts===false||!o.fence)return null;
+    const f=o.fence;
+    let client=null;
+    if(f.jobId!=null){
+      const j=jobs.find(x=>String(x.id)===String(f.jobId));
+      if(j&&j.client_id!=null)client=clients.find(c=>String(c.id)===String(j.client_id))||null;
+    }
+    if(!client&&f.clientId!=null)client=clients.find(c=>String(c.id)===String(f.clientId))||null;
+    if(!client)return null;
+    if(lat!=null&&lon!=null){
+      const hit=tdGuessPlaceFor({lat,lon});
+      if(!hit||String(hit.client.id)!==String(client.id))return null;
+      return {clientId:client.id,addr:hit.addr||'',name:client.name||''};
+    }
+    return {clientId:client.id,addr:f.addr||client.addr||'',name:client.name||''};
+  }catch(_e){return null;}
+}
+// Undo from the "Filed to" toast: back to unfiled, and the sheet asks.
+function tdUndoAutoFile(ids){
+  const list=(ids||[]).map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+  list.forEach(p=>{tdFilePhoto(p.id,null);delete p.autoFiled;});
+  if(list.length)tdReviewShots(list.map(p=>p.id));
+}
+function _pcToastAutoFiled(rows){
+  if(typeof showToast!=='function'||!rows.length)return;
+  const esc=s=>(typeof escHtml==='function'?escHtml(String(s||'')):String(s||'').replace(/[&<>"']/g,''));
+  const name=rows[0].client_name||'the customer';
+  const ids=JSON.stringify(rows.map(p=>String(p.id))).replace(/"/g,"'");
+  showToast((rows.length===1?'Filed to ':rows.length+' photos filed to ')+esc(name)+
+    ' <button class="td-wh-undo" onclick="tdUndoAutoFile('+ids+');this.closest(\'.toast\')?.remove()">Undo</button>','✓',6000,{html:true});
+}
 function tdFilePhoto(photoId,clientId,bidId,jobId){
   const p=photos.find(x=>String(x.id)===String(photoId));
   if(!p)return false;
@@ -793,7 +849,14 @@ function _pcFinishCapture(){
   // they have to find later (owner, first UAT run, 2026-09-21). A tagged
   // shoot already has its answer and closes silently, so the flow that had a
   // customer never pays a tap for the flow that did not.
-  if(unfiled)tdReviewShots(ids);
+  if(unfiled){
+    // Shots that filed themselves on site say so; only the rest are asked about.
+    const rows=ids.map(id=>photos.find(p=>String(p.id)===String(id))).filter(Boolean);
+    const auto=rows.filter(p=>p.autoFiled&&p.client_id!=null);
+    const left=rows.filter(p=>p.client_id==null).map(p=>p.id);
+    if(auto.length)_pcToastAutoFiled(auto);
+    if(left.length)tdReviewShots(left);
+  }
 }
 
 // ── Review the burst: swipe, bin the bad ones, attach the rest ──────────────
