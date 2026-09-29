@@ -1282,11 +1282,16 @@ function resolveSupplyRun(key,mode,expenseId){
     return u;
   }
   let n=0;
+  // A receipt found AFTER "No receipt" (Jack 2026-09-29: "if we hit no receipt
+  // on the home page prompt is there a way to add the receipt back?") settles
+  // the run the same way a receipt on the day does: the no-receipt mark goes
+  // and the expense is linked.
   (mileage||[]).forEach(m=>{
-    if(!m||m.supplyRunKey!==key||!m.pendingReceipt)return;
+    if(!m||m.supplyRunKey!==key)return;
+    if(!(m.pendingReceipt||(mode==='receipt'&&expenseId!=null&&m.noReceipt)))return;
     delete m.pendingReceipt;n++;
     if(mode==='noreceipt'){m.noReceipt=true;}
-    else if(mode==='receipt'&&expenseId!=null){m.receiptExpenseId=expenseId;}
+    else if(mode==='receipt'&&expenseId!=null){delete m.noReceipt;m.receiptExpenseId=expenseId;}
   });
   if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
   return n;
@@ -1366,6 +1371,32 @@ function _supplyRunNoReceipt(k){
 // scanner). The run key rides INSIDE the modal as a hidden field, never a
 // global, so backing out of the modal can never leak the key onto some later,
 // unrelated expense.
+// The customer a store run was for: the saved house at either end of it (the
+// leg out starts there, the leg back ends there). Only when that is one
+// customer; a run between two jobs is his to say.
+function _supplyRunClient(key){
+  const ends=new Set();
+  (mileage||[]).forEach(m=>{
+    if(!m||m.supplyRunKey!==key)return;
+    [m.from_name,m.to_name,m.from,m.to].forEach(n=>{n=String(n||'').trim();if(n)ends.add(n);});
+  });
+  if(!ends.size)return null;
+  const nm=(n,w)=>typeof _geoFenceName==='function'?_geoFenceName(n,w):(w?(String(n).trim()+' ('+w+')'):String(n).trim());
+  const st=a=>String(a||'').split(',')[0].trim();
+  const hits=new Set();
+  (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
+    if(!c||!c.name)return;
+    const names=[String(c.name).trim()];
+    if(c.addr)names.push(nm(c.name,st(c.addr)));
+    (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
+      if(!a||!a.addr)return;
+      names.push(nm(c.name,st(a.addr)));
+      if(a.label)names.push(nm(c.name,String(a.label).trim()));
+    });
+    if(names.some(n=>ends.has(n)))hits.add(c.id);
+  });
+  return hits.size===1?[...hits][0]:null;
+}
 function _supplyRunScan(k){
   const key=decodeURIComponent(k);
   // The button says SCAN RECEIPT, so it opens the receipt SCANNER (owner
@@ -1395,6 +1426,26 @@ function _supplyRunScan(k){
   if(dd&&dm)dd.value=day; // native date input: ISO
   const c=m.querySelector('#em-cat');
   if(c)c.value='materials';
+  // Whose job it was (Jack 2026-09-29: "when we do expenses does it tag it to
+  // a client?"): the house the run left from or came back to. It rides in the
+  // modal like the key, and a sold job at that house is picked for him.
+  const cid=_supplyRunClient(key);
+  if(cid!=null){
+    const hc=document.createElement('input');
+    hc.type='hidden';hc.id='qe-supply-client';hc.value=String(cid);
+    m.appendChild(hc);
+    const js=m.querySelector('#em-job');
+    const won=(bids||[]).filter(b=>b&&b.status==='Closed Won'&&String(b.client_id)===String(cid));
+    if(js&&!js.value&&won.length===1)js.value=String(won[0].id);
+    // Say so, where he can see it and change it.
+    const cl=(typeof getClientById==='function')?getClientById(cid):null;
+    if(js&&!js.value&&cl&&cl.name){
+      const note=document.createElement('div');
+      note.id='em-client-note';note.style.cssText='font-size:12px;color:var(--text2);margin-top:6px';
+      note.textContent='For '+cl.name+'. Pick a job above to change it.';
+      js.insertAdjacentElement('afterend',note);
+    }
+  }
   // Straight into the camera, still inside the tap's user gesture. If the
   // scanner cannot open (no camera, denied), the modal is already up with its
   // own Scan button, so nothing is lost.
@@ -3033,7 +3084,9 @@ function _milRenderTripList(shown,yr){
       // in the log (2026-09-05, see _supplyRunSettleByKeys) and says so.
       const stateBadge=r.addressUnknown?'<div style="font-size:10px;font-weight:800;color:#B45309">Not on the books · no address</div>'
         :(r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
-        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
+        :(r.noReceipt?('<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'+
+            // Found it later: the same scanner the Home card opens.
+            (r.supplyRunKey?'<button type="button" class="tl-rail-chip" style="margin-top:4px" onclick="event.stopPropagation();_supplyRunScan(\''+encodeURIComponent(String(r.supplyRunKey))+'\')">Add receipt</button>':''))
         :(r.personal?('<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>'+
             // THE WAY BACK, ON THE ROW (owner 2026-09-16). Jack meant no
             // receipt and hit Personal, twice, and no control anywhere could

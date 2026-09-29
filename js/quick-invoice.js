@@ -902,7 +902,15 @@ function _qiPriceBook(){
   const pb=(typeof S!=='undefined'&&S.priceBook)||{};
   const all=[];
   Object.keys(pb).forEach(t=>(Array.isArray(pb[t])?pb[t]:[]).forEach(p=>{if(p&&p.desc)all.push(p);}));
-  return all.sort((a,b)=>(Number(b.n)||0)-(Number(a.n)||0));
+  all.sort((a,b)=>(Number(b.n)||0)-(Number(a.n)||0));
+  // Then the parts off his receipts (the materials book, js/data.js), at
+  // what he last paid, for anything the price book has no price for.
+  const have=new Set(all.map(p=>_partCostKey(p.desc)));
+  if(typeof materialsBook==='function')materialsBook().forEach(m=>{
+    const k=_partCostKey(m.desc);if(have.has(k))return;have.add(k);
+    all.push({desc:m.desc,rate:m.cost,paid:true});
+  });
+  return all;
 }
 function _qiAddPb(i){
   const p=_qiPriceBook()[i];if(!p||!_qi)return;
