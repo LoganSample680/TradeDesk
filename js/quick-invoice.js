@@ -844,7 +844,7 @@ function renderQuickInvoice(){
     ?'<div class="ios-row qi-part"><input class="qi-desc" type="text" placeholder="Part" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
       '<span class="qi-qty"><button type="button" aria-label="One fewer" onclick="_qiQtyStep('+i+',-1)">−</button><b id="qi-qty-'+i+'">'+_qiQty(l)+'</b><button type="button" aria-label="One more" onclick="_qiQtyStep('+i+',1)">+</button></span>'+
       '<span class="ios-val">$<input type="text" inputmode="decimal" aria-label="Price of one" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>'
-    :'<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Trip charge, extra labor':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
+    :'<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Other charge, like a trip fee':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
     '<span class="ios-val">$<input type="text" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
   const pb=_qiPriceBook();
   const pbHtml=_qi.pbOpen&&pb.length?'<div class="qi-pb">'+pb.slice(0,12).map((p,i)=>
@@ -864,37 +864,40 @@ function renderQuickInvoice(){
       _qiStatusPill(_qi.cid)+'</div>'+
     '<div class="qi-body">'+
       '<div class="ios-seg qi-seg" role="tablist">'+
-        '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">Hourly</button>'+
-        '<button type="button" role="tab" class="'+(hourly?'':'on')+'" onclick="_qiSetMode(\'set\')">Set price</button></div>'+
+        '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">By the hour</button>'+
+        '<button type="button" role="tab" class="'+(hourly?'':'on')+'" onclick="_qiSetMode(\'set\')">Flat price</button></div>'+
       _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
         escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
         '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
       // FOUR STEPS (owner 2026-09-29: "stupid simple for a complex thing").
-      // 1 The work, 2 Time, 3 Materials and extras, 4 Review. The settings
-      // that are about every invoice, not this job, sit under Options in 4.
+      // Each thing sits in the step it is about (owner: "why is drive time
+      // in options and not with time?"): drive time in Time; what they see
+      // and one set price in Review, out in the open. No Options drawer.
       _qiStep(1,DOC_STEP.work)+
       _qiSayHtml()+
       (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-group">'+
         _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       _qiPhotosHtml()+
-      (hourly?_qiStep(2,DOC_STEP.time)+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days since the last invoice</span>':'<div class="ios-h" style="display:none"><span></span>')+
-          (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
+      (hourly?_qiStep(2,DOC_STEP.time)+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days not billed yet</span>':'<div class="ios-h" style="display:none"><span></span>')+
+          (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Check all':'Uncheck all')+'</button>':'')+'</div>'+
         (tracked&&!_qi.loading?_qiPeopleHtml():'')+
         (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
         (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
-        (tracked?'<div class="ios-foot">Tap the hours or the rate to change them. Changing hours here never changes the time log.</div>':'')+
+        (tracked?'<div class="ios-foot">Tap a day to change hours or a rate. Your time log stays as it is.</div>':'')+
+        _qiDriveHtml()+
       '</div>':'')+
       _qiStep(hourly?3:2,hourly?DOC_STEP.materials:'What you did')+
       '<div class="ios-sec"><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" id="qi-add-part" onclick="_qiAddPart()">Add a part</button>'+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a charge</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
-      '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already on their day in step 2.</div>':'')+'</div>'+
+      '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already counted. Add anything else here.</div>':'')+'</div>'+
       _qiStep(hourly?4:3,DOC_STEP.review)+
       _qiMathHtml(total)+
+      _qiSetPriceHtml(hourly)+
       _qiDueHtml()+
-      _qiOptionsHtml(hourly)+
+      _qiSeeHtml(hourly)+
       // Pinned to the bottom of the screen (Earl): Send is never three
       // screens down on a small phone.
       // The bar is the T&M estimate's bar (owner 2026-09-29: "it all needs to
@@ -975,7 +978,7 @@ function _qiMathHtml(total){
   const M=_qiMath();
   const r=(id,lbl,sub,v,cls)=>'<div class="ios-row'+(cls?' '+cls:'')+'"><span class="ios-lbl">'+lbl+(sub?'<small>'+escHtml(sub)+'</small>':'')+'</span><span class="ios-fact"'+(id?' id="'+id+'"':'')+'>'+_qiMoney(v)+'</span></div>';
   return '<div class="ios-sec"><div class="ios-group qi-math-box">'+
-    (M.fixed!=null?r('','Set price','The hours stay on your records',M.fixed):
+    (M.fixed!=null?r('','Your price','The hours stay on your records',M.fixed):
       (M.mins>0?r('qi-m-labor','Labor',_qiMins(M.mins)+(M.people>1?' across '+M.people+' people':''),M.labor):''))+
     (M.mat>0?r('qi-m-mat','Materials','From store receipts',M.mat):'')+
     (M.extra>0?r('qi-m-extra','Parts and charges','',M.extra):'')+
@@ -983,26 +986,27 @@ function _qiMathHtml(total){
   '</div></div>';
 }
 function _qiStep(n,t){return docStepHtml(n,t,'todo');}   // the shared steps (js/doc-steps.js)
-// Settings that are about every invoice, not this job: one row, folded.
-function _qiOptionsHtml(hourly){
-  const open=!!(_qi&&_qi.optOpen);
-  const on=[];
-  if(hourly&&_qiBillDrive())on.push('drive time billed');
-  if(_qi.fixed!=null)on.push('set price');
-  if(_qiShowRate())on.push('rate shown');
-  return '<div class="ios-sec"><div class="ios-group qi-opts'+(open?' open':'')+'">'+
-    '<button type="button" class="ios-row qi-opts-row" id="qi-opts" onclick="_qi.optOpen=!_qi.optOpen;renderQuickInvoice()" aria-expanded="'+open+'">'+
-      '<span class="ios-lbl">Options<small>'+escHtml(on.length?on.join(', '):'Drive time, set price, what the customer sees')+'</small></span>'+
-      '<span class="ios-chev" style="transform:rotate('+(open?'90':'0')+'deg);transition:transform .18s ease" aria-hidden="true">\u203a</span></button>'+
-    '<div class="qi-opts-body">'+
-      (hourly?'<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
-        '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label>'+
-      '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Charge a set price<small>The hours stay on your records</small></span>'+
-        '<input type="checkbox" class="ios-switch" id="qi-fixed-on" '+(_qi.fixed!=null?'checked':'')+' onchange="_qiSetFixed(this.checked)"></label>'+
-      (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">Set price</span><span class="ios-val">$<input id="qi-fixed" type="text" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':''):'')+
-      _qiCopyHtml()+
-      (hourly&&_qi.tracked.some(l=>!_qi.off.has(l.day))?'<button type="button" class="ios-row ios-link" id="qi-elsewhere" onclick="qiBilledElsewhere()">Already billed outside TradeDesk</button>':'')+
-    '</div></div></div>';
+// Drive time: part of the hours, so it sits in Time.
+function _qiDriveHtml(){
+  return '<div class="ios-group" style="margin-top:12px"><label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Charge for drive time<small>'+
+      (_qiBillDrive()?'On: the drive there and back is billed.':'Off: only time at the house is billed.')+' Remembered for next time.</small></span>'+
+    '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label></div>';
+}
+// One number instead of the hours: under the total it replaces.
+function _qiSetPriceHtml(hourly){
+  if(!hourly)return '';
+  return '<div class="ios-sec"><div class="ios-group">'+
+    '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Change the total<small>Type what they pay. They see that one number, not the hours.</small></span>'+
+      '<input type="checkbox" class="ios-switch" id="qi-fixed-on" '+(_qi.fixed!=null?'checked':'')+' onchange="_qiSetFixed(this.checked)"></label>'+
+    (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">The price</span><span class="ios-val">$<input id="qi-fixed" type="text" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':'')+
+  '</div></div>';
+}
+// What the customer sees, in the step where he checks what they get.
+function _qiSeeHtml(hourly){
+  return '<div class="ios-sec"><div class="ios-h"><span>What they see</span></div><div class="ios-group">'+
+    _qiCopyHtml()+
+    (hourly&&_qi.tracked.some(l=>!_qi.off.has(l.day))?'<button type="button" class="ios-row ios-link" id="qi-elsewhere" onclick="qiBilledElsewhere()">Already billed outside the app</button>':'')+
+  '</div></div>';
 }
 function _qiAddLine(){if(!_qi)return;_qi.typed.push({desc:'',amount:''});renderQuickInvoice();}
 function _qiAddPart(){if(!_qi)return;_qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);_qi.typed.push({desc:'',amount:'',qty:1,part:true});renderQuickInvoice();}
@@ -1485,14 +1489,14 @@ function _qiCustomerHtml(){
 function _qiCopyHtml(){
   const locked=_qiRateLocked(),rate=_qiShowRate(),pm=_qiPartsMode(),word=_qiPartsWord();
   const always=(k,now,def)=>now!==def?'<button type="button" class="qi-always" onclick="_qiShowAlways(\''+k+'\')">Always</button>':'';
-  return '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state requires it on a time and materials bill':'Off: they see the hours and the total')+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
+  return '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state says it has to be on the bill.':(rate?'They see your rate per hour.':'They see the hours and the total, not your rate.'))+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
       '<input type="checkbox" class="ios-switch" id="qi-show-rate" '+(rate?'checked':'')+(locked?' disabled':'')+' onchange="_qiSetShow(\'showRate\',this.checked)"></label>'+
     // Three ways, the default first (owner 2026-09-29).
-    '<div class="ios-row qi-parts-row"><span class="ios-lbl">'+word+' on their copy<small>'+
-      (pm==='total'?'In the total, not listed':pm==='items'?'Listed with counts, no prices':'Listed with counts and prices')+
+    '<div class="ios-row qi-parts-row"><span class="ios-lbl">'+word+' on their invoice<small>'+
+      (pm==='total'?'Only in the total. Items are not listed.':pm==='items'?'Each item and how many, no prices.':'Each item, how many and the price.')+
       (pm!==copyPartsMode('invoice')?' <button type="button" class="qi-always" onclick="_qiPartsAlways()">Always</button>':'')+'</small></span></div>'+
     '<div class="ios-row qi-parts-seg"><div class="ios-seg" role="tablist" id="qi-parts-mode">'+
-      [['total','Total only'],['items','List them'],['priced','With prices']].map(([k,l])=>'<button type="button" role="tab" data-mode="'+k+'" class="'+(pm===k?'on':'')+'" onclick="_qiSetPartsMode(\''+k+'\')">'+l+'</button>').join('')+
+      [['total','Just the total'],['items','List the items'],['priced','Items and prices']].map(([k,l])=>'<button type="button" role="tab" data-mode="'+k+'" class="'+(pm===k?'on':'')+'" onclick="_qiSetPartsMode(\''+k+'\')">'+l+'</button>').join('')+
     '</div></div>';
 }
 // Before and after: part of the work, step 1, attached by themselves.

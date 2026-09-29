@@ -104,7 +104,7 @@ test.describe('Ready to bill', () => {
     expect(r.days).toEqual(['Tue, Sep 22', 'Wed, Sep 23', 'Thu, Sep 24']);
     expect(r.dayTotals).toEqual(['$636.00', '$262.50', '$150.00']);
     expect(r.total).toBe('$1,048.50');
-    expect(r.text).toContain('3 days since the last invoice');
+    expect(r.text).toContain('3 days not billed yet');
     expect(r.text).toContain('Ferguson $120.00, Menards $66.00');   // his screen names the stores
   });
 
@@ -224,7 +224,7 @@ test.describe('Ready to bill', () => {
     expect(r.payKept).toBe(true);
   });
 
-  test('Select none and Select all flip every day at once', async ({ page }) => {
+  test('Uncheck all and Check all flip every day at once', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
@@ -233,7 +233,7 @@ test.describe('Ready to bill', () => {
       const none = document.getElementById('qi-total').textContent, second = btn().textContent; btn().click();
       return { first, none, second, all: document.getElementById('qi-total').textContent };
     });
-    expect(r).toEqual({ first: 'Select none', none: '$0.00', second: 'Select all', all: '$1,048.50' });
+    expect(r).toEqual({ first: 'Uncheck all', none: '$0.00', second: 'Check all', all: '$1,048.50' });
   });
 
   test('already billed outside TradeDesk: those days come off the list for good and are not a sale', async ({ page }) => {
@@ -442,12 +442,19 @@ test.describe('Ready to bill', () => {
       steps: [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent),
       math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
       send: document.getElementById('qi-send-total').textContent,
-      optsHidden: getComputedStyle(document.querySelector('#qi-page .qi-opts-body')).display === 'none',
+      // Each setting sits in the step it is about, out in the open (owner
+      // 2026-09-29: "why is drive time in options and not with time?").
+      where: ['qi-drive', 'qi-fixed-on', 'qi-show-rate', 'qi-parts-mode'].map(id => {
+        const el = document.getElementById(id); let n = el; const heads = [...document.querySelectorAll('#qi-page .ios-stephead')];
+        return heads.filter(h => h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).map(h => h.querySelector('.t').textContent).pop() + ':' + (el.offsetParent !== null);
+      }),
+      drawer: !!document.querySelector('#qi-page .qi-opts'),
     }));
     expect(r.steps).toEqual(['The work', 'Time', 'Materials', 'Review']);
     expect(r.math).toEqual(['Labor=$862.50', 'Materials=$186.00', 'Total=$1,048.50']);
     expect(r.send).toBe('$1,048.50');
-    expect(r.optsHidden, 'settings about every invoice are folded under Options').toBe(true);
+    expect(r.where).toEqual(['Time:true', 'Review:true', 'Review:true', 'Review:true']);
+    expect(r.drawer, 'no Options drawer').toBe(false);
   });
 
   test('fix hours refuses junk, a negative and more than a day', async ({ page }) => {
@@ -683,7 +690,7 @@ test.describe('Invoice: the customer copy', () => {
     });
     expect(r.def).toBe('total');
     expect(r.qty).toBe(2);
-    expect(r.seg).toEqual(['Total only', 'List them', 'With prices']);
+    expect(r.seg).toEqual(['Just the total', 'List the items', 'Items and prices']);
     expect(r.seen.total).toEqual({ list: false, price: false, receipts: false, total: 1084.5, sum: 1084.5 });
     expect(r.seen.items).toEqual({ list: true, price: false, receipts: false, total: 1084.5, sum: 1084.5 });
     expect(r.seen.priced).toEqual({ list: true, price: true, receipts: true, total: 1084.5, sum: 1084.5 });
