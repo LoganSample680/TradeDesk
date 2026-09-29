@@ -25,9 +25,17 @@ async function fakeNative(page) {
       schedule: rec('schedule'), cancel: rec('cancel'),
       addListener: () => ({ remove() {} }),
     };
+    // Behaves like the plugin: update() finds a card by its channel and says
+    // ok:false when there is none, so the app's update-before-start on a fresh
+    // launch (js/live-activity.js) is exercised honestly.
+    const liveCh = new Set();
+    window.__td.live = liveCh;
     const TdLive = {
       isSupported: () => Promise.resolve({ supported: true, enabled: true }),
-      start: rec('live.start'), update: rec('live.update'), end: rec('live.end'), endAll: rec('live.endAll'),
+      start: (a) => { calls.push({ name: 'live.start', args: a || {} }); liveCh.add((a && a.channel) || 'default'); return Promise.resolve({ ok: true }); },
+      update: (a) => { calls.push({ name: 'live.update', args: a || {} }); return Promise.resolve({ ok: liveCh.has((a && a.channel) || 'default') }); },
+      end: (a) => { calls.push({ name: 'live.end', args: a || {} }); liveCh.delete((a && a.channel) || 'default'); return Promise.resolve({ ok: true }); },
+      endAll: (a) => { calls.push({ name: 'live.endAll', args: a || {} }); liveCh.clear(); return Promise.resolve({ ok: true }); },
       addListener: () => ({ remove() {} }),
     };
     window.Capacitor = {

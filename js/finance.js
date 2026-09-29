@@ -1415,7 +1415,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
         escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
-        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
+        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+(s.dup?' data-dup="1"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:'+(s.dup?'none':'flex')+';align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
@@ -1474,7 +1474,9 @@ function onQPSearch(el){
     let shown=0;
     const qd=q.replace(/\D/g,'');
     rows.forEach(b=>{
-      const on=!q||b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd));
+      // data-dup: listed higher up already (the invoice's Ready to bill rows),
+      // so it only shows once he is searching.
+      const on=!q?!b.dataset.dup:(b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd)));
       // 'flex', not '': the row's own inline style is what makes it a row.
       b.style.display=on?'flex':'none';if(on)shown++;
       // A customer with more than one house: name the house that matched.
@@ -1521,7 +1523,7 @@ function pickQuickClient(btn,actionType){
   const s=suggestions[idx];
   if(!s)return;
   overlay.remove();
-  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||undefined);
+  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||(s.addr!=null?s.addr:undefined));
 }
 
 function pickQPClient(cid,actionType){
@@ -3334,15 +3336,53 @@ function _bizHM(d){
   }catch(_e){return '??:??';}
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
-async function _fetchCrewLabor(sinceISO){
+// opts (the quick invoice, owner 2026-09-28: "time to search for hours is
+// slow"): {only:{jobIds,places}} asks the server for just one customer's rows
+// (their jobs, or a visit or drive at one of their places) instead of every
+// crew member at every customer for six months, and {noShop:true} skips the
+// shop rows a customer is never billed for. The three reads run side by side
+// either way. With no opts every caller gets exactly what it always did.
+function _crewOnlyOr(only){
+  if(!only)return '';
+  const q=v=>'"'+String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+  const ids=(only.jobIds||[]).filter(x=>x!=null&&x!=='').map(x=>String(x).replace(/[^0-9a-zA-Z_-]/g,'')).filter(Boolean);
+  const pl=[...(only.places||[])].filter(Boolean).map(q);
+  const parts=[];
+  if(ids.length)parts.push('job_id.in.('+ids.join(',')+')');
+  if(pl.length){parts.push('dest_place.in.('+pl.join(',')+')');parts.push('origin_place.in.('+pl.join(',')+')');}
+  return parts.join(',');
+}
+async function _fetchCrewLabor(sinceISO,opts){
   // comp: the raw team_members pay row per uid, so Crew Cost can hand it to
   // the one pay function (_payPersonPeriod) instead of an hourly figure.
   // Additive, every other consumer ignores it.
   const out={loaded:{},wage:{},comp:{},name:{},entries:[],shopEntries:[]};
   if(!supaEnabled()||!_supaUser)return out;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  const only=opts&&opts.only;
+  const onlyOr=_crewOnlyOr(only);
+  // A customer with no jobs and no places has no rows to find.
+  if(only&&!onlyOr)return out;
   try{
-    const{data:tm}=await _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
+    if(sinceISO)q=q.gte('arrived_at',sinceISO);
+    // until: one stretch of days only (the invoice's "Add time" reads the
+    // days on the bill, not everything since then).
+    const until=opts&&opts.untilISO;
+    if(until)q=q.lt('arrived_at',until);
+    if(onlyOr)q=q.or(onlyOr);
+    let sq=null;
+    if(!(opts&&opts.noShop)){
+      sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
+      if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
+      if(until)sq=sq.lt('arrived_at',until);
+    }
+    const [tmR,teR,seR]=await Promise.all([
+      _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid),
+      q,
+      sq||Promise.resolve({data:[]}),
+    ]);
+    const tm=tmR&&tmR.data;
     (tm||[]).forEach(r=>{
       if(!r.employee_user_id)return;
       const comp={pay_type:r.pay_type,pay_rate:r.pay_rate};
@@ -3370,10 +3410,7 @@ async function _fetchCrewLabor(sinceISO){
     // id: the Time Log's Edit button needs to address the actual row to
     // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
     // other _fetchCrewLabor consumer ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
-    if(sinceISO)q=q.gte('arrived_at',sinceISO);
-    const{data:te}=await q;
-    out.entries=te||[];
+    out.entries=(teR&&teR.data)||[];
     // departed_at rides along for the Time Log's stop-anchor rule
     // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
     // location events" an unpaid stop must sit between. Additive, every
@@ -3384,10 +3421,7 @@ async function _fetchCrewLabor(sinceISO){
     // row with no rawId behind it, correctly, because there would be nothing
     // for an action to act ON; this select simply never asked for one, so every
     // shop row in the app has arrived id-less since the rail was built.
-    let sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
-    if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
-    const{data:se}=await sq;
-    out.shopEntries=se||[];
+    out.shopEntries=(seR&&seR.data)||[];
   }catch(_e){}
   return out;
 }
