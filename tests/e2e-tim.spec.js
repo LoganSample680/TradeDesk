@@ -1985,8 +1985,10 @@ test.describe('tim', () => {
       // that just told him he is owed $1,240 is reaching for the $1,240, and
       // handing that tap to whatever list is behind it is the worst answer to it.
       expect(await hits()).toEqual({ vis: 'visible', mine: true });
-      await page.waitForTimeout(7600);
-      expect(await hits()).toEqual({ vis: 'hidden', mine: false });
+      // The animation is 7.2s. Wait for it to END rather than a fixed 7.6s: on a
+      // loaded WebKit runner the frame that ends it can land after 7.6s, and the
+      // test failed on a slow machine, not on the pill (2026-09-29, #120).
+      await expect.poll(hits, { timeout: 12000, intervals: [250] }).toEqual({ vis: 'hidden', mine: false });
     });
 
     test('a long line does not push the page sideways, at 320px or 390px', async () => {

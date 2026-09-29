@@ -1352,6 +1352,7 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   try{if(typeof _renderWhBoard==='function')_renderWhBoard();}catch(_e){}
+  try{if(typeof _renderToBill==='function')_renderToBill();}catch(_e){}
   _renderDashSupplyHold();
   _renderDashVisitHold();
   try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
