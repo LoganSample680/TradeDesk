@@ -798,6 +798,7 @@ test.describe('Invoice: the customer copy', () => {
       };
       document.getElementById('qi-preview').click();
       out.preview = !!document.getElementById('_prop-preview-ov');
+      out.phone = _qiDocHtml().includes('(555) 555-0101') && _propPhone('5555550101') === '(555) 555-0101';
       return out;
     });
     expect(r.nav).toEqual(['Back', 'Save']);
@@ -810,6 +811,7 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.collect, 'the word every screen uses for the Get paid panel').toBe('Collect');
     expect(r.see).toBe('See what they get');
     expect(r.preview).toBe(true);
+    expect(r.phone, 'the phone prints the way the proposal prints it').toBe(true);
     expect(r.bleed).toBeLessThanOrEqual(1);
     assertNoErrors(page, 'invoice copy');
   });

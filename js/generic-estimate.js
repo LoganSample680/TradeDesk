@@ -7798,6 +7798,13 @@ function _propCover(o){
     `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
 }
+// A customer's phone as the document prints it, (555) 555-0101. One helper
+// so the proposal and the invoice never print the same number two ways.
+function _propPhone(v){
+  const raw=String(v||'');let d=raw.replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
+  return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
+}
 function _propIncludedHtml(texts,accent,title,tm,tint){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
@@ -7917,11 +7924,7 @@ async function sendGenericProposal(previewOnly,opts){
   // Printed the way a phone number is written, not as ten bare digits. Only a
   // clean US number is reshaped (a leading 1 dropped); anything else prints
   // exactly as he typed it, because a wrong reformat is worse than none.
-  const clientPhone=escHtml((()=>{
-    const raw=String(_clientRec?.phone||'');let d=raw.replace(/\D/g,'');
-    if(d.length===11&&d[0]==='1')d=d.slice(1);
-    return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
-  })());
+  const clientPhone=escHtml(_propPhone(_clientRec?.phone));
   // The Project line is the CLIENT's header, so it only carries a name the
   // contractor actually chose. The auto name (_geiAutoName) is derived from the
   // first line item and exists so he can find the proposal in his own list,

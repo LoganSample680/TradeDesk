@@ -929,7 +929,7 @@ function _qiDocHtml(num){
     `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr></tfoot></table></div>`;
   return _propDoc(
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
-      label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(c.phone||''),
+      label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
       project:escHtml(_qiMoney(total))+' due',until:null,forLabel:'Billed to'})+
     _propSection('Work performed','',_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     _propSignoff(bname,'Thank you for choosing'));
