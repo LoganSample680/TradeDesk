@@ -71,6 +71,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // and load() restored everything EXCEPT the beat.
     private let hbKey = "td_geo_hb"
     private let motionPollKey = "td_geo_motion_poll"
+    private let motionPollTickKey = "td_geo_motion_poll_tick"
     // ── Real-time flush (owner 2026-08-27) ──────────────────────────────────
     // Config JS hands over via configureFlush: {url, userId, deviceId, key}.
     // The key is the per-device geo_flush_keys secret, NOT a Supabase token:
@@ -194,6 +195,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // nothing asleep. JS names the interval (3.2) and turns it off.
     private var motionPollTimer: Timer?
     private var motionPollMs: Double = 0
+    // When this process started. A sleep that began before it is a relaunch:
+    // iOS ended the app, not only paused it.
+    private let bornMs = Date().timeIntervalSince1970 * 1000
     // ── THE KEEPALIVE IS NOW OPT-IN, AND OFF BY DEFAULT (owner 2026-09-01) ───
     // "right now when tradedesk backgrounds I see the blue navigation arrow,
     // that's old continuous engine." That arrow is not the drive engine and
@@ -1596,6 +1600,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var motionPollTimerForTest: Timer? { motionPollTimer }
     var motionPollKeyForTest: String { motionPollKey }
     func hbStopForTest() { hbStop(reason: "test", trigger: "test") }
+    func motionPollTickForTest(nowMs: Double) { motionPollTick(nowMs: nowMs) }
+    var motionPollTickKeyForTest: String { motionPollTickKey }
     var motionMarkKeyForTest: String { motionMarkKey }
     var motionReadKeyForTest: String { motionReadKey }
     var flushCoveredKeyForTest: String { flushCoveredKey }
@@ -2142,14 +2148,44 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             if ms > 0 { UserDefaults.standard.set(ms, forKey: motionPollKey) }
             else { UserDefaults.standard.removeObject(forKey: motionPollKey) }
         }
-        guard ms > 0 else { return }
+        // Off means the next day's first tick has nothing to measure against,
+        // so an evening at home is never reported as the phone asleep.
+        guard ms > 0 else { UserDefaults.standard.removeObject(forKey: motionPollTickKey); return }
         let t = Timer.scheduledTimer(withTimeInterval: ms / 1000, repeats: true) { [weak self] _ in
-            self?.backfillMotionHistory(poll: true)
+            self?.motionPollTick()
         }
         // A fifth of the interval of slack lets iOS fold these wakes into ones
         // it was making anyway, which is where a timer's battery goes.
         t.tolerance = ms / 1000 * 0.2
         motionPollTimer = t
+    }
+
+    // ── THE SLEEP DETECTOR (owner 2026-09-28, "add it") ──────────────────────
+    // A timer does not run in a suspended process, so a tick that arrives far
+    // later than it was due is iOS saying the app was asleep, and for how
+    // long. One row per sleep, written on the tick that notices it, so the
+    // server can tell a phone iOS put to sleep from one that was awake while
+    // the motion chip said nothing. Nothing is written while the ticks keep
+    // time, so a normal day adds no rows.
+    static func sleepGapMs(lastMs: Double, nowMs: Double, intervalMs: Double) -> Double? {
+        guard lastMs.isFinite, nowMs.isFinite, intervalMs.isFinite, lastMs > 0, intervalMs > 0 else { return nil }
+        let gap = nowMs - lastMs
+        // Four missed ticks and never under a minute: a busy main thread or
+        // iOS folding timers is not sleep. Over a day is a stale mark, not a
+        // measurement.
+        guard gap > max(4 * intervalMs, 60_000), gap < 24 * 3600_000 else { return nil }
+        return gap
+    }
+
+    private func motionPollTick(nowMs: Double = Date().timeIntervalSince1970 * 1000) {
+        let d = UserDefaults.standard
+        let last = d.double(forKey: motionPollTickKey)
+        if let gap = TdGeoPlugin.sleepGapMs(lastMs: last, nowMs: nowMs, intervalMs: motionPollMs) {
+            record(["type": "asleep", "ts": nowMs, "fromMs": last,
+                    "gapSec": (gap / 1000).rounded(), "relaunched": last < bornMs])
+        }
+        d.set(nowMs, forKey: motionPollTickKey)
+        backfillMotionHistory(poll: true)
     }
 
     private func heartbeatTick() {
