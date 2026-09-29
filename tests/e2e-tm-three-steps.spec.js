@@ -159,7 +159,7 @@ test.describe('T&M in three steps', () => {
     expect(await page.evaluate(() => document.getElementById('tm-step-4').textContent)).toContain('Review');
     const sum = await page.evaluate(() => document.getElementById('tm-pay-sum').textContent);
     // Nothing is picked for him (owner 2026-09-29: "that can't default").
-    expect(sum).toContain('No deposit, when you bill: not picked');
+    expect(sum).toContain('No deposit, billing not picked');
     expect(await shown('#tm-dep-row')).toBe(false);
     await page.locator('#tm-pay-btn').tap();
     expect(await shown('#tm-dep-row')).toBe(true);

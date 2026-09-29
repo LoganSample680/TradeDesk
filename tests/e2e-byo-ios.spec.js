@@ -15,7 +15,7 @@
  *  - Lines are rows: check, title, price; description full width under them.
  *  - The price group: their price, his cost and profit (never on the
  *    proposal), the deposit against the state limit.
- *  - The bar: Build the lines, Price every line, then Sign here / Send it.
+ *  - The bar: Price it out, Price every line, then Sign here / Send it.
  *  - The proposal: YOUR PRICE, fixed, moved only by a change order.
  *  - Earl, 58, on an iPhone SE, cannot break it.
  */
@@ -105,9 +105,9 @@ test.describe('Build Your Own, as an iPhone editor', () => {
 
   // ── THE WORK ──────────────────────────────────────────────────────────────
 
-  test('the bar says Build the lines until there are some', async () => {
+  test('the bar says Price it out until there are some', async () => {
     await open();
-    expect(await bar()).toEqual(['Build the lines']);
+    expect(await bar()).toEqual(['Price it out']);
   });
 
   test('a sentence becomes lines, priced from his own book where he has priced it before', async () => {
@@ -240,7 +240,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(small).toEqual([]);
   });
 
-  test('Earl: a double tap on Build the lines never sends anything', async () => {
+  test('Earl: a double tap on Price it out never sends anything', async () => {
     await open({ book: [{ desc: 'Pull the old water heater', rate: 450 }, { desc: 'Set a tankless', rate: 3200 }] });
     await page.evaluate(() => { document.getElementById('byo-say').value = 'pull the old water heater, set a tankless'; });
     await page.locator('#byo-dock-go').tap();

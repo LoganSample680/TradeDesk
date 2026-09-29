@@ -162,7 +162,7 @@ test.describe('Blake Sample: the money rows on a rate sheet', () => {
     const r = await openBlake(0);
     expect(r.text).not.toMatch(/raising the rate/i);
     expect(r.text).not.toMatch(/You keep\s*\$0\b/);
-    expect(r.text).toContain('You bill an hour');
+    expect(r.text).toContain('You charge an hour');
     expect(r.text).toContain('$125');
     // The job margin gauge measured parts markup as profit and called the
     // rate underpriced. With no job total it stands down.
@@ -172,7 +172,7 @@ test.describe('Blake Sample: the money rows on a rate sheet', () => {
   test('with no pay of his own on file, it says where to put it instead of guessing', async () => {
     const r = await openBlake(0);
     test.skip(r.loaded > 0, 'this account already costs the owner hour');
-    expect(r.text).toContain('Put your own pay in Settings');
+    expect(r.text).toContain('Add your own pay in Settings');
   });
 
   test('with his pay on file, it shows what one hour keeps', async () => {

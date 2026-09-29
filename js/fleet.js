@@ -70,13 +70,13 @@ function renderFleetVehicles() {
       '<div style="padding:28px 20px 24px;text-align:center">' +
         '<div style="font-size:40px;margin-bottom:10px">'+svgIcon('🚛',{size:40})+'</div>' +
         '<div style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--text)">Set up your first vehicle</div>' +
-        '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.5;max-width:300px;margin-left:auto;margin-right:auto">The IRS requires a vehicle description on every business trip log. Add one here to unlock mileage tracking, maintenance records, and tax deductions.</div>' +
+        '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.5;max-width:300px;margin-left:auto;margin-right:auto">Add your truck to start logging miles, service and write-offs. The IRS wants the vehicle on every trip.</div>' +
         '<button class="btn btn-p" onclick="openAddVehicleModal(-1)" style="font-size:15px;padding:13px 28px;margin-bottom:24px">+ Add your first vehicle</button>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;max-width:340px;margin:0 auto">' +
           '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('🗺',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">IRS mileage log</div><div style="font-size:11px;color:var(--text3)">Per-vehicle trip log the IRS requires</div></div>' +
           '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('🔧',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">Maintenance records</div><div style="font-size:11px;color:var(--text3)">Service log + cost per mile</div></div>' +
           '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('📊',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">Business use %</div><div style="font-size:11px;color:var(--text3)">Auto-calculated from odometer</div></div>' +
-          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('💰',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">P&L per vehicle</div><div style="font-size:11px;color:var(--text3)">Deductions vs. actual costs</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('💰',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">Cost per vehicle</div><div style="font-size:11px;color:var(--text3)">What it costs vs. what you write off</div></div>' +
         '</div>' +
       '</div>';
     return;

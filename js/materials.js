@@ -119,9 +119,9 @@ function _matCardHTML(){
     '<div class="card-hd"><div class="card-hd-title">'+_MAT_SEC+'</div>'+
       '<button class="btn btn-sm" onclick="_matAdd()">+ Add item</button>'+
     '</div>'+
-    '<div class="mat-rows">'+(rows||'<div class="mat-empty">No items yet, tap + Add item</div>')+'</div>'+
+    '<div class="mat-rows">'+(rows||'<div class="mat-empty">Nothing added yet</div>')+'</div>'+
     (sup?'<div class="mat-sup">'+sup+'</div>':'')+
-    '<div class="mat-tip">Markup is built into the prices. The client sees the all-in price, never the markup.</div>'+
+    '<div class="mat-tip">Your markup is in each price. They never see the markup.</div>'+
   '</div>';
 }
 

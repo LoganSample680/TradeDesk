@@ -380,7 +380,7 @@ test.describe('Earl, 58, hates technology', () => {
     await page.evaluate(() => _geiScopeBuild('tm-scope-wrap'));
     await page.evaluate(() => { _geiScopeChips.slice().forEach(l => _tmDelStep(l)); });
     expect(await page.evaluate(() => !!document.getElementById('gei-scope-say'))).toBe(true);
-    expect(await bar()).toEqual(['Build the steps']);
+    expect(await bar()).toEqual(['Write it up']);
     expect(junk(await visibleText())).toBe(false);
   });
 
