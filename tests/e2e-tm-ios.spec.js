@@ -241,7 +241,7 @@ test.describe('the T&M screen, as an iPhone app', () => {
     const e = document.getElementById('tm-i-rate'); e.value = r; _tmInputChange();
   }, v);
 
-  test('a fresh page: step 1 is on, and the bar says Build the steps', async () => {
+  test('a fresh page: step 1 is on, and the bar says Write it up', async () => {
     await open();
     await setRate('');
     const s = await steps();
@@ -249,12 +249,12 @@ test.describe('the T&M screen, as an iPhone app', () => {
     // Nothing beside the heading: the box under it already says what to do.
     // Renamed 2026-09-29 (§10.4): every document shares one set of steps (js/doc-steps.js).
     expect(s[0].text).toBe('1The work');
-    expect(s[2].buttons).toEqual(['Build the steps']);
+    expect(s[2].buttons).toEqual(['Write it up']);
   });
 
   // The bar's button does the thing, not just name it: with words in the box
   // it builds the steps.
-  test('Build the steps in the bar builds them from the box', async () => {
+  test('Write it up in the bar builds them from the box', async () => {
     await open();
     await page.evaluate(() => { document.getElementById('gei-scope-say').value = 'Pull the old water heater and set a tankless'; });
     await page.locator('#tm-dock-go').click();

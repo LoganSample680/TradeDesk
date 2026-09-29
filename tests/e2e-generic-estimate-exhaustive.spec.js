@@ -3493,7 +3493,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const html = wrap.innerHTML;
         wrap.remove();
         return { composer: html.includes('Tell me what you are doing'),
-          build: html.includes('Build the steps'),
+          build: html.includes('Write it up'),
           picker: html.includes('Or pick from a list') };
       });
       // CHANGED 2026-09-22 (§10.4). The empty scope used to be a dashed

@@ -1933,7 +1933,7 @@ function _tmScopeIosHtml(){
   const cid='tm-scope-wrap';
   const steps=_geiScopeChips||[];
   const btns='<div style="margin-top:14px">'+
-      '<button type="button" class="ios-btn ios-btn-fill" onclick="_geiScopeBuild(\''+cid+'\')">Build the steps</button>'+
+      '<button type="button" class="ios-btn ios-btn-fill" onclick="_geiScopeBuild(\''+cid+'\')">Write it up</button>'+
       timMicBtn('gei-scope-say')+'</div>';
   // THE PAGE'S ONE BUTTON IS AT THE BOTTOM (2026-09-23, "does it look like
   // something a pro UX designer would ship?"). Build the steps is the bar's
@@ -2023,7 +2023,7 @@ function _geiScopeComposerHtml(containerId){
       mic+
       '<button type="button" onclick="_geiScopeBuild(\''+containerId+'\')" style="flex:1;min-width:0;padding:10px 14px;'+
         'border-radius:var(--r-pill,999px);border:0;background:var(--blue);color:#fff;font-size:13px;font-weight:800;'+
-        'cursor:pointer;font-family:inherit">Build the steps</button>'+
+        'cursor:pointer;font-family:inherit">Write it up</button>'+
     '</div>'+
     '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="margin-top:9px;border:0;background:none;'+
       'padding:2px 0;font-size:12px;color:var(--text3);cursor:pointer;font-family:inherit;text-decoration:underline">'+
@@ -3172,7 +3172,7 @@ function _byoDepInput(el){
   pct.dispatchEvent(new Event('input',{bubbles:true}));
 }
 function _byoDockNext(st){
-  if(!st.n)return {label:'Build the lines',fn:'_byoDockBuild()'};
+  if(!st.n)return {label:'Price it out',fn:'_byoDockBuild()'};
   // Tim before the prices: a step he adds is a line that needs a price, so
   // pricing first would send him back to pricing (2026-09-26, shared walk).
   const tim=_geiTimStep(_byoMissed);
@@ -3803,7 +3803,7 @@ function _tmPaySummary(){
   const parts=[];
   const dep=_tmLayers.has('dep')?(typeof _tmDeposit==='function'?_tmDeposit():0):0;
   parts.push(dep>0?('$'+dep.toLocaleString('en-US')+' deposit'):'No deposit');
-  if(_tmLayers.has('rate'))parts.push(_tmBillingCycle?_tmBillWords(_tmBillingCycle):'when you bill: not picked');
+  if(_tmLayers.has('rate'))parts.push(_tmBillingCycle?_tmBillWords(_tmBillingCycle):'billing not picked');
   const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
   const sub=cap>0?('The most it can cost: $'+cap.toLocaleString('en-US')):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
   return {main:parts.join(', '),sub};
@@ -3957,7 +3957,7 @@ function _renderLaborPicker(type){
   // One control per job, never the same chips twice (15.1).
   const tm=type==='tm';
   if(!_estCrew.length){
-    body='<span style="color:var(--text3)">'+(tm?'Pick who\'s going in step 2, their pay + benefits become a job cost.':'Tap a name to add who\'s on this job, their pay + benefits become a job cost.')+'</span>';
+    body='<span style="color:var(--text3)">'+(tm?'Pick who\'s going in step 2 to see what they cost you.':'Tap who\'s on this job to see what they cost you.')+'</span>';
   }else if(cost<=0){
     // TWO NUMBERS, AND THIS LINE IS ONLY ABOUT ONE OF THEM. With per-person
     // bill rates on screen above it, the old wording ("set pay rates") read as
@@ -3966,16 +3966,16 @@ function _renderLaborPicker(type){
     // place, and the sentence now says which.
     body=_crewHourlyBill()>0
       ? '<span style="color:var(--c-amber)">What they bill is set. What they cost you is not, so there is no profit figure on this job yet. Add their pay on the Team page.</span>'
-      : '<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
+      : '<span style="color:var(--c-amber)">Add their pay on the Team page to see what they cost you.</span>';
   }else{
     const ppl=_estCrew.length;
     const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
     body='<span style="color:#A32D2D;font-weight:800;font-size:14px">− '+fmt(cost)+'</span>'+
-      '<span style="color:var(--text3)"> crew payroll · '+ppl+' '+(ppl>1?'people':'person')+' · ~'+hrs+' hrs · incl. benefits</span>'+conflictNote;
+      '<span style="color:var(--text3)"> crew pay, benefits in · '+ppl+' '+(ppl>1?'people':'person')+' · about '+hrs+' hrs</span>'+conflictNote;
   }
   wrap.style.display='';
   wrap.innerHTML=
-    '<div class="td-micro" style="margin-bottom:6px">Crew on this job <span style="font-weight:500;color:var(--text3);text-transform:none;letter-spacing:0">(their pay is your cost)</span></div>'+
+    '<div class="td-micro" style="margin-bottom:6px">What your crew costs you</div>'+
     (tm?'':'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+_crewRatesHtml(emps))+
     '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
     '<div class="summary-divider"></div>';
@@ -5236,12 +5236,12 @@ function _tmMoneyPerHourHtml(n){
     const share=Math.round(keep/perHour*100);
     const target=_MARGIN_BANDS.target;
     const colour=share>=target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
-    rows+=row('You bill an hour',n.crewRates?'the crew\'s rates on this job':'your rate on this job',money(perHour),false)+
+    rows+=row('You charge an hour',n.crewRates?'your crew\'s rates':'your rate',money(perHour),false)+
       row('It costs you an hour',n.crewRates?'what the crew costs you':'what your own hour costs you',money(hourCost),false)+
       row('You keep an hour',Math.max(0,share)+' cents on the dollar',money(keep),true,colour);
   }else{
-    rows+=row('You bill an hour','your rate on this job',money(perHour),false)+
-      '<div style="font-size:11px;line-height:1.5;color:var(--text3);padding:0 0 9px">Put your own pay in Settings to see what you keep an hour.</div>';
+    rows+=row('You charge an hour','your rate',money(perHour),false)+
+      '<div style="font-size:11px;line-height:1.5;color:var(--text3);padding:0 0 9px">Add your own pay in Settings to see what you keep an hour.</div>';
   }
   if(markup>0)rows+=row('On the parts','your markup on '+money(matCost)+' of materials',money(markup),true,'var(--c-green)');
   return '<div style="display:flex;align-items:center;gap:7px;padding:0 0 10px">'+
@@ -5659,7 +5659,7 @@ function _tmApplyLayers(){
       // means the rate is in the contract, the way every iPhone switch means
       // yes, and the line under it says in words where the customer reads it.
       ? '<label class="ios-row" style="cursor:pointer">'+
-          '<span class="ios-lbl">Rate in the contract<small id="tm-show-rate-sub"></small></span>'+
+          '<span class="ios-lbl">Rate they agree to<small id="tm-show-rate-sub"></small></span>'+
           '<input type="checkbox" class="ios-switch" id="tm-show-rate" '+(_tmHideRate?'':'checked')+
           ' onchange="_tmSetHideRate(!this.checked)"></label>'
       // Named, not abbreviated: a man reading why he cannot turn something off
@@ -5667,7 +5667,7 @@ function _tmApplyLayers(){
       // code he has to decode to know which law is talking to him.
       // Named in full, with the statute: a man told he cannot turn something
       // off is owed which law is saying so.
-      : '<div class="ios-row"><span class="ios-lbl">Rate in the contract<small>'+
+      : '<div class="ios-row"><span class="ios-lbl">Rate they agree to<small>'+
           escHtml(_tmStateName(rule.state))+' requires it on a time and materials contract. '+escHtml(rule.statute||'')+'</small></span>'+
           '<input type="checkbox" class="ios-switch" checked disabled aria-label="Rate shown, required"></div>';
     // The line under the switch is written by _tmRenderBillTerms, which ran
@@ -6046,7 +6046,7 @@ function _tmRenderSteps(all,rule){
 // is still one place.
 function _tmDockNext(st,rule,all){
   if(rule.rule==='block')return {label:'Make it a fixed price',fn:'_tmToFixedPrice()'};
-  if(!st.one)return {label:'Build the steps',fn:'_tmDockBuild()'};
+  if(!st.one)return {label:'Write it up',fn:'_tmDockBuild()'};
   if(!st.two){
     if(_tmCrewOn()&&_tmLayers.has('rate')&&_tmCrewMissing().length)
       return {label:'Add '+_crewFirst(_tmCrewMissing()[0])+'\'s rate',fn:'_tmStepAct(\'rate\')'};
@@ -6276,10 +6276,10 @@ function _tmRenderBillTerms(){
     // contract they sign.
     const cr=_tmCrewOn()?_crewHourlyBill():0;
     rs.textContent=(shown&&cr>0)
-      ?('They sign to $'+cr.toLocaleString('en-US')+' an hour for the crew on site. It is in the contract terms, not on the proposal page.')
+      ?('They agree to $'+cr.toLocaleString('en-US')+' an hour for the crew. It is in the contract they sign.')
       :shown
-      ?(r>0?'They sign to '+f+' an hour, per worker. It is in the contract terms, not on the proposal page.':'They sign to your hourly rate, in the contract terms.')
-      :(r>0?'Nowhere they see. You still bill the hours at '+f+'.':'Nowhere they see. You still bill the hours at your rate.');
+      ?(r>0?'They agree to '+f+' an hour per worker. It is in the contract they sign.':'They agree to your hourly rate in the contract they sign.')
+      :(r>0?'Hidden from them. You still bill '+f+' an hour.':'Hidden from them. You still bill your hourly rate.');
   }
   // Bills: on every contract that bills time.
   const cw=document.getElementById('tm-cad-main');
