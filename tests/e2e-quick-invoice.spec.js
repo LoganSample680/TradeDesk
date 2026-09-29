@@ -59,12 +59,15 @@ test.describe('Quick invoice', () => {
     await page.click('#qa-invoice-btn');
     const r = await page.evaluate(() => {
       const box = document.querySelector('.zmodal');
-      const rows = [...box.querySelectorAll('#qp-sugs [data-action="invoice"]')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
+      // Ready to bill houses lead the list (e2e-ready-to-bill.spec.js); this
+      // test is about the customer rows under them.
+      const rows = [...box.querySelectorAll('#qp-sugs [data-action="invoice"]')].filter(b => !/Ready to bill/.test(b.textContent)).map(b => b.textContent.replace(/\s+/g, ' ').trim());
       const search = box.querySelector('#qp-search'), list = box.querySelector('#qp-sugs');
       return { text: box.textContent, rows, searchFirst: !!(search.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) };
     });
-    expect(r.text).toContain('Quick invoice');
-    expect(r.text).toContain('Your customers');
+    expect(r.text).toContain('Invoice');   // one name everywhere (Earl): no "Quick invoice"
+    expect(r.text).not.toContain('Quick invoice');
+    expect(r.text).toMatch(/Your customers|then your customers/);
     expect(r.rows.length).toBe(3);
     expect(r.rows[0]).toContain('John Doe');
     expect(r.rows[0]).toContain('1418 Maple Ave');
@@ -101,6 +104,8 @@ test.describe('Quick invoice', () => {
     expect(phone.length).toBe(1);
     expect(none).toEqual([]);
     expect(newShown).toBe(true);
+    // Empty again: the Ready to bill houses (John and Mary have unbilled time
+    // here) on top, then every customer not already listed above.
     expect(all.length).toBe(3);
     expect(await page.locator('#qp-results button').count(), 'no second list stacked under the first').toBe(0);
     await page.fill('#qp-search', 'smith');
@@ -129,12 +134,12 @@ test.describe('Quick invoice', () => {
     expect(r.active).toBe('pg-qi');
     expect(r.seg).toBe('Hourly');
     expect(r.text).toContain('Jack Sample');
-    expect(r.text).toContain('6h 30m on site at');
+    expect(r.text).toContain('6h 30m on site at');  // hours at the rate (Earl: "which rate wins?")
     expect(r.text).toContain('$552.50');           // 6.5h x $85
     expect(r.text).toContain('$455.00');           // owner at the labor rate, 6.5h x $70
     expect(r.text).toContain('Ferguson');
     expect(r.total).toBe('$1,307.50');
-    expect(r.send).toBe('Text it to John');
+    expect(r.send).toBe('Send it · $1,307.50');  // the total rides on the pinned button; the customer's full name is the page title
   });
 
   // The tracker writes a visit as job_id null + dest_place "Name (street)"
@@ -144,6 +149,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(async () => {
       window._jobTimeEntriesByJob = {};
+      S.qiBillDrive = false;   // drive time is on by default now; this test is about visits
       clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
       const H = 3600e3, t = Date.parse('2026-09-22T13:00:00Z');
       const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 4 * H).toISOString(), minutes: 240 }, o);
@@ -171,10 +177,11 @@ test.describe('Quick invoice', () => {
     });
     expect(r.shimmer, 'a shimmer while the visits load, not "Nothing tracked"').toBe(true);
     // The Rental's hour is its own invoice now (owner 2026-09-27: one bill per house).
-    expect(r.lines).toEqual([{ who: 'Jack Sample', mins: 120 }, { who: 'Mike Sample', mins: 240 }]);
+    // One line per person per day, oldest day first (owner 2026-09-29: a card a day).
+    expect(r.lines).toEqual([{ who: 'Mike Sample', mins: 240 }, { who: 'Jack Sample', mins: 120 }]);
     expect(r.mode).toBe('hourly');
     expect(r.text).not.toContain('Nothing tracked');
-    expect(r.nav).toBe('Preview');
+    expect(r.nav, 'Save top right, the way proposals do it; Preview sits by Send').toBe('Save');
   });
 
   // Owner 2026-09-27: "drive time should have a toggle that's set by user
@@ -185,7 +192,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(async () => {
       window._jobTimeEntriesByJob = {};
-      delete S.qiBillDrive;
+      S.qiBillDrive = false;
       const H = 3600e3, M = 60e3, t = Date.parse('2026-09-22T13:00:00Z');
       const at = (o, mins) => ({ arrived_at: new Date(t + o).toISOString(), departed_at: new Date(t + o + mins * M).toISOString(), minutes: mins });
       const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client' }, o);
@@ -206,6 +213,7 @@ test.describe('Quick invoice', () => {
       openQuickInvoice(901);
       await new Promise(r => setTimeout(r, 50));
       const off = _qi.tracked.filter(l => l.kind === 'time').map(l => ({ who: l.who, mins: l.mins, detail: l.detail }));
+      _qiDays(_qi.tracked).forEach(d => _qi.open.add(d)); renderQuickInvoice();   // days fold to one line; open them to read
       const offText = document.getElementById('qi-page').textContent;
       document.getElementById('qi-drive').click();
       const on = _qi.tracked.filter(l => l.kind === 'time').map(l => ({ who: l.who, mins: l.mins, detail: l.detail, amount: l.amount }));
@@ -220,7 +228,10 @@ test.describe('Quick invoice', () => {
     expect(r.offText).toContain('Bill drive time');
     expect(r.offText).toContain('4h on site at');
     expect(r.offText).not.toMatch(/shop/i);
-    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 260, detail: '4h on site, 20m driving', amount: 303.33 }]);
+    // Only the first drive there counts by itself (owner 2026-09-29: "the
+    // first drive there, nothing back"): Shop to John Doe. The leg leaving
+    // for Mary Smith waits in Add time.
+    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 250, detail: '4h on site, 10m driving', amount: 291.67 }]);
     expect(r.checked).toBe(true);
     expect(r.setting).toBe(true);
     expect(r.back).toEqual([240]);
@@ -455,7 +466,7 @@ test.describe('Quick invoice', () => {
     await page.click('text=Add from price book');
     await page.click('.qi-pb button:has-text("Replace water heater")');
     expect(await page.textContent('#qi-total')).toBe('$1,400.00');
-    await page.click('text=Add a line');
+    await page.click('text=Add a charge');   // a charge is one line, one price; a part has a count
     await page.locator('.qi-desc').nth(1).fill('Haul away');
     await page.locator('#qi-page .ios-val input').nth(1).fill('75');
     expect(await page.textContent('#qi-total')).toBe('$1,475.00');
@@ -468,7 +479,7 @@ test.describe('Quick invoice', () => {
       const bid = qiSend();
       const again = _qiUnbilled(901);
       return {
-        bid: { kind: bid.kind, status: bid.status, amount: bid.amount, lines: bid.lineItems.length, exp: bid.qiExpenseIds, through: !!bid.qiTimeThrough },
+        bid: { kind: bid.kind, status: bid.status, amount: bid.amount, lines: bid.lineItems.length, exp: bid.qiExpenseIds, through: !!bid.qiTimeThrough, days: bid.qiDays },
         balance: getBidBalance(bid),
         inCollect: bids.filter(b => b.status === 'Closed Won' && getBidBalance(b) > 0.01).some(b => b.id === bid.id),
         mode: getClientById(901).qiMode,
@@ -476,7 +487,11 @@ test.describe('Quick invoice', () => {
         page: document.querySelector('.pg.active').id,
       };
     });
-    expect(r.bid).toEqual({ kind: 'quick_invoice', status: 'Closed Won', amount: 1307.5, lines: 3, exp: ['e1'], through: true });
+    // The invoice carries its days, never a through-mark: a through-mark lost a
+    // day he left for later (Earl's audit 2026-09-29).
+    // One line for the day: parts cost is off by default, so the day's labor and
+    // parts go out as one amount (owner 2026-09-29).
+    expect(r.bid).toEqual({ kind: 'quick_invoice', status: 'Closed Won', amount: 1307.5, lines: 1, exp: ['e1'], through: false, days: ['2026-09-24'] });
     expect(r.balance).toBe(1307.5);
     expect(r.inCollect).toBe(true);
     expect(r.mode).toBe('hourly');
@@ -537,7 +552,14 @@ test.describe('Quick invoice', () => {
     });
     expect(r.cover, 'the same cover the proposal opens on').toBe(true);
     expect(r.text).toContain('Billed to');
-    expect(r.text).toContain('Jack Sample: 6h 30m on site');
+    // Time on site and crew size, never man-hours or names (owner 2026-09-29).
+    expect(r.text).toContain('Labor · 6.5 hrs on site · 2 techs');
+    // Parts default to "in the total, not listed" (owner 2026-09-29).
+    expect(r.text).not.toContain('Materials included');
+    expect(r.text).not.toContain('$300.00');
+    expect(r.text).not.toContain('Jack Sample');
+    expect(r.text).not.toContain('Draft');
+    expect(r.text).toContain('INV-');
     expect(r.text).toContain('Total due');
     expect(r.text).toContain('$1,307.50');
     expect(r.text).not.toContain('Valid until');
@@ -586,8 +608,11 @@ test.describe('Quick invoice', () => {
       window.open = orig;
       return out;
     });
-    expect(html).toContain('Jack Sample: 6h 30m on site');
-    expect(html).toContain('Ferguson receipt');
+    expect(html).toContain('Labor · 6.5 hrs on site · 2 techs');
+    expect(html).not.toContain('Jack Sample');
+    // Parts default to in the total and not listed; never the store receipts.
+    expect(html).not.toContain('Materials included');
+    expect(html).not.toContain('Ferguson');
   });
 
   test('crew never reach the invoice screen', async ({ page }) => {
@@ -599,6 +624,58 @@ test.describe('Quick invoice', () => {
       return document.querySelector('.pg.active').id;
     });
     expect(id).not.toBe('pg-qi');
+  });
+
+  // Owner 2026-09-28: "time to search for hours is slow". The invoice asks the
+  // server for this customer's rows only, skips shop rows, and runs the reads
+  // side by side; everybody else's _fetchCrewLabor call is unchanged.
+  test('hours: one customer\'s rows only, no shop read, reads side by side', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const calls = []; let open = 0, peak = 0;
+      const mk = (t) => { const c = { t, f: [] }; calls.push(c);
+        const q = { select: () => q, is: () => q, eq: () => q, gte: () => q, or: (x) => { c.or = x; return q; },
+          then: (res, rej) => { open++; peak = Math.max(peak, open); return new Promise(r => setTimeout(r, 30)).then(() => { open--; return { data: [] }; }).then(res, rej); } };
+        return q; };
+      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser };
+      window._supa = { from: mk }; window.supaEnabled = () => true; window._supaUser = { id: 'owner-uid' };
+      const c = clients.find(x => x.id === 901);
+      c.extraAddresses = [{ label: 'Rental', addr: '9 "Quoted" Ln, Springfield, IL' }];
+      await _fetchCrewLabor('2026-09-01T00:00:00Z', { noShop: true, only: _qiOnly(c) });
+      const one = { tables: calls.map(x => x.t), or: calls.find(x => x.t === 'job_time_entries').or, peak };
+      calls.length = 0; peak = 0;
+      await _fetchCrewLabor('2026-09-01T00:00:00Z');
+      const all = { tables: calls.map(x => x.t).sort(), or: calls.find(x => x.t === 'job_time_entries').or, peak };
+      const none = await _fetchCrewLabor(null, { only: { jobIds: [], places: [] } });
+      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su });
+      return { one, all, none: none.entries.length, esc: _crewOnlyOr({ jobIds: ['j9', 'x;drop'], places: ['A "B" (C)'] }) };
+    });
+    expect(r.one.tables).not.toContain('shop_time_entries');
+    expect(r.one.or).toContain('job_id.in.(j901)');
+    expect(r.one.or).toContain('dest_place.in.(');
+    expect(r.one.or).toContain('John Doe');
+    expect(r.one.peak, 'the reads run side by side').toBeGreaterThanOrEqual(2);
+    expect(r.all.tables, 'everyone else still gets every table').toEqual(['job_time_entries', 'shop_time_entries', 'team_members']);
+    expect(r.all.or).toBeUndefined();
+    expect(r.all.peak).toBe(3);
+    expect(r.none).toBe(0);
+    expect(r.esc).toBe('job_id.in.(j9,xdrop),dest_place.in.("A \\"B\\" (C)"),origin_place.in.("A \\"B\\" (C)")');
+  });
+
+  test('hours: what the Time Log already fetched paints at once', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const t = Date.parse('2026-09-25T15:00:00Z'), h = 3600e3;
+      _tlCrewCache = { since: new Date(Date.now() - 200 * 86400e3).toISOString(), payload: { name: { 'u1': 'Jack Sample' }, entries: [
+        { employee_user_id: 'u1', job_id: null, dest_place: _geoFenceName('Mary Smith', '77 Lakeview Dr'), source: 'visit', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 2 * h).toISOString(), minutes: 120 },
+      ] } };
+      const saved = window.supaEnabled; window.supaEnabled = () => false;
+      openQuickInvoice(902);
+      const lines = _qi.tracked.filter(l => l.kind === 'time').map(l => l.who + ' ' + l.mins);
+      window.supaEnabled = saved; _tlCrewCache = null;
+      return lines;
+    });
+    expect(r).toContain('Jack Sample 120');
   });
 
   for (const w of [320, 390]) {

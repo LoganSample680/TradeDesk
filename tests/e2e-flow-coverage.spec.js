@@ -887,14 +887,17 @@ test.describe('Settings persistence', () => {
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('settings page has deposit pct, margin, labor rate fields', async () => {
+  test('settings page has deposit pct and margin; the labor rate is under Team', async () => {
     await goPg(page, 'pg-settings');
     const depositField = await page.locator('#set-deposit-pct').count();
     const marginField = await page.locator('#set-margin').count();
+    // The hourly rate moved to Team (owner 2026-09-29); Settings points there.
     const laborField = await page.locator('#set-labor-rate').count();
+    const toTeam = await page.locator('#set-rates-team').count();
     expect(depositField).toBe(1);
     expect(marginField).toBe(1);
-    expect(laborField).toBe(1);
+    expect(laborField).toBe(0);
+    expect(toTeam).toBe(1);
   });
 
   test('saveSettings persists deposit pct to S object', async () => {

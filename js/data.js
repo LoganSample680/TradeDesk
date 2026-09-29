@@ -478,6 +478,92 @@ function setPropertyData(client,addr,data){
   // Mirror to legacy client-level fields for the primary address (back-compat).
   if(k===_addrKey(client.addr))_PROP_FIELDS.forEach(f=>{if(data[f]!=null)client[f]=data[f];});
 }
+// WHAT THE CUSTOMER'S COPY SHOWS (owner 2026-09-29: "the toggle we have on
+// rate should carry over"). One place for both documents' switches, so the
+// proposal and the invoice read the same setting and the same code. The
+// starting points differ on purpose: a T&M proposal shows the rate the
+// customer is agreeing to; an invoice shows the hours and one total, and
+// never parts cost unless he turns it on ("for a pissed off old man, I doubt
+// it"). A state that requires the rate overrides both (statePriceRule).
+const _COPY_DEFAULTS={proposal:{rate:true,parts:true},invoice:{rate:false,parts:false}};
+function copyShows(doc,what){
+  const d=(_COPY_DEFAULTS[doc]||{})[what];
+  if(typeof S==='undefined'||!S)return !!d;
+  // The proposal's rate lives where it always has (S.tmHideRate, which the
+  // proposal screen and every saved account already carry); setCopyShows
+  // keeps it in step.
+  if(doc==='proposal'&&what==='rate'&&typeof S.tmHideRate==='boolean')return !S.tmHideRate;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc][what];
+  if(typeof v==='boolean')return v;
+  return !!d;
+}
+// Parts on the customer's copy is three ways, not on and off (owner
+// 2026-09-29, "default to show a total price not showing materials and
+// prices, but toggle it on if they want to show the materials no price, and
+// a third to show materials and price"):
+//   'total'   the parts money is in the total, the parts are not named
+//   'items'   the parts are named with their counts, no prices
+//   'priced'  the parts, their counts and their prices
+const _PARTS_MODES=['total','items','priced'];
+function copyPartsMode(doc){
+  const def=doc==='proposal'?'priced':'total';
+  if(typeof S==='undefined'||!S)return def;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].partsMode;
+  if(_PARTS_MODES.includes(v))return v;
+  const b=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].parts;
+  return typeof b==='boolean'?(b?'priced':def):def;
+}
+function setCopyPartsMode(doc,mode){
+  if(!_PARTS_MODES.includes(mode)||typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{partsMode:mode});
+  S.copyShow=all;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+function setCopyShows(doc,what,on){
+  if(typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{[what]:!!on});
+  S.copyShow=all;
+  if(doc==='proposal'&&what==='rate')S.tmHideRate=!on;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+// WHAT A PERSON BILLS AN HOUR (owner 2026-09-29: "updates in one spot show
+// all"). One lookup for every screen that charges for somebody's hour: the
+// T&M and BYO estimate (_billRateFor), the quick invoice and Ready to bill
+// (_qiRateFor). key is their email or their name: the estimate crew carries
+// emails, time rows carry names. The owner is not on the crew list, so their
+// rate is S.ownerBillRate. 0 when nobody set one; each screen decides its own
+// fallback. This is the SELL rate; what a person costs is pay_rate on
+// team_members, and the two are never mixed (CLAUDE.md 18.2).
+function _personIsOwner(k){
+  if(typeof S==='undefined'||!S)return false;
+  const names=[S.ownerName,typeof getOwnerName==='function'?getOwnerName():''].map(n=>String(n||'').trim().toLowerCase()).filter(Boolean);
+  const mail=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
+  return names.includes(k)||(!!mail&&k===mail);
+}
+function _personFind(key){
+  const k=String(key||'').trim().toLowerCase();
+  if(!k||typeof S==='undefined'||!S)return {k,e:null};
+  const e=(S.employees||[]).find(x=>x&&(String(x.email||'').toLowerCase()===k||String(x.name||'').trim().toLowerCase()===k));
+  return {k,e:e||null};
+}
+function personBillRate(key){
+  const {k,e}=_personFind(key);
+  if(!k)return 0;
+  const r=e?Number(e.billRate):(_personIsOwner(k)?Number(S.ownerBillRate):0);
+  return r>0?r:0;
+}
+function setPersonBillRate(key,rate){
+  const {k,e}=_personFind(key);
+  if(!k)return false;
+  const r=Math.max(0,Number(rate)||0);
+  if(e)e.billRate=r;
+  else if(_personIsOwner(k))S.ownerBillRate=r;
+  else return false;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
+}
 // Every address this client has: primary + saved extras. {label, addr, key}.
 function clientAddresses(client){
   const out=[];if(!client)return out;const seen={};
