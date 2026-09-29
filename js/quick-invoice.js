@@ -42,14 +42,31 @@ function _qiLastTouch(c){
   bump(c.last_contact_date);bump(c.created_at);
   return t;
 }
+// ONE WAY IN (Earl 2026-09-29): the Invoice button on Home opens the same
+// Ready to bill houses first, each straight to its drafted bill, then every
+// customer.
+function _qiReadyPicks(){
+  const rows=(_tb&&_tb.lab)?_tbRows(_tb.lab):[];
+  return rows.map(r=>{
+    const c=getClientById(r.cid)||{};
+    return {label:r.name,sub:'Ready to bill · '+_qiMoney(r.total).replace(/\.00$/,'')+' · '+_tbSub(r),subTail:'',clientId:r.cid,addr:r.pick||'',
+      // They are the list before he types. Typing is a customer search, so a
+      // ready row never matches it (a zero-width space is text no search holds)
+      // and the customer's own row, with its houses, answers instead.
+      icon:'💵',find:'\u200b'};
+  });
+}
 function _qiPickList(){
   const rank={now:0,next:1,done:2};
-  return (clients||[]).filter(c=>c&&c.name&&!c.archived).map(c=>{
+  const ready=_qiReadyPicks();
+  // A one-house customer already on top is not listed again until he types.
+  const dup=new Set(ready.filter(p=>clientAddresses(getClientById(p.clientId)).length<=1).map(p=>String(p.clientId)));
+  return ready.concat((clients||[]).filter(c=>c&&c.name&&!c.archived).map(c=>{
     const st=_qiStatus(c.id);
     return {c,st,r:st?rank[st.k]:3,t:_qiLastTouch(c)};
   }).sort((a,b)=>(a.r-b.r)||(b.t-a.t)||String(a.c.name).localeCompare(String(b.c.name)))
-    .map(({c,st})=>({label:c.name,sub:clientAddrSub(c)+(st?' · '+st.label:''),subTail:st?' · '+st.label:'',clientId:c.id,icon:'📍',
-      find:clientSearchText(c)}));
+    .map(({c,st})=>({label:c.name,sub:clientAddrSub(c)+(st?' · '+st.label:''),subTail:st?' · '+st.label:'',clientId:c.id,icon:'📍',dup:dup.has(String(c.id)),
+      find:clientSearchText(c)})));
 }
 // Is the work at this customer going on, finished, or still to come? One
 // word, next to their name, so nobody bills a job that is still running
@@ -80,30 +97,61 @@ function _qiStatusPill(cid){
   return st?'<span class="qi-st qi-st-'+st.k+'">'+escHtml(st.label)+'</span>':'';
 }
 function openQuickInvoicePicker(){
-  showQuickPicker('Quick invoice','Who is it for?',_qiPickList(),'invoice',true,'Your customers',{searchFirst:true});
+  const list=_qiPickList();
+  showQuickPicker('Invoice','Who is it for?',list,'invoice',true,list.some(p=>p.icon==='💵')?'Ready to bill first, then your customers':'Your customers',{searchFirst:true});
 }
 
 // Everything this customer has been billed for on a quick invoice already.
 // A property's invoice covers that house; an invoice from before invoices had
 // a property (no qiAddr) covered every house, so it counts for all of them.
 function _qiSameAddr(a,b){return !a||!b||_addrKey(a)===_addrKey(b);}
+// BILLED BY THE DAY (owner 2026-09-29, Earl's audit): an invoice remembers
+// the days it carried (qiDays), not a "billed through" moment. A through-mark
+// lost a day he left for later: skip Tuesday, bill Wednesday, and Tuesday fell
+// behind the mark and never came back. Invoices from before this carry
+// qiTimeThrough and are still honored for what they covered.
+// Days he settled outside the app (cash, another invoice, before TradeDesk)
+// live on the customer (c.qiElsewhere): they are not a sale, so they must not
+// count as revenue the way a saved invoice does.
 function _qiBilled(cid,addr){
-  let through=0;const exp=new Set();
+  let through=0;const exp=new Set(),days=new Set();
   (bids||[]).forEach(b=>{
     if(!b||b.kind!=='quick_invoice'||String(b.client_id)!==String(cid))return;
     if(!_qiSameAddr(b.qiAddr,addr))return;
     const t=Date.parse(b.qiTimeThrough||'');if(t>through)through=t;
+    (b.qiDays||[]).forEach(d=>days.add(String(d)));
     (b.qiExpenseIds||[]).forEach(id=>exp.add(String(id)));
   });
-  return {through,exp};
+  const c=getClientById(cid);
+  ((c&&Array.isArray(c.qiElsewhere))?c.qiElsewhere:[]).forEach(x=>{
+    if(!x||!_qiSameAddr(x.addr,addr))return;
+    (x.days||[]).forEach(d=>days.add(String(d)));
+    (x.expIds||[]).forEach(id=>exp.add(String(id)));
+  });
+  return {through,exp,days};
 }
-// A person's bill rate: their own, else the business's labor rate. Time rows
-// carry the person's NAME only (cloud.js _crewMemberName), so the match is by
-// name, the same way the Time Log labels them.
+// A person's bill rate: the one lookup every screen uses (personBillRate,
+// js/data.js), else the business's labor rate. Time rows carry the person's
+// NAME only (cloud.js _crewMemberName), so the key here is the name.
 function _qiRateFor(name){
-  const emp=((typeof S!=='undefined'&&S.employees)||[]).find(e=>e&&e.name===name);
-  const r=Number(emp&&emp.billRate)||0;
+  const r=personBillRate(name);
   return r>0?r:(Number(typeof S!=='undefined'&&S.laborRate)||0);
+}
+// A rate he types for somebody who has none yet becomes theirs, so the next
+// invoice and the next estimate already know it (Earl: "set it once"). A rate
+// they already have is changed for this invoice only.
+function _qiRememberRate(name,rate){
+  if(rate>0&&!(personBillRate(name)>0))setPersonBillRate(name,rate);
+}
+// RIDERS (owner 2026-09-29): somebody with no phone in the app who works
+// beside somebody who has one. John rides with Jack: every day Jack has hours
+// at a house, John is on that day's bill with the same hours at his own rate,
+// unless John tracked that day himself. One setting, rider -> lead.
+function _qiRiders(){return (typeof S!=='undefined'&&S&&S.qiRiders&&typeof S.qiRiders==='object')?S.qiRiders:{};}
+function _qiRiderLine(day,rider,lead,mins){
+  const rate=_qiRateFor(rider);
+  const detail=_qiMins(mins)+', rode with '+String(lead).split(' ')[0];
+  return {kind:'time',day,who:rider,mins,rate,rider:lead,detail,desc:rider+': '+detail,amount:Math.round(mins/60*rate*100)/100};
 }
 function _qiMins(m){const h=Math.floor(m/60),mm=Math.round(m%60);return ((h?h+'h ':'')+(mm||!h?mm+'m':'')).trim();}
 function _qiDay(d){const t=Date.parse(String(d||'')+'T12:00:00');return isNaN(t)?'':new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
@@ -172,7 +220,7 @@ const _QI_NOT_A_VISIT=/^(drive|dismissed|place|unsaved|personal|shop)/;
 //     another customer is split in half, so nobody is billed for it twice.
 //     Held legs (an open question on the Time Log) are not billed until answered.
 const _QI_DRIVE=/^drive(?!-held)/;
-function _qiVisitsFor(c,entries,names,addr){
+function _qiVisitsFor(c,entries,names,addr,allPlaces){
   const cid=String(c.id);
   const mine=new Set(_qiJobsAt(cid,addr).filter(j=>!_qiPropBid(j)).map(j=>String(j.id)));
   const theirs=new Set((jobs||[]).filter(j=>j&&String(j.client_id)===cid).map(j=>String(j.id)));
@@ -189,7 +237,10 @@ function _qiVisitsFor(c,entries,names,addr){
   // The rows now come back for this customer only (_qiLoadVisits), so the
   // other customers' places come from the customer book as well.
   const custPlaces=new Set(list.filter(e=>!_QI_NOT_A_VISIT.test(String(e.source||''))&&e.dest_place).map(e=>String(e.dest_place).trim()));
-  (clients||[]).forEach(o=>{if(o&&String(o.id)!==cid)_qiPlaceNames(o).forEach(n=>custPlaces.add(n));});
+  // The Ready to bill card hands in every customer's places once, instead of
+  // this loop running again for each customer on the list.
+  if(allPlaces)allPlaces.forEach(n=>{if(!places.has(n))custPlaces.add(n);});
+  else (clients||[]).forEach(o=>{if(o&&String(o.id)!==cid)_qiPlaceNames(o).forEach(n=>custPlaces.add(n));});
   const out=site.map(e=>({kind:'site',arrivedAt:e.arrived_at,departedAt:e.departed_at,minutes:e.minutes,employeeName:who(e.employee_user_id)}));
   list.forEach(e=>{
     if(!_QI_DRIVE.test(String(e.source||'')))return;
@@ -211,8 +262,17 @@ function _qiSetBillDrive(on){
   if(!_qi)return;
   const u=_qiUnbilled(_qi.cid,_qi.visits,_qi.addr);
   _qiKeepRates(u.lines);
-  _qi.tracked=u.lines;_qi.through=u.through;
+  _qi.tracked=_qiWithAdded(u.lines);_qi.through=u.through;
   renderQuickInvoice();
+}
+// Crew he added by hand on this screen stay when the lines are rebuilt.
+function _qiWithAdded(lines){
+  (_qi&&_qi.added||[]).forEach(x=>{
+    if(lines.some(l=>l.day===x.day&&l.who===x.rider))return;
+    const lead=lines.find(l=>l.day===x.day&&l.who===x.lead&&l.kind==='time');
+    if(lead)lines.push(_qiRiderLine(x.day,x.rider,x.lead,lead.mins));
+  });
+  return lines;
 }
 // A rate he typed on screen stays when the lines are rebuilt.
 function _qiKeepRates(lines){
@@ -252,8 +312,8 @@ function _qiVisitsCached(cid,addr){
 // The unbilled work: one line per person (their minutes at this customer's
 // jobs since the last quick invoice), then one line per unbilled receipt.
 function _qiUnbilled(cid,visits,addr){
-  const {through,exp}=_qiBilled(cid,addr);
-  const byPerson={};let last=through;
+  const {through,exp,days}=_qiBilled(cid,addr);
+  const byDay={};let last=through;
   // What the job cache holds, plus the loaded visits, each visit once (the
   // two overlap on job_id rows): same person, same arrival.
   const byJob=(typeof _jobTimeEntriesByJob==='object'&&_jobTimeEntriesByJob)||{};
@@ -272,23 +332,51 @@ function _qiUnbilled(cid,visits,addr){
     const a=Date.parse(e&&(e.arrivedAt||e.arrived_at)||'');
     const d=Date.parse(e&&(e.departedAt||e.departed_at)||'');
     if(!(a>through)||!(d>a))return;              // billed already, or still open
+    const day=dateKey(new Date(a));
+    if(days.has(day))return;                     // that day is on an invoice, or settled elsewhere
     const mins=Number(e.minutes)>0?Number(e.minutes):Math.round((d-a)/60000);
     const who=e.employeeName||(typeof S!=='undefined'&&S.ownerName)||'You';
-    const p=byPerson[who]||(byPerson[who]={site:0,drive:0});
+    const P=byDay[day]||(byDay[day]={});
+    const p=P[who]||(P[who]={site:0,drive:0});
     p[kind]=(p[kind]||0)+mins;
     if(d>last)last=d;
   });
-  const lines=Object.keys(byPerson).sort().map(who=>{
-    const p=byPerson[who];
-    const mins=Math.round(p.site+p.drive);
-    const rate=_qiRateFor(who);
-    const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
-    return {kind:'time',who,mins,rate,detail,desc:who+': '+detail,amount:Math.round(mins/60*rate*100)/100};
-  }).filter(l=>l.mins>0);
+  // Receipts: one Materials line a day. The customer sees what materials came
+  // to, never the store receipts (owner 2026-09-28); the vendors stay on his
+  // screen so he knows what is in it.
+  const rec={};
   ((typeof expenses!=='undefined'&&expenses)||[]).filter(e=>e&&String(e.client_id)===String(cid)&&!exp.has(String(e.id))&&Number(e.amount)>0)
-    .forEach(e=>lines.push({kind:'receipt',expId:e.id,desc:(e.vendor||'Materials')+' receipt',date:_qiDay(e.date),amount:Number(e.amount)}));
+    .forEach(e=>{const day=String(e.date||'').slice(0,10)||todayKey();(rec[day]||(rec[day]=[])).push(e);});
+  const riders=_qiRiders();
+  const lines=[];
+  Object.keys(byDay).concat(Object.keys(rec)).filter((d,i,a)=>a.indexOf(d)===i).sort().forEach(day=>{
+    const P=byDay[day]||{};
+    Object.keys(P).sort().forEach(who=>{
+      const p=P[who];
+      const mins=Math.round(p.site+p.drive);
+      if(!(mins>0))return;
+      const rate=_qiRateFor(who);
+      const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
+      lines.push({kind:'time',day,who,mins,rate,detail,desc:who+': '+detail,amount:Math.round(mins/60*rate*100)/100});
+    });
+    Object.keys(riders).forEach(rider=>{
+      const lead=riders[rider],p=P[lead];
+      if(!p||P[rider])return;                    // he tracked that day himself: his own hours win
+      const mins=Math.round(p.site+p.drive);
+      if(mins>0)lines.push(_qiRiderLine(day,rider,lead,mins));
+    });
+    const r=rec[day];
+    if(r){
+      const amt=Math.round(r.reduce((s,e)=>s+Number(e.amount),0)*100)/100;
+      lines.push({kind:'receipt',day,expId:r[0].id,expIds:r.map(e=>e.id),desc:'Materials',
+        vendors:r.map(e=>(e.vendor||'Receipt')+' '+_qiMoney(e.amount)).join(', '),date:_qiDay(day),amount:amt});
+    }
+  });
   return {lines,through:last>through?new Date(last).toISOString():null};
 }
+// The days on the screen, oldest first.
+function _qiDays(lines){return (lines||[]).map(l=>l.day).filter((d,i,a)=>d&&a.indexOf(d)===i).sort();}
+function _qiDayLabel(day){const t=Date.parse(String(day||'')+'T12:00:00');return isNaN(t)?'':new Date(t).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}
 
 // WHICH HOUSE (owner 2026-09-27, "the multiple options like what we have in
 // TrueShot"). A customer with more than one property is asked which one, with
@@ -306,7 +394,8 @@ function openQuickInvoice(cid,addr){
   const un=_qiUnbilled(cid,cached,addr);
   const hasWork=un.lines.length>0;
   const mode=c.qiMode||(hasWork?'hourly':'set');
-  _qi={cid,addr,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode};
+  _qi={cid,addr,mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!c.qiMode,
+    off:new Set(),open:new Set(),addDay:null,added:[]};
   goPg('pg-qi');
   renderQuickInvoice();
   // The visits load once, then the screen paints once more (the shimmer in
@@ -318,7 +407,7 @@ function openQuickInvoice(cid,addr){
     if(Array.isArray(v)){
       me.visits=v;
       const u=_qiUnbilled(cid,v,addr);
-      me.tracked=_qiKeepRates(u.lines);
+      me.tracked=_qiWithAdded(_qiKeepRates(u.lines));
       me.through=u.through;
       if(!me.modeSet&&me.tracked.some(l=>l.kind==='time'))me.mode='hourly';
     }
@@ -329,7 +418,58 @@ function _qiSetMode(m){if(!_qi)return;_qi.mode=m;_qi.modeSet=true;renderQuickInv
 function _qiLines(){
   if(!_qi)return [];
   const typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0).map(l=>({kind:'line',desc:String(l.desc||'').trim(),amount:Number(l.amount)||0}));
-  return (_qi.mode==='hourly'?_qi.tracked:[]).concat(typed);
+  return (_qi.mode==='hourly'?_qiOnLines():[]).concat(typed);
+}
+// The tracked lines on the days he has checked. More than one day and each
+// line says which day it is, so the customer's copy reads day by day.
+function _qiOnLines(){
+  if(!_qi)return [];
+  const on=_qi.tracked.filter(l=>!(_qi.off&&_qi.off.has(l.day)));
+  const multi=_qiDays(on).length>1;
+  return on.map(l=>multi&&l.day?Object.assign({},l,{desc:_qiDay(l.day)+' · '+l.desc}):l);
+}
+function _qiDayTotal(day){return Math.round(((_qi&&_qi.tracked)||[]).filter(l=>l.day===day).reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
+function _qiDayOpen(day){
+  if(!_qi)return;
+  if(_qi.off.has(day)){_qi.off.delete(day);_qi.open.add(day);}   // opening an unchecked day checks it back in
+  else if(_qi.open.has(day))_qi.open.delete(day);else _qi.open.add(day);
+  renderQuickInvoice();
+}
+function _qiDayToggle(day){
+  if(!_qi)return;
+  if(_qi.off.has(day))_qi.off.delete(day);else _qi.off.add(day);
+  renderQuickInvoice();
+}
+function _qiAllDays(on){
+  if(!_qi)return;
+  _qi.off=on?new Set():new Set(_qiDays(_qi.tracked));
+  renderQuickInvoice();
+}
+// Add somebody to one day with the same hours as whoever worked it longest.
+// Everybody on the business can be added: the crew and the owner.
+function _qiPeople(){
+  const out=[_qiOwnerName()];
+  ((typeof S!=='undefined'&&S.employees)||[]).forEach(e=>{if(e&&e.name&&!out.includes(e.name))out.push(e.name);});
+  return out;
+}
+function _qiAddCrewOpen(day){if(!_qi)return;_qi.addDay=_qi.addDay===day?null:day;renderQuickInvoice();}
+function _qiAddRider(day,name){
+  if(!_qi)return;
+  const lead=_qi.tracked.filter(l=>l.day===day&&l.kind==='time'&&!l.rider).sort((a,b)=>b.mins-a.mins)[0];
+  if(!lead||_qi.tracked.some(l=>l.day===day&&l.who===name))return;
+  _qi.added.push({day,rider:name,lead:lead.who});
+  _qi.tracked.push(_qiRiderLine(day,name,lead.who,lead.mins));
+  _qi.addDay=null;
+  renderQuickInvoice();
+}
+// "Every day": the rider setting, so the next invoice adds him by itself.
+function _qiRideAlways(name,lead){
+  if(typeof S==='undefined'||!S)return;
+  S.qiRiders=Object.assign({},_qiRiders(),{[name]:lead});
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(_qi)_qi.added=_qi.added.filter(x=>x.rider!==name);
+  if(typeof showToast==='function')showToast(name+' rides with '+lead+' on every invoice now','✓');
+  if(_qi)_qiSetBillDrive(_qiBillDrive());
 }
 function _qiTotal(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
 
@@ -337,17 +477,50 @@ function renderQuickInvoice(){
   const host=document.getElementById('qi-page');if(!host||!_qi)return;
   const c=getClientById(_qi.cid)||{};
   const hourly=_qi.mode==='hourly';
-  const tracked=hourly?_qi.tracked.map((l,i)=>{
+  const row=(l,i)=>{
     // The rate sits in the line under the name, small, so the name keeps the
-    // width of the row on a phone.
+    // width of the row on a phone. Hours times rate, so he can see which rate
+    // won (Earl: "which rate wins?").
+    const riderAsk=l.rider&&_qiRiders()[l.who]!==l.rider
+      ?' <button type="button" class="qi-always" onclick="_qiRideAlways(\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',\''+escHtml(l.rider).replace(/'/g,'&#39;')+'\')">Every day</button>':'';
     const sub=l.kind==='time'
-      ?escHtml(l.detail||(_qiMins(l.mins)+' on site'))+' at <span class="qi-rate">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)">/hr</span>'
-      :'Receipt'+(l.date?' · '+escHtml(l.date):'');
+      ?escHtml(l.detail||(_qiMins(l.mins)+' on site'))+' at <span class="qi-rate">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')">/hr</span>'+riderAsk
+      :escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')));
     const name=l.kind==='time'?l.who:l.desc;
     return '<div class="ios-row"><span class="ios-lbl">'+escHtml(name)+'<small>'+sub+'</small></span>'+
       '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+_qiMoney(l.amount)+'</span>'+
       '<button type="button" class="qi-x" aria-label="Leave off" onclick="_qiDropTracked('+i+')">×</button></div>';
-  }).join(''):'';
+  };
+  // ONE CARD A DAY (owner 2026-09-29, "three days at Tagen's, each day we do
+  // something different"): each day with who was there and what it came to,
+  // checked, and one total for every checked day. Uncheck a day to bill it
+  // later; it stays on the list.
+  const dayList=hourly?_qiDays(_qi.tracked):[];
+  const people=_qiPeople();
+  const tracked=dayList.map(day=>{
+    const on=!_qi.off.has(day);
+    const mine=_qi.tracked.map((l,i)=>({l,i})).filter(x=>x.l.day===day);
+    const who=mine.filter(x=>x.l.kind==='time');
+    const hrs=who.length?who.map(x=>x.l.who.split(' ')[0]).join(', '):'Materials only';
+    const canAdd=on&&who.some(x=>!x.l.rider);
+    const addable=people.filter(n=>!mine.some(x=>x.l.who===n));
+    // Folded to one line (Earl 2026-09-29: "three SE screens before the Text
+    // it button"). The circle checks the day in or out; the rest of the line
+    // opens it. One day on the bill opens by itself.
+    const open=on&&(_qi.open.has(day)||dayList.length===1);
+    const mins=who.filter(x=>!x.l.rider).reduce((s2,x)=>s2+x.l.mins,0);
+    return '<div class="ios-group qi-day'+(on?'':' qi-day-off')+(open?' qi-day-open':'')+'" data-day="'+day+'">'+
+      '<div class="ios-row qi-day-hd">'+
+        '<button type="button" class="qi-chk-btn" onclick="_qiDayToggle(\''+day+'\')" aria-pressed="'+on+'" aria-label="Bill '+escHtml(_qiDayLabel(day))+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span></button>'+
+        '<button type="button" class="qi-day-open-btn" onclick="_qiDayOpen(\''+day+'\')" aria-expanded="'+open+'">'+
+          '<span class="ios-lbl"><b>'+escHtml(_qiDayLabel(day))+'</b><small>'+escHtml(hrs+(mins>0?' · '+_qiMins(mins):''))+'</small></span>'+
+          '<span class="ios-fact qi-dt" id="qi-dt-'+day+'">'+_qiMoney(_qiDayTotal(day))+'</span>'+
+          '<span class="ios-chev qi-day-chev" aria-hidden="true">›</span></button></div>'+
+      (open?mine.map(x=>row(x.l,x.i)).join('')+
+        (canAdd&&addable.length?'<button type="button" class="ios-row ios-link" onclick="_qiAddCrewOpen(\''+day+'\')">Add crew</button>'+
+          (_qi.addDay===day?'<div class="qi-pb qi-crew">'+addable.map(n=>'<button type="button" onclick="_qiAddRider(\''+day+'\',\''+escHtml(n).replace(/'/g,'&#39;')+'\')">'+escHtml(n)+'</button>').join('')+'</div>':''):''):'')+
+    '</div>';
+  }).join('');
   const typed=_qi.typed.map((l,i)=>
     '<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Anything else':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
     '<span class="ios-val">$<input type="text" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
@@ -372,32 +545,50 @@ function renderQuickInvoice(){
       (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-h"><span>Work done</span></div><div class="ios-group">'+
         _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
-      (hourly?'<div class="ios-sec"><div class="ios-h"><span>Since the last invoice</span></div><div class="ios-group">'+
-        ((tracked+(_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':''))||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+
-        '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
-          '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label>'+
-      '</div></div>':'')+
+      (hourly?'<div class="ios-sec"><div class="ios-h"><span>'+(dayList.length>1?'Days at this house':'Since the last invoice')+'</span>'+
+          (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
+        (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
+        (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
+        '<div class="ios-group"><label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
+          '<input type="checkbox" class="ios-switch" id="qi-drive" '+(_qiBillDrive()?'checked':'')+' onchange="_qiSetBillDrive(this.checked)"></label></div>'+
+      '</div>':'')+
       '<div class="ios-sec"><div class="ios-h"><span>'+(hourly?'Add a line':'What you did')+'</span></div><div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a line</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
       '</div>'+pbHtml+'</div>'+
       '<div class="ios-sec"><div class="ios-group"><div class="ios-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div></div>'+
-        '<div class="ios-foot">'+(hourly?'Once sent, these hours and receipts are marked billed and the next invoice starts after them.':'Your tracked time and receipts are not on this bill.')+'</div></div>'+
-      '<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Text it to '+escHtml(String(c.name||'customer').split(' ')[0])+'</button>'+
-      '<button type="button" class="ios-btn ios-btn-tint" id="qi-paynow" onclick="qiPayNow()">Pay now</button>'+
+        '<div class="ios-foot">'+(hourly?(dayList.length>1?'The customer gets one invoice with each day listed. Once sent, those days are billed; an unchecked day stays for next time.':'Once sent, these hours and receipts are marked billed and the next invoice starts after them.'):'Your tracked time and receipts are not on this bill.')+'</div></div>'+
+      // Pinned to the bottom of the screen (Earl): Send is never three
+      // screens down on a small phone.
+      '<div class="qi-actions">'+
+      '<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Text it to '+escHtml(String(c.name||'customer'))+' · <span id="qi-send-total">'+_qiMoney(total)+'</span></button>'+
+      '<button type="button" class="ios-btn ios-btn-tint" id="qi-paynow" onclick="qiPayNow()">Take card now</button></div>'+
+      (hourly&&_qi.tracked.some(l=>!_qi.off.has(l.day))?'<button type="button" class="qi-elsewhere" id="qi-elsewhere" onclick="qiBilledElsewhere()">Already billed outside TradeDesk</button>':'')+
     '</div>';
 }
+// A person's rate is one number on the whole invoice: change Jack's on
+// Monday and Tuesday's Jack moves with it.
 function _qiRate(i,v){
   const l=_qi&&_qi.tracked[i];if(!l)return;
-  l.rate=parseFloat(String(v).replace(/[^0-9.]/g,''))||0;
-  l.amount=Math.round(l.mins/60*l.rate*100)/100;
-  const a=document.getElementById('qi-amt-'+i);if(a)a.textContent=_qiMoney(l.amount);
-  const t=document.getElementById('qi-total');if(t)t.textContent=_qiMoney(_qiTotal());
+  const rate=parseFloat(String(v).replace(/[^0-9.]/g,''))||0;
+  _qi.tracked.forEach((x,j)=>{
+    if(x.kind!=='time'||x.who!==l.who)return;
+    x.rate=rate;x.amount=Math.round(x.mins/60*rate*100)/100;
+    const a=document.getElementById('qi-amt-'+j);if(a)a.textContent=_qiMoney(x.amount);
+    if(j!==i){const inp=a&&a.parentElement&&a.parentElement.querySelector('.qi-rate input');if(inp)inp.value=rate||'';}
+  });
+  _qiDays(_qi.tracked).forEach(d=>{const e=document.getElementById('qi-dt-'+d);if(e)e.textContent=_qiMoney(_qiDayTotal(d));});
+  _qiTotalsPaint();
 }
+function _qiRateDone(i){const l=_qi&&_qi.tracked[i];if(l)_qiRememberRate(l.who,l.rate);}
 function _qiTyped(i,k,v){
   const l=_qi&&_qi.typed[i];if(!l)return;
   l[k]=k==='amount'?(String(v).replace(/[^0-9.]/g,'')):v;
-  const t=document.getElementById('qi-total');if(t)t.textContent=_qiMoney(_qiTotal());
+  _qiTotalsPaint();
+}
+function _qiTotalsPaint(){
+  const m=_qiMoney(_qiTotal());
+  ['qi-total','qi-send-total'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=m;});
 }
 function _qiAddLine(){if(!_qi)return;_qi.typed.push({desc:'',amount:''});renderQuickInvoice();}
 function _qiDropTracked(i){if(!_qi)return;_qi.tracked.splice(i,1);renderQuickInvoice();}
@@ -543,14 +734,44 @@ function _qiSave(){
     desc:(hourly?_qi.work:[]).concat(lines.map(l=>l.desc)).join('\n'),lineItems:lines.map(l=>({desc:l.desc,amount:l.amount})),
     qiWork:hourly?_qi.work.slice():[],
     qiMode:_qi.mode,
-    qiTimeThrough:hourly?_qi.through:null,
-    qiExpenseIds:hourly?_qi.tracked.filter(l=>l.kind==='receipt').map(l=>l.expId):[]};
+    // The days it carries, never a through-mark (see _qiBilled).
+    qiTimeThrough:null,
+    qiDays:hourly?_qiOnDays():[],
+    qiExpenseIds:hourly?_qiOnExpIds():[]};
   bids.unshift(bid);
   c.qiMode=_qi.mode;
   saveAll();
   _qi=null;
+  _tbInvalidate();
   goPg('pg-dash');
   return bid;
+}
+function _qiOnDays(){return _qi?_qiDays(_qi.tracked.filter(l=>!_qi.off.has(l.day)&&Number(l.amount)>0)):[];}
+function _qiOnExpIds(){
+  if(!_qi)return [];
+  const out=[];
+  _qi.tracked.filter(l=>l.kind==='receipt'&&!_qi.off.has(l.day)).forEach(l=>(l.expIds||[l.expId]).forEach(id=>out.push(id)));
+  return out;
+}
+// ALREADY BILLED OUTSIDE TRADEDESK (owner 2026-09-29): the checked days were
+// settled some other way (cash on the spot, a paper bill, before he had the
+// app). They come off the list for good and never count as a sale here.
+function qiBilledElsewhere(){
+  if(!_qi)return;
+  const days=_qiDays(_qi.tracked.filter(l=>!_qi.off.has(l.day)));
+  if(!days.length){showToast('Check a day first','✏️');return;}
+  const n=days.length;
+  const go=()=>{
+    const c=getClientById(_qi&&_qi.cid);if(!c||!_qi)return;
+    c.qiElsewhere=(Array.isArray(c.qiElsewhere)?c.qiElsewhere:[]).concat([{addr:_qi.addr||'',days,expIds:_qiOnExpIds(),at:new Date().toISOString()}]);
+    saveAll();
+    _qi=null;
+    _tbInvalidate();
+    goPg('pg-dash');
+    showToast(n===1?'That day is off the list':n+' days are off the list','✓');
+  };
+  if(typeof zConfirm==='function')zConfirm((n===1?'This day was':'These '+n+' days were')+' already billed outside TradeDesk? '+(n===1?'It comes':'They come')+' off the list and never go on an invoice here.',go);
+  else go();
 }
 // Text them the link to pay later.
 function qiSend(){
@@ -565,4 +786,133 @@ function qiPayNow(){
   const bid=_qiSave();if(!bid)return false;
   if(typeof openPayPanel==='function')openPayPanel(bid.id,'final');
   return bid;
+}
+
+// ── READY TO BILL (owner 2026-09-29) ───────────────────────────────────────
+// Owner: "pull hours if there are hours, pull receipts to total up materials
+// but not show them ... another dashboard for invoices then clicking into them
+// opens up the invoice thing we already created." One row per house with
+// unbilled work, oldest first, and a tap opens that house's invoice, already
+// filled in. Same engine as the invoice screen (_qiVisitsFor, _qiUnbilled), so
+// the number on Home is the number on the bill. Earl and the market research
+// both picked one row per job with the days inside it, not a row per day.
+// A house with a proposal job still open is billed from that job, so it is
+// not on this list.
+const _TB_DAYS=180;
+let _tb=null,_tbBusy=false,_tbLast=[];
+function _tbInvalidate(){if(_tb)_tb.stale=true;}
+function _tbCan(){
+  if(typeof _ownerUI==='function')return !!_ownerUI();
+  return !(typeof _isEmployee!=='undefined'&&_isEmployee);
+}
+function _tbOnline(){return typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&!!_supaUser;}
+async function _tbLoad(){
+  if(_tbBusy||typeof _fetchCrewLabor!=='function'||!_tbOnline())return;
+  _tbBusy=true;
+  let lab=null;
+  try{lab=await _fetchCrewLabor(new Date(Date.now()-_TB_DAYS*86400000).toISOString(),{noShop:true});}catch(_e){lab=null;}
+  // A failed read keeps what the card already showed.
+  _tb={at:Date.now(),lab:lab||(_tb&&_tb.lab)||null};
+  _tbBusy=false;
+  _renderToBill();
+}
+function _tbRows(lab){
+  const entries=(lab&&lab.entries)||[],names=(lab&&lab.name)||{};
+  const since=dateKey(new Date(Date.now()-_TB_DAYS*86400000));
+  const all=new Set(),per=[];
+  (clients||[]).forEach(c=>{
+    if(!c||!c.name||c.archived)return;
+    const houses=clientAddresses(c);
+    (houses.length>1?houses.map(h=>h.addr):['']).forEach((addr,hi)=>{
+      const pl=_qiPlaceNames(c,addr);pl.forEach(n=>all.add(n));
+      per.push({c,addr,pl,first:hi===0});
+    });
+  });
+  const byPlace={},byJob={};
+  entries.forEach(e=>{
+    if(!e||typeof e!=='object')return;
+    const seen=new Set();
+    [e.dest_place,e.origin_place].forEach(p=>{const k=String(p||'').trim();if(k&&!seen.has(k)){seen.add(k);(byPlace[k]||(byPlace[k]=[])).push(e);}});
+    if(e.job_id!=null&&e.job_id!=='')(byJob[String(e.job_id)]||(byJob[String(e.job_id)]=[])).push(e);
+  });
+  const withReceipts=new Set(((typeof expenses!=='undefined'&&expenses)||[]).filter(e=>e&&e.client_id!=null&&Number(e.amount)>0).map(e=>String(e.client_id)));
+  const rows=[];
+  per.forEach(({c,addr,pl,first})=>{
+    if(_qiPropJobs(c.id).length)return;          // billed from the proposal's job
+    const set=new Set();
+    pl.forEach(n=>(byPlace[n]||[]).forEach(e=>set.add(e)));
+    _qiJobsAt(c.id,addr).forEach(j=>(byJob[String(j.id)]||[]).forEach(e=>set.add(e)));
+    if(!set.size&&!(first&&withReceipts.has(String(c.id))))return;
+    const u=_qiUnbilled(c.id,_qiVisitsFor(c,[...set],names,addr,all),addr);
+    // Receipts ride on the first house only, and only inside the window, so a
+    // two-house customer's Home Depot run is not counted twice and a receipt
+    // from years back does not surface as work to bill.
+    const lines=u.lines.filter(l=>l.kind!=='receipt'||(first&&l.day>=since));
+    if(!lines.some(l=>l.kind==='time'))return;   // receipts alone are not a visit
+    const days=_qiDays(lines);
+    const mins=lines.filter(l=>l.kind==='time'&&!l.rider).reduce((s,l)=>s+l.mins,0);
+    const total=Math.round(lines.reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;
+    rows.push({cid:c.id,name:c.name,addr:addr||c.addr||'',pick:addr,days,mins,total,oldest:days[0]});
+  });
+  return rows.sort((a,b)=>String(a.oldest).localeCompare(String(b.oldest))||String(a.name).localeCompare(String(b.name)));
+}
+function _tbSub(r){
+  const st=String(r.addr||'').split(',')[0].trim();
+  const n=r.days.length;
+  const when=_qiDay(r.oldest)+' · '+(n>1?n+' days':_qiMins(r.mins));
+  // The days first, so a long street is what gets cut short, not the count.
+  return when+(st?' · '+st:'');
+}
+// How long the oldest unbilled day has waited. Short, so it fits beside the
+// total on an iPhone SE.
+function _tbAge(day){
+  const d=Math.round((Date.parse(todayKey()+'T12:00:00')-Date.parse(String(day)+'T12:00:00'))/86400000);
+  return d<=0?'today':d===1?'1 day':d+' days';
+}
+// ONE LINE UNDER THE TILES (owner 2026-09-29, "like #3 under the tiles but
+// gotta make it so people will click it"). A money row that reads like a
+// button: an icon tile, what is waiting and for how long, the total, and a
+// chevron. Orange once the oldest day is two weeks old. One house opens its
+// invoice; more than one folds the houses open underneath.
+let _tbExpanded=false;
+function _tbTap(){
+  if(_tbLast.length===1)return _tbOpen(0);
+  _tbExpanded=!_tbExpanded;
+  _renderToBill();
+}
+function _renderToBill(){
+  const el=document.getElementById('dash-to-bill');if(!el)return;
+  const hide=()=>{el.innerHTML='';el.style.display='none';};
+  if(!_tbCan()||!_tbOnline())return hide();
+  if(!_tb){
+    el.style.display='';
+    el.innerHTML='<div class="ios-sec"><div class="ios-group"><div class="ios-row tb-sum" style="display:block">'+(typeof _tdSkelRows==='function'?_tdSkelRows(1,14):'')+'</div></div></div>';
+    _tbLoad();return;
+  }
+  if(_tb.stale||Date.now()-_tb.at>5*60000){_tb.stale=false;_tbLoad();}
+  const rows=_tb.lab?_tbRows(_tb.lab):[];
+  _tbLast=rows;
+  if(!rows.length)return hide();
+  const old=dateKey(new Date(Date.now()-14*86400000));
+  const late=rows[0].oldest<old;
+  const sum=rows.reduce((s,r)=>s+r.total,0);
+  const open=_tbExpanded&&rows.length>1;
+  const what=rows.length===1?rows[0].name:rows.length+' houses';
+  el.style.display='';
+  el.innerHTML='<div class="ios-sec"><div class="ios-group">'+
+    '<button type="button" class="ios-row tb-sum'+(late?' late':'')+(open?'':' nosep')+'" onclick="_tbTap()" aria-expanded="'+open+'">'+
+      '<span class="tb-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M13 11.5c-.5-.6-1.3-.9-2-.9-1.1 0-2 .6-2 1.5 0 2 4 1.2 4 3.2 0 .9-.9 1.5-2 1.5-.8 0-1.6-.3-2.1-.9M11 9.5v1.1M11 17.3v1.1"/></svg></span>'+
+      '<span class="ios-lbl"><b>Ready to bill</b><small class="tb-age">'+escHtml(what+' · '+_tbAge(rows[0].oldest))+'</small></span>'+
+      '<span class="ios-fact tb-total">'+escHtml('$'+Math.round(sum).toLocaleString('en-US'))+'</span>'+
+      '<span class="ios-chev tb-chev-sum'+(open?' open':'')+'" aria-hidden="true">›</span></button>'+
+    '<div class="tb-list'+(open?' open':'')+'" style="max-height:'+(open?rows.length*72+8:0)+'px"'+(open?'':' inert')+'>'+rows.map((r,i)=>
+      '<button type="button" class="ios-row tb-row" onclick="_tbOpen('+i+')">'+
+        '<span class="tb-dot'+(r.oldest<old?' old':'')+'" aria-hidden="true"></span>'+
+        '<span class="ios-lbl"><b class="tb-name">'+escHtml(r.name)+'</b><small class="tb-sub">'+escHtml(_tbSub(r))+'</small></span>'+
+        '<span class="ios-fact tb-amt">'+escHtml(_qiMoney(r.total).replace(/\.00$/,''))+'</span><span class="ios-chev" aria-hidden="true">›</span></button>').join('')+
+    '</div></div></div>';
+}
+function _tbOpen(i){
+  const r=_tbLast[i];if(!r)return;
+  openQuickInvoice(r.cid,r.pick||'');
 }
