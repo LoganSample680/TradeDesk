@@ -208,6 +208,8 @@ test.describe('type it or talk to Tim, in every trade', () => {
 
   test('the answer field is big enough for a thumb and does not zoom the page', async () => {
     await tmMissed('pull the old water heater and set a tankless');
+    // Tim's list folds to one line (owner 2026-09-29); Review opens it.
+    await page.locator('#tm-scope-wrap .ios-tim-h .who').tap();
     const r = await page.evaluate(() => {
       const f = document.getElementById('tim-ask-detail-model');
       const b = f.getBoundingClientRect();
