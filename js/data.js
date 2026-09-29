@@ -564,6 +564,105 @@ function setPersonBillRate(key,rate){
   if(typeof _settingsChanged==='function')_settingsChanged();
   return true;
 }
+// THE MATERIALS BOOK (Jack 2026-09-29: "Does it build a price sheet for
+// materials?"; owner: "receipts should build a materials book you can pull
+// from ... grabs the recent price ... most used thing at the top so we make
+// sure we got enough on the truck ... all this transitions over to other
+// trades"). Every scanned receipt's parts land here: the newest price wins,
+// with where and when, and how many he has bought over how many trips.
+// One book for every trade: a part is a part.
+// Kept apart from S.priceBook on purpose: the price book is what he CHARGES
+// and feeds every estimate; this is what he PAID. A receipt writing a sell
+// price would quietly bill parts at cost. A screen that wants a price for a
+// part the price book has never seen may start from this cost.
+// ONE LINE PER PART, WHATEVER STORE SOLD IT (Earl 2026-09-29): Ferguson prints
+// "SB 1/2 CPLG", Menards "SHARKBITE 1/2IN COUPLING", and to him both are the
+// same coupling. partCanon spells out the shorthand receipts use and drops the
+// SKU, so both land as "SharkBite 1/2 in coupling"; partCostLearn then treats
+// any name with the same sizes and nearly the same words as that one line.
+const _PART_ABBR={
+  cplg:'coupling',cpl:'coupling',cplng:'coupling',ell:'elbow',elb:'elbow',el:'elbow',adpt:'adapter',adptr:'adapter',adapt:'adapter',
+  vlv:'valve',ftg:'fitting',ftgs:'fittings',fem:'female',fpt:'FPT',mpt:'MPT',fip:'FIP',mip:'MIP',swt:'sweat',cu:'copper',cop:'copper',
+  brs:'brass',galv:'galvanized',nip:'nipple',bush:'bushing',bshg:'bushing',stl:'steel',ss:'stainless',wht:'white',blk:'black',
+  gal:'gallon',qt:'quart',pk:'pack',pkg:'pack',ct:'count',rl:'roll',bx:'box',asst:'assorted',sb:'SharkBite',shrkbt:'SharkBite',
+  recep:'receptacle',rcpt:'receptacle',rcp:'receptacle',outl:'outlet',sw:'switch',swch:'switch',wr:'wire',cbl:'cable',cndt:'conduit',
+  conn:'connector',cnctr:'connector',strp:'strap',brkr:'breaker',bkr:'breaker',scr:'screw',scrw:'screws',drywl:'drywall',dw:'drywall',
+  sht:'sheet',shts:'sheets',pnl:'panel',clg:'ceiling',flr:'floor',lt:'light',ltg:'lighting',fxtr:'fixture',fix:'fixture',
+  trp:'trap',tlt:'toilet',wtr:'water',htr:'heater',sup:'supply',supl:'supply',ln:'line',lns:'lines',ang:'angle',stp:'stop',
+  thrd:'threaded',thd:'threaded',plst:'plastic',tbg:'tubing',tub:'tubing',hd:'heavy duty',
+};
+function partCanon(desc){
+  let t=String(desc||'').replace(/[“”"]/g,' in ').replace(/\s+/g,' ').trim();
+  const letters=t.replace(/[^A-Za-z]/g,'');
+  const shout=letters.length>2&&letters.replace(/[^A-Z]/g,'').length/letters.length>0.7;
+  // SKUs, UPCs and item numbers at either end, and a trailing tax flag.
+  t=t.replace(/^(?:#?\d{5,}\s+)+/,'').replace(/(?:\s+#?\d{5,})+$/,'').replace(/\s+[A-Z]$/,'');
+  t=t.replace(/(\d)\s*(?:in|inch)\b\.?/gi,'$1 in').replace(/(\d)\s*(?:ft|foot|feet)\b\.?/gi,'$1 ft');
+  const words=t.split(' ').filter(Boolean).map(w=>{
+    const k=w.toLowerCase().replace(/[^a-z]/g,'');
+    if(k&&_PART_ABBR[k]&&/^[a-z.]+$/i.test(w))return _PART_ABBR[k];
+    return w;
+  });
+  t=words.join(' ').replace(/\s+/g,' ').trim();
+  // Receipts shout; a person reads sentence case. Codes and sizes stay as printed.
+  if(shout)t=t.toLowerCase().replace(/\b(pex|pvc|cpvc|abs|emt|gfci|afci|led|fpt|mpt|fip|mip|t&p|nm-b|romex|ptfe|sharkbite)\b/gi,m=>m.toLowerCase()==='sharkbite'?'SharkBite':m.toUpperCase());
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+function _partCostKey(desc){return partCanon(desc).toLowerCase().replace(/[^a-z0-9/]+/g,' ').trim();}
+// Same part: the same sizes (1/2 is never 3/4) and nearly the same words.
+function _partSame(a,b){
+  const sz=k=>(k.match(/\d+(?:\/\d+)?/g)||[]).sort().join(',');
+  if(sz(a)!==sz(b))return false;
+  const W=k=>new Set(k.replace(/\d+(?:\/\d+)?/g,' ').split(/\s+/).filter(w=>w.length>1&&!['in','ft','the','and','for','with','of'].includes(w)));
+  const A=W(a),B=W(b);if(!A.size||!B.size)return false;
+  let hit=0;A.forEach(w=>{if(B.has(w))hit++;});
+  return hit/Math.min(A.size,B.size)>=0.75&&hit/(A.size+B.size-hit)>=0.5;
+}
+function partCostLearn(desc,price,vendor,date,qty){
+  const k=_partCostKey(desc);const p=Number(price);
+  if(!k||k.length<3||!(p>0)||typeof S==='undefined'||!S)return false;
+  if(!S.partCosts||typeof S.partCosts!=='object'||Array.isArray(S.partCosts))S.partCosts={};
+  // Already in the book under another store's spelling: that line.
+  let key=k;
+  if(!S.partCosts[key]){const hit=Object.keys(S.partCosts).find(x=>_partSame(x,k));if(hit)key=hit;}
+  const was=S.partCosts[key]||null;
+  const d=String(date||'');
+  // An older receipt scanned late adds to the count but never overwrites a
+  // newer price.
+  const newer=!was||!was.at||!d||d>=String(was.at);
+  const q=Number(qty)>0?Number(qty):1;
+  S.partCosts[key]={
+    desc:was&&was.desc?was.desc:partCanon(desc).slice(0,80),
+    cost:newer?Math.round(p*100)/100:was.cost,
+    vendor:newer?String(vendor||'').slice(0,60):was.vendor,
+    at:newer?d:was.at,
+    n:((was&&was.n)||0)+1,
+    qty:Math.round((((was&&was.qty)||0)+q)*100)/100,
+  };
+  // Bounded: once there are more than 600 parts, the ones bought least and
+  // longest ago go first.
+  const keys=Object.keys(S.partCosts);
+  if(keys.length>600){
+    keys.sort((a,b)=>((S.partCosts[a].qty||0)-(S.partCosts[b].qty||0))||String(S.partCosts[a].at).localeCompare(String(S.partCosts[b].at)));
+    keys.slice(0,keys.length-600).forEach(x=>delete S.partCosts[x]);
+  }
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
+}
+function partCostFor(desc){
+  const k=_partCostKey(desc);
+  const pc=(typeof S!=='undefined'&&S&&S.partCosts&&typeof S.partCosts==='object')?S.partCosts:null;
+  if(!k||!pc)return null;
+  if(pc[k])return pc[k];
+  const hit=Object.keys(pc).find(x=>_partSame(x,k));
+  return hit?pc[hit]:null;
+}
+// Most bought first (what has to be on the truck), then most trips, then newest.
+function materialsBook(){
+  const pc=(typeof S!=='undefined'&&S&&S.partCosts&&typeof S.partCosts==='object')?S.partCosts:{};
+  return Object.keys(pc).map(k=>pc[k]).filter(r=>r&&r.desc&&Number(r.cost)>0)
+    .sort((a,b)=>((Number(b.qty)||0)-(Number(a.qty)||0))||((Number(b.n)||0)-(Number(a.n)||0))||String(b.at||'').localeCompare(String(a.at||'')));
+}
 // Every address this client has: primary + saved extras. {label, addr, key}.
 function clientAddresses(client){
   const out=[];if(!client)return out;const seen={};
