@@ -1319,7 +1319,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew,sugLabel
         escHtml(sugLabel||(suggestions[0]?'Today / Recent':'Suggestions'))+
       '</div>'+
       suggestions.map((s,i)=>
-        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
+        '<button data-idx="'+i+'" data-action="'+actionType+'"'+(s.clientId!=null?' data-cid="'+escHtml(String(s.clientId))+'" data-subtail="'+escHtml(s.subTail||'')+'"':'')+(s.dup?' data-dup="1"':'')+' data-q="'+escHtml((s.find||((s.label||'')+' '+(s.sub||''))).toLowerCase())+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:'+(s.dup?'none':'flex')+';align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
@@ -1378,7 +1378,9 @@ function onQPSearch(el){
     let shown=0;
     const qd=q.replace(/\D/g,'');
     rows.forEach(b=>{
-      const on=!q||b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd));
+      // data-dup: listed higher up already (the invoice's Ready to bill rows),
+      // so it only shows once he is searching.
+      const on=!q?!b.dataset.dup:(b.dataset.q.includes(q)||(qd.length>=3&&b.dataset.q.replace(/\D/g,'').includes(qd)));
       // 'flex', not '': the row's own inline style is what makes it a row.
       b.style.display=on?'flex':'none';if(on)shown++;
       // A customer with more than one house: name the house that matched.
@@ -1425,7 +1427,7 @@ function pickQuickClient(btn,actionType){
   const s=suggestions[idx];
   if(!s)return;
   overlay.remove();
-  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||undefined);
+  executeQuickAction(actionType,s.clientId,s.bidId||null,s.jobId||null,btn.dataset.addr||(s.addr!=null?s.addr:undefined));
 }
 
 function pickQPClient(cid,actionType){

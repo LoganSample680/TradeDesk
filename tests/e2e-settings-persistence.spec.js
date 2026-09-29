@@ -39,7 +39,6 @@ const FIELDS = [
   { id: 'set-review-url',         key: 'reviewUrl',        v1: 'https://g.page/r/bobspaint', v2: 'https://g.page/r/samplepaint',s1: 'https://g.page/r/bobspaint', s2: 'https://g.page/r/samplepaint' },
   { id: 'set-subdomain',          key: 'subdomain',        v1: 'bobspainting',               v2: 'samplepainting',              s1: 'bobspainting',               s2: 'samplepainting' },
   { id: 'set-bwebsite',           key: 'bwebsite',         v1: 'https://bobspainting.com',   v2: 'https://samplepainting.com',  s1: 'https://bobspainting.com',   s2: 'https://samplepainting.com' },
-  { id: 'set-labor-rate',         key: 'laborRate',        v1: '55',                         v2: '60',                          s1: 55,                           s2: 60 },
   { id: 'set-finance-charge-pct', key: 'financeChargePct', v1: '2.5',                        v2: '1.8',                         s1: 2.5,                          s2: 1.8 },
   { id: 'set-custom-terms',       key: 'customTerms',      v1: 'E2E custom proposal terms',  v2: 'E2E updated proposal terms',  s1: 'E2E custom proposal terms',  s2: 'E2E updated proposal terms' },
   { id: 'set-co-terms',           key: 'coTerms',          v1: 'E2E change order terms',     v2: 'E2E updated CO terms',        s1: 'E2E change order terms',     s2: 'E2E updated CO terms' },
