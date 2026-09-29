@@ -137,7 +137,7 @@ test.describe('Quick invoice', () => {
     expect(r.active).toBe('pg-qi');
     expect(r.seg).toBe('Hourly');
     expect(r.text).toContain('Jack Sample');
-    expect(r.text).toContain('6h 30m on site at');  // hours at the rate (Earl: "which rate wins?")
+    expect(r.text).toContain('From the phone: 6h 30m on site');  // where the hours came from, in words (owner 2026-09-29)
     expect(r.text).toContain('$552.50');           // 6.5h x $85
     expect(r.text).toContain('$455.00');           // owner at the labor rate, 6.5h x $70
     expect(r.text).toContain('Ferguson');
@@ -229,7 +229,7 @@ test.describe('Quick invoice', () => {
     });
     expect(r.off).toEqual([{ who: 'Mike Sample', mins: 240, detail: '4h on site' }]);
     expect(r.offText).toContain('Bill drive time');
-    expect(r.offText).toContain('4h on site at');
+    expect(r.offText).toContain('From the phone: 4h on site');
     expect(r.offText).not.toMatch(/shop/i);
     // Only the first drive there counts by itself (owner 2026-09-29: "the
     // first drive there, nothing back"): Shop to John Doe. The leg leaving
