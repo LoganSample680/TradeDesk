@@ -57,14 +57,15 @@ test.describe('T&M in three steps', () => {
       title: document.getElementById('tm-step-2').textContent,
     }));
     expect(r.chips).toEqual(['Logan', 'Jack', 'John']);
-    expect(r.title).toContain("Who's going");
+    // One set of steps on every document (owner 2026-09-29, js/doc-steps.js).
+    expect(r.title).toContain('Time');
   });
 
   test('a man working alone gets no chips, just his rate', async () => {
     await open({ solo: true });
     expect(await page.evaluate(() => document.getElementById('tm-who').innerHTML)).toBe('');
     expect(await shown('#tm-rate-row')).toBe(true);
-    expect(await page.evaluate(() => document.getElementById('tm-step-2').textContent)).toContain('Your rate');
+    expect(await page.evaluate(() => document.getElementById('tm-step-2').textContent)).toContain('Time');
   });
 
   test('picking the crew sets the head count and the hour, and hides both old fields', async () => {
@@ -155,7 +156,7 @@ test.describe('T&M in three steps', () => {
   // ── 3 Getting paid ────────────────────────────────────────────────────────
   test('Getting paid is one filled-in line until he taps it', async () => {
     await open();
-    expect(await page.evaluate(() => document.getElementById('tm-step-3').textContent)).toContain('Getting paid');
+    expect(await page.evaluate(() => document.getElementById('tm-step-4').textContent)).toContain('Review');
     const sum = await page.evaluate(() => document.getElementById('tm-pay-sum').textContent);
     expect(sum).toContain('No deposit, bills weekly');
     expect(await shown('#tm-dep-row')).toBe(false);
@@ -218,6 +219,33 @@ test.describe('T&M in three steps', () => {
       right: Math.max(...[...document.querySelectorAll('#tm-who .tm-who-chip, #tm-who .qi-rate')].map(e => e.getBoundingClientRect().right)) }));
     expect(r.sw).toBeLessThanOrEqual(r.w + 1);
     expect(r.right).toBeLessThanOrEqual(r.w);
+  });
+
+  test('one set of steps on every document: T&M, Build Your Own and the invoice read the same names from one place', async () => {
+    await open({ say: 'Set a tankless' });
+    const r = await page.evaluate(async () => {
+      const tm = [1, 2, 3, 4].map(n => document.querySelector('#tm-step-' + n + ' .t').textContent);
+      clients.push({ id: 92002, name: 'Dana Pell', addr: '9 Oak St, Topeka, KS 66603' });
+      openQuickInvoice(92002); await new Promise(r => setTimeout(r, 40));
+      const qi = [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent);
+      return { tm, qi, names: Object.values(DOC_STEP), shared: typeof docStepHead === 'function' && typeof docStepHtml === 'function' };
+    });
+    expect(r.tm).toEqual(['The work', 'Time', 'Materials', 'Review']);
+    expect(r.names).toEqual(['The work', 'Time', 'Materials', 'Review']);
+    expect(r.shared).toBe(true);
+    // An invoice with nothing tracked is a set price: The work, What you did, Review.
+    expect(r.qi[0]).toBe('The work');
+    expect(r.qi[r.qi.length - 1]).toBe('Review');
+  });
+
+  test('Materials is optional on T&M: a row turns it on, then the row goes away', async () => {
+    await open({ say: 'Set a tankless' });
+    const before = await shown('#tm-mat-add');
+    await page.locator('#tm-mat-add button').click();
+    const r = await page.evaluate(() => ({ on: _tmLayers.has('mat'), state: document.getElementById('tm-step-3').getAttribute('data-state') }));
+    expect(before).toBe(true);
+    expect(r).toEqual({ on: true, state: 'done' });
+    expect(await shown('#tm-mat-add')).toBe(false);
   });
 
   test('no console errors, T&M three steps', async () => {

@@ -247,7 +247,8 @@ test.describe('the T&M screen, as an iPhone app', () => {
     const s = await steps();
     expect(s.map(x => x.state)).toEqual(['now', 'todo', 'todo']);
     // Nothing beside the heading: the box under it already says what to do.
-    expect(s[0].text).toBe('1The job');
+    // Renamed 2026-09-29 (§10.4): every document shares one set of steps (js/doc-steps.js).
+    expect(s[0].text).toBe('1The work');
     expect(s[2].buttons).toEqual(['Build the steps']);
   });
 
