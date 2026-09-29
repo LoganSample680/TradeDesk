@@ -139,7 +139,7 @@ test.describe('Quick invoice', () => {
     expect(r.text).toContain('$455.00');           // owner at the labor rate, 6.5h x $70
     expect(r.text).toContain('Ferguson');
     expect(r.total).toBe('$1,307.50');
-    expect(r.send).toBe('Text it to John Doe · $1,307.50');  // the total rides on the pinned button   // full name: "John" read like his crewman (Earl)
+    expect(r.send).toBe('Send it · $1,307.50');  // the total rides on the pinned button; the customer's full name is the page title
   });
 
   // The tracker writes a visit as job_id null + dest_place "Name (street)"
@@ -149,6 +149,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(async () => {
       window._jobTimeEntriesByJob = {};
+      S.qiBillDrive = false;   // drive time is on by default now; this test is about visits
       clients.find(c => c.id === 901).extraAddresses = [{ addr: '9 Lake Rd, Springfield, IL', label: 'Rental' }];
       const H = 3600e3, t = Date.parse('2026-09-22T13:00:00Z');
       const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client', arrived_at: new Date(t).toISOString(), departed_at: new Date(t + 4 * H).toISOString(), minutes: 240 }, o);
@@ -191,7 +192,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(async () => {
       window._jobTimeEntriesByJob = {};
-      delete S.qiBillDrive;
+      S.qiBillDrive = false;
       const H = 3600e3, M = 60e3, t = Date.parse('2026-09-22T13:00:00Z');
       const at = (o, mins) => ({ arrived_at: new Date(t + o).toISOString(), departed_at: new Date(t + o + mins * M).toISOString(), minutes: mins });
       const row = (o) => Object.assign({ job_id: null, employee_user_id: 'boss-uid', source: 'client' }, o);
@@ -227,7 +228,10 @@ test.describe('Quick invoice', () => {
     expect(r.offText).toContain('Bill drive time');
     expect(r.offText).toContain('4h on site at');
     expect(r.offText).not.toMatch(/shop/i);
-    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 260, detail: '4h on site, 20m driving', amount: 303.33 }]);
+    // Only the first drive there counts by itself (owner 2026-09-29: "the
+    // first drive there, nothing back"): Shop to John Doe. The leg leaving
+    // for Mary Smith waits in Add time.
+    expect(r.on).toEqual([{ who: 'Mike Sample', mins: 250, detail: '4h on site, 10m driving', amount: 291.67 }]);
     expect(r.checked).toBe(true);
     expect(r.setting).toBe(true);
     expect(r.back).toEqual([240]);

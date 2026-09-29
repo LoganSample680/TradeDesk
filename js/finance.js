@@ -3289,11 +3289,16 @@ async function _fetchCrewLabor(sinceISO,opts){
   try{
     let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
+    // until: one stretch of days only (the invoice's "Add time" reads the
+    // days on the bill, not everything since then).
+    const until=opts&&opts.untilISO;
+    if(until)q=q.lt('arrived_at',until);
     if(onlyOr)q=q.or(onlyOr);
     let sq=null;
     if(!(opts&&opts.noShop)){
       sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
       if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
+      if(until)sq=sq.lt('arrived_at',until);
     }
     const [tmR,teR,seR]=await Promise.all([
       _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid),

@@ -164,9 +164,9 @@ test.describe('Ready to bill', () => {
     expect(r.opened.exp).toBe('true');
     expect(r.off).toBe(true);
     expect(r.reopened, 'opening a day left off checks it back in').toEqual({ off: false, open: true });
-    expect(r.pos).toBe('sticky');
+    expect(r.pos, 'the T&M estimate\'s bar, pinned to the screen').toBe('fixed');
     expect(r.onScreen, 'Send is on screen before any scrolling on an SE').toBe(true);
-    expect(r.send).toBe('Text it to Tagen Miller · $1,048.50');
+    expect(r.send).toBe('Send it · $1,048.50');
   });
 
   // Earl 2026-09-29: "one way in". The Invoice button lists the Ready to bill
@@ -258,6 +258,44 @@ test.describe('Ready to bill', () => {
     expect(r.left).toEqual(['2026-09-24']);
     // Tagen's oldest open day is now Sep 24, so Mary's Sep 23 goes first.
     expect(r.names).toEqual(['Mary Smith', 'Tagen Miller']);
+  });
+
+  test('swipe a day left and tap Already billed: only that day comes off, its receipts with it, and the bill stays open', async ({ page }) => {
+    await boot(page, 390);
+    await open(page, 701);
+    await page.evaluate(() => { window.zConfirm = (msg, yes) => { window._rtbMsg = msg; yes(); }; });
+    const hd = page.locator('#qi-page .qi-day[data-day="2026-09-22"] .qi-day-hd');
+    const box = await hd.boundingBox();
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 80, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.move(box.x + box.width - 140, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.locator('#qi-page .qi-day[data-day="2026-09-22"] .ios-swipe')).toHaveClass(/open/);
+    await page.locator('#qi-page .qi-day[data-day="2026-09-22"] .qi-billed').click();
+    const r = await page.evaluate(() => {
+      const c = getClientById(701);
+      return { msg: window._rtbMsg, elsewhere: c.qiElsewhere, page: document.querySelector('.pg.active').id,
+        days: [...document.querySelectorAll('#qi-page .qi-day[data-day]')].map(d => d.dataset.day), total: _qiTotal() };
+    });
+    expect(r.msg).toContain('This day was already billed outside TradeDesk?');
+    expect(r.elsewhere).toHaveLength(1);
+    expect(r.elsewhere[0].days).toEqual(['2026-09-22']);
+    expect(r.elsewhere[0].expIds).toEqual(['x1', 'x2']);
+    expect(r.page).toBe('pg-qi');
+    expect(r.days).toEqual(['2026-09-23', '2026-09-24']);
+    expect(r.total).toBe(412.5);                                // 5.5 hrs at $75, no receipts left
+  });
+
+  test('swiping the last day off goes home, nothing is left to bill', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      window.zConfirm = (msg, yes) => yes();
+      openQuickInvoice(702); await new Promise(r => setTimeout(r, 30));
+      qiBilledElsewhere('2026-09-23');
+      return { page: document.querySelector('.pg.active').id, qi: _qi, days: getClientById(702).qiElsewhere[0].days };
+    });
+    expect(r).toEqual({ page: 'pg-dash', qi: null, days: ['2026-09-23'] });
   });
 
   test('riders: John has no app and rides with Jack, so each of Jack\'s days bills John too at his own rate; a day John tracked himself uses his own hours', async ({ page }) => {
@@ -716,18 +754,188 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.toTeam).toBe(true);
   });
 
-  test('Preview sits in the pinned bar with Send and opens the customer copy; Save is top right', async ({ page }) => {
-    await boot(page);
+  // Owner 2026-09-29: "rate should go on the person right?" The You / Everyone
+  // else box read as two more people; each rate now sits on its own row.
+  test('each person carries their own bill rate on their Team row; the default is one quiet line', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      goPg('pg-team'); renderTeam();
+      const list = document.getElementById('team-page-list');
+      const jack = document.getElementById('team-bill-0');
+      const before = jack.value;
+      jack.value = '80'; jack.dispatchEvent(new Event('change'));
+      const ownerRow = document.getElementById('team-owner-rate').closest('div[style]').parentElement.textContent;
+      return { before, jackRate: _qiRateFor('Jack Sample'), stored: S.employees[0].billRate, ownerRow,
+        oldBox: /What you bill an hour|Everyone else/.test(list.textContent),
+        defaultLine: document.getElementById('team-rates').textContent,
+        bleed: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(r.before).toBe('75');
+    expect(r.stored).toBe(80);
+    expect(r.jackRate, 'the invoice reads the rate set on his row').toBe(80);
+    expect(r.ownerRow).toContain('You');
+    expect(r.oldBox, 'no separate You / Everyone else box').toBe(false);
+    expect(r.defaultLine).toContain('Anyone without a rate bills');
+    expect(r.bleed).toBeLessThanOrEqual(1);
+  });
+
+  // Owner 2026-09-29: "streamline how T&M proposals look so invoices look the
+  // exact same ... what do we call the payment step in the other things?"
+  test('same top and bar as the T&M estimate: Back, Invoice, Save; the customer large; Tim, Collect, Send it; See what they get under the page', async ({ page }) => {
+    await boot(page, 390);
     await ks(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
-      const row = document.querySelector('#qi-page .qi-act-row');
+      const nav = document.querySelector('#qi-page .ios-nav');
+      const bar = document.getElementById('qi-dock');
+      const out = {
+        nav: [...nav.querySelectorAll('button')].map(b => b.textContent.trim()), navTitle: nav.querySelector('.ios-navtitle').textContent,
+        title: document.querySelector('#qi-page .ios-title').textContent, sub: document.querySelector('#qi-page .ios-sub').textContent,
+        bar: [...bar.querySelectorAll('.ios-btn')].map(b => b.id), tim: !!bar.querySelector('.tm-dock-tim'),
+        appBars: ['mobile-topbar', 'mobile-tabbar'].map(id => { const e = document.getElementById(id); return e ? getComputedStyle(e).display : 'none'; }),
+        collect: document.getElementById('qi-paynow').textContent, see: document.getElementById('qi-preview').textContent,
+        bleed: document.documentElement.scrollWidth - innerWidth,
+      };
       document.getElementById('qi-preview').click();
-      const ov = document.getElementById('_prop-preview-ov');
-      const bar = document.querySelector('#qi-page .qi-actions');
-      return { inRow: !!row.querySelector('#qi-preview') && !!bar.querySelector('#qi-send'), preview: !!ov, save: document.querySelector('#qi-page .ios-nav .ios-navbtn.bold').textContent };
+      out.preview = !!document.getElementById('_prop-preview-ov');
+      return out;
     });
-    expect(r).toEqual({ inRow: true, preview: true, save: 'Save' });
+    expect(r.nav).toEqual(['Back', 'Save']);
+    expect(r.navTitle).toBe('Invoice');
+    expect(r.title).toBe('Tagen Miller');
+    expect(r.sub).toMatch(/^INV-\d{6} · 2210 Birch Ln$/);
+    expect(r.bar).toEqual(['qi-paynow', 'qi-send']);
+    expect(r.tim).toBe(true);
+    expect(r.appBars, 'full screen while he works, like the estimate').toEqual(['none', 'none']);
+    expect(r.collect, 'the word every screen uses for the Get paid panel').toBe('Collect');
+    expect(r.see).toBe('See what they get');
+    expect(r.preview).toBe(true);
+    expect(r.bleed).toBeLessThanOrEqual(1);
     assertNoErrors(page, 'invoice copy');
+  });
+});
+
+// ── Add time from the day (Jack 2026-09-29, the Tagen Burnett bid) ─────────
+// Owner's rules: time on site and the first drive there count by themselves;
+// a supply run that leaves his house and comes straight back counts too
+// (labeled, one tap takes it off); everything else from that day waits in
+// Add time, checked already when he was the only customer that day.
+test.describe('Invoice: add time from the day', () => {
+  const day = async (page, opts) => page.evaluate((opts) => {
+    getClientById(701).addr = '2210 Birch Ln, Topeka, KS 66615';
+    const T = (h, m) => '2026-09-25T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00.000Z';
+    const r = (id, src, from, to, a, z, mins) => ({ id, job_id: null, employee_user_id: 'jack-uid', source: src, origin_place: from, dest_place: to, arrived_at: a, departed_at: z, minutes: mins });
+    const H = 'Tagen Miller (2210 Birch Ln)';
+    const entries = [
+      r(101, 'drive', 'Shop', H, T(13, 0), T(13, 20), 20),
+      r(102, 'client', null, H, T(13, 20), T(15, 20), 120),
+      r(103, 'drive', H, 'Ferguson', T(15, 20), T(15, 35), 15),
+      r(104, 'place', null, 'Ferguson', T(15, 35), T(15, 55), 20),
+      r(105, 'drive', 'Ferguson', H, T(15, 55), T(16, 10), 15),
+      r(106, 'client', null, H, T(16, 10), T(18, 10), 120),
+      r(107, 'drive', H, 'Shop', T(18, 10), T(18, 30), 20),
+    ];
+    if (opts && opts.second) entries.push(r(108, 'client', null, 'Mary Smith (77 Lakeview Dr)', T(19, 0), T(20, 0), 60));
+    window._rtbLab = { name: { 'jack-uid': 'Jack Sample' }, entries, shopEntries: [{ id: 201, employee_user_id: 'jack-uid', arrived_at: T(18, 30), departed_at: T(19, 0), minutes: 30 }] };
+    expenses.splice(0, expenses.length);
+  }, opts);
+  const openIt = (page) => page.evaluate(async () => { openQuickInvoice(701); await new Promise(r => setTimeout(r, 60)); _qi.open.add('2026-09-25'); renderQuickInvoice(); });
+  const jack = () => _qi.tracked.filter(l => l.who === 'Jack Sample').map(l => ({ mins: l.mins, extra: l.extra || null }));
+
+  test('on site and the first drive there count by themselves; the supply run between two visits counts too, labeled', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await openIt(page);
+    const r = await page.evaluate((jack) => {
+      const f = new Function('return (' + jack + ')()');
+      return { lines: f(), text: document.getElementById('qi-page').textContent, total: _qiTotal() };
+    }, jack.toString());
+    expect(r.lines).toEqual([{ mins: 260, extra: null }, { mins: 15, extra: 'e103' }, { mins: 20, extra: 'e104' }, { mins: 15, extra: 'e105' }]);
+    expect(r.text).toContain('Ferguson · 20m, between visits');
+    expect(r.total).toBe(387.5);                               // 310 minutes at $75
+  });
+
+  test('Add time lists the rest of the day; he was the only customer, so opening it checks them and they count', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await openIt(page);
+    const r = await page.evaluate(() => {
+      const btn = document.getElementById('qi-addtime-2026-09-25');
+      const label = btn.textContent;
+      btn.click();
+      const rows = [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => ({ t: b.querySelector('.ios-lbl').firstChild.textContent, on: b.getAttribute('aria-pressed') }));
+      const note = !!document.querySelector('#qi-page .qi-xnote');
+      const total = _qiTotal();
+      document.querySelectorAll('#qi-page .qi-x-row')[1].click();       // the shop was not his
+      const after = _qiTotal();
+      const d = _qiDocHtml();
+      return { label, rows, note, total, after, doc: /Labor · 6 hrs on site/.test(d) || /Labor · 5.\d hrs on site/.test(d) };
+    });
+    expect(r.label).toBe('Add time from this day (2)');
+    expect(r.rows).toEqual([{ t: 'Drive · Here to Shop', on: 'true' }, { t: 'Shop', on: 'true' }]);
+    expect(r.note).toBe(true);
+    expect(r.total).toBe(450);                                  // 360 minutes at $75
+    expect(r.after).toBe(412.5);
+    expect(r.doc).toBe(true);
+  });
+
+  test('another customer the same day: nothing is checked for him; the run between his visits still counts', async ({ page }) => {
+    await boot(page);
+    await day(page, { second: true });
+    await openIt(page);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-addtime-2026-09-25').click();
+      return { on: [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => b.getAttribute('aria-pressed')), note: !!document.querySelector('#qi-page .qi-xnote'), total: _qiTotal() };
+    });
+    expect(r.on).toEqual(['false', 'false']);
+    expect(r.note).toBe(false);
+    expect(r.total).toBe(387.5);
+  });
+
+  test('one tap takes the run between visits off; time pulled onto a bill is never offered again', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await openIt(page);
+    const r = await page.evaluate(async () => {
+      const i = _qi.tracked.findIndex(l => l.extra === 'e104');
+      _qiDropTracked(i);
+      const dropped = _qiTotal();
+      _qiExtraOpen('2026-09-25');
+      const bid = qiSend();
+      // Everything pulled is marked on the bill, so no invoice (his or another
+      // customer's) can offer it again; the day itself is billed.
+      return { dropped, pulled: bid.qiPulled.sort(), marked: [..._qiPulledAll()].sort(), days: bid.qiDays };
+    });
+    expect(r.dropped).toBe(362.5);
+    expect(r.pulled).toEqual(['e103', 'e105', 'e107', 's201']);
+    expect(r.marked).toEqual(['e103', 'e105', 'e107', 's201']);
+    expect(r.days).toEqual(['2026-09-25']);
+  });
+
+  test('drive time off leaves every drive off, the first one and the ones he adds', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await page.evaluate(() => { S.qiBillDrive = false; });
+    await openIt(page);
+    const r = await page.evaluate(() => { _qiExtraOpen('2026-09-25'); return _qi.tracked.filter(l => l.who === 'Jack Sample').map(l => l.extra || 'base'); });
+    expect(r).toEqual(['base', 'e104', 's201']);
+  });
+});
+
+test.describe('Ready to bill: drafts', () => {
+  test('saved invoices sit in a Drafts group at the top; the rest are Not started', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      openQuickInvoice(702); await new Promise(r => setTimeout(r, 30));
+      qiSaveDraft();
+      _tbExpanded = true; _renderToBill();
+      const el = document.getElementById('dash-to-bill');
+      return { groups: [...el.querySelectorAll('.tb-grp')].map(g => g.textContent), names: [...el.querySelectorAll('.tb-name')].map(n => n.textContent),
+        age: el.querySelector('.tb-age').textContent, draftRow: el.querySelector('.tb-row').classList.contains('tb-draft') };
+    });
+    expect(r.groups).toEqual(['Drafts', 'Not started']);
+    expect(r.names).toEqual(['Mary Smith', 'Tagen Miller']);
+    expect(r.age).toContain('2 houses · 1 draft');
+    expect(r.draftRow).toBe(true);
   });
 });

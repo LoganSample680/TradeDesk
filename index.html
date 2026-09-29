@@ -976,6 +976,11 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 /* Data lands: each card's real content comes into focus where its shimmer was. */
 #pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
+/* Team: what each person bills an hour, on their own row (owner 2026-09-29) */
+#team-page-list .td-rate-row{margin-top:8px}
+#team-page-list .td-rate-chip{display:inline-flex;align-items:center;gap:2px;min-height:36px;padding:0 12px;border-radius:99px;background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:700;cursor:text}
+#team-page-list .td-rate-chip input{width:2.3em;min-width:0;padding:0;margin:0 0 0 1px;border:0;background:none;color:inherit;font:inherit;text-align:left;outline:none;field-sizing:content;min-inline-size:1.6em}
+#team-page-list .td-rate-default{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text3);padding:6px 2px 2px}
 /* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
    Owner 2026-09-05: "like Life360 but better." Dark, full-bleed, with the crew
    sheet floating over it. Deliberately a single dark world rather than a
@@ -1567,6 +1572,7 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-tim-h img{
    a typed line's description field and the leave-off button. Everything else
    is the shared iOS rows above. */
 #pg-qi #qi-page{background:none;padding-bottom:40px;max-width:640px;margin:0 auto}
+@media(max-width:767px){#pg-qi #qi-page{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}}
 #pg-qi #qi-page .ios-large{padding:0 4px 18px}
 #pg-qi #qi-page .ios-nav{margin-left:-12px}
 #qi-page .ios-val input{width:84px}
@@ -1592,6 +1598,8 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 /* One card a day (2026-09-29): a checked circle, the day, who, and its total. */
 #qi-page .qi-day{margin-bottom:14px}
 #qi-page .qi-day-hd{padding:0 12px 0 4px;gap:0}
+#qi-page .ios-swipe>.ios-del.qi-billed{background:#FF9500;font-size:13px;padding:0 6px}
+#qi-page .ios-swipe:not(.open):not(.dragging)>.qi-billed{visibility:hidden}
 #qi-page .qi-chk-btn{flex-shrink:0;width:48px;height:56px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
 #qi-page .qi-day-open-btn{flex:1;min-width:0;display:flex;align-items:center;gap:10px;min-height:56px;border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 #qi-page .qi-day-chev{transition:transform .18s cubic-bezier(.22,1,.36,1)}
@@ -1601,12 +1609,18 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-rate input{width:4ch;min-width:2ch;border:0!important;background:none!important;box-shadow:none!important;padding:0;font:inherit;color:inherit;text-align:right}
 #qi-page .qi-x{margin-left:8px;min-width:44px;min-height:44px}
 /* Send and Take card stay on screen (Earl): pinned above the tab bar. */
-#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;margin:0;padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
+@media(min-width:768px){#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;margin:14px 0 0;padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
+#qi-page .qi-actions .ios-btn-fill{flex:1}#qi-page .qi-actions .ios-btn-tint{flex:0 0 auto;width:auto;padding:0 22px}#qi-page .qi-actions .tm-dock-tim{display:none}}
 #qi-page .qi-actions .ios-btn{margin:0}
-#qi-page .qi-act-row{display:flex;gap:8px;margin-top:8px}
-#qi-page .qi-act-row .ios-btn,#qi-page .qi-act-row #qi-paynow{flex:1;min-width:0;margin:0}
-#qi-page #qi-send{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#qi-page #qi-send{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 14px}
+@media(max-width:767px){#qi-page #qi-dock #qi-send{font-size:16px}}
+@media(max-width:399px){#qi-page #qi-dock .ios-btn-tint{padding:0 14px}}
 #qi-page .qi-note-row .qi-desc{font-size:16px}
+/* Add time from this day (Jack 2026-09-29). */
+#qi-page .qi-xlist{background:var(--bg2)}
+#qi-page .qi-xnote{padding:10px 16px 2px;font-size:13px;color:var(--ios-2)}
+#qi-page .qi-x-row{background:transparent;cursor:pointer}
+#qi-page .qi-x-row .qi-chk{margin-right:2px}
 /* A part's count (Jack 2026-09-29): minus, the number, plus. */
 #qi-page .qi-part{gap:8px}
 #qi-page .qi-qty{display:inline-flex;align-items:center;flex-shrink:0;border-radius:10px;background:var(--bg2)}
@@ -1620,14 +1634,12 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-parts-seg .ios-seg button{flex:1;font-size:14px;padding:8px 4px}
 #qi-page .ios-large .ios-sub{white-space:normal;overflow-wrap:anywhere}
 @media(max-width:359px){#qi-page .qi-send-amt{display:none}}
-#qi-page .qi-act-row>*{max-width:100%}
 #qi-page .qi-photos{gap:10px;align-items:stretch}
 #qi-page .qi-photos.off{opacity:.4}
 #qi-page .qi-ph{flex:1;min-width:0;border:0;background:none;padding:0;font:inherit;cursor:pointer;text-align:center}
 #qi-page .qi-ph img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;display:block;background:var(--bg2)}
 #qi-page .qi-ph span{display:block;margin-top:4px;font-size:13px;font-weight:600;color:var(--ios-2)}
 /* Clear of Tim's round button, which rises above the tab bar. */
-@media(max-width:767px){#qi-page .qi-actions{bottom:calc(var(--mtb-h) + env(safe-area-inset-bottom,0px));padding-bottom:30px}}
 #qi-page .qi-day-hd .ios-lbl b{font-weight:700}
 #qi-page .qi-day-hd .qi-dt{font-weight:700}
 #qi-page .qi-chk{position:relative;flex-shrink:0;width:24px;height:24px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2)}
@@ -1636,7 +1648,6 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-day-off .qi-day-hd .ios-lbl,#qi-page .qi-day-off .qi-day-hd .ios-fact{opacity:.45}
 #qi-page .qi-crew{padding:0 16px 12px;margin-top:0;background:var(--ios-grp)}
 #qi-page .qi-always{border:0;background:none;padding:0 0 0 4px;font:inherit;font-weight:600;color:var(--ios-tint);cursor:pointer}
-#qi-page .qi-elsewhere{display:block;width:100%;min-height:44px;margin-top:6px;border:0;background:none;font-family:inherit;font-size:15px;color:var(--ios-2);cursor:pointer}
 /* Ready to bill on Home (2026-09-29): the same iOS rows as the invoice and
    estimate screens (the :is() list above), so one change reaches all three.
    Only what is Home's own lives here, as div#dash-to-bill so it outranks
@@ -1659,6 +1670,7 @@ div#dash-to-bill .tb-chev-sum.open{transform:rotate(90deg)}
 div#dash-to-bill .tb-list{overflow:hidden;transition:max-height .18s cubic-bezier(.22,1,.36,1)}
 div#dash-to-bill .tb-list .ios-row{padding-left:28px}
 div#dash-to-bill .tb-sum:active,div#dash-to-bill .tb-row:active{background:var(--bg2)}
+div#dash-to-bill .tb-grp{padding:10px 16px 4px 28px;font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ios-2);background:var(--ios-grp)}
 div#dash-to-bill .tb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--ios-tint)}
 div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #qi-page .qi-pb button{border:1px solid var(--ios-sep);background:var(--ios-grp);border-radius:16px;padding:7px 12px;font-family:inherit;font-size:15px;color:var(--text);cursor:pointer}
@@ -1817,19 +1829,19 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-stephead[d
    buttons, as it always has. Frosted, over the page, clear of the home bar. */
 :is(#tm-dock,#byo-dock){display:none}
 @media(max-width:767px){
-  :is(#tm-dock,#byo-dock){position:fixed;left:0;right:0;bottom:0;z-index:1002;display:flex;align-items:center;gap:10px;
+  :is(#tm-dock,#byo-dock,#qi-dock){position:fixed;left:0;right:0;bottom:0;z-index:1002;display:flex;align-items:center;gap:10px;
     padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
     background:color-mix(in srgb,var(--bg2) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
     border-top:.5px solid var(--line-2)}
-  :is(#tm-dock,#byo-dock) .ios-btn{flex:1;min-width:0;margin:0;height:50px}
-  :is(#tm-dock,#byo-dock) .ios-btn-tint{flex:0 0 auto;width:auto;padding:0 20px}
+  :is(#tm-dock,#byo-dock,#qi-dock) .ios-btn{flex:1;min-width:0;margin:0;height:50px}
+  :is(#tm-dock,#byo-dock,#qi-dock) .ios-btn-tint{flex:0 0 auto;width:auto;padding:0 20px}
   /* Tim as he is on the tab bar: the denim orb, the figure in white. The
      ink figure on a white disc vanished on the dark bar. */
-  :is(#tm-dock,#byo-dock) .tm-dock-tim{flex:0 0 auto;width:50px;height:50px;border-radius:50%;border:1px solid rgba(255,255,255,.24);padding:0;
+  :is(#tm-dock,#byo-dock,#qi-dock) .tm-dock-tim{flex:0 0 auto;width:50px;height:50px;border-radius:50%;border:1px solid rgba(255,255,255,.24);padding:0;
     background:linear-gradient(180deg,rgba(45,93,168,.95),rgba(20,48,98,.92));
     box-shadow:0 2px 6px rgba(15,23,42,.22);display:flex;align-items:center;justify-content:center;cursor:pointer}
-  :is(#tm-dock,#byo-dock) .tm-dock-tim img{filter:invert(1)}
-  :is(#tm-dock,#byo-dock) .tm-dock-tim:active{transform:scale(.94)}
+  :is(#tm-dock,#byo-dock,#qi-dock) .tm-dock-tim img{filter:invert(1)}
+  :is(#tm-dock,#byo-dock,#qi-dock) .tm-dock-tim:active{transform:scale(.94)}
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) #tm-actions-wrap .ios-links{margin-top:0}
   /* The bar carries Send and Sign; the page's foot keeps the three links. */
   #tm-actions-wrap .ios-btn{display:none}
@@ -1841,24 +1853,24 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-stephead[d
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   /* Anything the page scrolls to (a focused field, a button brought into
      view) stops above the bar instead of sliding under it. */
-  html:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])){scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));scroll-padding-top:56px}
+  html:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])){scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));scroll-padding-top:56px}
   /* FULL SCREEN WHILE HE WORKS. The app's black bar sat over the page's own
      Back and Save, and the tab bar and Tim's orb floated over the form. An
      editor on an iPhone has one bar at the top and its own at the bottom.
      :has() rather than a class a script must remember to take off: the moment
      the T&M page is not the one showing, the app's bars are back. */
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
   /* No enter animation here: a transform animation, even finished and held,
      makes the page the box a fixed bar is pinned to, and the bar rode 1,000px
      down the page instead of sitting on the screen's bottom edge. The ground
      is the page's grey edge to edge, or a lighter strip shows down the side. */
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) #pg-est-generic{padding-top:0;animation:none}
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])){background:var(--bg2)}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#pg-est-generic,#pg-qi){padding-top:0;animation:none}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])){background:var(--bg2)}
   /* A toast sat on top of Send (Earl, 2026-09-23). On this page it rises
      above the bar, and its close is a thumb-sized target. */
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;left:16px;right:16px;max-width:none}
-  body:has(#pg-est-generic.active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) .toast-close{min-width:44px;min-height:44px;margin:-10px -12px -10px 0}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important;left:16px;right:16px;max-width:none}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) .toast-close{min-width:44px;min-height:44px;margin:-10px -12px -10px 0}
   /* The nav bar stays put while the page scrolls under it. The wrap is
      display:contents so the bar's sticky range is the whole page. */
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) #tm-topbar-wrap{display:contents}
@@ -1872,7 +1884,7 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-stephead[d
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub{display:flex;align-items:baseline;white-space:nowrap}
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub .txt{min-width:0;overflow:hidden;text-overflow:ellipsis}
   :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub button{flex-shrink:0;padding-left:8px}
-  :is(#tm-dock,#byo-dock) .ios-btn+.ios-btn{margin-top:0}
+  :is(#tm-dock,#byo-dock,#qi-dock) .ios-btn+.ios-btn{margin-top:0}
 }
 /* Groups lift off the page a little in light mode, so a white list on a pale
    grey page reads as a thing and not as a lighter patch of the same thing. */
