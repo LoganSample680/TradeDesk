@@ -3240,7 +3240,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="card-hd" style="cursor:pointer" onclick="window._leadSrcOpen=!window._leadSrcOpen;this.querySelector('.lead-src-chevron').textContent=window._leadSrcOpen?'▲':'▼';document.getElementById('dash-sources').style.display=window._leadSrcOpen?'block':'none'">
           <div>
             <div class="card-hd-title">Lead sources</div>
-            <div class="card-hd-sub">Year to date · close rate &amp; revenue</div>
+            <div class="card-hd-sub">This year: how many you win and what they paid</div>
           </div>
           <span class="lead-src-chevron" style="font-size:11px;color:var(--text3)">▼</span>
         </div>
@@ -4281,7 +4281,7 @@ body.dark .cal-cell.other{background:var(--cream)}
          (owner asked for one, 2026-08-30). Describes what the tracker did,
          not what the contractor has to do, and names the one thing on the
          page that needs a person: the hours nobody has accounted for. -->
-    <div class="tbar-sub">Every hour your phone recorded, sorted into driving, on site, shop and loading. Anything it could not place is flagged for you to answer.</div>
+    <div class="tbar-sub">Every hour your phone logged: driving, on site, shop and loading. Anything it could not figure out is flagged for you.</div>
   </div>
   <!-- ── Tim, at the point of the work ──────────────────────────────────────
        The bar is his global door. This is a door at the work, and the two do
@@ -4296,7 +4296,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button type="button" class="tim-atwork" hidden
     onclick="_timAskFrom('what do I invoice for last week')">
     <span class="tim-atwork-mark" aria-hidden="true"></span>
-    <span class="tim-atwork-say"><b>Turn last week into an invoice worksheet</b><i>By job site, with the address and who was on it</i></span>
+    <span class="tim-atwork-say"><b>Last week's hours, ready to bill</b><i>By house, with who was there</i></span>
     <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
   </button>
   <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
@@ -4322,7 +4322,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <button class="btn btn-sm" onclick="openExportPanel()" style="flex-shrink:0;margin-top:6px">⬇ Export</button>
     </div>
-    <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
+    <div class="tbar-sub">Every payment, receipt and mile, sorted the way the IRS wants it.</div>
     <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
   <div class="fbar">
@@ -4476,11 +4476,11 @@ body.dark .cal-cell.other{background:var(--cream)}
         <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
       <div class="f">
-        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return, unlocks safe harbor</span></label>
+        <label>Last year's total tax ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From last year's return. Keeps you clear of penalties</span></label>
         <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0: enter from last year's return">
       </div>
       <div class="f">
-        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold, leave 0 if unknown</span></label>
+        <label>Last year's adjusted gross income ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Line 11 of your 1040. Leave 0 if you don't know</span></label>
         <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0: from last year's return line 11">
       </div>
     </div>
@@ -4554,7 +4554,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-icon"><span data-ico="🎨" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Branding</div>
-            <div class="set-idx-sub">Logo, brand color, white-label client hub</div>
+            <div class="set-idx-sub">Logo, color, what your customers see</div>
           </div>
           <div class="set-idx-meta" id="set-meta-branding"></div>
           <div class="set-idx-chev">›</div>
@@ -4665,7 +4665,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-icon"><span data-ico="📦" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Data &amp; export</div>
-            <div class="set-idx-sub">Download data, factory reset</div>
+            <div class="set-idx-sub">Download your data, or wipe the app</div>
           </div>
           <div class="set-idx-chev">›</div>
         </div>
@@ -5512,11 +5512,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="money-tbar-eyebrow">Collect</div>
       <div class="tbar-title">Collect</div>
-      <div class="tbar-sub" id="money-lien-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under applicable state law.</div>
+      <div class="tbar-sub" id="money-lien-sub">Ready-to-send texts for each reminder. Lien deadlines follow your state's law.</div>
     </div>
     <div class="tbar-r">
       <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none"><span data-ico="📤" data-ico-size="14"></span> Send all reminders</button>
-      <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
+      <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ New invoice</button>
     </div>
   </div>
   <!-- ── Tim, at the point of the work ──────────────────────────────────────
@@ -5532,15 +5532,15 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button type="button" class="tim-atwork" hidden
     onclick="_timAskFrom('what do I invoice for last week')">
     <span class="tim-atwork-mark" aria-hidden="true"></span>
-    <span class="tim-atwork-say"><b>What have I worked and not billed</b><i>Last week's hours, by customer and address</i></span>
+    <span class="tim-atwork-say"><b>Work not billed yet</b><i>Last week's hours, by customer and address</i></span>
     <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
   </button>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
-    <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
+    <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All</button>
     <button type="button" class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
-    <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
-    <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
+    <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Part paid</button>
+    <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Not sent</button>
     <button type="button" class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
   </div>
   <div id="money-list"></div>
@@ -5565,7 +5565,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="proposals-eyebrow">Proposals</div>
       <div class="tbar-title">Proposals</div>
-      <div class="tbar-sub">Everything you've sent for signature. Tap any row to open the client's portal.</div>
+      <div class="tbar-sub">Everything you've sent to sign. Tap one to see what they see.</div>
     </div>
     <div class="tbar-r">
       <button class="btn btn-p btn-sm" onclick="goPg('pg-clients')">+ New proposal</button>
@@ -5575,7 +5575,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
     <button type="button" class="fb active" id="pft-all"          onclick="setProposalFilter('all',this)">All<span class="fb-count" id="pft-c-all"></span></button>
     <button type="button" class="fb"        id="pft-draft"        onclick="setProposalFilter('draft',this)">Drafts<span class="fb-count" id="pft-c-draft"></span></button>
-    <button type="button" class="fb"        id="pft-awaiting_sig" onclick="setProposalFilter('awaiting_sig',this)">Awaiting sig<span class="fb-count" id="pft-c-awaiting_sig"></span></button>
+    <button type="button" class="fb"        id="pft-awaiting_sig" onclick="setProposalFilter('awaiting_sig',this)">Waiting to sign<span class="fb-count" id="pft-c-awaiting_sig"></span></button>
     <button type="button" class="fb"        id="pft-signed"       onclick="setProposalFilter('signed',this)">Signed<span class="fb-count" id="pft-c-signed"></span></button>
     <button type="button" class="fb"        id="pft-declined"     onclick="setProposalFilter('declined',this)">Declined<span class="fb-count" id="pft-c-declined"></span></button>
   </div>
