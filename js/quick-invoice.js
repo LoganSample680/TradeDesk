@@ -606,7 +606,7 @@ function openQuickInvoice(cid,addr){
   const mode=c.qiMode||(hasWork?'hourly':'set');
   const d=_qiDraftGet(c,addr);
   _qi={cid,addr,mode:(d&&d.mode)||mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!(c.qiMode||(d&&d.mode)),
-    off:new Set(),open:new Set(),addOpen:false,added:[],crew:[],
+    off:new Set(),open:new Set(),addOpen:false,added:[],crew:[],due:null,
     // The number it will be sent under, from the moment it opens (owner
     // 2026-09-29: "No. Draft doesn't show a number"). A saved draft keeps its.
     id:(d&&d.id)||_newBidId(),dayNote:{},fixed:null,rates:{},showRate:null,partsMode:null,photos:{on:true,before:null,after:null},
@@ -869,6 +869,7 @@ function renderQuickInvoice(){
       '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already on their day in step 2.</div>':'')+'</div>'+
       _qiStep(hourly?4:3,DOC_STEP.review)+
       _qiMathHtml(total)+
+      _qiDueHtml()+
       _qiOptionsHtml(hourly)+
       // Pinned to the bottom of the screen (Earl): Send is never three
       // screens down on a small phone.
@@ -882,7 +883,7 @@ function renderQuickInvoice(){
       '<div class="qi-actions" id="qi-dock">'+
         (typeof openTim==='function'?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'')+
         '<button type="button" class="ios-btn ios-btn-tint" id="qi-paynow" onclick="qiPayNow()">Collect</button>'+
-        '<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Send it<span class="qi-send-amt"> · <span id="qi-send-total">'+_qiMoney(total)+'</span></span></button>'+
+        '<span id="qi-go">'+_qiGoHtml(total)+'</span>'+
       '</div>'+
     '</div>';
   if(typeof _tmWireSwipe==='function')_tmWireSwipe(host);
@@ -925,6 +926,7 @@ function _qiTyped(i,k,v){
 function _qiTotalsPaint(){
   const m=_qiMoney(_qiTotal());
   ['qi-total','qi-send-total'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=m;});
+  _qiGoPaint();
   const M=_qiMath();
   [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
 }
@@ -1123,17 +1125,64 @@ function _qiDocHtml(num){
   const table=`<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef">`+
     `<table style="width:100%;border-collapse:collapse"><tbody>${rows}</tbody>`+
     `<tfoot><tr><td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:17px;font-weight:800">Total due</td>`+
-    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr></tfoot></table></div>`;
+    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr>`+
+    (_qi.due?`<tr><td colspan="2" style="padding:0 18px 16px;font-size:14px;font-weight:600;color:#475569">${escHtml(_qiDueWords(_qi.due))}</td></tr>`:'')+
+    `</tfoot></table></div>`;
   return _propDoc(
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
       label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
-      project:escHtml(_qiMoney(total))+' due',until:null,forLabel:'Billed to'})+
+      project:escHtml(_qiMoney(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
     _propSection('Work performed','',_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     _propSignoff(bname,'Thank you for choosing'));
 }
 // What he said he did, as a plain list above the charges. Hourly only.
 // The invoice number, the same one printInvoice prints (INV- and the id).
 function _qiNum(){return _qi&&_qi.id!=null?'INV-'+String(_qi.id).slice(-6):'Draft';}
+// WHEN IT IS DUE (owner 2026-09-29: "add in when you will bill, is it due on
+// completion? Remember that can't default"). He picks it on every invoice;
+// nothing is lit until he does, and Send waits for it. Collect is paid now,
+// so it does not ask.
+const _QI_DUE={receipt:0,'7':7,'15':15,'30':30};
+function _qiDueDate(due){
+  if(!(due in _QI_DUE))return '';
+  return _QI_DUE[due]?dateKey(new Date(Date.parse(todayKey()+'T12:00:00')+_QI_DUE[due]*86400000)):todayKey();
+}
+function _qiDueWords(due){
+  if(!(due in _QI_DUE))return '';
+  if(!_QI_DUE[due])return 'Due on receipt';
+  return 'Due by '+new Date(Date.parse(_qiDueDate(due)+'T12:00:00')).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function _qiSetDue(v){if(!_qi||!(v in _QI_DUE))return;_qi.due=v;renderQuickInvoice();}
+function _qiDueHtml(){
+  const b=(k,t)=>'<button type="button" data-due="'+k+'" class="'+(_qi.due===k?'on':'')+'" onclick="_qiSetDue(\''+k+'\')">'+t+'</button>';
+  return '<div class="ios-sec"><div class="ios-group'+(_qi.due?'':' qi-due-ask')+'" id="qi-due">'+
+    '<div class="ios-row"><span class="ios-lbl">When is it due?<small>'+escHtml(_qi.due?_qiDueWords(_qi.due):'Pick one. It prints on their invoice.')+'</small></span></div>'+
+    '<div class="ios-row qi-parts-seg"><div class="ios-seg" role="tablist">'+b('receipt','On receipt')+b('7','7 days')+b('15','15 days')+b('30','30 days')+'</div></div>'+
+  '</div></div>';
+}
+function _qiGoHtml(total){
+  const nx=_qiNext();
+  return nx
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="qi-next" onclick="'+nx.fn+'">'+escHtml(nx.label)+'</button>'+
+      '<span id="qi-send-total" hidden>'+_qiMoney(total)+'</span>'
+    :'<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Send it<span class="qi-send-amt"> · <span id="qi-send-total">'+_qiMoney(total)+'</span></span></button>';
+}
+function _qiGoPaint(){const g=document.getElementById('qi-go');if(g&&_qi)g.innerHTML=_qiGoHtml(_qiTotal());}
+function _qiAskDue(){
+  const g=document.getElementById('qi-due');if(!g)return;
+  g.classList.add('asking');
+  try{g.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
+}
+// The bar walks him to the first thing missing, then offers Send
+// (js/doc-steps.js docNext, the same walk the proposals take).
+function _qiNext(){
+  const miss=_qiMissingRates();
+  return docNext([
+    {ok:!miss.length,label:'Add '+String(miss[0]||'').split(' ')[0]+'\'s rate',fn:'_qiRatesReady()'},
+    {ok:_qiTotal()>0,label:'Add what you did',fn:'document.getElementById(\'qi-say\')?.focus()'},
+    {ok:!!_qi.due,label:'Pick when it\'s due',fn:'_qiAskDue()'},
+  ]);
+}
 // The same words as the customer's page, as plain lines, for the saved bid
 // (the printed invoice and the customer's hub read lineItems).
 function _qiCustomerItems(){
@@ -1183,6 +1232,7 @@ function _qiSave(){
     // The days it carries, never a through-mark (see _qiBilled).
     qiTimeThrough:null,
     qiDays:hourly?_qiOnDays():[],
+    qiDue:_qi.due||null,dueDate:_qi.due?_qiDueDate(_qi.due):null,
     // Time he pulled onto this bill from the day (Add time), so no other
     // bill can take it too.
     qiPulled:hourly?_qi.tracked.filter(l=>l.extra&&!_qi.off.has(l.day)).map(l=>l.extra):[],
@@ -1256,6 +1306,7 @@ function _qiRatesReady(){
 }
 function qiSend(){
   if(!_qiRatesReady())return false;
+  if(!_qi.due){if(typeof showToast==='function')showToast('Pick when it\'s due first','⚠️');_qiAskDue();return false;}
   const bid=_qiSave();if(!bid)return false;
   if(typeof _sendPaidInvoice==='function')_sendPaidInvoice(bid.id);
   return bid;
@@ -1476,6 +1527,7 @@ function _qiDraftApply(d){
   _qi.showRate=d.showRate!=null?!!d.showRate:null;_qi.partsMode=d.partsMode||null;
   _qi.added=Array.isArray(d.added)?d.added.slice():[];
   _qi.crew=Array.isArray(d.crew)?d.crew.slice():[];
+  _qi.due=_QI_DUE[d.due]?d.due:null;
   _qi.photos=Object.assign({on:true,before:null,after:null},d.photos||{});
   _qi.xOn=new Set(d.xOn||[]);_qi.xOff=new Set(d.xOff||[]);_qi.dropped=new Set(d.dropped||[]);
   _qi.riderMins=Object.assign({},d.riderMins||{});
@@ -1486,7 +1538,7 @@ function qiSaveDraft(){
   const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};
   D[_qiDraftKey(c,_qi.addr)]={id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
-    added:_qi.added.slice(),crew:_qi.crew.slice(),photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
+    added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
   c.qiDrafts=D;
   saveAll();

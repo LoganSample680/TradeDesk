@@ -67,7 +67,16 @@ test.describe('the bar walks him to Send', () => {
     await tap();
     expect(await bar()).toEqual(['Yes: $45/hr, 1 person']);
     await tap();
+    // When he bills is asked, never assumed (owner 2026-09-29: "that can't
+    // default"). Nothing is lit until he picks.
+    expect(await bar()).toEqual(['Pick when you bill']);
+    expect(await page.evaluate(() => document.querySelectorAll('#tm-cad-main .ios-seg button.on').length)).toBe(0);
+    await tap();
+    expect(await page.evaluate(() => document.getElementById('tm-cad-main').classList.contains('ask'))).toBe(true);
+    await page.locator('#tm-cad-main .ios-seg button', { hasText: 'At the end' }).click();
+    await page.waitForTimeout(300);
     expect(await bar()).toEqual(['Sign here', 'Send it']);
+    expect(await page.evaluate(() => _tmBillingCycle)).toBe('completion');
     expect(await page.evaluate(() => document.getElementById('tm-step-2').getAttribute('data-state'))).toBe('done');
   });
 
@@ -75,7 +84,7 @@ test.describe('the bar walks him to Send', () => {
     await open(99402);
     await page.waitForTimeout(400);
     await tap();
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmBillingCycle = 'weekly'; _tmRenderSteps(); });
     expect(await bar()).toEqual(['Check your rate']);
     await page.locator('#tm-sec-bill button[aria-label="One more"]').click();
     await page.waitForTimeout(200);
@@ -83,7 +92,7 @@ test.describe('the bar walks him to Send', () => {
     await open(99403);
     await page.waitForTimeout(400);
     await tap();
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmBillingCycle = 'weekly'; _tmRenderSteps(); });
     await page.locator('#tm-i-rate').fill('95');
     await page.locator('#tm-i-rate').dispatchEvent('input');
     await page.waitForTimeout(200);
@@ -94,7 +103,7 @@ test.describe('the bar walks him to Send', () => {
     await open(99404);
     await page.waitForTimeout(400);
     await tap();
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmMarkRateChecked(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     const bidA = await page.evaluate(() => _geiEditBidId);
     expect(await bar()).toEqual(['Sign here', 'Send it']);
     await open(99405);

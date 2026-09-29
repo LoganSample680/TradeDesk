@@ -124,7 +124,7 @@ test.describe('the T&M screen, as an iPhone app', () => {
     // rate, how much my hourly number was, how many people, Tim's
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmMarkRateChecked(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     const r = await page.evaluate(() => {
       const w = document.getElementById('tm-dock');
       const big = [...w.querySelectorAll('.ios-btn')];
@@ -286,7 +286,7 @@ test.describe('the T&M screen, as an iPhone app', () => {
     const pre = await steps();
     expect(pre[1].state).toBe('now');
     expect(pre[2].buttons).toEqual(['Check your rate']);
-    await page.evaluate(() => _tmMarkRateChecked());
+    await page.evaluate(() => { /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     const s = await steps();
     expect(s.map(x => x.state)).toEqual(['done', 'done', 'now']);
     expect(s[1].text).toContain('$45/hr');
