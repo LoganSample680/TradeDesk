@@ -26,3 +26,12 @@ function docStepHead(id,n,title,state,status){
 function docStepHtml(n,title,state,status){
   return '<div class="ios-stephead" data-state="'+(state||'todo')+'">'+docStepInner(n,title,state,status)+'</div>';
 }
+
+// THE NEXT THING (owner 2026-09-29: "will the bottom button guide me through
+// the prompts that are required?"). Every document's bar asks for the first
+// thing still missing, in order, and only then offers Send. checks is a list
+// of {ok, label, fn}; the first not ok is the bar's button, none means Send.
+function docNext(checks){
+  for(const c of (checks||[]))if(c&&!c.ok)return c;
+  return null;
+}

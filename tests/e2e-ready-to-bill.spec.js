@@ -123,7 +123,7 @@ test.describe('Ready to bill', () => {
     const r = await page.evaluate(async () => {
       document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-chk-btn').click();
       const total = document.getElementById('qi-total').textContent;
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       openQuickInvoice(701);
       await new Promise(r => setTimeout(r, 30));
       return { total, days: bid.qiDays, amount: bid.amount, left: _qiDays(_qi.tracked), leftTotal: document.getElementById('qi-total').textContent };
@@ -150,6 +150,7 @@ test.describe('Ready to bill', () => {
       const off = _qi.off.has('2026-09-23');
       document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-day-open-btn').click();
       const reopened = { off: _qi.off.has('2026-09-23'), open: _qi.open.has('2026-09-23') };
+      _qi.due = 'receipt'; renderQuickInvoice();   // he picked when it is due
       const bar = document.querySelector('#qi-page .qi-actions');
       window.scrollTo(0, 0);
       const b = bar.getBoundingClientRect();
@@ -456,6 +457,56 @@ test.describe('Ready to bill', () => {
     expect(r).toEqual([360, 360, 360, 360]);
   });
 
+  // Owner 2026-09-29: "add in when you will bill, is it due on completion?
+  // Remember that can't default."
+  test('when it is due: nothing picked, the bar asks, Send waits; the pick prints on their copy and saves on the invoice', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const before = { bar: document.getElementById('qi-next')?.textContent, send: !!document.getElementById('qi-send'),
+        lit: document.querySelectorAll('#qi-due .ios-seg button.on').length, sent: qiSend() };
+      document.getElementById('qi-next').click();
+      const asking = document.getElementById('qi-due').classList.contains('asking');
+      document.querySelector('#qi-due button[data-due="15"]').click();
+      const after = { send: document.getElementById('qi-send')?.textContent, doc: _qiDocHtml() };
+      const bid = qiSend();
+      return { before, asking, after: { send: after.send, due: /Due by [A-Z][a-z]{2} \d{1,2}/.test(after.doc) }, saved: [bid.qiDue, bid.dueDate] };
+    });
+    expect(r.before).toEqual({ bar: "Pick when it's due", send: false, lit: 0, sent: false });
+    expect(r.asking).toBe(true);
+    expect(r.after.send).toContain('Send it');
+    expect(r.after.due).toBe(true);
+    expect(r.saved[0]).toBe('15');
+    expect(r.saved[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test('Collect is paid now, so it does not ask when it is due; a missing rate still comes first on the bar', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => { S.employees[0].billRate = 0; S.laborRate = 0; });
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const bar = document.getElementById('qi-next').textContent;
+      _qi.tracked.filter(l => l.kind === 'time').forEach(l => { l.rate = 75; l.amount = Math.round(l.mins / 60 * 75 * 100) / 100; });
+      window.openPayPanel = () => {};
+      const paid = qiPayNow();
+      return { bar, paid: !!paid };
+    });
+    expect(r.bar).toBe("Add Jack's rate");
+    expect(r.paid).toBe(true);
+  });
+
+  test('a junk due value is ignored, and a saved draft keeps the pick', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      _qiSetDue('tomorrow'); _qiSetDue(null); const junk = _qi.due;
+      _qiSetDue('7'); qiSaveDraft();
+      _qi = null; openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
+      return { junk, kept: _qi.due };
+    });
+    expect(r).toEqual({ junk: null, kept: '7' });
+  });
+
   test('junk in + Add person adds nobody and never throws', async ({ page }) => {
     await boot(page);
     await open(page, 701);
@@ -529,7 +580,7 @@ test.describe('Invoice: the customer copy', () => {
     await open(page, 701);
     const r = await page.evaluate(() => {
       const num = _qiNum(), sub = document.querySelector('#qi-page .ios-sub').textContent, d = _qiDocHtml();
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { num, sub, inDoc: d.includes(num), sent: 'INV-' + String(bid.id).slice(-6) };
     });
     expect(r.num).toMatch(/^INV-\w{6}$/);
@@ -682,7 +733,7 @@ test.describe('Invoice: the customer copy', () => {
       qiSaveDraft();
       openQuickInvoice(701);
       await new Promise(r => setTimeout(r, 30));
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { drafts: Object.keys(getClientById(701).qiDrafts || {}).length, kind: bid.kind };
     });
     expect(r).toEqual({ drafts: 0, kind: 'quick_invoice' });
@@ -697,7 +748,7 @@ test.describe('Invoice: the customer copy', () => {
       const start = document.getElementById('qi-total').textContent;
       const f = document.getElementById('qi-fixed'); f.value = '950'; f.dispatchEvent(new Event('input'));
       const d = _qiDocHtml();
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { start, hrs: /hrs? on site/.test(d), has: d.includes('$950.00'), amount: bid.amount, days: bid.qiDays, items: bid.lineItems.length };
     });
     expect(r.start).toBe('$1,048.50');
@@ -833,6 +884,7 @@ test.describe('Invoice: the customer copy', () => {
     await ks(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
+      _qi.due = 'receipt'; renderQuickInvoice();   // he picked when it is due
       const nav = document.querySelector('#qi-page .ios-nav');
       const bar = document.getElementById('qi-dock');
       const out = {
@@ -986,7 +1038,7 @@ test.describe('Invoice: add time from the day', () => {
       _qiDropTracked(i);
       const dropped = _qiTotal();
       _qiExtraOpen('2026-09-25');
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       // Everything pulled is marked on the bill, so no invoice (his or another
       // customer's) can offer it again; the day itself is billed.
       return { dropped, pulled: bid.qiPulled.sort(), marked: [..._qiPulledAll()].sort(), days: bid.qiDays };

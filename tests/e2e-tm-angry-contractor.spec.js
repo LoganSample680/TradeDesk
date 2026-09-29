@@ -221,7 +221,7 @@ test.describe('Earl, 58, hates technology', () => {
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
     // Typing the rate is checking it; Tim's leftovers are answered here.
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmRenderSteps(); });
     expect(await bar()).toEqual(['Sign here', 'Send it']);
     await page.locator('#tm-i-rate').fill('');
     await page.locator('#tm-i-rate').dispatchEvent('input');

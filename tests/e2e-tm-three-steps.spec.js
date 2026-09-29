@@ -158,7 +158,8 @@ test.describe('T&M in three steps', () => {
     await open();
     expect(await page.evaluate(() => document.getElementById('tm-step-4').textContent)).toContain('Review');
     const sum = await page.evaluate(() => document.getElementById('tm-pay-sum').textContent);
-    expect(sum).toContain('No deposit, bills weekly');
+    // Nothing is picked for him (owner 2026-09-29: "that can't default").
+    expect(sum).toContain('No deposit, when you bill: not picked');
     expect(await shown('#tm-dep-row')).toBe(false);
     await page.locator('#tm-pay-btn').tap();
     expect(await shown('#tm-dep-row')).toBe(true);
@@ -175,11 +176,26 @@ test.describe('T&M in three steps', () => {
     expect(await page.evaluate(() => document.getElementById('tm-pay-sum').textContent)).toContain('$500 deposit, bills at the end');
   });
 
-  test('a new T&M bills the way his last one did', async () => {
-    await open({ bids: [{ id: 1, isTM: true, tmBillingCycle: 'milestone' }, { id: 2, isTM: false, tmBillingCycle: 'completion' }] });
-    expect(await page.evaluate(() => _tmBillingCycle)).toBe('milestone');
-    await open({ bids: [] });
-    expect(await page.evaluate(() => _tmBillingCycle)).toBe('weekly');
+  // CHANGED (§10.4). It used to start from his last T&M's cadence. Owner
+  // 2026-09-29: "add in when you will bill, is it due on completion?
+  // Remember that can't default." A pick carried over is a default.
+  test('a new T&M starts with when-you-bill unpicked, whatever the last one used; a saved one keeps its pick', async () => {
+    await open({ bids: [{ id: 1, isTM: true, tmBillingCycle: 'milestone' }] });
+    const r = await page.evaluate(() => ({ cyc: _tmBillingCycle, lit: document.querySelectorAll('#tm-cad-main .ios-seg button.on').length,
+      kept: _tmSavedCadence({ tmBillingCycle: 'completion' }), old: _tmSavedCadence({}), unpicked: _tmSavedCadence({ tmBillingCycle: '' }), junk: _tmSavedCadence({ tmBillingCycle: 'daily' }) }));
+    expect(r).toEqual({ cyc: '', lit: 0, kept: 'completion', old: 'weekly', unpicked: '', junk: '' });
+    expect(await page.evaluate(() => typeof _tmLastCadence)).toBe('undefined');
+  });
+
+  test('the contract never prints a billing schedule he did not pick', async () => {
+    await open({ say: 'Set a tankless' });
+    const r = await page.evaluate(async () => {
+      let d = ''; const real = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { d = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = real; }
+      return d;
+    });
+    expect(r).not.toMatch(/Billed weekly|Weekly invoices/);
   });
 
   test('a state that requires the limit opens Getting paid on its own', async () => {

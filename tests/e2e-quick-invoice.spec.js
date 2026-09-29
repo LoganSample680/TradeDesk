@@ -126,7 +126,7 @@ test.describe('Quick invoice', () => {
 
   test('Hourly: each person at their own rate, receipts, and the total', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => openQuickInvoice(901));
+    await page.evaluate(() => { openQuickInvoice(901); _qi.due = 'receipt'; renderQuickInvoice(); });
     const r = await page.evaluate(() => ({
       active: document.querySelector('.pg.active').id,
       seg: document.querySelector('#qi-page .qi-seg .on').textContent,
@@ -479,7 +479,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(() => {
       openQuickInvoice(901);
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       const again = _qiUnbilled(901);
       return {
         bid: { kind: bid.kind, status: bid.status, amount: bid.amount, lines: bid.lineItems.length, exp: bid.qiExpenseIds, through: !!bid.qiTimeThrough, days: bid.qiDays },
@@ -508,7 +508,7 @@ test.describe('Quick invoice', () => {
       const n = bids.length;
       openQuickInvoice(903);
       const seg = document.querySelector('#qi-page .qi-seg .on').textContent;
-      const out = qiSend();
+      const out = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { seg, sent: !!out, grew: bids.length !== n };
     });
     expect(r.seg).toBe('Set price');
@@ -603,7 +603,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const html = await page.evaluate(() => {
       openQuickInvoice(901);
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       let out = '';
       const orig = window.open;
       window.open = () => ({ document: { write: (s) => { out += s; }, close() {} }, focus() {}, print() {} });

@@ -351,7 +351,10 @@ let _estCrew=[];
 let _estCrewRates={};
 Object.defineProperty(window,'_estCrewRates',{get:()=>_estCrewRates,set:v=>{_estCrewRates=(v&&typeof v==='object')?v:{};},configurable:true});
 let _panelSched=null; // null = not active, obj = panel schedule data
-let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+// When he bills is HIS call, never a default (owner 2026-09-29: "add in when
+// you will bill, is it due on completion? Remember that can't default"). ''
+// means not picked yet, and the bar asks for it before Send.
+let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='';
 // ── THE RATE IS ON THE JOB. WHETHER THE CUSTOMER SEES IT IS A SEPARATE THING ─
 //
 // Owner, 2026-09-22: "how do we give contractors the opportunity to hide the
@@ -731,7 +734,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _geiChecking=false;
-  _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle=_tmLastCadence();_tmPayOpen=false;_tmCapAction='Stop & get re-approval';
+  _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='';_tmPayOpen=false;_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
   // It started at NOTHING until 2026-09-22, and the reasoning then was sound:
@@ -804,7 +807,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.isTM){
         _geiIsTM=true;_geiIsFreeForm=false;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||_facts.laborRate;
-        _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
+        _tmEstHours=b.tmEstHours||0;_tmBillingCycle=_tmSavedCadence(b);
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
         // A proposal comes back the way it was SENT. Falling through to the
         // standing preference here would silently reprint a rate on a job he
@@ -868,7 +871,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||_facts.laborRate;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_tmSavedCadence(_b);_tmCapAction=_b.tmCapAction||'Stop & get re-approval';if(_b.tmRateOnly!==undefined)_tmRateOnly=!!_b.tmRateOnly;
         _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
@@ -3800,7 +3803,7 @@ function _tmPaySummary(){
   const parts=[];
   const dep=_tmLayers.has('dep')?(typeof _tmDeposit==='function'?_tmDeposit():0):0;
   parts.push(dep>0?('$'+dep.toLocaleString('en-US')+' deposit'):'No deposit');
-  if(_tmLayers.has('rate'))parts.push({weekly:'bills weekly',milestone:'bills at milestones',completion:'bills at the end'}[_tmBillingCycle||'weekly']||'bills weekly');
+  if(_tmLayers.has('rate'))parts.push(_tmBillingCycle?_tmBillWords(_tmBillingCycle):'when you bill: not picked');
   const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
   const sub=cap>0?('The most it can cost: $'+cap.toLocaleString('en-US')):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
   return {main:parts.join(', '),sub};
@@ -3819,14 +3822,21 @@ function _tmRenderPay(){
     '<span class="ios-chev" style="transform:rotate('+(_tmPayOpen?'90':'0')+'deg);transition:transform .2s ease">›</span></button>';
 }
 function _tmPayToggle(){_tmPayOpen=!_tmPayOpen;_tmRenderPay();}
-// A new T&M bills the way his last one did. Weekly when there is no last one.
-function _tmLastCadence(){
-  const list=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
-  for(let i=list.length-1;i>=0;i--){
-    const c=list[i]&&list[i].isTM&&list[i].tmBillingCycle;
-    if(c==='weekly'||c==='milestone'||c==='completion')return c;
-  }
-  return 'weekly';
+// A saved proposal keeps the cadence it was saved with. One saved before this
+// was a choice (no field) was weekly, which is what it printed at the time. A
+// draft saved without a pick stays unpicked.
+function _tmSavedCadence(b){
+  if(!b||typeof b!=='object'||!('tmBillingCycle' in b))return 'weekly';
+  const c=b.tmBillingCycle;
+  return (c==='weekly'||c==='milestone'||c==='completion')?c:'';
+}
+function _tmBillWords(c){return {weekly:'bills weekly',milestone:'bills at milestones',completion:'bills at the end'}[c]||'';}
+// The bar's "Pick when you bill": open Getting paid and light the choice.
+function _tmPickBilling(){
+  _tmPayOpen=true;_tmRenderPay();_tmRenderBillTerms();
+  const el=document.getElementById('tm-cad-main');if(!el)return;
+  el.classList.add('ask');
+  try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){}
 }
 function _takeBillRateDefault(email,rate){
   _setBillRate(email,rate,true);
@@ -6020,7 +6030,9 @@ function _tmRenderSteps(all,rule){
   head('tm-step-3',3,DOC_STEP.materials,matOn?'done':'todo',matOn?'':'Optional');
   const ma=document.getElementById('tm-mat-add');
   if(ma){ma.style.display=(matOn||blocked)?'none':'';}
-  head('tm-step-4',4,DOC_STEP.review,blocked?'todo':_tmPayAttention()?'now':(st.one&&st.two&&chk)?'done':'todo','');
+  // Not done until he has picked when he bills (never a default).
+  const billPicked=!_tmLayers.has('rate')||!!_tmBillingCycle;
+  head('tm-step-4',4,DOC_STEP.review,blocked?'todo':_tmPayAttention()?'now':(st.one&&st.two&&chk)?(billPicked?'done':'now'):'todo',billPicked?'':'Pick when you bill');
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────
@@ -6058,9 +6070,14 @@ function _tmDockNext(st,rule,all){
   // Shared with Build Your Own (_geiTimStep, _geiNumsStep below).
   const tim=_geiTimStep(_geiScopeMissed);
   if(tim)return tim;
-  const r=Number(_tmRatePerMan)||0,c=_tmCrewCount||1;
-  return _geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
+  // The hour as it bills: the crew's rates added up when he picked a crew.
+  const r=_tmHourlyBill()||0,c=_tmCrewOn()?_estCrew.length:(_tmCrewCount||1);
+  const nums=_geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
     yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+  if(nums)return nums;
+  // When he bills: asked, never assumed (owner 2026-09-29).
+  if(_tmLayers.has('rate')&&!_tmBillingCycle)return {label:'Pick when you bill',fn:'_tmPickBilling()'};
+  return null;
 }
 // ── THE WALK TO SEND, SHARED BY T&M AND BUILD YOUR OWN (2026-09-26) ──────
 //
@@ -6267,10 +6284,13 @@ function _tmRenderBillTerms(){
   // Bills: on every contract that bills time.
   const cw=document.getElementById('tm-cad-main');
   if(cw){
-    const cyc=_tmBillingCycle||'weekly';
+    const cyc=_tmBillingCycle;   // nothing lit until he picks (never a default)
     const seg=(k,t)=>'<button type="button" class="'+(cyc===k?'on':'')+'" onclick="_tmCadence(\''+k+'\');_tmRenderBillTerms()">'+t+'</button>';
     cw.innerHTML=_tmLayers.has('rate')
-      ?'<div class="ios-row"><span class="ios-lbl">Bills</span><span class="ios-seg">'+
+      // Label on one line, the three choices on the next, full width: on one
+      // line they ran off a zoomed small phone.
+      ?'<div class="ios-row'+(cyc?'':' tm-cad-ask')+'"><span class="ios-lbl">When you bill'+(cyc?'':'<small>Pick one. It goes in the contract.</small>')+'</span></div>'+
+        '<div class="ios-row tm-cad-seg"><span class="ios-seg">'+
           seg('weekly','Weekly')+seg('milestone','Milestones')+seg('completion','At the end')+'</span></div>'
       :'';
   }
@@ -6309,7 +6329,7 @@ function _tmLayersFrom(b){
   if((b.exclusions||[]).length)out.push('excl');
   return [...new Set(out)];
 }
-function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();}
+function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();document.getElementById('tm-cad-main')?.classList.remove('ask');if(typeof _tmRenderSteps==='function')_tmRenderSteps();}
 function _tmSyncCadence(){
   ['weekly','milestone','completion'].forEach(c=>{
     const el=document.getElementById('tm-cad-'+c);if(!el)return;
@@ -7464,7 +7484,7 @@ function saveGenericEstimate(draft,opts){
     tmLayers:[..._tmLayers],
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
-    tmBillingCycle:_tmBillingCycle||'weekly',
+    tmBillingCycle:_tmBillingCycle||'',        // unpicked stays unpicked, even on a draft
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
     tmDepositPct:0,
     tmDepositAmt:_tmFlatDep,
@@ -7620,7 +7640,7 @@ function _geiBuildTermsHtml(){
   const _tmBillTerm={
     weekly:'Weekly invoices',biweekly:'Invoices every two weeks',
     milestone:'Invoices at each agreed milestone',completion:'One invoice on completion',
-  }[_tmBillingCycle||'weekly']||'Weekly invoices';
+  }[_tmBillingCycle]||'Invoice schedule not picked yet';
   // ON A RATE SHEET THE RATE IS THE CONTRACT. There is no total to point at, so
   // the number Buyer is agreeing to has to be stated in the terms themselves
   // and not left living only in the document body.
@@ -8155,7 +8175,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
   const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:15px 24px;font-size:14px;font-weight:500;border-top:1px solid #eceef2">${lbl}</td><td style="padding:15px 24px;text-align:right;font-size:14.5px;font-weight:700;white-space:nowrap;border-top:1px solid #eceef2">${val}</td></tr>`;
-  const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle||'weekly']||'Billed weekly';
+  const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle]||'Billing not picked yet';
   const _rsFlatDep=_tmDeposit();
   // THE CEILING LEADS WHEN THERE IS ONE (read-through as two sceptical
   // customers, 2026-09-23). "TIME & MATERIALS" in the big bar read as "the

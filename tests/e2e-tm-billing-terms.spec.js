@@ -107,7 +107,7 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
     expect(s.bar).toEqual(['Check your rate']);
-    await page.evaluate(() => _tmMarkRateChecked());
+    await page.evaluate(() => { /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     expect((await state()).bar).toEqual(['Sign here', 'Send it']);
   });
 
