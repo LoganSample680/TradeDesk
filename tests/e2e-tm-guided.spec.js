@@ -146,12 +146,12 @@ test.describe('the bar walks him to Send', () => {
     expect(await byoBar()).toEqual(['Price every line']);
     await page.evaluate(() => { _byoItems.forEach(it => { if (!(Number(it.price) > 0)) { it.price = 350; it.rate = 350; } }); _byoRenderSections(); _byoUpdateRail(); });
     expect(await byoBar()).toEqual(['Check the price']);
-    expect(await page.evaluate(() => document.getElementById('byo-step-2').getAttribute('data-state')), 'not ticked while unchecked').toBe('now');
+    expect(await page.evaluate(() => document.getElementById('byo-step-3').getAttribute('data-state')), 'not ticked while unchecked').toBe('now');
     await byoTap();
     expect((await byoBar())[0]).toMatch(/^Yes: \$[\d,]+, 25% deposit$/);
     await byoTap();
     expect(await byoBar()).toEqual(['Sign here', 'Send it']);
-    expect(await page.evaluate(() => document.getElementById('byo-step-2').getAttribute('data-state'))).toBe('done');
+    expect(await page.evaluate(() => document.getElementById('byo-step-3').getAttribute('data-state'))).toBe('done');
   });
 
   test('BYO: changing the deposit is checking it', async () => {

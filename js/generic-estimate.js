@@ -3055,8 +3055,11 @@ function _byoRenderSections(){
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+_matCardHTML()+(_byoItems.length?_attachCardHTML():'')+group+terms;
-  _matClaim(wrap);
+  // Materials is its own step (2), the same card T&M draws (js/materials.js).
+  const matWrap=document.getElementById('byo-mat-wrap');
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(matWrap?'':_matCardHTML())+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  if(matWrap){matWrap.innerHTML=_matCardHTML();_matClaim(matWrap);}
+  else _matClaim(wrap);
   _tmWireSwipe(wrap);
   _byoRenderSteps();
 }
@@ -3092,7 +3095,10 @@ function _byoRenderSteps(){
   const one=st.n>0, two=one&&!st.unpriced.length&&st.total>0;
   head('byo-step-1',1,DOC_STEP.work,one?'done':'now',one?(st.n+' line'+(st.n>1?'s':'')):'');
   // Not ticked until he has looked at the total and the deposit.
-  head('byo-step-2',2,DOC_STEP.review,two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  // 2 Materials: optional on a fixed price, so never "now".
+  const mats=(typeof _matIdx==='function')?_matIdx().length:0;
+  head('byo-step-2',2,DOC_STEP.materials,mats?'done':'todo',mats?(mats+' item'+(mats>1?'s':'')):'Optional');
+  head('byo-step-3',3,DOC_STEP.review,two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }

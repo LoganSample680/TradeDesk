@@ -238,6 +238,26 @@ test.describe('T&M in three steps', () => {
     expect(r.qi[r.qi.length - 1]).toBe('Review');
   });
 
+  // Owner 2026-09-29: "they all should be the same except BYO doesn't get
+  // time; it gets scope and materials if applicable".
+  test('Build Your Own: The work, Materials, Review, with no Time step', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay,#_style-pick-ov').forEach(e => e.remove());
+      openGenericEstimate(getClientById(92001), null, null, { mode: 'byo' }); _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+      _byoRenderSections(); _byoUpdateRail();
+      return {
+        steps: [1, 2, 3].map(n => (document.querySelector('#byo-step-' + n + ' .t') || {}).textContent),
+        matState: document.getElementById('byo-step-2').getAttribute('data-state'),
+        matInStep: !!document.querySelector('#byo-mat-wrap #mat-card'),
+        oneCard: document.querySelectorAll('#gei-byo-page #mat-card').length,
+      };
+    });
+    expect(r.steps).toEqual(['The work', 'Materials', 'Review']);
+    expect(r.matState, 'optional, so never the step to do').toBe('todo');
+    expect(r.matInStep).toBe(true);
+    expect(r.oneCard).toBe(1);
+  });
+
   test('Materials is optional on T&M: a row turns it on, then the row goes away', async () => {
     await open({ say: 'Set a tankless' });
     const before = await shown('#tm-mat-add');
