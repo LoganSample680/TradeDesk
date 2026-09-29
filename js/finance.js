@@ -40,6 +40,9 @@ function openExpenseFlow(){
         '</div>'+
       '</div>'+
       '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
+      // What was on the receipt, line by line (Jack 2026-09-29: "can it parse
+      // the materials too?"). Filled by the scan; read-only here.
+      '<div id="em-items"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
@@ -137,43 +140,39 @@ function expTriggerAttach(addPage){
 }
 function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy: redirect to live scanner
 
+// RECEIPTS ARE READ ON THE PHONE, NOTHING ELSE (owner 2026-09-29: "go no AI").
+// Apple's own text reader (TdDoc recognizeText) turns the photo into lines;
+// _rcptParseLines finds the store, total and date and _rcptParseItems the
+// parts. No network, no key, no cost per scan, the same rule Tim follows
+// (CLAUDE.md 18.3). The web has no reader, so there the form is filled by hand.
 function expTriggerScan(){
-  const tokenP=(async()=>{if(!_supa)return null;const{data}=await _supa.auth.getSession();let t=data?.session?.access_token||null;if(!t){const{data:r}=await _supa.auth.refreshSession();t=r?.session?.access_token||null;}return t;})();
   _showReceiptScanner(null,async blob=>{
     const status=document.getElementById('exp-scan-status');
     const scanArea=document.getElementById('exp-scan-area');
-    const token=await tokenP;
-    if(!token){if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}return;}
-    if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>'+svgIcon('📡')+' Reading receipt...</strong></div>';}
     if(scanArea)scanArea.style.opacity='.5';
     let b64;
     try{b64=await compressAndEncodeImage(blob);}
     catch(_ce){
       if(scanArea)scanArea.style.opacity='';
-      if(status){status.innerHTML='<div class="tip tip-w">Could not read that image, try another photo.</div>';}
+      if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Could not read that image, try another photo.</div>';}
       return;
     }
     const pageObj={b64,key:null};
     _expState.imagePages.push(pageObj);
     _expState.imageData={b64,type:'image/jpeg'};
+    _expState.hasReceipt=true;
     _uploadReceiptToStorage(Date.now(),b64).then(k=>{if(k)pageObj.key=k;}).catch(()=>{});
-    try{
-      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})});
-      if(!resp.ok)throw new Error('Scan error '+resp.status);
-      const parsed=await resp.json();
-      if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
-      if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
-      if(parsed.date)document.getElementById('em-date').value='';  // cleared: set properly after user confirms below
-      if(parsed.category)document.getElementById('em-cat').value=parsed.category;
-      if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
-      _expState.hasReceipt=true;
-      _renderExpPages();
-      if(scanArea){scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';}
-      _confirmReceiptDate(parsed.date||'',status);
-    }catch(e){
-      console.warn('Receipt scan failed:',e);
-      if(status)status.innerHTML='<div class="tip tip-w">Could not auto-read, fill in manually below.</div>';
-      if(scanArea)scanArea.style.opacity='1';
+    _renderExpPages();
+    if(scanArea){scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';}
+    // Apple's scanner already read page one from its file (_rcptNativeScan);
+    // a photo from anywhere else is read here, from the picture itself.
+    if(_expState.readOnPhone||_expState.imagePages.length>1)return;
+    _expState.readOnPhone=true;
+    const read=await _rcptOcrRead({base64:b64,mime:'image/jpeg'});
+    const got=_rcptApplyPhoneRead(read);
+    if(status){
+      status.style.display='block';
+      status.innerHTML=got?'':'<div class="tip tip-w">Could not read this one. Fill in the store and total below.</div>';
     }
   });
 }
@@ -348,19 +347,12 @@ async function _rcptReadNativeFile(path){
     return await (await fetch(src)).blob();
   }catch(_e){return null;}
 }
-// ── On-device receipt reading (owner 2026-08-11) ─────────────────────────────
-// "Is this instant and more accurate?" Instant yes, accurate only in part, so
-// the two engines split the job by what each is actually good at:
-//
-//   Apple Vision (here)  reads the CHARACTERS. Sub-second, free, works with no
-//                        signal. Terrible at judgment: raw OCR asked for "the
-//                        total" happily returns the subtotal.
-//   The AI pass          understands the STRUCTURE. Slower, costs money, needs
-//                        a network, and is far better on a crumpled receipt.
-//
-// So Vision fills the fields the instant the scanner closes, and the AI pass
-// corrects them when it lands. Offline, the Vision read simply stands and the
-// expense still gets logged, which is the case that used to fail completely.
+// ── On-device receipt reading (owner 2026-08-11, the only reader since
+// 2026-09-29: "go no AI") ──────────────────────────────────────────────────
+// Apple Vision reads the CHARACTERS: sub-second, free, works with no signal.
+// It has no judgment (raw OCR asked for "the total" happily returns the
+// subtotal), so the judgment lives in the parsers below, which are tuned on
+// real receipts rather than handed to a model.
 async function _rcptOcrLines(path){
   const P=_rcptNativePlugin();
   if(!P||typeof P.recognizeText!=='function')return [];
@@ -368,6 +360,63 @@ async function _rcptOcrLines(path){
     const r=await P.recognizeText({path});
     return (r&&Array.isArray(r.lines))?r.lines:[];
   }catch(_e){return [];}
+}
+// The reader's words WITH where they sit. Vision hands back each run of text
+// on its own, so "SHARKBITE CPLG" and "6.49" at the same height come as two
+// entries; _rcptRows puts a printed line back together, left to right.
+async function _rcptOcrRead(src){
+  const P=_rcptNativePlugin();
+  if(!P||typeof P.recognizeText!=='function')return {lines:[],rows:[]};
+  try{
+    const r=await P.recognizeText(src&&src.path?{path:src.path}:src);
+    const lines=(r&&Array.isArray(r.lines))?r.lines:[];
+    const rows=_rcptRows(r&&r.boxes);
+    return {lines,rows:rows.length?rows:lines};
+  }catch(_e){return {lines:[],rows:[]};}
+}
+function _rcptRows(boxes){
+  const bx=(Array.isArray(boxes)?boxes:[]).filter(b=>b&&String(b.text||'').trim()&&isFinite(b.y)&&isFinite(b.h))
+    .map(b=>({t:String(b.text).trim(),p:Number(b.page)||0,x:Number(b.x)||0,cy:Number(b.y)+Number(b.h)/2,h:Math.max(Number(b.h)||0,0.004)}))
+    .sort((a,b)=>(a.p-b.p)||(a.cy-b.cy));
+  const rows=[];
+  bx.forEach(b=>{
+    const last=rows[rows.length-1];
+    // Same printed line: same page and the centres within half a line height.
+    if(last&&last.p===b.p&&Math.abs(last.cy-b.cy)<=Math.min(last.h,b.h)*0.6){last.items.push(b);return;}
+    rows.push({p:b.p,cy:b.cy,h:b.h,items:[b]});
+  });
+  return rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(i=>i.t).join('   '));
+}
+// One place the read lands on the form: the store, total and date where the
+// form is still empty, the parts, and the category the store implies.
+function _rcptApplyPhoneRead(read){
+  const lines=(read&&read.lines)||[],rows=(read&&read.rows)||lines;
+  if(!lines.length&&!rows.length)return 0;
+  const parsed=_rcptParseLines(rows.length?rows:lines);
+  let got=_rcptApplyLocalRead(parsed);
+  const its=_rcptParseItems(rows);
+  if(its.length){_expState.items=its;_renderExpItems();got++;}
+  const cat=_rcptCategoryFor(parsed.vendor||document.getElementById('em-vendor')?.value||'');
+  const ce=document.getElementById('em-cat');
+  if(cat&&ce&&(!ce.value||ce.value==='other'||ce.value===(ce.options&&ce.options[0]&&ce.options[0].value))){ce.value=cat;if(typeof toggleExpenseSections==='function')toggleExpenseSections();}
+  if(parsed.date&&typeof _confirmReceiptDate==='function')_confirmReceiptDate(parsed.date,document.getElementById('exp-scan-status'));
+  return got;
+}
+// THE STORE SAYS WHAT IT WAS (no AI to guess a category any more). Checked
+// in order; the first match wins. Unknown stores are left for him.
+const _RCPT_STORE_CATS=[
+  [/\b(shell|exxon|mobil|bp|chevron|marathon|speedway|casey'?s|qt|quik\s*trip|kwik|sinclair|conoco|phillips\s*66|valero|circle\s*k|wawa|sheetz|love'?s|pilot|flying\s*j|murphy\s*usa|fuel|gas)\b/i,'fuel'],
+  [/\b(o'?reilly|autozone|advance\s*auto|napa|jiffy\s*lube|valvoline|firestone|discount\s*tire|tire|auto\s*parts|car\s*wash)\b/i,'vehicle'],
+  [/\b(harbor\s*freight|northern\s*tool|snap[\s-]*on|milwaukee|dewalt|tool)\b/i,'tools'],
+  [/\b(ferguson|home\s*depot|lowe'?s|menards|ace\s*hardware|true\s*value|do\s*it\s*best|84\s*lumber|abc\s*supply|beacon|sherwin|benjamin\s*moore|ppg|hd\s*supply|grainger|winsupply|hajoca|johnstone|graybar|platt|ced\b|crescent|rexel|consolidated\s*electrical|supply|lumber|plumbing|electric|hardware)\b/i,'materials'],
+  [/\b(mcdonald'?s|wendy'?s|burger|subway|taco|chick[\s-]*fil|starbucks|dunkin|pizza|grill|cafe|restaurant|diner|kitchen)\b/i,'meals'],
+  [/\b(verizon|at&t|t[\s-]*mobile|sprint|cricket)\b/i,'phone'],
+];
+function _rcptCategoryFor(vendor){
+  const v=String(vendor||'');
+  if(!v.trim())return '';
+  for(const [re,cat] of _RCPT_STORE_CATS)if(re.test(v))return cat;
+  return '';
 }
 // Money on a receipt line. Handles 1,234.56 / 1234.56 / $12.34, and refuses
 // bare integers: a quantity, a SKU, or a phone fragment is not a price.
@@ -383,6 +432,46 @@ function _rcptMoneyIn(line){
 }
 // The judgment call OCR cannot make. Ordered by how much a contractor would
 // trust it, and every rule here exists because of how receipts actually print.
+// ── THE PARTS ON THE RECEIPT (Jack 2026-09-29) ─────────────────────────────
+// One shape for both readers: {desc, qty, price} where price is ONE of them,
+// what he paid. Junk in comes out as nothing, never as a $0 line.
+function _rcptItems(raw){
+  if(!Array.isArray(raw))return [];
+  return raw.slice(0,60).map(x=>{
+    const desc=String((x&&(x.desc||x.description||x.name))||'').replace(/\s+/g,' ').trim().slice(0,80);
+    const qty=Number(x&&x.qty)>0?Number(x.qty):1;
+    let price=Number(x&&(x.price!=null?x.price:x.unit_price));
+    const total=Number(x&&x.total);
+    if(!(price>0)&&total>0)price=total/qty;
+    return {desc,qty,price:Math.round((price||0)*100)/100};
+  }).filter(x=>x.desc.length>=3&&x.price>0);
+}
+// A printed line that ends in a price and is not a total, tax, tender or
+// change line is a part. "2 @ 4.99" is a count.
+function _rcptParseItems(lines){
+  const skip=/\b(sub\s*-?total|total|tax|balance|change|cash|visa|master\s*card|amex|discover|debit|credit|tender|payment|amount\s+due|you\s+saved|savings|auth|approval|ref(erence)?\s*#|card\s*#|acct|store\s*#|register|cashier|thank)\b/i;
+  const out=[];
+  (lines||[]).map(x=>String(x||'').trim()).filter(Boolean).forEach(l=>{
+    if(skip.test(l))return;
+    const m=l.match(/^(.*?[A-Za-z].*?)\s+\$?(\d{1,5}\.\d{2})\s*[A-Z]?$/);
+    if(!m)return;
+    let desc=m[1].trim(),qty=1,price=Number(m[2]);
+    const at=desc.match(/^(.*?)\s+(\d{1,4})\s*[@xX]\s*\$?(\d{1,5}\.\d{2})$/);
+    if(at){desc=at[1].trim();qty=Number(at[2]);price=Number(at[3]);}
+    desc=desc.replace(/^\d{6,}\s+/,'').replace(/\s{2,}/g,' ').trim();
+    out.push({desc,qty,price});
+  });
+  return _rcptItems(out);
+}
+function _renderExpItems(){
+  const el=document.getElementById('em-items');if(!el)return;
+  const its=(_expState&&_expState.items)||[];
+  if(!its.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="margin-bottom:12px;border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">On the receipt · '+its.length+(its.length===1?' part':' parts')+'</div>'+
+    its.map(i=>'<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;line-height:1.5"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(i.desc)+(i.qty!==1?' <span style="color:var(--text3)">× '+i.qty+'</span>':'')+'</span><span style="flex-shrink:0">'+fmt(i.price*i.qty)+'</span></div>').join('')+
+    '<div style="font-size:11px;color:var(--text3);margin-top:6px">Saved with the expense, and what you paid goes in your materials book.</div></div>';
+}
 function _rcptParseLines(lines){
   const L=(lines||[]).map(x=>String(x||'').trim()).filter(Boolean);
   const out={vendor:'',amount:null,date:''};
@@ -448,7 +537,7 @@ function _rcptParseLines(lines){
   return out;
 }
 // Fill the expense form from an on-device read, WITHOUT clobbering anything
-// the user (or a faster AI response) already put there.
+// the user already put there.
 function _rcptApplyLocalRead(parsed){
   if(!parsed)return 0;
   let filled=0;
@@ -474,13 +563,10 @@ async function _rcptNativeScan(callback,allPages){
   const pages=(r&&r.pages)||[];
   if(!pages.length)return;                        // cancelled: leave everything alone
   const take=allPages?pages:pages.slice(0,1);
-  // Read page one on-device FIRST: it lands in well under a second, so the
-  // fields are already filled while the AI round trip is still in flight (and
-  // they stand on their own when there is no signal at all).
-  _rcptOcrLines(pages[0]).then(lines=>{
-    if(!lines.length)return;
-    try{_rcptApplyLocalRead(_rcptParseLines(lines));}catch(_e){}
-  }).catch(()=>{});
+  // Read page one on the phone, from the scanner's own file: it lands in well
+  // under a second, and it works with no signal at all.
+  if(typeof _expState!=='undefined'&&_expState)_expState.readOnPhone=true;
+  _rcptOcrRead({path:pages[0]}).then(read=>{try{_rcptApplyPhoneRead(read);}catch(_e){}}).catch(()=>{});
   let delivered=0;
   for(const p of take){
     const blob=await _rcptReadNativeFile(p);
@@ -1024,7 +1110,8 @@ async function expSave(){
         vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
         vehicleId:_vehIdForName(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):''),
         lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
-        job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
+        job_id:jobId,job_name:job2?job2.client_name||job2.name:(!jobId&&expenses[idx].client_id!=null?(expenses[idx].job_name||''):''),
+        items:(_expState.items&&_expState.items.length)?_expState.items.slice():expenses[idx].items,
         receipt:upd_receipt_key||upd_receipt_img?'Yes: photo stored':'No receipt photo',
         receipt_key:upd_receipt_key,receipt_img:upd_receipt_img,
         receipt_keys:existing_keys.length?existing_keys:undefined,
@@ -1063,6 +1150,10 @@ async function expSave(){
   if(err)err.textContent='';
   const catInfo=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
   const job=jobId?bids.find(b=>b.id===jobId):null;
+  // A store run knows whose house it was for (js/mileage.js _supplyRunClient):
+  // with no job picked, the expense is still that customer's.
+  const _srCid=document.getElementById('qe-supply-client')?.value||'';
+  const _srClient=(!job&&_srCid&&typeof getClientById==='function')?(getClientById(isNaN(+_srCid)?_srCid:+_srCid)||null):null;
   const mealPurpose=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
   const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
   const expId=_expState.preId||Date.now();
@@ -1086,11 +1177,16 @@ async function expSave(){
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
-    job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
+    job_id:jobId,job_name:job?job.client_name||job.name:(_srClient?_srClient.name:''),client_id:job?job.client_id:(_srClient?_srClient.id:null),
     receipt:receipt_key||receipt_img?'Yes: photo stored':'No receipt photo',
     receipt_key,receipt_img,receipt_keys:receipt_keys.length?receipt_keys:undefined,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
+    items:(_expState.items&&_expState.items.length)?_expState.items.slice():undefined,
   });
+  // What he paid, part by part, onto his price sheet (partCostLearn, js/data.js).
+  if(_expState.items&&_expState.items.length&&typeof partCostLearn==='function'){
+    _expState.items.forEach(i=>partCostLearn(i.desc,i.price,vendor,date,i.qty));
+  }
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   // A supply-run card launched this flow (hidden field, js/mileage.js
   // _supplyRunScan): the saved receipt/expense is the proof that commits the
@@ -2227,25 +2323,6 @@ function deleteReceiptPhoto(expId){
   },{title:'Delete photo?',yes:'Delete photo',danger:true});
 }
 
-// ── State-based tax & lien info ────────────────────────────────────────
-async function fetchStateInfo(state){
-  if(!state||!supaEnabled())return;
-  const cacheKey='zp3_state_info_'+state;
-  const cached=localStorage.getItem(cacheKey);
-  if(cached){
-    try{const p=JSON.parse(cached);if(p.ts&&Date.now()-p.ts<30*24*60*60*1000){S.stateInfo=p.data;return;}}catch(e){}
-  }
-  try{
-    const session=await _supa.auth.getSession();
-    const token=session?.data?.session?.access_token;
-    const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
-      body:JSON.stringify({stateInfoQuery:true,state})
-    });
-    // Falls back gracefully if function doesn't handle this yet
-  }catch(e){console.warn('fetchStateInfo:',e);}
-}
 async function openExportPanel(mode){
   // From the Mileage screen he wants the mileage log, not a menu of five
   // things that are not it (Earl audit 2026-09-27).
@@ -4120,6 +4197,7 @@ function editExpense(id){
     sv('em-cat',exp.cat);
     sv('em-notes',exp.notes);
     if(exp.job_id)sv('em-job',exp.job_id);
+    if(Array.isArray(exp.items)&&exp.items.length){_expState.items=exp.items.slice();_renderExpItems();}
     toggleExpenseSections();
     if(exp.vehicleName)sv('em-vehicle',exp.vehicleName);
     if(exp.lead_source)sv('em-mkt-source',exp.lead_source);

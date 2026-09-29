@@ -59,7 +59,7 @@ function renderPriceBookSettings(){
     if(tabs)tabs.innerHTML='';
     list.innerHTML=_offer+'<div style="padding:'+(_offer?'4px':'22px')+' 4px 22px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
-      '</div>';
+      '</div>'+_partCostsHtml();
     return;
   }
   if(!_pbTradeTab||!trades.includes(_pbTradeTab))_pbTradeTab=trades[0];
@@ -75,13 +75,33 @@ function renderPriceBookSettings(){
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
         '<button data-i="'+i+'" onclick="_pbRename(+this.dataset.i)" style="display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</button>'+
-        '<div style="font-size:11px;color:var(--text3)">'+escHtml(used)+(r.last?' · '+escHtml(r.last):'')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml(used)+(r.last?' · '+escHtml(r.last):'')+
+          // What he paid for it, from his receipts, beside what he charges.
+          (function(){const pc=(typeof partCostFor==='function')?partCostFor(r.desc):null;return pc?' · paid '+escHtml(fmt(pc.cost))+(pc.vendor?' at '+escHtml(pc.vendor):''):'';})()+'</div>'+
       '</div>'+
       '<button data-i="'+i+'" onclick="_pbReprice(+this.dataset.i)" style="background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:14px;font-weight:800;color:var(--blue);flex-shrink:0">'+(typeof fmt==='function'?fmt(r.rate):'$'+r.rate)+'</button>'+
       '<button data-i="'+i+'" onclick="_pbRemove(+this.dataset.i)" aria-label="Remove" style="background:none;border:none;padding:4px 2px;font-family:inherit;cursor:pointer;font-size:15px;color:var(--text3);flex-shrink:0">&times;</button>'+
     '</div>';
   }).join('')+
-  '<div style="font-size:11px;color:var(--text3);padding:12px 2px 0;line-height:1.6">A line lands here the second time you use it, so one-off descriptions never clutter it up.</div>';
+  '<div style="font-size:11px;color:var(--text3);padding:12px 2px 0;line-height:1.6">A line lands here the second time you use it, so one-off descriptions never clutter it up.</div>'+
+  _partCostsHtml();
+}
+// THE MATERIALS BOOK on the price book screen (partCostLearn, js/data.js):
+// every part off a scanned receipt, most bought first so he can see what the
+// truck has to carry, with the latest price and where it came from.
+function _pcDay(at){const m=String(at||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return '';try{return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(_e){return '';}}
+function _partCostsHtml(){
+  const rows=(typeof materialsBook==='function')?materialsBook():[];
+  const head='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Materials book'+(rows.length?' · '+rows.length+(rows.length===1?' part':' parts'):'')+'</div>';
+  if(!rows.length)return '<div id="pb-paid" style="margin-top:22px">'+head+
+    '<div style="font-size:13px;color:var(--text3);line-height:1.6">Scan a receipt and every part on it lands here with what it cost you and where. The ones you buy most sit at the top.</div></div>';
+  const q=n=>{n=Number(n)||0;return Number.isInteger(n)?String(n):String(Math.round(n*100)/100);};
+  return '<div id="pb-paid" style="margin-top:22px">'+head+
+    rows.slice(0,200).map(r=>'<div class="pb-paid-row" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">'+escHtml(['bought '+q(r.qty||1)+((r.n||1)>1?' over '+r.n+' trips':''),r.vendor,_pcDay(r.at)].filter(Boolean).join(' · '))+'</div></div>'+
+      '<div style="font-size:14px;font-weight:700;flex-shrink:0">'+escHtml(fmt(r.cost))+'</div></div>').join('')+
+    '<div style="font-size:11px;color:var(--text3);padding:10px 2px 0;line-height:1.6">From your receipts, the latest price each time you buy it. Your cost, never what a customer is charged unless you pick it.</div></div>';
 }
 function _pbPickTrade(t){_pbTradeTab=t;renderPriceBookSettings();}
 function _pbSettingsRow(i){
