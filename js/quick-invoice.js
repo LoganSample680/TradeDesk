@@ -657,7 +657,6 @@ function _qiAddPerson(name,rate){
   if(!_qi.crew.includes(name))_qi.crew.push(name);
   // Taking somebody off one day and then adding them back puts them back.
   _qi.dropped=new Set([..._qi.dropped].filter(k=>k.split('|')[2]!==name));
-  _qi.addOpen=false;
   _qiRebuild();renderQuickInvoice();
   return true;
 }
@@ -671,26 +670,43 @@ function _qiRemovePerson(name){
   _qi.added=_qi.added.filter(x=>x.rider!==name);
   _qiRebuild();renderQuickInvoice();
 }
+// A DROPDOWN, NOT PILLS (owner 2026-09-29: "rather than pills can it be a
+// dropdown"). Folded it is one row: Who was on it, and the names. Open, it is
+// a checklist of everybody: tap to put somebody on or take them off, and a
+// last row to type a new name with a rate.
+function _qiTrackedPeople(){return [...new Set((_qi.base||[]).filter(l=>l.kind==='time'&&!l.rider).map(l=>l.who))];}
+function _qiPersonToggle(name){
+  if(!_qi)return;
+  const on=_qiOnBill().includes(name);
+  if(_qiTrackedPeople().includes(name)){
+    // Somebody who tracked their own time: off drops every line of theirs,
+    // on puts them back.
+    if(on)_qi.tracked.filter(l=>l.who===name).forEach(l=>_qi.dropped.add(_qiLineKey(l)));
+    else _qi.dropped=new Set([..._qi.dropped].filter(k=>k.split('|')[2]!==name));
+    _qiRebuild();renderQuickInvoice();
+    return;
+  }
+  if(on)_qiRemovePerson(name);else{_qiAddPerson(name);_qi.addOpen=true;renderQuickInvoice();}
+}
 function _qiPeopleHtml(){
   const on=_qiOnBill();
-  const extra=_qi.crew.concat(_qi.added.map(x=>x.rider));
-  const chip=n=>{
-    const added=extra.includes(n);
-    return '<span class="qi-person">'+escHtml(n.split(' ')[0])+
-      (added?'<button type="button" aria-label="Take '+escHtml(n)+' off this invoice" onclick="_qiRemovePerson(\''+escHtml(n).replace(/'/g,'&#39;')+'\')">×</button>':'')+'</span>';
-  };
-  const pick=_qiPeople().filter(n=>!on.includes(n));
-  const b=n=>'<button type="button" onclick="_qiAddPerson(\''+escHtml(n).replace(/'/g,'&#39;')+'\')">'+escHtml(n)+'</button>';
-  return '<div class="ios-group qi-people">'+
-    '<div class="ios-row qi-people-row"><span class="ios-lbl"><b>Who was on it</b>'+
-      '<span class="qi-person-list">'+on.map(chip).join('')+'</span></span>'+
-      '<button type="button" class="qi-add-person" id="qi-add-person" onclick="_qiAddOpen()">+ Add person</button></div>'+
-    (_qi.addOpen?'<div class="qi-add-sheet">'+
-      (pick.length?'<div class="qi-pb qi-crew">'+pick.map(b).join('')+'</div>':'')+
-      '<div class="ios-row qi-new"><input id="qi-new-name" class="qi-desc" type="text" autocapitalize="words" placeholder="Name, no app needed" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'qi-new-rate\').focus();}">'+
+  const tracked=_qiTrackedPeople();
+  const all=[...new Set(tracked.concat(on,_qiPeople()))];
+  const q=n=>escHtml(n).replace(/'/g,'&#39;');
+  const names=on.length?on.map(n=>n.split(' ')[0]).join(', '):'Nobody yet';
+  return '<div class="ios-group qi-people'+(_qi.addOpen?' open':'')+'">'+
+    '<button type="button" class="ios-row qi-people-row" id="qi-add-person" onclick="_qiAddOpen()" aria-expanded="'+(_qi.addOpen?'true':'false')+'">'+
+      '<span class="ios-lbl">Who was on it<small>'+escHtml(names)+'</small></span>'+
+      '<span class="ios-chev" style="transform:rotate('+(_qi.addOpen?'90':'0')+'deg);transition:transform .18s ease" aria-hidden="true">›</span></button>'+
+    (_qi.addOpen?
+      all.map(n=>{const is=on.includes(n);
+        return '<button type="button" class="ios-row qi-x-row qi-person-row" data-who="'+escHtml(n)+'" onclick="_qiPersonToggle(\''+q(n)+'\')" aria-pressed="'+is+'">'+
+          '<span class="qi-chk'+(is?' on':'')+'" aria-hidden="true"></span>'+
+          '<span class="ios-lbl">'+escHtml(n)+'<small>'+(tracked.includes(n)?'Tracked in the app':'Same hours as the crew')+'</small></span></button>';}).join('')+
+      '<div class="ios-row qi-new"><input id="qi-new-name" class="qi-desc" type="text" autocapitalize="words" placeholder="New person, no app needed" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'qi-new-rate\').focus();}">'+
         '<span class="ios-val">$<input id="qi-new-rate" type="text" inputmode="decimal" placeholder="0" aria-label="Their rate per hour" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_qiAddNew();}">/hr</span>'+
-        '<button type="button" class="ios-pill" onclick="_qiAddNew()">Add</button></div>'+
-      '<div class="ios-foot">They get the hours of whoever worked each day. Change a day\'s hours on that day.</div></div>':'')+
+        '<button type="button" class="ios-pill" onclick="_qiAddNew()">Add</button></div>'
+    :'')+
   '</div>';
 }
 function _qiTotal(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
