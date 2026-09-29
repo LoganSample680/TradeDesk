@@ -3633,9 +3633,7 @@ function _billRateFor(email){
   if(!k)return 0;
   const own=Number(_estCrewRates&&_estCrewRates[k]);
   if(own>0)return own;
-  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-  const def=Number(e&&e.billRate);
-  return def>0?def:0;
+  return personBillRate(k);                      // the one lookup (js/data.js)
 }
 // What the crew on site bills, per hour, all in. Zero when nobody on this job
 // has a rate of their own, which is the signal to fall back to crew × flat.
@@ -3658,10 +3656,7 @@ function _setBillRate(email,rate,asDefault){
   const r=Math.max(0,Number(rate)||0);
   if(!k)return;
   if(r>0)_estCrewRates[k]=r;else delete _estCrewRates[k];
-  if(asDefault){
-    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-    if(e){e.billRate=r||0;if(typeof _settingsChanged==='function')_settingsChanged();}
-  }
+  if(asDefault)setPersonBillRate(k,r);
   if(_geiIsTM&&typeof _tmInputChange==='function')_tmInputChange();
   else{if(typeof _byoUpdateRail==='function')_byoUpdateRail();if(typeof _byoAutosave==='function')_byoAutosave();}
 }
@@ -5194,7 +5189,7 @@ function _tmStateName(st){
 // the terms and the Rate row on the document.
 function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
 function _tmHideRateDefault(){
-  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+  try{return typeof copyShows==='function'?!copyShows('proposal','rate'):!!(typeof S!=='undefined'&&S&&S.tmHideRate);}catch(_e){return false;}
 }
 function _tmSetHideRate(v){
   if(!_tmCanHideRate()){_tmHideRate=false;}
@@ -5203,7 +5198,8 @@ function _tmSetHideRate(v){
   // An assignment alone lives until the tab closes, which is not "remembered"
   // and is certainly not "follows him to the tablet in the truck".
   try{
-    if(typeof S!=='undefined'&&S){
+    if(typeof setCopyShows==='function')setCopyShows('proposal','rate',!_tmHideRate);
+    else if(typeof S!=='undefined'&&S){
       S.tmHideRate=_tmHideRate;
       if(typeof _settingsChanged==='function')_settingsChanged();
     }
@@ -7802,6 +7798,13 @@ function _propCover(o){
     `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
 }
+// A customer's phone as the document prints it, (555) 555-0101. One helper
+// so the proposal and the invoice never print the same number two ways.
+function _propPhone(v){
+  const raw=String(v||'');let d=raw.replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
+  return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
+}
 function _propIncludedHtml(texts,accent,title,tm,tint){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
@@ -7921,11 +7924,7 @@ async function sendGenericProposal(previewOnly,opts){
   // Printed the way a phone number is written, not as ten bare digits. Only a
   // clean US number is reshaped (a leading 1 dropped); anything else prints
   // exactly as he typed it, because a wrong reformat is worse than none.
-  const clientPhone=escHtml((()=>{
-    const raw=String(_clientRec?.phone||'');let d=raw.replace(/\D/g,'');
-    if(d.length===11&&d[0]==='1')d=d.slice(1);
-    return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
-  })());
+  const clientPhone=escHtml(_propPhone(_clientRec?.phone));
   // The Project line is the CLIENT's header, so it only carries a name the
   // contractor actually chose. The auto name (_geiAutoName) is derived from the
   // first line item and exists so he can find the proposal in his own list,
