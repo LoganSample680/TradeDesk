@@ -3758,7 +3758,14 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div id="byo-sections"></div>
         <div id="byo-sitenote-wrap"></div>
 
+        <!-- 2 MATERIALS (owner 2026-09-29: "they all should be the same except
+             BYO doesn't get time; it gets scope and materials if applicable").
+             The one shared card (js/materials.js), drawn by _byoRenderSections. -->
         <div class="ios-stephead" id="byo-step-2" data-tim-step="2"></div>
+        <div id="byo-mat-wrap"></div>
+
+        <!-- 3 REVIEW: the price, the deposit, then the bar sends it. -->
+        <div class="ios-stephead" id="byo-step-3" data-tim-step="3"></div>
         <!-- The price: rows drawn by _byoRenderPrice; the rail's own fields
              (deposit, cost, profit) are moved in here so each keeps its id. -->
         <div class="ios-sec" id="byo-price-sec">
