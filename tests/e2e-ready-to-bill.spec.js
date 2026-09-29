@@ -311,15 +311,14 @@ test.describe('Ready to bill', () => {
       openQuickInvoice(701);
       await new Promise(r => setTimeout(r, 30));
       document.getElementById('qi-add-person').click();
-      const choices = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
-      [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].find(b => b.textContent === 'John Miller')?.click();
+      const rows = [...document.querySelectorAll('#qi-page .qi-person-row')].map(b => [b.dataset.who, b.getAttribute('aria-pressed')]);
       const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => ({ day: l.day, mins: l.mins, rate: l.rate, rider: l.rider || null }));
-      const chips = [...document.querySelectorAll('#qi-page .qi-person')].map(c => c.firstChild.textContent);
-      return { choices, john, chips };
+      const folded = document.querySelector('#qi-page .qi-people-row small').textContent;
+      return { rows, john, folded };
     });
-    // John tracked the 24th himself, so he is already on the bill and not offered.
-    expect(r.choices).toEqual([]);
-    expect(r.chips).toEqual(['Jack', 'John']);
+    // John tracked the 24th himself, so he is already checked.
+    expect(r.rows).toEqual([['Jack Sample', 'true'], ['John Miller', 'true']]);
+    expect(r.folded).toBe('Jack, John');
     expect(r.john).toEqual([{ day: '2026-09-24', mins: 60, rate: 125, rider: null }]);
   });
 
@@ -328,30 +327,30 @@ test.describe('Ready to bill', () => {
     await open(page, 701);
     const r = await page.evaluate(async () => {
       document.getElementById('qi-add-person').click();
-      const choices = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
-      [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].find(b => b.textContent === 'John Miller').click();
+      const choices = [...document.querySelectorAll('#qi-page .qi-person-row[aria-pressed="false"]')].map(b => b.dataset.who);
+      document.querySelector('#qi-page .qi-person-row[data-who="John Miller"]').click();
       const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => [l.day, l.mins]);
       _qiDayOpen('2026-09-22');
       const inp = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-hrs input');
       inp.value = '4'; inp.dispatchEvent(new Event('change'));
       const after = _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-22');
       return { choices, john, after: [after.mins, after.amount], other: _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-23').mins,
-        remembered: S.qiRiders || null, sheet: !!document.querySelector('#qi-page .qi-add-sheet') };
+        remembered: S.qiRiders || null, folded: document.querySelector('#qi-page .qi-people-row small').textContent };
     });
     expect(r.choices).toEqual(['John Miller']);
     expect(r.john).toEqual([['2026-09-22', 360], ['2026-09-23', 210], ['2026-09-24', 120]]);
     expect(r.after, 'John left early: 4 hours at $125').toEqual([240, 500]);
     expect(r.other, 'only that day moves').toBe(210);
     expect(r.remembered, 'nothing rides along to the next invoice').toBeNull();
-    expect(r.sheet).toBe(false);
+    expect(r.folded).toBe('Jack, John');
   });
 
   test('two people with no app: typed with a rate, they double the man-hours, and next time it is just the name', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(async () => {
+      document.getElementById('qi-add-person').click();
       const add = (n, rate) => {
-        document.getElementById('qi-add-person').click();
         document.getElementById('qi-new-name').value = n; document.getElementById('qi-new-rate').value = rate;
         [...document.querySelectorAll('#qi-page .qi-new button')].find(b => b.textContent === 'Add').click();
       };
@@ -361,7 +360,7 @@ test.describe('Ready to bill', () => {
       _qi = null; openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
       const fresh = _qi.tracked.some(l => l.who === 'Mike Dunn');
       document.getElementById('qi-add-person').click();
-      const offered = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
+      const offered = [...document.querySelectorAll('#qi-page .qi-person-row[aria-pressed="false"]')].map(b => b.dataset.who);
       return { day, kept, fresh, offered, rate: personBillRate('Mike Dunn') };
     });
     expect(r.day).toEqual([['Jack Sample', 360, 75], ['Mike Dunn', 360, 60], ['Sam Ortiz', 360, 55]]);
@@ -379,11 +378,26 @@ test.describe('Ready to bill', () => {
       const i = _qi.tracked.findIndex(l => l.who === 'John Miller' && l.day === '2026-09-23');
       _qiDropTracked(i);
       const oneOff = _qi.tracked.filter(l => l.who === 'John Miller').map(l => l.day);
-      [...document.querySelectorAll('#qi-page .qi-person button')][0].click();
+      document.getElementById('qi-add-person').click();
+      document.querySelector('#qi-page .qi-person-row[data-who="John Miller"]').click();
       return { oneOff, gone: _qi.tracked.some(l => l.who === 'John Miller'), crew: _qi.crew.slice() };
     });
     expect(r.oneOff).toEqual(['2026-09-22', '2026-09-24']);
     expect(r).toMatchObject({ gone: false, crew: [] });
+  });
+
+  test('someone who tracked their own time can be unchecked off the whole bill, and checked back', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-add-person').click();
+      document.querySelector('#qi-page .qi-person-row[data-who="Jack Sample"]').click();
+      const off = { jack: _qi.tracked.some(l => l.who === 'Jack Sample'), checked: document.querySelector('#qi-page .qi-person-row[data-who="Jack Sample"]').getAttribute('aria-pressed') };
+      document.querySelector('#qi-page .qi-person-row[data-who="Jack Sample"]').click();
+      return { off, back: _qi.tracked.filter(l => l.who === 'Jack Sample').length };
+    });
+    expect(r.off).toEqual({ jack: false, checked: 'false' });
+    expect(r.back).toBe(3);
   });
 
   test('junk in + Add person adds nobody and never throws', async ({ page }) => {
