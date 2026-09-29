@@ -143,11 +143,11 @@ function _qiRateFor(name){
 function _qiRememberRate(name,rate){
   if(rate>0&&!(personBillRate(name)>0))setPersonBillRate(name,rate);
 }
-// RIDERS (owner 2026-09-29): somebody with no phone in the app who works
-// beside somebody who has one. John rides with Jack: every day Jack has hours
-// at a house, John is on that day's bill with the same hours at his own rate,
-// unless John tracked that day himself. One setting, rider -> lead.
-function _qiRiders(){return (typeof S!=='undefined'&&S&&S.qiRiders&&typeof S.qiRiders==='object')?S.qiRiders:{};}
+// PEOPLE WITH NO TIME IN THE APP (owner 2026-09-29: "that person shouldn't
+// just ride along forever ... we type them up and their rate and it doubles
+// the man hours"). Added on THIS invoice with + Add person: each checked day
+// bills them the hours of whoever worked it longest, at their own rate. Not
+// remembered for the next invoice; only their rate is (on the person).
 function _qiRiderLine(day,rider,lead,mins){
   const rate=_qiRateFor(rider);
   const detail=_qiMins(mins)+', rode with '+String(lead).split(' ')[0];
@@ -306,41 +306,6 @@ function _qiRiderSet(day,who,v){
   _qi.riderMins=Object.assign({},_qi.riderMins||{},{[day+'|'+who]:Math.round(h*60)});
   _qiRebuild();renderQuickInvoice();
 }
-// ANYONE WITH JACK? (owner 2026-09-29: "John doesn't have an account ... we
-// would have Jack's name but we wouldn't have John's name"). Asked once, the
-// first time a bill has people on the team with no time of their own: tap
-// who was with him and they ride along on every invoice (S.qiRiders).
-function _qiRiderCandidates(){
-  if(!_qi||_qi.mode!=='hourly'||(typeof S!=='undefined'&&S&&S.qiRidersAsked))return {lead:null,list:[]};
-  const time=_qi.tracked.filter(l=>l.kind==='time'&&!l.rider);
-  if(!time.length)return {lead:null,list:[]};
-  const per={};time.forEach(l=>{per[l.who]=(per[l.who]||0)+l.mins;});
-  const lead=Object.keys(per).sort((a,b)=>per[b]-per[a])[0];
-  const riders=_qiRiders();
-  const list=_qiPeople().filter(n=>!per[n]&&!riders[n]&&!_qi.tracked.some(l=>l.who===n));
-  return {lead,list};
-}
-function _qiRiderAskHtml(){
-  const {lead,list}=_qiRiderCandidates();
-  if(!lead||!list.length)return '';
-  const first=String(lead).split(' ')[0];
-  const b=(fn,label,cls)=>'<button type="button"'+(cls?' class="'+cls+'"':'')+' onclick="'+fn+'">'+escHtml(label)+'</button>';
-  return '<div class="ios-group qi-ask" id="qi-ask">'+
-    '<div class="ios-row"><span class="ios-lbl"><b>Anyone with '+escHtml(first)+'?</b><small>Only '+escHtml(first)+'\'s phone logged these days. Tap who was there too; they ride along from now on.</small></span></div>'+
-    '<div class="qi-pb qi-crew">'+list.map(n=>b('_qiRiderPick(\''+escHtml(n).replace(/'/g,'&#39;')+'\',\''+escHtml(lead).replace(/'/g,'&#39;')+'\')',n.split(' ')[0])).join('')+
-      b('_qiRiderNone()','Just '+first,'qi-ask-no')+'</div></div>';
-}
-function _qiRiderPick(name,lead){
-  if(typeof S==='undefined'||!S)return;
-  S.qiRidersAsked=true;
-  _qiRideAlways(name,lead);
-}
-function _qiRiderNone(){
-  if(typeof S==='undefined'||!S)return;
-  S.qiRidersAsked=true;
-  if(typeof _settingsChanged==='function')_settingsChanged();
-  renderQuickInvoice();
-}
 function _qiLineKey(l){return (l.day||'')+'|'+(l.kind||'')+'|'+(l.who||l.desc||'')+'|'+(l.extra||'');}
 // ── ADD TIME FROM THE DAY (Jack 2026-09-29, the Tagen Burnett bid: the app
 // said 2 hours on site, the real day was 4 with two techs, because the supply
@@ -470,12 +435,23 @@ function _qiExtraHtml(day){
         return '<button type="button" class="ios-row qi-x-row" onclick="_qiExtraToggle(\''+x.key+'\')" aria-pressed="'+on+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span>'+
           '<span class="ios-lbl">'+escHtml(x.label)+'<small>'+escHtml(x.who.split(' ')[0]+' · '+_qiMins(x.mins)+(x.kind==='drive'&&!_qiBillDrive()?' · drive time is off':''))+'</small></span></button>';}).join('')+'</div>':'');
 }
-// Crew he added by hand on this screen stay when the lines are rebuilt.
+// People he added on this screen stay when the lines are rebuilt: on every
+// day with tracked hours, the hours of whoever worked it longest. A day they
+// tracked themselves keeps their own hours. An old draft's one-day adds
+// (added) still land where they were.
 function _qiWithAdded(lines){
+  const lead=day=>lines.filter(l=>l.day===day&&l.kind==='time'&&!l.rider&&!l.extra).sort((a,b)=>b.mins-a.mins)[0];
+  (_qi&&_qi.crew||[]).forEach(name=>{
+    [...new Set(lines.filter(l=>l.kind==='time').map(l=>l.day))].forEach(day=>{
+      if(lines.some(l=>l.day===day&&l.who===name))return;
+      const L=lead(day);
+      if(L)lines.push(_qiRiderLine(day,name,L.who,L.mins));
+    });
+  });
   (_qi&&_qi.added||[]).forEach(x=>{
     if(lines.some(l=>l.day===x.day&&l.who===x.rider))return;
-    const lead=lines.find(l=>l.day===x.day&&l.who===x.lead&&l.kind==='time');
-    if(lead)lines.push(_qiRiderLine(x.day,x.rider,x.lead,lead.mins));
+    const L=lines.find(l=>l.day===x.day&&l.who===x.lead&&l.kind==='time');
+    if(L)lines.push(_qiRiderLine(x.day,x.rider,x.lead,L.mins));
   });
   return lines;
 }
@@ -552,7 +528,6 @@ function _qiUnbilled(cid,visits,addr){
   const rec={};
   ((typeof expenses!=='undefined'&&expenses)||[]).filter(e=>e&&String(e.client_id)===String(cid)&&!exp.has(String(e.id))&&Number(e.amount)>0)
     .forEach(e=>{const day=String(e.date||'').slice(0,10)||todayKey();(rec[day]||(rec[day]=[])).push(e);});
-  const riders=_qiRiders();
   const lines=[];
   Object.keys(byDay).concat(Object.keys(rec)).filter((d,i,a)=>a.indexOf(d)===i).sort().forEach(day=>{
     const P=byDay[day]||{};
@@ -563,12 +538,6 @@ function _qiUnbilled(cid,visits,addr){
       const rate=_qiRateFor(who);
       const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
       lines.push({kind:'time',day,who,mins,rate,detail,desc:who+': '+detail,amount:Math.round(mins/60*rate*100)/100});
-    });
-    Object.keys(riders).forEach(rider=>{
-      const lead=riders[rider],p=P[lead];
-      if(!p||P[rider])return;                    // he tracked that day himself: his own hours win
-      const mins=Math.round(p.site+p.drive);
-      if(mins>0)lines.push(_qiRiderLine(day,rider,lead,mins));
     });
     const r=rec[day];
     if(r){
@@ -601,7 +570,7 @@ function openQuickInvoice(cid,addr){
   const mode=c.qiMode||(hasWork?'hourly':'set');
   const d=_qiDraftGet(c,addr);
   _qi={cid,addr,mode:(d&&d.mode)||mode,tracked:un.lines,through:un.through,typed:[{desc:'',amount:''}],work:[],pbOpen:false,loading:true,modeSet:!!(c.qiMode||(d&&d.mode)),
-    off:new Set(),open:new Set(),addDay:null,added:[],
+    off:new Set(),open:new Set(),addOpen:false,added:[],crew:[],
     // The number it will be sent under, from the moment it opens (owner
     // 2026-09-29: "No. Draft doesn't show a number"). A saved draft keeps its.
     id:(d&&d.id)||_newBidId(),dayNote:{},fixed:null,rates:{},showRate:null,partsMode:null,photos:{on:true,before:null,after:null},
@@ -667,26 +636,62 @@ function _qiAllDays(on){
 function _qiPeople(){
   const out=[_qiOwnerName()];
   ((typeof S!=='undefined'&&S.employees)||[]).forEach(e=>{if(e&&e.name&&!out.includes(e.name))out.push(e.name);});
+  (typeof crewNoApp==='function'?crewNoApp():[]).forEach(e=>{if(!out.includes(e.name))out.push(e.name);});
   return out;
 }
-function _qiAddCrewOpen(day){if(!_qi)return;_qi.addDay=_qi.addDay===day?null:day;renderQuickInvoice();}
-function _qiAddRider(day,name){
-  if(!_qi)return;
-  const lead=_qi.tracked.filter(l=>l.day===day&&l.kind==='time'&&!l.rider).sort((a,b)=>b.mins-a.mins)[0];
-  if(!lead||_qi.tracked.some(l=>l.day===day&&l.who===name))return;
-  _qi.added.push({day,rider:name,lead:lead.who});
-  _qi.tracked.push(_qiRiderLine(day,name,lead.who,lead.mins));
-  _qi.addDay=null;
-  renderQuickInvoice();
+// + ADD PERSON: one place on the invoice, not one per day. Pick somebody on
+// the team, or type a name and a rate for somebody with no app (their rate
+// is kept on them, so next time it is just the name).
+function _qiAddOpen(){if(!_qi)return;_qi.addOpen=!_qi.addOpen;renderQuickInvoice();if(_qi.addOpen)setTimeout(()=>document.getElementById('qi-new-name')?.focus(),30);}
+function _qiOnBill(){return [...new Set(_qi.tracked.filter(l=>l.kind==='time').map(l=>l.who))];}
+function _qiAddPerson(name,rate){
+  if(!_qi)return false;
+  name=String(name||'').replace(/\s+/g,' ').trim();
+  if(!name)return false;
+  // A minus sign is refused, not dropped: "-40" is not $40 (the Team pay chip lesson).
+  const r=Math.max(0,parseFloat(String(rate==null?'':rate).replace(/[^0-9.\-]/g,''))||0);
+  if(r>0&&!(personBillRate(name)>0)){
+    // Nobody on the team by that name: keep him as crew with no app.
+    if(!setPersonBillRate(name,r)&&typeof addCrewNoApp==='function')addCrewNoApp(name,r);
+  }
+  if(!_qi.crew.includes(name))_qi.crew.push(name);
+  // Taking somebody off one day and then adding them back puts them back.
+  _qi.dropped=new Set([..._qi.dropped].filter(k=>k.split('|')[2]!==name));
+  _qi.addOpen=false;
+  _qiRebuild();renderQuickInvoice();
+  return true;
 }
-// "Every day": the rider setting, so the next invoice adds him by itself.
-function _qiRideAlways(name,lead){
-  if(typeof S==='undefined'||!S)return;
-  S.qiRiders=Object.assign({},_qiRiders(),{[name]:lead});
-  if(typeof _settingsChanged==='function')_settingsChanged();
-  if(_qi)_qi.added=_qi.added.filter(x=>x.rider!==name);
-  if(typeof showToast==='function')showToast(name+' rides with '+lead+' on every invoice now','✓');
-  if(_qi)_qiSetBillDrive(_qiBillDrive());
+function _qiAddNew(){
+  const n=document.getElementById('qi-new-name'),r=document.getElementById('qi-new-rate');
+  if(!_qiAddPerson(n&&n.value,r&&r.value)&&n)n.focus();
+}
+function _qiRemovePerson(name){
+  if(!_qi)return;
+  _qi.crew=_qi.crew.filter(n=>n!==name);
+  _qi.added=_qi.added.filter(x=>x.rider!==name);
+  _qiRebuild();renderQuickInvoice();
+}
+function _qiPeopleHtml(){
+  const on=_qiOnBill();
+  const extra=_qi.crew.concat(_qi.added.map(x=>x.rider));
+  const chip=n=>{
+    const added=extra.includes(n);
+    return '<span class="qi-person">'+escHtml(n.split(' ')[0])+
+      (added?'<button type="button" aria-label="Take '+escHtml(n)+' off this invoice" onclick="_qiRemovePerson(\''+escHtml(n).replace(/'/g,'&#39;')+'\')">×</button>':'')+'</span>';
+  };
+  const pick=_qiPeople().filter(n=>!on.includes(n));
+  const b=n=>'<button type="button" onclick="_qiAddPerson(\''+escHtml(n).replace(/'/g,'&#39;')+'\')">'+escHtml(n)+'</button>';
+  return '<div class="ios-group qi-people">'+
+    '<div class="ios-row qi-people-row"><span class="ios-lbl"><b>Who was on it</b>'+
+      '<span class="qi-person-list">'+on.map(chip).join('')+'</span></span>'+
+      '<button type="button" class="qi-add-person" id="qi-add-person" onclick="_qiAddOpen()">+ Add person</button></div>'+
+    (_qi.addOpen?'<div class="qi-add-sheet">'+
+      (pick.length?'<div class="qi-pb qi-crew">'+pick.map(b).join('')+'</div>':'')+
+      '<div class="ios-row qi-new"><input id="qi-new-name" class="qi-desc" type="text" autocapitalize="words" placeholder="Name, no app needed" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'qi-new-rate\').focus();}">'+
+        '<span class="ios-val">$<input id="qi-new-rate" type="text" inputmode="decimal" placeholder="0" aria-label="Their rate per hour" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_qiAddNew();}">/hr</span>'+
+        '<button type="button" class="ios-pill" onclick="_qiAddNew()">Add</button></div>'+
+      '<div class="ios-foot">They get the hours of whoever worked each day. Change a day\'s hours on that day.</div></div>':'')+
+  '</div>';
 }
 function _qiTotal(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
 
@@ -698,8 +703,6 @@ function renderQuickInvoice(){
     // The rate sits in the line under the name, small, so the name keeps the
     // width of the row on a phone. Hours times rate, so he can see which rate
     // won (Earl: "which rate wins?").
-    const riderAsk=l.rider&&_qiRiders()[l.who]!==l.rider
-      ?' <button type="button" class="qi-always" onclick="_qiRideAlways(\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',\''+escHtml(l.rider).replace(/'/g,'&#39;')+'\')">Every day</button>':'';
     // A rider's hours are the guess, so they are the thing he can change.
     const riderHrs=(l.kind==='time'&&l.rider&&!l.extra)
       ?'<span class="qi-hrs"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',this.value)">h</span> with '+escHtml(String(l.rider).split(' ')[0])
@@ -714,7 +717,9 @@ function renderQuickInvoice(){
     const need=l.kind==='time'&&!(Number(l.rate)>0);
     const guess=l.kind==='time'&&!need&&!l.rateSet&&!(personBillRate(l.who)>0);
     const sub=l.kind==='time'
-      ?(riderHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="Rate?" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+riderAsk
+      ?(riderHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+
+        // $0 with a flag to change it (owner 2026-09-29), never a blank box.
+        (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'')
       :escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')));
     const name=l.kind==='time'?l.who:l.desc;
     return '<div class="ios-row"><span class="ios-lbl">'+escHtml(name)+'<small>'+sub+'</small></span>'+
@@ -726,15 +731,12 @@ function renderQuickInvoice(){
   // checked, and one total for every checked day. Uncheck a day to bill it
   // later; it stays on the list.
   const dayList=hourly?_qiDays(_qi.tracked):[];
-  const people=_qiPeople();
   const tracked=dayList.map(day=>{
     const on=!_qi.off.has(day);
     const mine=_qi.tracked.map((l,i)=>({l,i})).filter(x=>x.l.day===day);
     const who=mine.filter(x=>x.l.kind==='time');
     // Each name once: a day with six visits is still just Jack.
     const hrs=who.length?[...new Set(who.map(x=>x.l.who.split(' ')[0]))].join(', '):'Materials only';
-    const canAdd=on&&who.some(x=>!x.l.rider);
-    const addable=people.filter(n=>!mine.some(x=>x.l.who===n));
     // Folded to one line (Earl 2026-09-29: "three SE screens before the Text
     // it button"). The circle checks the day in or out; the rest of the line
     // opens it. One day on the bill opens by itself.
@@ -754,9 +756,7 @@ function renderQuickInvoice(){
           '<span class="ios-chev qi-day-chev" aria-hidden="true">›</span></button></div>'+
         '<button type="button" class="ios-del qi-billed" tabindex="-1" onclick="qiBilledElsewhere(\''+day+'\')">Already billed</button></div>'+
       (open?'<div class="ios-row qi-note-row"><input class="qi-desc" type="text" aria-label="What was done '+escHtml(_qiDayLabel(day))+'" placeholder="What was done this day" value="'+escHtml(_qi.dayNote[day]||'')+'" oninput="_qiDayNoteTyped(\''+day+'\',this.value)"></div>'+
-        mine.map(x=>row(x.l,x.i)).join('')+_qiExtraHtml(day)+
-        (canAdd&&addable.length?'<button type="button" class="ios-row ios-link" onclick="_qiAddCrewOpen(\''+day+'\')">Add crew</button>'+
-          (_qi.addDay===day?'<div class="qi-pb qi-crew">'+addable.map(n=>'<button type="button" onclick="_qiAddRider(\''+day+'\',\''+escHtml(n).replace(/'/g,'&#39;')+'\')">'+escHtml(n)+'</button>').join('')+'</div>':''):''):'')+
+        mine.map(x=>row(x.l,x.i)).join('')+_qiExtraHtml(day):'')+
     '</div>';
   }).join('');
   // A part has a count (Jack 2026-09-29: "a quantity selector for materials
@@ -797,7 +797,7 @@ function renderQuickInvoice(){
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       (hourly?'<div class="ios-sec"><div class="ios-h"><span>'+(dayList.length>1?'Days at this house':'Since the last invoice')+'</span>'+
           (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
-        (tracked&&!_qi.loading?_qiRiderAskHtml():'')+
+        (tracked&&!_qi.loading?_qiPeopleHtml():'')+
         (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
         (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
         '<div class="ios-group"><label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
@@ -1369,6 +1369,7 @@ function _qiDraftApply(d){
   _qi.fixed=d.fixed!=null?Number(d.fixed):null;_qi.rates=Object.assign({},d.rates||{});
   _qi.showRate=d.showRate!=null?!!d.showRate:null;_qi.partsMode=d.partsMode||null;
   _qi.added=Array.isArray(d.added)?d.added.slice():[];
+  _qi.crew=Array.isArray(d.crew)?d.crew.slice():[];
   _qi.photos=Object.assign({on:true,before:null,after:null},d.photos||{});
   _qi.xOn=new Set(d.xOn||[]);_qi.xOff=new Set(d.xOff||[]);_qi.dropped=new Set(d.dropped||[]);
   _qi.riderMins=Object.assign({},d.riderMins||{});
@@ -1379,7 +1380,7 @@ function qiSaveDraft(){
   const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};
   D[_qiDraftKey(c,_qi.addr)]={id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
-    added:_qi.added.slice(),photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
+    added:_qi.added.slice(),crew:_qi.crew.slice(),photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
   c.qiDrafts=D;
   saveAll();

@@ -39,7 +39,7 @@ async function boot(page, w) {
     S.ownerName = 'John Miller';
     S.ownerBillRate = 125;
     S.employees = [{ name: 'Jack Sample', email: 'jack@x.com', billRate: 75 }];
-    delete S.qiRiders; delete S.qiBillDrive;
+    delete S.qiRiders; delete S.qiBillDrive; delete S.crewNoApp;
     const H = 3600e3;
     const row = (at, hrs, place, uid) => ({ job_id: null, employee_user_id: uid || 'jack-uid', source: 'client', dest_place: place,
       arrived_at: at, departed_at: new Date(Date.parse(at) + hrs * H).toISOString(), minutes: hrs * 60 });
@@ -160,7 +160,7 @@ test.describe('Ready to bill', () => {
     expect(r.head).toContain('Tue, Sep 22');
     expect(r.head).toContain('Jack · 6h');
     expect(r.head).toContain('$636.00');
-    expect(r.opened.lines, 'what was done, Jack, Materials, and Add crew').toBe(4);
+    expect(r.opened.lines, 'what was done, Jack and Materials (+ Add person is once, above the days)').toBe(3);
     expect(r.opened.exp).toBe('true');
     expect(r.off).toBe(true);
     expect(r.reopened, 'opening a day left off checks it back in').toEqual({ off: false, open: true });
@@ -298,289 +298,120 @@ test.describe('Ready to bill', () => {
     expect(r).toEqual({ page: 'pg-dash', qi: null, days: ['2026-09-23'] });
   });
 
-  test('riders: John has no app and rides with Jack, so each of Jack\'s days bills John too at his own rate; a day John tracked himself uses his own hours', async ({ page }) => {
+  // Owner 2026-09-29: "that person shouldn't just ride along forever ... we
+  // type them up and their rate and it doubles the man hours". CHANGED
+  // (§10.4): riders were a setting (S.qiRiders) asked once and remembered for
+  // every invoice. Now + Add person is on the invoice itself and forgotten
+  // after it; only the rate stays, on the person.
+  test('+ Add person from the team: every day gets the hours of whoever worked it, at their own rate; a day they tracked keeps their own', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
-      S.qiRiders = { 'John Miller': 'Jack Sample' };
       window._rtbLab.entries.push({ job_id: null, employee_user_id: 'boss-uid', source: 'client', dest_place: 'Tagen Miller (2210 Birch Ln)',
         arrived_at: '2026-09-24T15:00:00.000Z', departed_at: '2026-09-24T16:00:00.000Z', minutes: 60 });
       openQuickInvoice(701);
       await new Promise(r => setTimeout(r, 30));
+      document.getElementById('qi-add-person').click();
+      const choices = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
+      [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].find(b => b.textContent === 'John Miller')?.click();
       const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => ({ day: l.day, mins: l.mins, rate: l.rate, rider: l.rider || null }));
-      _qiDays(_qi.tracked).forEach(d => _qi.open.add(d)); renderQuickInvoice();
-      const hrs = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-hrs');
-      return { john, text: document.getElementById('qi-page').textContent, hrs: hrs && hrs.querySelector('input').value, ask: !!document.getElementById('qi-ask') };
+      const chips = [...document.querySelectorAll('#qi-page .qi-person')].map(c => c.firstChild.textContent);
+      return { choices, john, chips };
     });
-    expect(r.john).toEqual([
-      { day: '2026-09-22', mins: 360, rate: 125, rider: 'Jack Sample' },
-      { day: '2026-09-23', mins: 210, rate: 125, rider: 'Jack Sample' },
-      { day: '2026-09-24', mins: 60, rate: 125, rider: null },
-    ]);
-    // His hours are the guess, so they are an editable box (2026-09-29).
-    expect(r.hrs).toBe('6');
-    expect(r.text).toContain('h with Jack');
-    expect(r.ask, 'already riding: nobody is asked about him').toBe(false);
+    // John tracked the 24th himself, so he is already on the bill and not offered.
+    expect(r.choices).toEqual([]);
+    expect(r.chips).toEqual(['Jack', 'John']);
+    expect(r.john).toEqual([{ day: '2026-09-24', mins: 60, rate: 125, rider: null }]);
   });
 
-  // Owner 2026-09-29: "John doesn't have an account ... we would have Jack's
-  // name but we wouldn't have John's name ... did he spend the same amount of
-  // time? no way to know". Asked once; his hours are a guess he can change.
-  test('Anyone with Jack?: asked once, one tap puts John on every day, and his hours for a day can be changed', async ({ page }) => {
+  test('+ Add person: the owner rides every day at his rate, and his hours for one day can be changed', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(async () => {
-      const ask = document.getElementById('qi-ask');
-      const before = { q: ask.querySelector('b').textContent, opts: [...ask.querySelectorAll('button')].map(b => b.textContent) };
-      [...ask.querySelectorAll('button')].find(b => b.textContent === 'John').click();
-      await new Promise(r => setTimeout(r, 20));
+      document.getElementById('qi-add-person').click();
+      const choices = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
+      [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].find(b => b.textContent === 'John Miller').click();
       const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => [l.day, l.mins]);
       _qiDayOpen('2026-09-22');
       const inp = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-hrs input');
       inp.value = '4'; inp.dispatchEvent(new Event('change'));
       const after = _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-22');
-      return { before, riders: S.qiRiders, asked: S.qiRidersAsked, john, after: [after.mins, after.amount], gone: !document.getElementById('qi-ask'),
-        other: _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-23').mins };
+      return { choices, john, after: [after.mins, after.amount], other: _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-23').mins,
+        remembered: S.qiRiders || null, sheet: !!document.querySelector('#qi-page .qi-add-sheet') };
     });
-    expect(r.before).toEqual({ q: 'Anyone with Jack?', opts: ['John', 'Just Jack'] });
-    expect(r.riders).toEqual({ 'John Miller': 'Jack Sample' });
-    expect(r.asked).toBe(true);
+    expect(r.choices).toEqual(['John Miller']);
     expect(r.john).toEqual([['2026-09-22', 360], ['2026-09-23', 210], ['2026-09-24', 120]]);
     expect(r.after, 'John left early: 4 hours at $125').toEqual([240, 500]);
     expect(r.other, 'only that day moves').toBe(210);
-    expect(r.gone).toBe(true);
+    expect(r.remembered, 'nothing rides along to the next invoice').toBeNull();
+    expect(r.sheet).toBe(false);
   });
 
-  test('Just Jack: never asked again, and nobody is added', async ({ page }) => {
+  test('two people with no app: typed with a rate, they double the man-hours, and next time it is just the name', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(async () => {
-      [...document.querySelectorAll('#qi-ask button')].find(b => b.textContent === 'Just Jack').click();
-      const now = !!document.getElementById('qi-ask');
-      _qi = null; openQuickInvoice(702); await new Promise(r => setTimeout(r, 30));
-      return { now, later: !!document.getElementById('qi-ask'), john: _qi.tracked.some(l => l.who === 'John Miller'), asked: S.qiRidersAsked };
+      const add = (n, rate) => {
+        document.getElementById('qi-add-person').click();
+        document.getElementById('qi-new-name').value = n; document.getElementById('qi-new-rate').value = rate;
+        [...document.querySelectorAll('#qi-page .qi-new button')].find(b => b.textContent === 'Add').click();
+      };
+      add('Mike Dunn', '60'); add('Sam Ortiz', '55');
+      const day = _qi.tracked.filter(l => l.day === '2026-09-22' && l.kind === 'time').map(l => [l.who, l.mins, l.rate]);
+      const kept = JSON.parse(JSON.stringify(S.crewNoApp));
+      _qi = null; openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
+      const fresh = _qi.tracked.some(l => l.who === 'Mike Dunn');
+      document.getElementById('qi-add-person').click();
+      const offered = [...document.querySelectorAll('#qi-page .qi-add-sheet .qi-crew button')].map(b => b.textContent);
+      return { day, kept, fresh, offered, rate: personBillRate('Mike Dunn') };
     });
-    expect(r).toEqual({ now: false, later: false, john: false, asked: true });
+    expect(r.day).toEqual([['Jack Sample', 360, 75], ['Mike Dunn', 360, 60], ['Sam Ortiz', 360, 55]]);
+    expect(r.kept).toEqual([{ name: 'Mike Dunn', billRate: 60 }, { name: 'Sam Ortiz', billRate: 55 }]);
+    expect(r.fresh, 'not on the next invoice by itself').toBe(false);
+    expect(r.offered).toEqual(['John Miller', 'Mike Dunn', 'Sam Ortiz']);
+    expect(r.rate).toBe(60);
   });
 
-  test('a rider can be taken off one day only', async ({ page }) => {
+  test('an added person can come off one day, or off the whole invoice', async ({ page }) => {
     await boot(page);
+    await open(page, 701);
     const r = await page.evaluate(async () => {
-      S.qiRiders = { 'John Miller': 'Jack Sample' };
-      openQuickInvoice(701);
-      await new Promise(r => setTimeout(r, 30));
+      _qiAddPerson('John Miller');
       const i = _qi.tracked.findIndex(l => l.who === 'John Miller' && l.day === '2026-09-23');
       _qiDropTracked(i);
-      return _qi.tracked.filter(l => l.who === 'John Miller').map(l => l.day);
+      const oneOff = _qi.tracked.filter(l => l.who === 'John Miller').map(l => l.day);
+      [...document.querySelectorAll('#qi-page .qi-person button')][0].click();
+      return { oneOff, gone: _qi.tracked.some(l => l.who === 'John Miller'), crew: _qi.crew.slice() };
     });
-    expect(r).toEqual(['2026-09-22', '2026-09-24']);
+    expect(r.oneOff).toEqual(['2026-09-22', '2026-09-24']);
+    expect(r).toMatchObject({ gone: false, crew: [] });
   });
 
-  test('Add crew puts somebody on one day with the lead\'s hours; Every day makes him a rider for good', async ({ page }) => {
-    await boot(page);
-    await open(page, 701);
-    const r = await page.evaluate(async () => {
-      _qiDayOpen('2026-09-22');
-      const day = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
-      [...day.querySelectorAll('button')].find(b => b.textContent === 'Add crew').click();
-      const day2 = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
-      const choices = [...day2().querySelectorAll('.qi-crew button')].map(b => b.textContent);
-      [...day2().querySelectorAll('.qi-crew button')].find(b => b.textContent === 'John Miller').click();
-      const line = _qi.tracked.find(l => l.who === 'John Miller');
-      const total = document.getElementById('qi-total').textContent;
-      document.querySelector('#qi-page .qi-always').click();
-      await new Promise(r => setTimeout(r, 10));
-      return { choices, line: { day: line.day, mins: line.mins, amount: line.amount }, total, riders: S.qiRiders,
-        johnDays: _qi.tracked.filter(l => l.who === 'John Miller').map(l => l.day) };
-    });
-    expect(r.choices).toEqual(['John Miller']);
-    expect(r.line).toEqual({ day: '2026-09-22', mins: 360, amount: 750 });
-    expect(r.total).toBe('$1,798.50');
-    expect(r.riders).toEqual({ 'John Miller': 'Jack Sample' });
-    expect(r.johnDays).toEqual(['2026-09-22', '2026-09-23', '2026-09-24']);
-  });
-
-  test('a person\'s rate is one number on the invoice: change Jack on one day and every day moves; a rate typed for somebody with none is kept', async ({ page }) => {
+  test('junk in + Add person adds nobody and never throws', async ({ page }) => {
     await boot(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
-      ['2026-09-22', '2026-09-23', '2026-09-24'].forEach(d => _qiDayOpen(d));
-      const inp = document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-rate input');
-      inp.value = '80'; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
-      const jack = _qi.tracked.filter(l => l.who === 'Jack Sample').map(l => l.amount);
-      const kept = S.employees[0].billRate;
-      S.employees[0].billRate = 0;
-      const inp2 = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-rate input');
-      inp2.value = '90'; inp2.dispatchEvent(new Event('input')); inp2.dispatchEvent(new Event('change'));
-      return { jack, total: document.getElementById('qi-total').textContent, kept, learned: S.employees[0].billRate,
-        other: document.querySelector('#qi-page .qi-day[data-day="2026-09-24"] .qi-rate input').value };
+      const n = _qi.tracked.length;
+      const res = ['', '   ', null, undefined].map(v => _qiAddPerson(v, 'abc'));
+      _qiAddPerson('Pat Lee', '-40');
+      return { res, same: _qi.tracked.length, n, rate: personBillRate('Pat Lee'), pat: _qi.tracked.filter(l => l.who === 'Pat Lee').every(l => l.rate >= 0) };
     });
-    expect(r.jack).toEqual([480, 280, 160]);
-    expect(r.kept, 'a rate he already has is changed for this invoice only').toBe(75);
-    expect(r.learned, 'somebody with no rate keeps the one he typed').toBe(90);
-    expect(r.other).toBe('90');
-    expect(r.total).toBe('$1,221.00');
+    expect(r.res).toEqual([false, false, false, false]);
+    expect(r.rate, 'a negative rate is refused, not flipped').toBe(0);
+    expect(r.pat).toBe(true);
   });
 
-  // Owner 2026-09-29: "first time people may not have a rate ... how do you
-  // make that smart?" Nobody goes out at $0, and a default nobody chose is
-  // asked about once.
-  test('no rate at all: the box is orange and says Rate?, and Send and Collect wait for it', async ({ page }) => {
+  test('the old rider pieces are gone', async ({ page }) => {
     await boot(page);
-    const r = await page.evaluate(async () => {
-      S.employees[0].billRate = 0; S.laborRate = 0;
-      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
-      _qiDayOpen('2026-09-22');
-      const pill = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-rate');
-      const before = { need: pill.classList.contains('need'), ph: pill.querySelector('input').placeholder, missing: _qiMissingRates(),
-        folded: document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-day-open-btn small').textContent };
-      const nBids = bids.length;
-      const sent = qiSend(), paid = qiPayNow();
-      const blocked = { sent, paid, bids: bids.length - nBids };
-      const inp = pill.querySelector('input');
-      inp.value = '75'; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
-      return { before, blocked, after: { need: pill.classList.contains('need'), missing: _qiMissingRates(), kept: S.employees[0].billRate } };
-    });
-    expect(r.before).toEqual({ need: true, ph: 'Rate?', missing: ['Jack Sample'], folded: 'Jack · 3h 30m · Jack needs a rate' });
-    expect(r.blocked, 'nothing is saved or sent at $0 an hour').toEqual({ sent: false, paid: false, bids: 0 });
-    expect(r.after).toEqual({ need: false, missing: [], kept: 75 });
-  });
-
-  // Owner 2026-09-29, screenshot: "why does it say jack jack jack jack".
-  // Six trips on one day are six lines for one man; the folded day names him once.
-  test('a day with several of his lines names him once', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(async () => {
-      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
-      const one = _qi.tracked.find(l => l.day === '2026-09-23' && l.kind === 'time');
-      for (let i = 0; i < 5; i++) _qi.tracked.push(Object.assign({}, one, { id: 'dup' + i, mins: 10, amount: 10 }));
-      renderQuickInvoice();
-      return document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-day-open-btn small').textContent;
-    });
-    expect(r.match(/Jack/g).length).toBe(1);
-  });
-
-  test('billed at the business default: the box is orange with a question mark until he looks at it once, then the rate is theirs', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(async () => {
-      S.employees[0].billRate = 0; S.laborRate = 70;
-      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
-      _qiDayOpen('2026-09-22');
-      const pill = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-rate');
-      const before = { guess: pill().classList.contains('guess'), text: pill().textContent, missing: _qiMissingRates() };
-      pill().querySelector('input').dispatchEvent(new Event('blur'));
-      return { before, kept: S.employees[0].billRate, guess: pill().classList.contains('guess') };
-    });
-    expect(r.before).toEqual({ guess: true, text: '$/hr?', missing: [] });
-    expect(r.kept, 'looked at and kept: the default is now his').toBe(70);
-    expect(r.guess).toBe(false);
-  });
-
-  // Owner 2026-09-29: "updates in one spot show all". The estimate and the
-  // invoice read one rate lookup (personBillRate, js/data.js); the copies each
-  // screen had of its own are gone.
-  test('one rate lookup: a rate set on the estimate is the invoice\'s rate, and one kept from the invoice is the estimate\'s', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(() => {
-      _setBillRate('jack@x.com', 88, true);
-      const onInvoice = _qiRateFor('Jack Sample');
-      S.employees.push({ name: 'Rico Diaz', email: 'rico@x.com' });
-      _qiRememberRate('Rico Diaz', 64);
-      const onEstimate = _billRateFor('rico@x.com');
-      const owner = [personBillRate('John Miller'), setPersonBillRate('John Miller', 130), personBillRate('john miller'), _qiRateFor('John Miller')];
-      return { onInvoice, onEstimate, owner, stranger: personBillRate('Nobody'), none: personBillRate('') };
-    });
-    expect(r.onInvoice).toBe(88);
-    expect(r.onEstimate).toBe(64);
-    expect(r.owner).toEqual([125, true, 130, 130]);
-    expect(r.stranger).toBe(0);
-    expect(r.none).toBe(0);
-  });
-
-  // Owner 2026-09-29: "like #3 under the tiles but gotta make it so people
-  // will click it". One line: what is waiting, how long, the total. Tap it
-  // and the houses fold open; with one house it goes straight to the bill.
-  test('Home shows one line under the tiles: what is waiting, how long, the total; tap folds the houses open', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(() => {
-      _tbExpanded = false;
-      _renderToBill();
-      const el = document.getElementById('dash-to-bill');
-      const sum = el.querySelector('.tb-sum');
-      const closed = { title: sum.querySelector('b').textContent, age: sum.querySelector('.tb-age').textContent,
-        total: sum.querySelector('.tb-total').textContent, inert: el.querySelector('.tb-list').hasAttribute('inert'),
-        expanded: sum.getAttribute('aria-expanded'), shared: el.querySelectorAll('.ios-group .ios-row').length,
-        old: el.querySelectorAll('.tb-list,.tb-hd,.tb-foot').length, late: sum.classList.contains('late') };
-      sum.click();
-      const s2 = document.querySelector('#dash-to-bill .tb-sum');
-      const open = { inert: document.querySelector('#dash-to-bill .tb-list').hasAttribute('inert'), expanded: s2.getAttribute('aria-expanded'),
-        rows: document.querySelectorAll('#dash-to-bill .tb-list .tb-row').length };
-      return { closed, open };
-    });
-    expect(r.closed.title).toBe('Ready to bill');
-    expect(r.closed.age).toMatch(/^2 houses · \d+ days$/);
-    expect(r.closed.total).toBe('$1,274');
-    expect(r.closed.inert, 'folded shut, the house rows cannot be tapped').toBe(true);
-    expect(r.closed.expanded).toBe('false');
-    expect(r.closed.shared, 'built from the shared iOS rows').toBe(3);
-    expect(r.closed.old, 'one list wrapper, no header or footer of its own').toBe(1);
-    expect(r.open).toEqual({ inert: false, expanded: 'true', rows: 2 });
-  });
-
-  test('with one house waiting, the line opens that invoice in one tap', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(async () => {
-      window._rtbLab.entries = window._rtbLab.entries.filter(e => !/^Mary/.test(e.dest_place));
-      _renderToBill();
-      const age = document.querySelector('#dash-to-bill .tb-age').textContent;
-      document.querySelector('#dash-to-bill .tb-sum').click();
-      await new Promise(r => setTimeout(r, 30));
-      return { age, page: document.querySelector('.pg.active').id, who: _qi && _qi.cid };
-    });
-    expect(r.age).toMatch(/^Tagen Miller · \d+ days$/);
-    expect(r.page).toBe('pg-qi');
-    expect(r.who).toBe(701);
-  });
-
-  test('two weeks unbilled turns the line orange', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(() => {
-      const d = new Date(Date.now() - 20 * 86400000); d.setHours(10, 0, 0, 0);
-      window._rtbLab.entries.push({ job_id: null, employee_user_id: 'jack-uid', source: 'client', dest_place: 'Mary Smith (77 Lakeview Dr)',
-        arrived_at: d.toISOString(), departed_at: new Date(d.getTime() + 3600e3).toISOString(), minutes: 60 });
-      _renderToBill();
-      const s = document.querySelector('#dash-to-bill .tb-sum');
-      return { late: s.classList.contains('late'), age: s.querySelector('.tb-age').textContent };
-    });
-    expect(r.late).toBe(true);
-    expect(r.age).toContain('2 houses · 20 days');
-  });
-
-  test('an invoice from before days were kept still covers what it billed', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(async () => {
-      bids.push({ id: 'old', client_id: 701, kind: 'quick_invoice', status: 'Closed Won', amount: 1, qiAddr: '', qiTimeThrough: '2026-09-22T23:00:00.000Z', qiExpenseIds: ['x1', 'x2'] });
-      openQuickInvoice(701);
-      await new Promise(r => setTimeout(r, 30));
-      return _qiDays(_qi.tracked);
-    });
-    expect(r).toEqual(['2026-09-23', '2026-09-24']);
-  });
-
-  test('crew never see the card; offline it is not shown', async ({ page }) => {
-    await boot(page);
-    const r = await page.evaluate(() => {
-      const el = document.getElementById('dash-to-bill');
-      const was = window._ownerUI; window._ownerUI = () => false;
-      _renderToBill();
-      const crew = el.style.display;
-      window._ownerUI = was;
-      const se = window.supaEnabled; window.supaEnabled = () => false;
-      _renderToBill();
-      const offline = el.style.display;
-      window.supaEnabled = se;
-      return { crew, offline };
-    });
-    expect(r).toEqual({ crew: 'none', offline: 'none' });
+    // An account that set a rider before this change: the setting is ignored.
+    await page.evaluate(() => { S.qiRiders = { 'John Miller': 'Jack Sample' }; });
+    await open(page, 701);
+    const r = await page.evaluate(() => ({
+      fns: ['_qiRiders', '_qiRideAlways', '_qiRiderAskHtml', '_qiRiderPick', '_qiRiderNone', '_qiRiderCandidates', '_qiAddRider', '_qiAddCrewOpen'].filter(f => typeof window[f] === 'function'),
+      ask: !!document.getElementById('qi-ask'),
+      john: _qi.tracked.some(l => l.who === 'John Miller'),
+      everyDay: [...document.querySelectorAll('#qi-page button')].some(b => b.textContent === 'Every day' || b.textContent === 'Add crew'),
+    }));
+    expect(r).toEqual({ fns: [], ask: false, john: false, everyDay: false });
   });
 
   test('the old names are gone: no through-mark on a new invoice, no per-store receipt lines', async ({ page }) => {
@@ -594,13 +425,12 @@ test.describe('Ready to bill', () => {
     test('no bleed at ' + w + 'px, Home card and invoice', async ({ page }) => {
       await boot(page, w);
       const r = await page.evaluate(async () => {
-        S.qiRiders = { 'John Miller': 'Jack Sample' };
         goPg('pg-dash'); _renderToBill();
         const card = document.getElementById('dash-to-bill').getBoundingClientRect();
         const home = { right: card.right, sw: document.documentElement.scrollWidth };
         openQuickInvoice(701);
         await new Promise(r => setTimeout(r, 30));
-        document.querySelector('#qi-page .qi-day [onclick^="_qiAddCrewOpen"]')?.click();
+        _qiAddPerson('John Miller'); document.getElementById('qi-add-person').click();
         return { home, sw: document.documentElement.scrollWidth, iw: innerWidth };
       });
       expect(r.home.sw).toBeLessThanOrEqual(r.iw + 1);
@@ -641,8 +471,8 @@ test.describe('Invoice: the customer copy', () => {
   test('by default: each day is the work, time on site and crew size; no names, no man-hours, no rate, parts included', async ({ page }) => {
     await boot(page);
     await ks(page);
-    await page.evaluate(() => { S.qiRiders = { 'John Miller': 'Jack Sample' }; });
     await open(page, 701);
+    await page.evaluate(() => _qiAddPerson('John Miller'));
     await page.evaluate(() => { _qi.dayNote['2026-09-22'] = 'Replaced the main shutoff'; });
     const d = await doc(page);
     expect(d).toContain('Replaced the main shutoff');
@@ -660,8 +490,8 @@ test.describe('Invoice: the customer copy', () => {
   test('Show my hourly rate and parts With prices put them on; Always makes it every invoice', async ({ page }) => {
     await boot(page);
     await ks(page);
-    await page.evaluate(() => { S.qiRiders = { 'John Miller': 'Jack Sample' }; });
     await open(page, 701);
+    await page.evaluate(() => _qiAddPerson('John Miller'));
     const r = await page.evaluate(() => {
       document.getElementById('qi-show-rate').click();
       document.querySelector('#qi-parts-mode [data-mode="priced"]').click();
