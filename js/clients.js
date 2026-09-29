@@ -658,8 +658,11 @@ function _closeStylePicker(){
 // get back to home page"). There it saves the draft and goes home.
 function _stylePickCancel(){
   const onEst=document.querySelector('.pg.active')?.id==='pg-est-generic';
+  // Going home: the picker goes now, not after a fade on a timer. The save
+  // that follows can hold the main thread past the fade on a slow phone, and
+  // the picker would sit over Home until it lets go.
+  if(onEst){document.getElementById('_style-pick-ov')?.remove();if(typeof _geiSaveAndExit==='function')_geiSaveAndExit();return;}
   _closeStylePicker();
-  if(onEst&&typeof _geiSaveAndExit==='function')_geiSaveAndExit();
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
