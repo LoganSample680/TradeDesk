@@ -400,6 +400,44 @@ test.describe('Ready to bill', () => {
     expect(r.back).toBe(3);
   });
 
+  // Owner 2026-09-29: "a hidden obvious way to put corrected manual time in
+  // if you don't agree, as a last minute override".
+  test('fix hours: his tracked hours are overridden for this invoice, the line says edited and what was tracked, Undo puts them back', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      _qiDayOpen('2026-09-22');
+      const day = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
+      const link = [...day().querySelectorAll('.qi-fix')].map(b => b.textContent);
+      [...day().querySelectorAll('.qi-fix')].find(b => b.textContent === 'fix hours').click();
+      const inp = day().querySelector('.qi-hrs input');
+      inp.value = '5'; inp.dispatchEvent(new Event('change'));
+      const jack = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'Jack Sample');
+      const note = day().querySelector('.qi-edited').textContent;
+      const other = _qi.tracked.find(l => l.day === '2026-09-23' && l.who === 'Jack Sample').mins;
+      _qiAddPerson('John Miller');
+      const john = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'John Miller').mins;
+      const doc = _qiDocHtml();
+      [...day().querySelectorAll('.qi-fix')].find(b => b.textContent === 'Undo').click();
+      const back = _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'Jack Sample');
+      return { link, jack: [jack.mins, jack.amount, jack.orig], note, other, john, doc5: doc.includes('5 hrs'), back: [back.mins, !!back.edited] };
+    });
+    expect(r.link).toEqual(['fix hours']);
+    expect(r.jack).toEqual([300, 375, 360]);
+    expect(r.note).toBe('Edited, tracked 6h');
+    expect(r.other, 'only that day').toBe(210);
+    expect(r.john, 'someone added beside him follows the fixed hours').toBe(300);
+    expect(r.doc5, 'the customer copy bills the fixed hours').toBe(true);
+    expect(r.back).toEqual([360, false]);
+  });
+
+  test('fix hours refuses junk, a negative and more than a day', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => ['abc', '-3', '25', ''].map(v => { _qiRiderSet('2026-09-22', 'Jack Sample', v); return _qi.tracked.find(l => l.day === '2026-09-22' && l.who === 'Jack Sample').mins; }));
+    expect(r).toEqual([360, 360, 360, 360]);
+  });
+
   test('junk in + Add person adds nobody and never throws', async ({ page }) => {
     await boot(page);
     await open(page, 701);
