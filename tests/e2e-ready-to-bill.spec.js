@@ -308,14 +308,58 @@ test.describe('Ready to bill', () => {
       await new Promise(r => setTimeout(r, 30));
       const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => ({ day: l.day, mins: l.mins, rate: l.rate, rider: l.rider || null }));
       _qiDays(_qi.tracked).forEach(d => _qi.open.add(d)); renderQuickInvoice();
-      return { john, text: document.getElementById('qi-page').textContent };
+      const hrs = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-hrs');
+      return { john, text: document.getElementById('qi-page').textContent, hrs: hrs && hrs.querySelector('input').value, ask: !!document.getElementById('qi-ask') };
     });
     expect(r.john).toEqual([
       { day: '2026-09-22', mins: 360, rate: 125, rider: 'Jack Sample' },
       { day: '2026-09-23', mins: 210, rate: 125, rider: 'Jack Sample' },
       { day: '2026-09-24', mins: 60, rate: 125, rider: null },
     ]);
-    expect(r.text).toContain('6h, rode with Jack');
+    // His hours are the guess, so they are an editable box (2026-09-29).
+    expect(r.hrs).toBe('6');
+    expect(r.text).toContain('h with Jack');
+    expect(r.ask, 'already riding: nobody is asked about him').toBe(false);
+  });
+
+  // Owner 2026-09-29: "John doesn't have an account ... we would have Jack's
+  // name but we wouldn't have John's name ... did he spend the same amount of
+  // time? no way to know". Asked once; his hours are a guess he can change.
+  test('Anyone with Jack?: asked once, one tap puts John on every day, and his hours for a day can be changed', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      const ask = document.getElementById('qi-ask');
+      const before = { q: ask.querySelector('b').textContent, opts: [...ask.querySelectorAll('button')].map(b => b.textContent) };
+      [...ask.querySelectorAll('button')].find(b => b.textContent === 'John').click();
+      await new Promise(r => setTimeout(r, 20));
+      const john = _qi.tracked.filter(l => l.who === 'John Miller').map(l => [l.day, l.mins]);
+      _qiDayOpen('2026-09-22');
+      const inp = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-hrs input');
+      inp.value = '4'; inp.dispatchEvent(new Event('change'));
+      const after = _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-22');
+      return { before, riders: S.qiRiders, asked: S.qiRidersAsked, john, after: [after.mins, after.amount], gone: !document.getElementById('qi-ask'),
+        other: _qi.tracked.find(l => l.who === 'John Miller' && l.day === '2026-09-23').mins };
+    });
+    expect(r.before).toEqual({ q: 'Anyone with Jack?', opts: ['John', 'Just Jack'] });
+    expect(r.riders).toEqual({ 'John Miller': 'Jack Sample' });
+    expect(r.asked).toBe(true);
+    expect(r.john).toEqual([['2026-09-22', 360], ['2026-09-23', 210], ['2026-09-24', 120]]);
+    expect(r.after, 'John left early: 4 hours at $125').toEqual([240, 500]);
+    expect(r.other, 'only that day moves').toBe(210);
+    expect(r.gone).toBe(true);
+  });
+
+  test('Just Jack: never asked again, and nobody is added', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      [...document.querySelectorAll('#qi-ask button')].find(b => b.textContent === 'Just Jack').click();
+      const now = !!document.getElementById('qi-ask');
+      _qi = null; openQuickInvoice(702); await new Promise(r => setTimeout(r, 30));
+      return { now, later: !!document.getElementById('qi-ask'), john: _qi.tracked.some(l => l.who === 'John Miller'), asked: S.qiRidersAsked };
+    });
+    expect(r).toEqual({ now: false, later: false, john: false, asked: true });
   });
 
   test('a rider can be taken off one day only', async ({ page }) => {
@@ -338,8 +382,9 @@ test.describe('Ready to bill', () => {
       _qiDayOpen('2026-09-22');
       const day = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
       [...day.querySelectorAll('button')].find(b => b.textContent === 'Add crew').click();
-      const choices = [...document.querySelectorAll('#qi-page .qi-crew button')].map(b => b.textContent);
-      [...document.querySelectorAll('#qi-page .qi-crew button')].find(b => b.textContent === 'John Miller').click();
+      const day2 = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"]');
+      const choices = [...day2().querySelectorAll('.qi-crew button')].map(b => b.textContent);
+      [...day2().querySelectorAll('.qi-crew button')].find(b => b.textContent === 'John Miller').click();
       const line = _qi.tracked.find(l => l.who === 'John Miller');
       const total = document.getElementById('qi-total').textContent;
       document.querySelector('#qi-page .qi-always').click();
@@ -374,6 +419,46 @@ test.describe('Ready to bill', () => {
     expect(r.learned, 'somebody with no rate keeps the one he typed').toBe(90);
     expect(r.other).toBe('90');
     expect(r.total).toBe('$1,221.00');
+  });
+
+  // Owner 2026-09-29: "first time people may not have a rate ... how do you
+  // make that smart?" Nobody goes out at $0, and a default nobody chose is
+  // asked about once.
+  test('no rate at all: the box is orange and says Rate?, and Send and Collect wait for it', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      S.employees[0].billRate = 0; S.laborRate = 0;
+      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
+      _qiDayOpen('2026-09-22');
+      const pill = document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-rate');
+      const before = { need: pill.classList.contains('need'), ph: pill.querySelector('input').placeholder, missing: _qiMissingRates(),
+        folded: document.querySelector('#qi-page .qi-day[data-day="2026-09-23"] .qi-day-open-btn small').textContent };
+      const nBids = bids.length;
+      const sent = qiSend(), paid = qiPayNow();
+      const blocked = { sent, paid, bids: bids.length - nBids };
+      const inp = pill.querySelector('input');
+      inp.value = '75'; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
+      return { before, blocked, after: { need: pill.classList.contains('need'), missing: _qiMissingRates(), kept: S.employees[0].billRate } };
+    });
+    expect(r.before).toEqual({ need: true, ph: 'Rate?', missing: ['Jack Sample'], folded: 'Jack · 3h 30m · Jack needs a rate' });
+    expect(r.blocked, 'nothing is saved or sent at $0 an hour').toEqual({ sent: false, paid: false, bids: 0 });
+    expect(r.after).toEqual({ need: false, missing: [], kept: 75 });
+  });
+
+  test('billed at the business default: the box is orange with a question mark until he looks at it once, then the rate is theirs', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      S.employees[0].billRate = 0; S.laborRate = 70;
+      openQuickInvoice(701); await new Promise(r => setTimeout(r, 30));
+      _qiDayOpen('2026-09-22');
+      const pill = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-22"] .qi-rate');
+      const before = { guess: pill().classList.contains('guess'), text: pill().textContent, missing: _qiMissingRates() };
+      pill().querySelector('input').dispatchEvent(new Event('blur'));
+      return { before, kept: S.employees[0].billRate, guess: pill().classList.contains('guess') };
+    });
+    expect(r.before).toEqual({ guess: true, text: '$/hr?', missing: [] });
+    expect(r.kept, 'looked at and kept: the default is now his').toBe(70);
+    expect(r.guess).toBe(false);
   });
 
   // Owner 2026-09-29: "updates in one spot show all". The estimate and the
@@ -905,7 +990,11 @@ test.describe('Invoice: add time from the day', () => {
     expect(r.total).toBe(387.5);                               // 310 minutes at $75
   });
 
-  test('Add time lists the rest of the day; he was the only customer, so opening it checks them and they count', async ({ page }) => {
+  // Owner 2026-09-29: "what about the times that you're in the shop for three
+  // hours before a job, that's not billable". Nothing outside the job counts on
+  // its own, not even on a day he was the only customer; Add time is for the
+  // odd miss.
+  test('Add time lists the rest of the day, all unchecked even on his only job that day; one tap adds a line', async ({ page }) => {
     await boot(page);
     await day(page);
     await openIt(page);
@@ -914,19 +1003,29 @@ test.describe('Invoice: add time from the day', () => {
       const label = btn.textContent;
       btn.click();
       const rows = [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => ({ t: b.querySelector('.ios-lbl').firstChild.textContent, on: b.getAttribute('aria-pressed') }));
-      const note = !!document.querySelector('#qi-page .qi-xnote');
       const total = _qiTotal();
-      document.querySelectorAll('#qi-page .qi-x-row')[1].click();       // the shop was not his
-      const after = _qiTotal();
-      const d = _qiDocHtml();
-      return { label, rows, note, total, after, doc: /Labor · 6 hrs on site/.test(d) || /Labor · 5.\d hrs on site/.test(d) };
+      document.querySelectorAll('#qi-page .qi-x-row')[1].click();       // this time the shop was his
+      return { label, rows, total, after: _qiTotal() };
     });
     expect(r.label).toBe('Add time from this day (2)');
-    expect(r.rows).toEqual([{ t: 'Drive · Here to Shop', on: 'true' }, { t: 'Shop', on: 'true' }]);
-    expect(r.note).toBe(true);
-    expect(r.total).toBe(450);                                  // 360 minutes at $75
-    expect(r.after).toBe(412.5);
-    expect(r.doc).toBe(true);
+    expect(r.rows).toEqual([{ t: 'Drive · Here to Shop', on: 'false' }, { t: 'Shop', on: 'false' }]);
+    expect(r.total, 'opening it adds nothing').toBe(387.5);
+    expect(r.after).toBe(425);                                  // + 30m at $75
+  });
+
+  test('a run back to the shop in the middle of his job counts by itself, labeled, like a supply run', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await page.evaluate(() => {
+      const L = window._rtbLab;
+      L.entries = L.entries.filter(e => e.id !== 104).map(e => e.id === 103 ? Object.assign({}, e, { dest_place: 'Shop' }) : e.id === 105 ? Object.assign({}, e, { origin_place: 'Shop' }) : e);
+      L.shopEntries.push({ id: 202, employee_user_id: 'jack-uid', arrived_at: '2026-09-25T15:35:00.000Z', departed_at: '2026-09-25T15:55:00.000Z', minutes: 20 });
+    });
+    await openIt(page);
+    const r = await page.evaluate(() => ({ extras: _qi.tracked.filter(l => l.extra).map(l => l.extra), text: document.getElementById('qi-page').textContent, total: _qiTotal() }));
+    expect(r.extras).toEqual(['e103', 's202', 'e105']);
+    expect(r.text).toContain('Shop · 20m, between visits');
+    expect(r.total).toBe(387.5);                               // the same 310 minutes, shop instead of Ferguson
   });
 
   test('another customer the same day: nothing is checked for him; the run between his visits still counts', async ({ page }) => {
@@ -935,10 +1034,9 @@ test.describe('Invoice: add time from the day', () => {
     await openIt(page);
     const r = await page.evaluate(() => {
       document.getElementById('qi-addtime-2026-09-25').click();
-      return { on: [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => b.getAttribute('aria-pressed')), note: !!document.querySelector('#qi-page .qi-xnote'), total: _qiTotal() };
+      return { on: [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => b.getAttribute('aria-pressed')), total: _qiTotal() };
     });
     expect(r.on).toEqual(['false', 'false']);
-    expect(r.note).toBe(false);
     expect(r.total).toBe(387.5);
   });
 
@@ -957,8 +1055,8 @@ test.describe('Invoice: add time from the day', () => {
       return { dropped, pulled: bid.qiPulled.sort(), marked: [..._qiPulledAll()].sort(), days: bid.qiDays };
     });
     expect(r.dropped).toBe(362.5);
-    expect(r.pulled).toEqual(['e103', 'e105', 'e107', 's201']);
-    expect(r.marked).toEqual(['e103', 'e105', 'e107', 's201']);
+    expect(r.pulled).toEqual(['e103', 'e105']);
+    expect(r.marked).toEqual(['e103', 'e105']);
     expect(r.days).toEqual(['2026-09-25']);
   });
 
@@ -968,7 +1066,7 @@ test.describe('Invoice: add time from the day', () => {
     await page.evaluate(() => { S.qiBillDrive = false; });
     await openIt(page);
     const r = await page.evaluate(() => { _qiExtraOpen('2026-09-25'); return _qi.tracked.filter(l => l.who === 'Jack Sample').map(l => l.extra || 'base'); });
-    expect(r).toEqual(['base', 'e104', 's201']);
+    expect(r).toEqual(['base', 'e104']);
   });
 });
 
