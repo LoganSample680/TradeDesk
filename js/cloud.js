@@ -6952,6 +6952,64 @@ async function _deleteReceiptFromStorage(receiptKey){
 // user hit Save then refreshed before the cloud flush finished (settings are
 // written LAST in supaSaveToCloud, after all table upserts). Local wins and we
 // flag a pending sync so the newer local settings get pushed up.
+// ── The logo rides in storage, not in the settings row (egress, 2026-09-28) ──
+// Supabase dropped every request on the project on 2026-09-28: egress 6.02 GB
+// of the 5.5 GB quota. S.logoData is the logo as base64 text, and one account's
+// was 1.5 MB. It rode inside zj_data.settings, so it went down again on every
+// settings read, every realtime settings push to every signed-in device, and
+// every server geo rebuild, about 1,000 times a day. The same bytes already
+// sit in storage (_ensureLogoUrl, js/proposals.js), with logoHash proving
+// which logoData they are. So once the upload is confirmed the settings row
+// carries logoUrl + logoHash and no logoData. A device that already has the
+// logo keeps it (_mergeIncomingSettings spreads the incoming keys over S, and
+// a missing key changes nothing); a device without it, or with an older one,
+// fetches the file once and rebuilds logoData, so every screen that paints
+// from S.logoData works as before.
+function _logoInStorage(s){
+  try{return !!(s&&s.logoData&&s.logoUrl&&typeof _hubHash==='function'&&String(s.logoHash)===String(_hubHash(s.logoData)));}catch(_e){return false;}
+}
+// Settings as they go to zj_data. The logo is left out only when the storage
+// copy is confirmed, so a failed upload keeps the old behavior (it syncs in
+// the row) rather than losing the logo on other devices. An unconfirmed logo
+// starts its upload here; _ensureLogoUrl saves again on success, and that
+// save leaves it out. One failed attempt per logo per session, so a storage
+// outage does not re-send a large file on every save.
+let _logoUploadTried='';
+function _settingsForCloud(src){
+  const{stateRates:_sr0,...out}=src||{};
+  if(_logoInStorage(out)){delete out.logoData;return out;}
+  if(out.logoData&&typeof _ensureLogoUrl==='function'&&typeof _hubHash==='function'){
+    const h=String(_hubHash(out.logoData));
+    if(_logoUploadTried!==h){_logoUploadTried=h;try{Promise.resolve(_ensureLogoUrl()).catch(()=>{});}catch(_e){}}
+  }
+  return out;
+}
+let _logoHydrating=null;
+function _hydrateLogoFromUrl(){
+  try{
+    if(_logoHydrating||typeof S==='undefined'||!S||!S.logoUrl||!S.logoHash||typeof _hubHash!=='function')return null;
+    if(S.logoData&&String(_hubHash(S.logoData))===String(S.logoHash))return null;
+    if(typeof fetch!=='function'||typeof FileReader!=='function')return null;
+    const url=S.logoUrl;
+    _logoHydrating=fetch(url).then(r=>r&&r.ok?r.blob():null).then(b=>{
+      if(!b||!b.size)return null;
+      return new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>res(null);fr.readAsDataURL(b);});
+    }).then(d=>{
+      // The logo changed or was removed while this was in flight: that one wins.
+      if(typeof d!=='string'||!/^data:image\//.test(d)||S.logoUrl!==url)return null;
+      S.logoData=d;
+      // Same bytes, so normally the same hash. If the type prefix came back
+      // different the hash follows what is now in S, which is still the file at logoUrl.
+      S.logoHash=String(_hubHash(d));
+      try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+      try{if(typeof applyBrandLogo==='function')applyBrandLogo();}catch(_e){}
+      try{if(typeof _renderLogoPreview==='function')_renderLogoPreview();}catch(_e){}
+      try{if(typeof _updateBootPreview==='function')_updateBootPreview();}catch(_e){}
+      return d;
+    }).catch(()=>null).finally(()=>{_logoHydrating=null;});
+    return _logoHydrating;
+  }catch(_e){_logoHydrating=null;return null;}
+}
 function _mergeIncomingSettings(ss,src){
   if(!ss)return false;
   // TEMP DIAGNOSTIC (automation only): trace every settings merge to find the reboot clobber.
@@ -6970,6 +7028,7 @@ function _mergeIncomingSettings(ss,src){
     if(!Array.isArray(S.vehicles))S.vehicles=[]; // never inherit the old account's vehicles
     if(S.suppliesRate===0.40)S.suppliesRate=0.25;
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+    setTimeout(_hydrateLogoFromUrl,0);
     return true;
   }
   if((S.settingsTs||0)>(ss.settingsTs||0)){
@@ -6995,6 +7054,7 @@ function _mergeIncomingSettings(ss,src){
   // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
   // until the next cloud merge; permanently if that boot happens offline).
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+  setTimeout(_hydrateLogoFromUrl,0);
   return true;
 }
 // ── Per-individual-user UI layout (dashboard widget order + nav tab order) ──
@@ -7704,7 +7764,8 @@ async function supaSaveToCloud(){
     if(_ownerUI() && _authSettingsLoaded){
       // Strip only stateRates (anon-readable reference data, never a user setting).
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
-      const{stateRates:_sr0,...sForCloud}=S;
+      // The logo's base64 is left out once storage holds it (_settingsForCloud).
+      const sForCloud=_settingsForCloud(S);
       // LAST-WRITER-WINS by settingsTs: never overwrite a NEWER cloud settings blob with our
       // (possibly stale) copy, but if that happens we STILL bump the cursor when our table rows
       // changed, else the peer that owns the newer settings would never learn of our records.

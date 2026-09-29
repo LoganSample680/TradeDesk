@@ -1174,7 +1174,13 @@ test.describe('traced trips', () => {
         await stale();
         const n = await page.evaluate(async (d) => {
           let calls = 0;
-          window._supa = { from: () => { calls++; return { update: () => ({ eq: () => ({ eq: () => ({ then: (r) => r({ error: null }) }) }) }) }; } };
+          // Only the TIME tables count. This stub is the whole of _supa while
+          // the save awaits, and the reconcile heartbeat (js/cloud.js
+          // _heartbeatTick) reads zj_data every few seconds on any visible
+          // page, so counting every table counted the heartbeat whenever it
+          // landed inside the await (WebKit, shard 3, 2026-09-28). What this
+          // test is about is time rows, so that is what it counts.
+          window._supa = { from: (t) => { if (/time_entries/.test(String(t))) calls++; return { update: () => ({ eq: () => ({ eq: () => ({ then: (r) => r({ error: null }) }) }) }), select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }; } };
           window._supaUser = { id: 'emp-1' };
           _mileAddressPending = { legKey: 'j-traced', day: d, which: 'to', lat: 39.035, lng: -95.7 };
           await _mileAddressSaved({ id: 9, name: 'Ace Hardware', addr: '2100 SW Gage Blvd' });

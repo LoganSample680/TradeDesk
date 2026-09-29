@@ -20,9 +20,17 @@ async function fakeNative(page) {
     const calls = [];
     window.__td = { calls, listeners: {} };
     const rec = (name) => (args) => { calls.push({ name, args: args || {} }); return Promise.resolve({ ok: true }); };
+    // Behaves like the plugin: update() finds a card by its channel and says
+    // ok:false when there is none, so the app's update-before-start on a fresh
+    // launch (js/live-activity.js) is exercised honestly.
+    const liveCh = new Set();
+    window.__td.live = liveCh;
     const TdLive = {
       isSupported: () => Promise.resolve({ supported: true, enabled: true }),
-      start: rec('start'), update: rec('update'), end: rec('end'), endAll: rec('endAll'),
+      start: (a) => { calls.push({ name: 'start', args: a || {} }); liveCh.add((a && a.channel) || 'default'); return Promise.resolve({ ok: true }); },
+      update: (a) => { calls.push({ name: 'update', args: a || {} }); return Promise.resolve({ ok: liveCh.has((a && a.channel) || 'default') }); },
+      end: (a) => { calls.push({ name: 'end', args: a || {} }); liveCh.delete((a && a.channel) || 'default'); return Promise.resolve({ ok: true }); },
+      endAll: (a) => { calls.push({ name: 'endAll', args: a || {} }); liveCh.clear(); return Promise.resolve({ ok: true }); },
       addListener: (ev, cb) => { window.__td.liveListeners = window.__td.liveListeners || {}; window.__td.liveListeners[ev] = cb; return { remove() {} }; },
     };
     const TdPush = {
@@ -508,6 +516,33 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.total, 'and only once, however often the dwell republishes').toBe(1);
   });
 
+  // Owner 2026-09-29: "jack got like 4 general time clocked in banners on his
+  // lock screen when he only should have one." Every relaunch mid-shift
+  // (iOS killing the app, a crash, the version watchdog) came back with an
+  // empty memory, and the boot rehydrate STARTED another clock card. The first
+  // call after a launch now updates the card already up and only starts one
+  // when there is none.
+  test('a relaunch while clocked in reuses the clock card: four launches, one card', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const relaunch = () => [_liveLast, _liveEnded, _liveProbed].forEach(m => Object.keys(m).forEach(k => delete m[k]));
+      const clock = { jobId: null, clientName: 'General time', scopeLabel: '', startTime: Date.now() - 60 * 60000 };
+      relaunch();
+      _liveActClockIn(clock); await new Promise(r => setTimeout(r, 60));
+      for (let i = 0; i < 3; i++) { relaunch(); _liveActClockIn(clock); await new Promise(r => setTimeout(r, 60)); }
+      const clockCalls = window.__td.calls.filter(c => c.args.channel === 'clock').map(c => c.name);
+      // Swiped away or reclaimed while the app was dead: the next launch starts one.
+      window.__td.live.delete('clock'); relaunch(); window.__td.calls.length = 0;
+      _liveActClockIn(clock); await new Promise(r => setTimeout(r, 60));
+      const gone = window.__td.calls.filter(c => c.args.channel === 'clock').map(c => c.name);
+      await _liveActClockOut(); await new Promise(r => setTimeout(r, 40));
+      return { starts: clockCalls.filter(n => n === 'start').length, updates: clockCalls.filter(n => n === 'update').length, gone };
+    });
+    expect(r.starts, 'one card, however many times the app comes back').toBe(1);
+    expect(r.updates, 'each relaunch updates the card that is up').toBe(4);
+    expect(r.gone, 'no card left: one quiet probe, then a start').toEqual(['update', 'start']);
+  });
+
   test('the drive card too: not driving after a relaunch takes the blue arrow down', async () => {
     // The exact channel his island was stuck on.
     const r = await page.evaluate(async () => {
@@ -921,9 +956,21 @@ test.describe('Remote push: token handling and tap routing', () => {
     const deadIdx = apns.indexOf('return { ok: false, dead: true }');
     expect(badIdx).toBeGreaterThan(-1);
     expect(deadIdx).toBeGreaterThan(badIdx);
-    for (const fn of ['send-push', 'push-geo-ping']) {
-      const src = fs.readFileSync(path.join(root, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
-      expect(src.includes('apnsSend('), `${fn} must send through the shared sender`).toBe(true);
+    // push-geo-ping reaches apnsSend through _shared/silent-push.ts now
+    // (2026-09-28), the one silent sender it shares with the terminate wake.
+    const silent = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'silent-push.ts'), 'utf8');
+    expect(silent.includes('apnsSend('), 'the silent sender goes through the shared sender').toBe(true);
+    expect(silent.includes('APNS_HOST')).toBe(false);
+    // The Live Activity senders too (owner 2026-09-28: the lock screen said
+    // John Doe from the shop). They hand-rolled a fetch to one gateway, read
+    // the wrong-gateway answer as "card gone", and deleted every card's token
+    // on its first push, so the server could never move a card again.
+    const files = ['send-push', 'push-geo-ping', 'rebuild-day', 'update-live-activity']
+      .map(fn => path.join('supabase', 'functions', fn, 'index.ts'))
+      .concat([path.join('supabase', 'functions', '_shared', 'live-push.ts')]);
+    for (const fn of files) {
+      const src = fs.readFileSync(path.join(root, fn), 'utf8');
+      expect(src.includes('apnsSend(') || src.includes('sendSilentWake('), `${fn} must send through the shared sender`).toBe(true);
       expect(src.includes('APNS_HOST'), `${fn} must not pin itself to one gateway`).toBe(false);
     }
   });

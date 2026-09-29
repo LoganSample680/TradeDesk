@@ -1,0 +1,185 @@
+// @ts-check
+// ── A close earns one wake (owner 2026-09-28: "do the swipe fix") ────────────
+//
+// Jack's phone closed nine times in a workday and stayed dark until the
+// half-hour ping or a fence exit woke it, 18 minutes at worst. The phone now
+// sends its close as it dies (TdGeoPlugin.appTerminate) and ingest-geo sends
+// one silent push to bring the app back. The rules are pure and live in
+// supabase/functions/_shared/terminate-wake.mjs; this drives them directly.
+const { test, expect } = require('./helpers');
+const path = require('path');
+const fs = require('fs');
+
+const ROOT = path.join(__dirname, '..');
+const MOD = 'file://' + path.join(ROOT, 'supabase/functions/_shared/terminate-wake.mjs');
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Monday 2026-09-28 in Central daylight time is UTC-5.
+const ct = (h, m, day = 28) => Date.UTC(2026, 8, day, h + 5, m);
+
+test.describe('terminate wake: the rules', () => {
+  test('working hours come from settings, with the deriver\'s defaults', async () => {
+    const { workHoursFromSettings } = await import(MOD);
+    const def = { start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] };
+    expect(workHoursFromSettings(null)).toEqual(def);
+    expect(workHoursFromSettings(undefined)).toEqual(def);
+    expect(workHoursFromSettings('{bad json')).toEqual(def);
+    expect(workHoursFromSettings({})).toEqual(def);
+    expect(workHoursFromSettings({ workHours: { start: '7:30', end: '17:00', days: [1, 2, 3] } }))
+      .toEqual({ start: '7:30', end: '17:00', days: [1, 2, 3] });
+    expect(workHoursFromSettings(JSON.stringify({ workHours: { start: 'nope', end: 5, days: [] } })))
+      .toEqual(def);
+  });
+
+  test('inside the working day, in Central time, start inclusive and end exclusive', async () => {
+    const { inWorkHours } = await import(MOD);
+    const wh = { start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] };
+    expect(inWorkHours(ct(5, 59), wh)).toBe(false);
+    expect(inWorkHours(ct(6, 0), wh)).toBe(true);
+    expect(inWorkHours(ct(12, 2), wh)).toBe(true);
+    expect(inWorkHours(ct(19, 59), wh)).toBe(true);
+    expect(inWorkHours(ct(20, 0), wh)).toBe(false);
+    expect(inWorkHours(ct(12, 0, 27), wh), 'Sunday is not a working day').toBe(false);
+    expect(inWorkHours(NaN, wh)).toBe(false);
+    expect(inWorkHours(ct(12, 0), null), 'no hours given means the defaults').toBe(true);
+  });
+
+  test('Jack at 12:02: a fresh close in the working day earns a wake', async () => {
+    const { terminateWakeDue } = await import(MOD);
+    const close = ct(12, 2);
+    const evs = [{ type: 'app-background', ts: close - 1 }, { type: 'app-terminate', ts: close }];
+    expect(terminateWakeDue(evs, close + 3000, null, NaN)).toBe(true);
+  });
+
+  test('a close that arrives late is history, not news', async () => {
+    const { terminateWakeDue, WAKE_FRESH_MS } = await import(MOD);
+    const close = ct(8, 12);
+    const evs = [{ type: 'app-terminate', ts: close }];
+    expect(terminateWakeDue(evs, close + WAKE_FRESH_MS, null, NaN)).toBe(true);
+    expect(terminateWakeDue(evs, close + WAKE_FRESH_MS + 1, null, NaN),
+      'the 8:12 close reached the server 18 minutes later; waking then is pointless').toBe(false);
+  });
+
+  test('one wake per ten minutes, however often it closes', async () => {
+    const { terminateWakeDue, WAKE_GAP_MS } = await import(MOD);
+    const close = ct(12, 36);
+    const evs = [{ type: 'app-terminate', ts: close }];
+    expect(terminateWakeDue(evs, close + 1000, null, close - 3 * 60000),
+      'woken three minutes ago at 12:33: not again').toBe(false);
+    expect(terminateWakeDue(evs, close + 1000, null, close + 1000 - WAKE_GAP_MS)).toBe(true);
+  });
+
+  test('outside the working day, nothing is woken', async () => {
+    const { terminateWakeDue } = await import(MOD);
+    const night = ct(22, 30);
+    expect(terminateWakeDue([{ type: 'app-terminate', ts: night }], night + 1000, null, NaN)).toBe(false);
+    const late = ct(18, 30);
+    expect(terminateWakeDue([{ type: 'app-terminate', ts: late }], late + 1000,
+      { start: '07:00', end: '17:00', days: [1, 2, 3, 4, 5] }, NaN), 'his own hours win').toBe(false);
+  });
+
+  test('no close, or junk, never wakes and never throws', async () => {
+    const { terminateWakeDue } = await import(MOD);
+    const t = ct(10, 0);
+    expect(terminateWakeDue([{ type: 'app-background', ts: t }], t + 1000, null, NaN)).toBe(false);
+    expect(terminateWakeDue([], t, null, NaN)).toBe(false);
+    expect(terminateWakeDue(null, t, null, NaN)).toBe(false);
+    expect(terminateWakeDue([null, { type: 'app-terminate' }, { type: 'app-terminate', ts: 'x' }], t, null, NaN)).toBe(false);
+    expect(terminateWakeDue([{ type: 'app-terminate', ts: t }], NaN, null, NaN)).toBe(false);
+    expect(terminateWakeDue([{ type: 'app-terminate', ts: t + 10 * 60000 }], t, null, NaN),
+      'a close from the future is a clock problem, not a close').toBe(false);
+  });
+});
+
+test.describe('quiet wake: a phone whose last word was "backgrounded"', () => {
+  const bg = (ms) => ({ type: 'app-background', created_at: new Date(ms).toISOString() });
+
+  test('Jack at 8:12: backgrounded, then nothing for three minutes, earns a wake', async () => {
+    const { quietWakeDue, QUIET_MIN_MS } = await import(MOD);
+    const heard = ct(8, 12);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MIN_MS - 1000, null, NaN), 'two minutes is not quiet yet').toBe(false);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MIN_MS, null, NaN)).toBe(true);
+    expect(quietWakeDue({ type: 'app-background', created_at: heard + QUIET_MIN_MS * 2 - QUIET_MIN_MS }, heard + QUIET_MIN_MS * 2, null, NaN),
+      'a numeric arrival time reads the same as a string').toBe(true);
+  });
+
+  test('anything after the background means it is alive: no wake', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const heard = ct(10, 0);
+    for (const type of ['push-ping', 'motion', 'fix', 'app-active', 'app-terminate', 'heartbeat']) {
+      expect(quietWakeDue({ type, created_at: new Date(heard).toISOString() }, heard + 5 * 60000, null, NaN), type).toBe(false);
+    }
+  });
+
+  test('past twenty minutes the half-hour ping is the nearer wake', async () => {
+    const { quietWakeDue, QUIET_MAX_MS } = await import(MOD);
+    const heard = ct(11, 0);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MAX_MS, null, NaN)).toBe(true);
+    expect(quietWakeDue(bg(heard), heard + QUIET_MAX_MS + 1, null, NaN)).toBe(false);
+  });
+
+  test('one wake per ten minutes, shared with the close wake, and only in working hours', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const heard = ct(12, 30);
+    const now = heard + 4 * 60000;
+    expect(quietWakeDue(bg(heard), now, null, now - 5 * 60000), 'woken five minutes ago').toBe(false);
+    const night = ct(21, 0);
+    expect(quietWakeDue(bg(night), night + 4 * 60000, null, NaN), 'after hours').toBe(false);
+  });
+
+  test('junk never wakes and never throws', async () => {
+    const { quietWakeDue } = await import(MOD);
+    const t = ct(9, 0);
+    expect(quietWakeDue(null, t, null, NaN)).toBe(false);
+    expect(quietWakeDue({}, t, null, NaN)).toBe(false);
+    expect(quietWakeDue({ type: 'app-background', created_at: 'nope' }, t, null, NaN)).toBe(false);
+    expect(quietWakeDue(bg(t), NaN, null, NaN)).toBe(false);
+    expect(quietWakeDue(bg(t + 10 * 60000), t, null, NaN), 'heard in the future').toBe(false);
+  });
+});
+
+test.describe('terminate wake: the wiring, read off the source', () => {
+  test('ingest-geo keeps why the app closed', () => {
+    const src = read('supabase/functions/ingest-geo/index.ts');
+    expect(src).toContain('function lifecycleDetail(');
+    expect(src).toMatch(/e\.type === "app-terminate" \|\| e\.type === "memory-warning"\s*\n\s*\? lifecycleDetail\(e\)/);
+  });
+
+  test('ingest-geo wakes through the pure rules and the one silent sender, rate-gated', () => {
+    const src = read('supabase/functions/ingest-geo/index.ts');
+    expect(src).toContain('terminateWakeDue(evs, Date.now(), workHoursFromSettings(');
+    expect(src).toContain('sendSilentWake(svc,');
+    expect(src).toContain('"wake:" + uid');
+    expect(src, 'only a batch holding a close pays for the lookup').toContain('evs.some((e) => e.type === "app-terminate")');
+    const ping = read('supabase/functions/push-geo-ping/index.ts');
+    expect(ping).toContain('sendSilentWake(');
+  });
+
+  test('wake-quiet runs every two minutes through the same rules and sender', () => {
+    const fn = read('supabase/functions/wake-quiet/index.ts');
+    expect(fn).toContain('quietWakeDue(last, now, workHoursFromSettings(');
+    expect(fn).toContain('sendSilentWake(svc, tokens, "geo-wake"');
+    expect(fn, 'rate-gated like the half-hour ping').toContain('"wake-quiet"');
+    expect(fn, 'shares the per-person wake gap with the close wake').toContain('"wake:" + uid');
+    const mig = read('supabase/migrations/20261052_wake_quiet_cron.sql');
+    expect(mig).toContain("'*/2 * * * *'");
+    expect(mig).toContain('/functions/v1/wake-quiet');
+    expect(mig).toContain('on public.geo_events (employee_user_id, created_at desc)');
+    expect(mig, 'no create extension, so the lint runner skips the schedule').not.toMatch(/^\s*create extension/im);
+  });
+
+  test('working hours are read in one place, for the deriver and the wake', () => {
+    const d = read('supabase/functions/_shared/derive-day.mjs');
+    expect(d).toContain('workHoursFromSettings(cfgRes)');
+    expect(d, 'the hand-written copy is gone').not.toContain('let workHours = { start: "06:00"');
+  });
+
+  test('the phone sends the close as it dies, and waits a bounded time for it', () => {
+    const sw = read('native/td-geo/ios/Plugin/TdGeoPlugin.swift');
+    expect(sw).toContain('holdForFlush(maxSec: TdGeoPlugin.terminateHoldSec)');
+    expect(sw).toMatch(/static let terminateHoldSec: Double = [0-3](\.\d+)?/);
+    expect(sw).toContain('UIApplication.didReceiveMemoryWarningNotification');
+    const tests = read('native/tests/TdGeoPluginTests.swift');
+    expect(tests).toContain('testHoldGivesUpAtTheCapWhenNothingAcks');
+    expect(tests).toContain('testTerminateRecordsTheCloseOnlyWhenArmedAndHoldsNoLongerThanTheCap');
+  });
+});

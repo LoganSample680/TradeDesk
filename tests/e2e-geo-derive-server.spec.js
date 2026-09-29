@@ -87,6 +87,16 @@ const FENCES = [
     job_id: null, place_id: null, client_id: '111', radius_ft: null, scheduled: false },
 ];
 
+// geo_work_settings (migration 20261053) answered from the same zj_data
+// fixture the old whole-blob read used, so a fixture's workHours still mean
+// what they say.
+function workSettingsFrom(tables) {
+  const r = (tables.zj_data || [])[0];
+  let s = null;
+  try { s = r ? JSON.parse(r.settings) : null; } catch { s = null; }
+  return { data: s ? { workHours: s.workHours, timeOff: s.timeOff } : null, error: null };
+}
+
 // A Supabase client that answers from a fixture. Chainable like the real one,
 // and awaitable at any point in the chain, because derive-day.mjs uses both
 // shapes (.range() for the paged reads, a bare await for the small ones).
@@ -106,6 +116,7 @@ function fakeSvc(tables, rpcLog, opts = {}) {
     rpc: async (name, args) => {
       rpcLog.push({ name, args });
       if (name === 'geo_fences_for') return { data: tables.__fences || [] };
+      if (name === 'geo_work_settings') return workSettingsFrom(tables);
       if (name === 'geo_replace_day') return opts.writeError ? { error: { message: opts.writeError } } : { error: null };
       return { data: null };
     },
@@ -161,6 +172,7 @@ test.describe('the geo_events read asks only for what it can use', () => {
       rpc: async (name, args) => {
         rpcLog.push({ name, args });
         if (name === 'geo_fences_for') return { data: tables.__fences || [] };
+        if (name === 'geo_work_settings') return workSettingsFrom(tables);
         return { error: null, data: null };
       },
     };
@@ -757,5 +769,327 @@ test.describe('the server drops a replayed cached fix', () => {
     const r = await deriveDayServer(fakeSvc(TABLES, []), 'cid-1', 'uid-1', DAY, at(23, 0), null, { sweep: true });
     expect(r.fixesDropped).toBe(0);
     expect(r.fixesSeen).toBeGreaterThan(0);
+  });
+});
+
+// ── THE DERIVER READS TWO SETTINGS, NOT THE BLOB (2026-09-28) ──────────────
+//
+// Supabase dropped every request on the project on 2026-09-28: egress 6.02 GB
+// of 5.5. This read pulled the whole zj_data.settings column, which carried a
+// 1.5 MB logo, about 1,000 times a day, to use workHours and timeOff.
+test.describe('the deriver reads workHours and timeOff, not the settings blob', () => {
+  const tracking = (tables, opts = {}) => {
+    const reads = [];
+    const base = fakeSvc(tables, []);
+    return {
+      reads,
+      svc: {
+        from: (t) => { reads.push(t); return base.from(t); },
+        rpc: async (name, args) => {
+          if (name === 'geo_work_settings' && opts.rpcFails) return { data: null, error: { message: 'no such function' } };
+          if (name === 'geo_work_settings' && 'settings' in opts) return { data: opts.settings, error: null };
+          return base.rpc(name, args);
+        },
+      },
+    };
+  };
+
+  test('zj_data is never read when the RPC answers', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const t = tracking(TABLES);
+    const r = await deriveDayServer(t.svc, 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(r.reason || '').not.toBe('error');
+    expect(t.reads).not.toContain('zj_data');
+  });
+
+  test('workSettings returns the two keys the RPC gives, nothing else', async () => {
+    const { workSettings } = await import(SHARED);
+    const t = tracking(TABLES, { settings: { workHours: { start: '07:00', end: '17:00', days: [1, 2] }, timeOff: [{ day: '2026-09-01' }] } });
+    const w = await workSettings(t.svc, 'cid-1');
+    expect(w.workHours.start).toBe('07:00');
+    expect(w.timeOff).toHaveLength(1);
+    expect(t.reads).not.toContain('zj_data');
+  });
+
+  test('an RPC that is not deployed yet falls back to the old read', async () => {
+    // Functions can land before the migration. The day must still see its
+    // Time off, so the old read runs rather than defaults.
+    const { workSettings } = await import(SHARED);
+    const tables = { ...TABLES, zj_data: [{ settings: JSON.stringify({ workHours: { start: '05:00', end: '19:00', days: [1] }, timeOff: [{ day: 'x' }], logoData: 'data:image/png;base64,AAAA' }) }] };
+    const t = tracking(tables, { rpcFails: true });
+    const w = await workSettings(t.svc, 'cid-1');
+    expect(t.reads).toContain('zj_data');
+    expect(w.workHours.start).toBe('05:00');
+    expect(w.timeOff).toHaveLength(1);
+    expect(Object.keys(w).sort()).toEqual(['timeOff', 'workHours']);
+  });
+
+  test('null input, bad JSON and a missing row all give null, never a throw', async () => {
+    const { workSettings } = await import(SHARED);
+    for (const zj of [[], [{ settings: '{not json' }], [{ settings: null }]]) {
+      const t = tracking({ ...TABLES, zj_data: zj }, { rpcFails: true });
+      expect(await workSettings(t.svc, 'cid-1')).toBeNull();
+    }
+    const t = tracking(TABLES, { settings: null });
+    expect(await workSettings(t.svc, null)).toBeNull();
+  });
+
+  test('the migration returns only workHours and timeOff, and only to service_role', () => {
+    const fs = require('fs');
+    const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261053_geo_work_settings.sql'), 'utf8');
+    expect(sql).toContain("jsonb_build_object('workHours', s->'workHours', 'timeOff', s->'timeOff')");
+    expect(sql).toMatch(/revoke all on function public\.geo_work_settings\(uuid\) from public, anon, authenticated/);
+    expect(sql).toMatch(/grant execute on function public\.geo_work_settings\(uuid\) to service_role/);
+  });
+});
+
+// ── THE DAY'S EVIDENCE TRAVELS COMPACT (2026-09-28) ───────────────────────
+//
+// The paged geo_events read pulled 6.4 million rows on 2026-09-27, about 1 GB,
+// the second cause of the egress cutoff. geo_day_evidence (migration 20261054)
+// returns the same rows as short arrays. It must change nothing the deriver
+// decides, and that is what these prove.
+test.describe('the day of evidence arrives compact and derives the same day', () => {
+  const compact = (rows) => rows.map((e) => [Date.parse(e.ts), e.type, e.kind ?? null,
+    e.lat ?? null, e.lon ?? null, e.region_id ?? null, e.detail ?? null]);
+  const withRpc = (tables, rpcLog, reads) => {
+    const base = fakeSvc(tables, rpcLog);
+    return {
+      from: (t) => { reads.push(t); return base.from(t); },
+      rpc: async (name, args) => {
+        if (name === 'geo_day_evidence') {
+          rpcLog.push({ name, args });
+          return { data: compact(tables.geo_events || []), error: null };
+        }
+        return base.rpc(name, args);
+      },
+    };
+  };
+
+  test('same rows written as the paged read, and geo_events is never paged', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const oldLog = [];
+    const a = await deriveDayServer(fakeSvc(TABLES, oldLog), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const newLog = [], reads = [];
+    const b = await deriveDayServer(withRpc(TABLES, newLog, reads), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const writes = (log) => JSON.stringify(log.filter((c) => c.name === 'geo_replace_day').map((c) => c.args));
+    expect(writes(oldLog).length).toBeGreaterThan(10);
+    expect(writes(newLog)).toBe(writes(oldLog));
+    expect(b.wrote).toBe(a.wrote);
+    expect(reads).not.toContain('geo_events');
+    const call = newLog.find((c) => c.name === 'geo_day_evidence');
+    expect(call.args.p_uid).toBe('uid-1');
+    expect(call.args.p_limit, 'same cap as the paged read').toBe(12000);
+    expect(call.args.p_types).toContain('fix');
+    expect(call.args.p_types).not.toContain('radio');
+  });
+
+  test('dayEvents rebuilds the loop shape exactly, and skips junk rows', async () => {
+    const { dayEvents } = await import(SHARED);
+    const svc = { rpc: async () => ({ error: null, data: [
+      [1757500000123, 'fix', null, 39.04565625037153, -95.71510278822348, null, null],
+      [1757500001000, 'regionEnter', null, null, null, 'fence-9', { a: 1 }],
+      null, 'x', [0, 'fix'], [-5, 'fix'],
+    ] }) };
+    const rows = await dayEvents(svc, 'u', 'a', 'b');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ ts: new Date(1757500000123).toISOString(), type: 'fix', kind: null,
+      lat: 39.04565625037153, lon: -95.71510278822348, region_id: null, detail: null });
+    expect(rows[1].region_id).toBe('fence-9');
+    expect(rows[1].detail).toEqual({ a: 1 });
+  });
+
+  test('an RPC that errors or is missing falls back to the paged read', async () => {
+    const { dayEvents } = await import(SHARED);
+    const paged = [{ ts: iso(at(8, 0)), type: 'motion', kind: 'automotive' }];
+    const base = fakeSvc({ geo_events: paged }, []);
+    for (const rpc of [async () => ({ data: null, error: { message: 'missing' } }), async () => { throw new Error('down'); }, async () => ({ data: null, error: null })]) {
+      const rows = await dayEvents({ from: base.from, rpc }, 'u', 'a', 'b');
+      expect(rows).toEqual(paged);
+    }
+  });
+
+  test('the migration keeps the paged read\'s filter, order and cap, for service_role only', () => {
+    const fs = require('fs');
+    const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261054_geo_day_evidence.sql'), 'utf8');
+    expect(sql).toContain('type = any(p_types)');
+    expect(sql).toContain('order by ts asc');
+    expect(sql).toContain('limit greatest(coalesce(p_limit, 12000), 0)');
+    expect(sql).toMatch(/from public, anon, authenticated/);
+    expect(sql).toMatch(/to service_role;/);
+  });
+});
+
+test.describe('no server function reads the whole settings blob', () => {
+  test('only the workSettings fallback selects zj_data.settings', () => {
+    // The deriver, the close wake (ingest-geo) and the two-minute wake-quiet
+    // cron all need workHours. Each one reading the blob is how a 1.5 MB logo
+    // went down a thousand times a day.
+    const fs = require('fs');
+    const dir = path.join(ROOT, 'supabase/functions');
+    const hits = [];
+    const walk = (d) => { for (const f of fs.readdirSync(d)) {
+      const p = path.join(d, f);
+      if (fs.statSync(p).isDirectory()) walk(p);
+      else if (/\.(ts|mjs|js)$/.test(f)) {
+        const src = fs.readFileSync(p, 'utf8');
+        const n = (src.match(/from\(["']zj_data["']\)\s*\.select\(["'][^"']*settings/g) || []).length;
+        if (n) hits.push(path.relative(ROOT, p) + ':' + n);
+      }
+    } };
+    walk(dir);
+    expect(hits).toEqual(['supabase/functions/_shared/derive-day.mjs:1']);
+    const ig = fs.readFileSync(path.join(dir, 'ingest-geo/index.ts'), 'utf8');
+    const wq = fs.readFileSync(path.join(dir, 'wake-quiet/index.ts'), 'utf8');
+    expect(ig).toContain('workHoursFromSettings(cfgRow)');
+    expect(ig).toContain('workSettings(svc, cid)');
+    expect(wq).toContain('settingsCache.set(cid, await workSettings(svc, cid))');
+  });
+});
+
+// ── THE KEPT DAY DERIVES THE SAME DAY (2026-09-28) ─────────────────────────
+//
+// dayEvents keeps a person's day in memory and asks only for rows added since
+// its last read. It is only allowed to exist because it changes nothing: these
+// derive the same day from the kept copy and from a whole fresh read, while
+// rows keep arriving, and require identical writes.
+test.describe('the kept day derives exactly what a fresh read derives', () => {
+  // A geo_events table with ids and insert times, answering geo_day_evidence
+  // with the migration's own rules: filter, (after id OR since), order, cap.
+  const evidenceDb = () => {
+    const rows = [];
+    let nextId = 1000;
+    const calls = [];
+    const add = (evs, createdMs, idOverride) => {
+      for (const e of evs) rows.push({ ...e, id: idOverride != null ? idOverride++ : nextId++, createdMs });
+    };
+    const rpcEvidence = (args) => {
+      calls.push(args);
+      const from = Date.parse(args.p_from), to = Date.parse(args.p_to);
+      const since = args.p_since ? Date.parse(args.p_since) : null;
+      const out = rows
+        .filter((r) => args.p_types.includes(r.type))
+        .filter((r) => { const t = Date.parse(r.ts); return t >= from && t < to; })
+        .filter((r) => (args.p_after_id == null && since == null)
+          || (args.p_after_id != null && r.id > args.p_after_id)
+          || (since != null && r.createdMs >= since))
+        .sort((a, b) => (Date.parse(a.ts) - Date.parse(b.ts)) || (a.id - b.id))
+        .slice(0, args.p_limit)
+        .map((r) => [Date.parse(r.ts), r.type, r.kind ?? null, r.lat ?? null, r.lon ?? null,
+          r.region_id ?? null, r.detail ?? null, r.id]);
+      return out;
+    };
+    return { rows, calls, add, rpcEvidence };
+  };
+  const svcFor = (db, log, opts = {}) => {
+    const base = fakeSvc({ ...TABLES, geo_events: [] }, log);
+    return {
+      from: base.from,
+      rpc: async (name, args) => {
+        if (name === 'geo_day_evidence') {
+          if (opts.failDelta && args.p_after_id != null) return { data: null, error: { message: 'down' } };
+          return { data: db.rpcEvidence(args), error: null };
+        }
+        return base.rpc(name, args);
+      },
+    };
+  };
+  const writes = (log) => JSON.stringify(log.filter((c) => c.name === 'geo_replace_day').map((c) => c.args));
+  const cut = (ms) => EVENTS.filter((e) => Date.parse(e.ts) < ms);
+  const after = (ms) => EVENTS.filter((e) => Date.parse(e.ts) >= ms);
+
+  test('arrival in pieces, a late commit with an older id: kept and fresh write the same', async () => {
+    const { deriveDayServer, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = evidenceDb();
+    const now0 = Date.now();
+    db.add(cut(at(10, 0)), now0 - 60000);
+
+    // Warm the kept copy, then prove the first answer against a fresh read.
+    const k1 = [];
+    await deriveDayServer(svcFor(db, k1), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const f1 = [];
+    await deriveDayServer(svcFor(db, f1), 'cid-1', 'uid-1', DAY, at(23, 0), null, { fresh: true });
+    expect(writes(k1)).toBe(writes(f1));
+
+    // More of the day lands. One row was inserted by another upload with an
+    // id below the kept maximum but committed just now: the overlap catches it.
+    const rest = after(at(10, 0));
+    db.add(rest.slice(1), Date.now());
+    db.add(rest.slice(0, 1), Date.now(), 1);   // id 1, far below everything kept
+    const before = db.calls.length;
+    const k2 = [];
+    await deriveDayServer(svcFor(db, k2), 'cid-1', 'uid-1', DAY, at(23, 0));
+    const delta = db.calls.slice(before).find((c) => c.p_after_id != null);
+    expect(delta, 'the warm read asked only for what is new').toBeTruthy();
+    expect(delta.p_since).toBeTruthy();
+
+    _dayCacheClear();
+    const f2 = [];
+    await deriveDayServer(svcFor(db, f2), 'cid-1', 'uid-1', DAY, at(23, 0));
+    expect(writes(f2).length).toBeGreaterThan(10);
+    expect(writes(k2)).toBe(writes(f2));
+  });
+
+  test('the warm read moves only the new rows, not the day', async () => {
+    const { dayEvents, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = evidenceDb();
+    db.add(EVENTS, Date.now() - 10 * 60000);
+    const svc = svcFor(db, []);
+    const a = await dayEvents(svc, 'uid-2', iso(at(0, 0)), iso(at(24, 0)));
+    const extra = { ts: iso(at(15, 0)), type: 'fix', lat: 39.01, lon: -95.7, kind: null };
+    db.add([extra], Date.now());
+    const n0 = db.calls.length;
+    const b = await dayEvents(svc, 'uid-2', iso(at(0, 0)), iso(at(24, 0)));
+    const moved = db.rpcEvidence(db.calls[n0]).length;
+    expect(moved, 'one new row travels, not the whole day').toBe(1);
+    expect(b.length).toBe(a.length + 1);
+    expect(b[b.length - 1]).toEqual({ ts: extra.ts, type: 'fix', kind: null, lat: 39.01, lon: -95.7, region_id: null, detail: null });
+  });
+
+  test('a failed delta, a rebuild and a stale copy all read the whole day', async () => {
+    const { dayEvents, deriveDayServer, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = evidenceDb();
+    db.add(EVENTS, Date.now() - 60000);
+    await dayEvents(svcFor(db, []), 'uid-3', iso(at(0, 0)), iso(at(24, 0)));
+
+    // The delta fails: whole day, and nothing half-merged is kept.
+    const n0 = db.calls.length;
+    const rows = await dayEvents(svcFor(db, [], { failDelta: true }), 'uid-3', iso(at(0, 0)), iso(at(24, 0)));
+    expect(rows.length).toBe(EVENTS.length);
+    expect(db.calls.slice(n0).some((c) => c.p_after_id == null && c.p_since == null)).toBe(true);
+
+    // The ops portal's Rebuild passes opts: never the kept copy.
+    const n1 = db.calls.length;
+    await deriveDayServer(svcFor(db, []), 'cid-1', 'uid-3', DAY, at(23, 0), null, { sweep: false });
+    expect(db.calls.slice(n1).every((c) => c.p_after_id == null)).toBe(true);
+  });
+
+  test('a delta that fills the cap is not trusted: the whole day is read', async () => {
+    const { dayEvents, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = evidenceDb();
+    db.add(EVENTS.slice(0, 5), Date.now() - 60000);
+    const svc = svcFor(db, []);
+    await dayEvents(svc, 'uid-4', iso(at(0, 0)), iso(at(24, 0)));
+    // 12,000 new rows in one go (a backfill dump).
+    const flood = Array.from({ length: 12000 }, (_, i) => ({ ts: iso(at(9, 0) + i * 1000), type: 'fix', lat: 39 + i * 1e-6, lon: -95.7, kind: null }));
+    db.add(flood, Date.now());
+    const n0 = db.calls.length;
+    const rows = await dayEvents(svc, 'uid-4', iso(at(0, 0)), iso(at(24, 0)));
+    expect(rows.length).toBe(12000);
+    expect(db.calls.slice(n0).some((c) => c.p_after_id == null && c.p_since == null), 'fell back to a whole read').toBe(true);
+  });
+
+  test('the migration returns the id, and the full read is the default', () => {
+    const fs = require('fs');
+    const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261054_geo_day_evidence.sql'), 'utf8');
+    expect(sql).toContain('e.type, e.kind, e.lat, e.lon, e.region_id, e.detail, e.id');
+    expect(sql).toContain('(p_after_id is null and p_since is null)');
+    expect(sql).toContain('or (p_after_id is not null and id > p_after_id)');
+    expect(sql).toContain('or (p_since is not null and created_at >= p_since)');
+    expect(sql).toContain('order by ts asc, id asc');
   });
 });

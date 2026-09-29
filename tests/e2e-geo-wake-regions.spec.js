@@ -738,8 +738,13 @@ test.describe('Wake region set for the dead app', () => {
     expect(cron.includes('*/30 * * * *'), 'the cron must tick every 30 minutes').toBe(true);
     expect(cron.includes('push-geo-ping'), 'the cron must call the push function').toBe(true);
     const fn = fs.readFileSync(path.join(root, 'supabase', 'functions', 'push-geo-ping', 'index.ts'), 'utf8');
-    expect(fn.includes('"content-available": 1'), 'the push must be silent').toBe(true);
-    expect(fn.includes('"apns-push-type": "background"'), 'Apple rejects background payloads sent as alerts').toBe(true);
+    // AMENDED 2026-09-28 (10.4): the payload moved into the one shared sender,
+    // _shared/silent-push.ts, because the terminate wake sends the same push.
+    // Same two facts, asserted where they now live.
+    expect(fn.includes('sendSilentWake('), 'the ping sends through the shared silent sender').toBe(true);
+    const sender = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'silent-push.ts'), 'utf8');
+    expect(sender.includes('"content-available": 1'), 'the push must be silent').toBe(true);
+    expect(sender.includes('"apns-push-type": "background"'), 'Apple rejects background payloads sent as alerts').toBe(true);
     expect(fn.includes('cron_watermarks'), 'the open endpoint must be rate-gated').toBe(true);
     const beta = fs.readFileSync(path.join(root, '.github', 'workflows', 'ios-beta.yml'), 'utf8');
     expect(beta.includes('didReceiveRemoteNotification'), 'without the AppDelegate patch silent pushes evaporate').toBe(true);

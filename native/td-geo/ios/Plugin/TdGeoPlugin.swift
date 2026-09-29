@@ -371,6 +371,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             nc.addObserver(self, selector: #selector(appActive), name: UIApplication.didBecomeActiveNotification, object: nil)
             nc.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
             nc.addObserver(self, selector: #selector(appTerminate), name: UIApplication.willTerminateNotification, object: nil)
+            nc.addObserver(self, selector: #selector(memoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
             nc.addObserver(self, selector: #selector(silentPush(_:)), name: Notification.Name("TdSilentPush"), object: nil)
         }
         // Both of these run on EVERY launch, before the armed guard and
@@ -1694,6 +1695,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var liveSessionForTest: URLSession { liveSession }
     func inflightKeyForTest(_ s: URLSession, _ t: URLSessionTask) -> String { inflightKey(s, t) }
     func hasLiveRuntimeForTest() -> Bool { hasLiveRuntime() }
+    @discardableResult func holdForFlushForTest(maxSec: Double) -> Bool { holdForFlush(maxSec: maxSec) }
+    func appTerminateForTest() { appTerminate() }
+    func memoryWarningForTest() { memoryWarning() }
+    func setLastBackgroundAtForTest(_ d: Date?) { lastBackgroundAt = d }
     #endif
 
     private func record(_ ev: [String: Any]) {
@@ -1803,13 +1808,100 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     @objc private func appActive() { lifecycleEvent("app-active") }
     @objc private func appBackground() {
+        lastBackgroundAt = Date()
         lifecycleEvent("app-background")
         // Backgrounding is the last reliable moment to get the buffer out
         // before iOS decides this process's fate, so it is spent NOW rather
         // than 1.5 seconds from now on a queue that is about to stop running.
         flushUrgently()
     }
-    @objc private func appTerminate() { lifecycleEvent("app-terminate") }
+    // ── A CLOSE THAT REACHES THE SERVER BEFORE THE PROCESS DIES ─────────────
+    // (owner 2026-09-28: "do the swipe fix")
+    //
+    // Jack's phone closed nine times in one workday and the server heard about
+    // each one only when the app next woke: 18 minutes later at worst, via the
+    // half-hour ping or a fence exit. Until then nothing knew he had gone dark.
+    // record() already hands the row to flushUrgently, but willTerminate
+    // returns and the process is torn down with the upload still in flight, so
+    // the row sat in UserDefaults until the relaunch.
+    //
+    // So the close waits, briefly, for its own upload. iOS allows roughly five
+    // seconds here; holdForFlush takes at most terminateHoldSec and returns
+    // the moment the server has acked the row. The server decides what to do
+    // with it (supabase/functions/_shared/terminate-wake.mjs). This file only
+    // makes sure the fact leaves the phone.
+    //
+    // WHO CLOSED IT rides on the row, because the same day showed two closes
+    // that could not have been a swipe (Apple will not deliver the half-hour
+    // silent push to an app the user swiped away, and it relaunched both). The
+    // state iOS reports at the moment of the close, the seconds since it went
+    // to the background, and the memory the process was holding are the three
+    // facts that tell a swipe from iOS reclaiming the app.
+    @objc private func appTerminate() {
+        guard trackingArmed() else { return }
+        countWake("app-terminate")
+        let state = stateName()
+        record(TdGeoPlugin.terminateRow(state: state, bgSince: lastBackgroundAt,
+                                        footprintMb: TdGeoPlugin.footprintMb(), now: Date()))
+        // record() already sent it for any state but active (scheduleFlush);
+        // an active close would sit behind the foreground debounce instead.
+        if state == "active" { flushUrgently() }
+        holdForFlush(maxSec: TdGeoPlugin.terminateHoldSec)
+    }
+    // iOS warns before it reclaims memory; the warning is the evidence that a
+    // close which follows was iOS and not a thumb.
+    @objc private func memoryWarning() {
+        guard trackingArmed() else { return }
+        countWake("memory-warning")
+        var ev: [String: Any] = ["type": "memory-warning", "ts": Double(Date().timeIntervalSince1970 * 1000)]
+        if let mb = TdGeoPlugin.footprintMb() { ev["mb"] = mb }
+        record(ev)
+    }
+    static let terminateHoldSec: Double = 2.5
+    private var lastBackgroundAt: Date?
+    private func stateName() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        case .background: return "background"
+        @unknown default: return "unknown"
+        }
+    }
+    // Pure, so the row's shape is testable without a dying process.
+    static func terminateRow(state: String, bgSince: Date?, footprintMb: Double?, now: Date) -> [String: Any] {
+        var ev: [String: Any] = ["type": "app-terminate", "ts": Double(now.timeIntervalSince1970 * 1000), "state": state]
+        if let b = bgSince { ev["bgSec"] = max(0, (now.timeIntervalSince(b)).rounded()) }
+        if let mb = footprintMb { ev["mb"] = mb }
+        return ev
+    }
+    // The memory this process holds, as iOS counts it against the app. The web
+    // view's content process is not in it; this is the native side only.
+    static func footprintMb() -> Double? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return nil }
+        return (Double(info.phys_footprint) / 1_048_576).rounded()
+    }
+    // Wait on this thread until everything recorded so far has been acked, or
+    // maxSec passes. The upload's completion runs on URLSession's own delegate
+    // queue (delegateQueue: nil), so sleeping here cannot block it. Returns
+    // whether the ack landed, so a test can tell the two exits apart.
+    @discardableResult
+    private func holdForFlush(maxSec: Double) -> Bool {
+        let d = UserDefaults.standard
+        let target = d.double(forKey: recordSeqKey)
+        let deadline = Date().addingTimeInterval(max(0, min(maxSec, 4.0)))
+        while d.double(forKey: flushSeqMarkKey) < target {
+            if Date() >= deadline { return false }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return true
+    }
 
     // A server cron nudges every registered phone with a content-available
     // push (supabase/functions/push-geo-ping); the AppDelegate forwards it

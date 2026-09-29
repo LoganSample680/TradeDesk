@@ -79,6 +79,8 @@ const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B',rail:'#F2A93B
 // ActivityKit budgets updates, and the geo engine pings far more often than the
 // card actually changes (every fix, versus every tenth of a mile).
 const _liveLast={};
+// Channels already asked "is a card from before this launch still up?" (_liveActSet).
+const _liveProbed={};
 
 // ── A CARD OUTLIVES THE APP, AND _liveLast DOES NOT (owner 2026-09-12) ──────
 // "Why is my gps Dynamic Island still running?" Because nothing could end it.
@@ -299,9 +301,25 @@ async function _liveActSet(channel,state){
   if(_liveLast[channel]===sig)return true;
   try{
     const started=_liveLast[channel]!=null;
-    const fn=started?P.update:P.start;
-    if(typeof fn!=='function')return false;
-    let r=await fn.call(P,payload);
+    let r=null;
+    // FIRST CALL SINCE LAUNCH: update before start (owner 2026-09-29: "jack got
+    // like 4 general time clocked in banners on his lock screen"). _liveLast is
+    // memory, so every relaunch mid-shift (iOS killing the app, a crash, the
+    // version watchdog's reload) forgot the card and _rehydrateActiveTimer
+    // started another one. The native update() finds a card left from an
+    // earlier run by its channel; only when there is none do we start one.
+    // Once per channel per launch, and never for a channel this launch has
+    // already ended (then we know there is no card).
+    if(!started&&!_liveEnded[channel]&&!_liveProbed[channel]&&typeof P.update==='function'){
+      _liveProbed[channel]=true;
+      r=await P.update(payload);
+      if(!(r&&r.ok===true))r=null;
+    }
+    if(!r){
+      const fn=started?P.update:P.start;
+      if(typeof fn!=='function')return false;
+      r=await fn.call(P,payload);
+    }
     // update() returns ok:false when the card is already gone (the user swiped
     // it away, or iOS reclaimed it). Start it again rather than going silent
     // for the rest of the shift.

@@ -100,6 +100,10 @@ function stubClient(seed, calls) {
     rpc: (name, args) => {
       calls.push({ name, args });
       if (name === 'geo_fences_for') return Promise.resolve({ data: fences, error: null });
+      if (name === 'geo_work_settings') {
+        const s = JSON.parse(seed.zj_data[0].settings);
+        return Promise.resolve({ data: { workHours: s.workHours, timeOff: s.timeOff }, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     },
   };
