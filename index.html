@@ -977,9 +977,13 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 #pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
 /* Team: what each person bills an hour, on their own row (owner 2026-09-29) */
-#team-page-list .td-rate-row{margin-top:8px}
+#team-page-list .td-rate-row{margin-top:8px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+#team-page-list .td-rate-cost{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:2px 2px;border:0;background:none;font-family:inherit;text-align:left;color:var(--text);cursor:pointer;min-height:36px;justify-content:center}
+#team-page-list .td-rate-cost span{font-size:13px}
+#team-page-list .td-rate-cost small{font-size:11.5px;color:var(--text3);line-height:1.35}
+#team-page-list .td-rate-cost .neg{color:#B45309}
 #team-page-list .td-rate-chip{display:inline-flex;align-items:center;gap:2px;min-height:36px;padding:0 12px;border-radius:99px;background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:700;cursor:text}
-#team-page-list .td-rate-chip input{width:2.3em;min-width:0;padding:0;margin:0 0 0 1px;border:0;background:none;color:inherit;font:inherit;text-align:left;outline:none;field-sizing:content;min-inline-size:1.6em}
+#team-page-list .td-rate-chip input{min-width:0;padding:0;margin:0 1px;border:0;background:none;color:inherit;font:inherit;font-variant-numeric:tabular-nums;text-align:center;outline:none}
 #team-page-list .td-rate-default{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text3);padding:6px 2px 2px}
 /* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
    Owner 2026-09-05: "like Life360 but better." Dark, full-bleed, with the crew
@@ -1598,7 +1602,7 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 /* One card a day (2026-09-29): a checked circle, the day, who, and its total. */
 #qi-page .qi-day{margin-bottom:14px}
 #qi-page .qi-day-hd{padding:0 12px 0 4px;gap:0}
-#qi-page .ios-swipe>.ios-del.qi-billed{background:#FF9500;font-size:13px;padding:0 6px}
+#qi-page .ios-swipe>.ios-del.qi-billed{background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;padding:0 6px}
 #qi-page .ios-swipe:not(.open):not(.dragging)>.qi-billed{visibility:hidden}
 #qi-page .qi-chk-btn{flex-shrink:0;width:48px;height:56px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
 #qi-page .qi-day-open-btn{flex:1;min-width:0;display:flex;align-items:center;gap:10px;min-height:56px;border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}

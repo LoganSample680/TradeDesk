@@ -779,6 +779,21 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.bleed).toBeLessThanOrEqual(1);
   });
 
+  // Owner 2026-09-29: "Bill at versus true hourly rate is different things."
+  test('each person shows what they bill and what they really cost: pay plus the burden, and what the hour keeps', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      S.laborBurden = 1.3; S.ownerPayType = 'hourly'; S.ownerPayRate = 0;
+      _teamComp['jack@x.com'] = { pay_type: 'hourly', pay_rate: 25 };
+      goPg('pg-team'); renderTeam();
+      const cost = [...document.querySelectorAll('#team-page-list .td-rate-cost')].map(b => b.innerText.replace(/\s+/g, ' ').trim());
+      return { cost, bleed: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(r.cost[0], 'the owner has no pay set yet').toBe('Costs you ? Add your pay to see what an hour earns');
+    expect(r.cost[1]).toBe('Costs you $32.50/hr pay $25 + 30% taxes and insurance · you keep $42.50/hr');
+    expect(r.bleed).toBeLessThanOrEqual(1);
+  });
+
   // Owner 2026-09-29: "streamline how T&M proposals look so invoices look the
   // exact same ... what do we call the payment step in the other things?"
   test('same top and bar as the T&M estimate: Back, Invoice, Save; the customer large; Tim, Collect, Send it; See what they get under the page', async ({ page }) => {

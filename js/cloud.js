@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.29.26.2';
+const APP_VERSION='09.29.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4012,9 +4012,32 @@ async function _denyPermissionRequest(reqId){
 // what they cost is pay_rate, shown beside it and never mixed (CLAUDE.md 18.2).
 function _teamRateChip(id,label,val,ph,onchange){
   return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
-    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" onchange="'+onchange+'">/hr</label>';
+    // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
+    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
 }
 function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
+// BILLS vs COSTS YOU (owner 2026-09-29: "Bill at versus true hourly rate is
+// different things"). Bills is what the customer pays for their hour. Costs
+// you is their pay times the burden from Settings (payroll taxes, comp,
+// insurance), the same _empLoadedHourly every job cost uses. What is left is
+// what the hour earns. Cost is only drawn for someone allowed to see pay.
+function _teamMoneyHtml(chip,bill,comp,editFn){
+  let cost='';
+  if(typeof _canViewComp==='function'&&_canViewComp()){
+    const wage=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
+    if(wage>0){
+      const loaded=Math.round(_empLoadedHourly(comp)*100)/100;
+      const pct=Math.round(((Number(S.laborBurden)||1.3)-1)*100);
+      const keep=bill>0?Math.round((bill-loaded)*100)/100:0;
+      cost='<button type="button" class="td-rate-cost" onclick="'+editFn+'">'+
+        '<span>Costs you <b>'+fmt(loaded)+'/hr</b></span>'+
+        '<small>pay '+fmt(wage).replace(/\.00$/,'')+' + '+pct+'% taxes and insurance'+(bill>0?' · you keep <b class="'+(keep<0?'neg':'')+'">'+fmt(keep)+'/hr</b>':'')+'</small></button>';
+    }else{
+      cost='<button type="button" class="td-rate-cost" onclick="'+editFn+'"><span>Costs you <b>?</b></span><small>Add '+(editFn==='_teamOwnerPay()'?'your':'their')+' pay to see what an hour earns</small></button>';
+    }
+  }
+  return '<div class="td-rate-row">'+chip+cost+'</div>';
+}
 // The default for anyone without their own rate: one quiet line, not a person.
 function _teamRatesHtml(){
   if(!(typeof _ownerUI==='function'&&_ownerUI()))return '';
@@ -4027,6 +4050,11 @@ function _teamRateSet(key,val){
   S[key]=r;
   if(typeof _settingsChanged==='function')_settingsChanged();
   if(typeof showToast==='function')showToast('Rate saved','✓');
+}
+// Your own pay lives in Settings (it feeds every job cost); this takes you there.
+function _teamOwnerPay(){
+  if(typeof goPg==='function')goPg('pg-settings');
+  setTimeout(()=>{const f=document.getElementById('set-owner-pay-rate');if(f){try{f.scrollIntoView({block:'center'});}catch(_e){}f.focus();}},250);
 }
 function _teamBillSet(i,val){
   const e=(S.employees||[])[i];if(!e)return;
@@ -4108,7 +4136,8 @@ function renderTeam(){
         '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
           ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
       '</div>'+
-      (rateOn?'<div class="td-rate-row">'+_teamRateChip('team-owner-rate','Bills',_teamRateVal(S.ownerBillRate),_teamRateVal(S.laborRate)||'95',"_teamRateSet('ownerBillRate',this.value)")+'</div>':'')+
+      (rateOn?_teamMoneyHtml(_teamRateChip('team-owner-rate','Bills',_teamRateVal(S.ownerBillRate),_teamRateVal(S.laborRate)||'95',"_teamRateSet('ownerBillRate',this.value)"),
+        Number(S.ownerBillRate)||Number(S.laborRate)||0,{pay_type:S.ownerPayType||'hourly',pay_rate:Number(S.ownerPayRate)||0},'_teamOwnerPay()'):'')+
       (g?'<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
         '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
       ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
@@ -4126,9 +4155,12 @@ function renderTeam(){
       const _roleLabel={tech:'Field Tech',office:'Office / CSR',manager:'Manager',owner:'Owner'}[e.role]||e.role;
       const _classTag=e.classification?'<span style="font-size:10px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text2);padding:1px 7px;border-radius:8px;margin-left:4px">'+escHtml(e.classification)+'</span>':'';
       const _ec=_teamComp[(e.email||'').toLowerCase()];
-      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+'Costs '+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
+      // Pay sits with the bill rate on the Team page (_teamMoneyHtml); the
+      // tag stays for the Settings roster, where there is no rate line.
+      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<!--pay--><span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span><!--/pay-->':'';
       const _billChip=(e.role!=='owner'&&typeof _ownerUI==='function'&&_ownerUI())
-        ?'<div class="td-rate-row">'+_teamRateChip('team-bill-'+i,'Bills',_teamRateVal(e.billRate),_teamRateVal(S.laborRate)||'75','_teamBillSet('+i+',this.value)')+'</div>':'';
+        ?_teamMoneyHtml(_teamRateChip('team-bill-'+i,'Bills',_teamRateVal(e.billRate),_teamRateVal(S.laborRate)||'75','_teamBillSet('+i+',this.value)'),
+          Number(e.billRate)||Number(S.laborRate)||0,_ec||{},'openEditEmployeeModal('+i+')'):'';
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4186,7 +4218,7 @@ function renderTeam(){
     }).join('');
   // Rates only on the Team page; the Settings list stays a roster.
   if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml.replace(/<!--rate-->[\s\S]*?<!--\/rate-->/g,'');
-  if(el2)el2.innerHTML=_reqHtml+_ownerRow(true)+empHtml.replace(/<!--\/?rate-->/g,'')+_teamRatesHtml();
+  if(el2)el2.innerHTML=_reqHtml+_ownerRow(true)+empHtml.replace(/<!--pay-->[\s\S]*?<!--\/pay-->/g,'').replace(/<!--\/?rate-->/g,'')+_teamRatesHtml();
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
