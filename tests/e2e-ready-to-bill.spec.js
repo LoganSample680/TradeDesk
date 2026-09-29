@@ -882,7 +882,7 @@ test.describe('Invoice: add time from the day', () => {
       return { lines: f(), text: document.getElementById('qi-page').textContent, total: _qiTotal() };
     }, jack.toString());
     expect(r.lines).toEqual([{ mins: 260, extra: null }, { mins: 15, extra: 'e103' }, { mins: 20, extra: 'e104' }, { mins: 15, extra: 'e105' }]);
-    expect(r.text).toContain('Ferguson · 20m, between visits');
+    expect(r.text).toContain('At Ferguson · 20m, between visits');
     expect(r.total).toBe(387.5);                               // 310 minutes at $75
   });
 
@@ -904,7 +904,7 @@ test.describe('Invoice: add time from the day', () => {
       return { label, rows, total, after: _qiTotal() };
     });
     expect(r.label).toBe('Add time from this day (2)');
-    expect(r.rows).toEqual([{ t: 'Drive · Here to Shop', on: 'false' }, { t: 'Shop', on: 'false' }]);
+    expect(r.rows).toEqual([{ t: "Drive, Tagen's to the shop", on: 'false' }, { t: 'At the shop', on: 'false' }]);
     expect(r.total, 'opening it adds nothing').toBe(387.5);
     expect(r.after).toBe(425);                                  // + 30m at $75
   });
@@ -920,8 +920,31 @@ test.describe('Invoice: add time from the day', () => {
     await openIt(page);
     const r = await page.evaluate(() => ({ extras: _qi.tracked.filter(l => l.extra).map(l => l.extra), text: document.getElementById('qi-page').textContent, total: _qiTotal() }));
     expect(r.extras).toEqual(['e103', 's202', 'e105']);
-    expect(r.text).toContain('Shop · 20m, between visits');
+    expect(r.text).toContain('At the shop · 20m, between visits');
     expect(r.total).toBe(387.5);                               // the same 310 minutes, shop instead of Ferguson
+  });
+
+  // Owner 2026-09-29, screenshot: "Drive · Here to somewhere", "A stop":
+  // "what do these somewhere things even mean".
+  test('no "somewhere": places are named the way he says them, an unnamed stop says so, and each has its clock times', async ({ page }) => {
+    await boot(page);
+    await day(page);
+    await page.evaluate(() => {
+      const L = window._rtbLab;
+      const T = (h, m) => '2026-09-25T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00.000Z';
+      L.entries.push({ id: 109, job_id: null, employee_user_id: 'jack-uid', source: 'drive', origin_place: 'Tagen Miller (2210 Birch Ln)', dest_place: '', arrived_at: T(20, 0), departed_at: T(20, 20), minutes: 20 });
+      L.entries.push({ id: 110, job_id: null, employee_user_id: 'jack-uid', source: 'place', origin_place: null, dest_place: '', arrived_at: T(20, 20), departed_at: T(20, 40), minutes: 20 });
+      L.entries.push({ id: 111, job_id: null, employee_user_id: 'jack-uid', source: 'drive', origin_place: '', dest_place: '', arrived_at: T(20, 40), departed_at: T(20, 50), minutes: 10 });
+    });
+    await openIt(page);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-addtime-2026-09-25').click();
+      return [...document.querySelectorAll('#qi-page .qi-x-row')].map(b => ({ t: b.querySelector('.ios-lbl').firstChild.textContent, sub: b.querySelector('small').textContent }));
+    });
+    const text = JSON.stringify(r);
+    expect(text).not.toMatch(/somewhere|Somewhere|A stop|Here to/);
+    expect(r.map(x => x.t), 'in the order they happened').toEqual(["Drive, Tagen's to the shop", 'At the shop', "Drive from Tagen's", 'Stop, place not saved', 'Drive, places not saved']);
+    r.forEach(x => expect(x.sub).toMatch(/\d{1,2}:\d{2} [AP]M to \d{1,2}:\d{2} [AP]M/));
   });
 
   test('another customer the same day: nothing is checked for him; the run between his visits still counts', async ({ page }) => {

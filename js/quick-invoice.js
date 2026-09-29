@@ -382,6 +382,16 @@ function _qiExtras(day){
   if(!people.length)return [];
   const billed=_qiPulledAll();
   const who=uid=>(ctx.name&&ctx.name[uid])||(String(uid)===String(_qiBizUid())?_qiOwnerName():'Crew');
+  // PLACES IN WORDS HE USES (owner 2026-09-29, screenshot of "Here to
+  // somewhere": "what do these somewhere things even mean"). His customer's
+  // house is "Tagen's", the shop is "the shop", a saved place is its name,
+  // and a place the phone never named says so plainly, with the clock times
+  // so he can tell which stop it was.
+  const first=String(c.name||'').trim().split(' ')[0];
+  const nm=p=>{const t=String(p||'').trim();if(!t)return '';if(isHis(t))return first?first+'\'s':'the job';
+    if(/^shop$/i.test(t)||/\bshop\b/i.test(t))return 'the shop';return t;};
+  const clock=v=>{const t=Date.parse(v||'');return isNaN(t)?'':new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});};
+  const span=e=>{const a=clock(e.arrived_at),z=clock(e.departed_at);return a&&z?a+' to '+z:a;};
   const out=[];
   people.forEach(uid=>{
     const rows=E.filter(e=>String(e.employee_user_id)===uid).map(e=>({e,kind:_QI_DRIVE.test(String(e.source||''))?'drive':'stay'}))
@@ -398,11 +408,13 @@ function _qiExtras(day){
       if(r.kind==='drive'){
         if(isOther(o)||isOther(d))return;            // another customer's leg
         if(isHis(o)&&isHis(d))return;
-        kind='drive';label='Drive · '+(isHis(o)?'Here':(o||'Somewhere'))+' to '+(isHis(d)?'here':(d||'somewhere'));
-      }else if(r.kind==='shop'){label='Shop';}
+        kind='drive';
+        const f=nm(o),t=nm(d);
+        label=f&&t?'Drive, '+f+' to '+t:t?'Drive to '+t:f?'Drive from '+f:'Drive, places not saved';
+      }else if(r.kind==='shop'){label='At the shop';}
       else{
         if(isHis(d)||isOther(d))return;               // site time, or another customer's
-        label=d||'A stop';
+        label=d?'At '+nm(d):'Stop, place not saved';
       }
       const key=(r.kind==='shop'?'s':'e')+e.id;
       if(billed.has(key))return;
@@ -410,7 +422,7 @@ function _qiExtras(day){
       const prevSite=[...rows.slice(0,i)].reverse().find(x=>x.kind==='stay'&&(isHis(x.e.dest_place)||isOther(x.e.dest_place)));
       const nextSite=rows.slice(i+1).find(x=>x.kind==='stay'&&(isHis(x.e.dest_place)||isOther(x.e.dest_place)));
       const between=!!(prevSite&&nextSite&&isHis(prevSite.e.dest_place)&&isHis(nextSite.e.dest_place));
-      out.push({key,uid,who:who(uid),kind,label,mins:_qiMinsOf(e),at:e.arrived_at,auto:between});
+      out.push({key,uid,who:who(uid),kind,label,span:span(e),mins:_qiMinsOf(e),at:e.arrived_at,auto:between});
     });
   });
   return out;
@@ -460,7 +472,7 @@ function _qiExtraHtml(day){
     (open?'<div class="qi-xlist">'+
       X.map(x=>{const on=_qi.xOn.has(x.key);
         return '<button type="button" class="ios-row qi-x-row" onclick="_qiExtraToggle(\''+x.key+'\')" aria-pressed="'+on+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span>'+
-          '<span class="ios-lbl">'+escHtml(x.label)+'<small>'+escHtml(x.who.split(' ')[0]+' · '+_qiMins(x.mins)+(x.kind==='drive'&&!_qiBillDrive()?' · drive time is off':''))+'</small></span></button>';}).join('')+'</div>':'');
+          '<span class="ios-lbl">'+escHtml(x.label)+'<small>'+escHtml(x.who.split(' ')[0]+' · '+_qiMins(x.mins)+(x.span?' · '+x.span:'')+(x.kind==='drive'&&!_qiBillDrive()?' · drive time is off':''))+'</small></span></button>';}).join('')+'</div>':'');
 }
 // People he added on this screen stay when the lines are rebuilt: on every
 // day with tracked hours, the hours of whoever worked it longest. A day they
