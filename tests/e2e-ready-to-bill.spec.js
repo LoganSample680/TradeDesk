@@ -507,6 +507,35 @@ test.describe('Ready to bill', () => {
     expect(r).toEqual({ junk: null, kept: '7' });
   });
 
+  test('one line per person: the hours box is the whole day, runs included; changing it keeps the runs; the × takes the person off that day', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => {
+      getClientById(701).addr = '2210 Birch Ln, Topeka, KS 66615';
+      const T = (h, m) => '2026-09-25T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00.000Z';
+      const r = (id, src, from, to, a, z, mins) => ({ id, job_id: null, employee_user_id: 'jack-uid', source: src, origin_place: from, dest_place: to, arrived_at: a, departed_at: z, minutes: mins });
+      const H = 'Tagen Miller (2210 Birch Ln)';
+      window._rtbLab = { name: { 'jack-uid': 'Jack Sample' }, entries: [
+        r(101, 'drive', 'Shop', H, T(13, 0), T(13, 20), 20), r(102, 'client', null, H, T(13, 20), T(15, 20), 120),
+        r(103, 'drive', H, 'Ferguson', T(15, 20), T(15, 35), 15), r(104, 'place', null, 'Ferguson', T(15, 35), T(15, 55), 20),
+        r(105, 'drive', 'Ferguson', H, T(15, 55), T(16, 10), 15), r(106, 'client', null, H, T(16, 10), T(18, 10), 120)], shopEntries: [] };
+      expenses.splice(0, expenses.length);
+    });
+    const r = await page.evaluate(async () => {
+      openQuickInvoice(701); await new Promise(r => setTimeout(r, 60)); _qi.open.add('2026-09-25'); renderQuickInvoice();
+      const day = () => document.querySelector('#qi-page .qi-day[data-day="2026-09-25"]');
+      const one = { rows: day().querySelectorAll('.qi-time').length, rates: day().querySelectorAll('.qi-rate').length,
+        hrs: day().querySelector('.qi-hrs input').value, amt: day().querySelector('.qi-pamt').textContent, sep: day().querySelector('.qi-math').textContent.includes(' at ') };
+      const inp = day().querySelector('.qi-hrs input'); inp.value = '5'; inp.dispatchEvent(new Event('change'));
+      const after = { total: _qi.tracked.filter(l => l.day === '2026-09-25' && l.kind === 'time').reduce((s, l) => s + l.mins, 0),
+        runs: _qi.tracked.filter(l => l.extra).length, note: day().querySelector('.qi-edited').textContent };
+      day().querySelector('.qi-x').click();
+      return { one, after, gone: !_qi.tracked.some(l => l.day === '2026-09-25' && l.kind === 'time') };
+    });
+    expect(r.one).toEqual({ rows: 1, rates: 1, hrs: '5.2', amt: '$387.50', sep: true });
+    expect(r.after).toEqual({ total: 300, runs: 3, note: 'You changed this. The phone said 5h 10m.' });
+    expect(r.gone).toBe(true);
+  });
+
   test('junk in + Add person adds nobody and never throws', async ({ page }) => {
     await boot(page);
     await open(page, 701);
@@ -949,10 +978,13 @@ test.describe('Invoice: add time from the day', () => {
     await openIt(page);
     const r = await page.evaluate((jack) => {
       const f = new Function('return (' + jack + ')()');
-      return { lines: f(), text: document.getElementById('qi-page').textContent, total: _qiTotal() };
+      return { lines: f(), text: document.getElementById('qi-page').textContent, total: _qiTotal(), rows: document.querySelectorAll('#qi-page .qi-day[data-day="2026-09-25"] .qi-time').length };
     }, jack.toString());
     expect(r.lines).toEqual([{ mins: 260, extra: null }, { mins: 15, extra: 'e103' }, { mins: 20, extra: 'e104' }, { mins: 15, extra: 'e105' }]);
-    expect(r.text).toContain('At Ferguson, between visits');
+    // One line for Jack that day (owner 2026-09-29: four "Logan Sample" rows
+    // were unreadable); the run is said on it (§10.4).
+    expect(r.text).toContain('+ 50m Ferguson run');
+    expect(r.rows, 'one line per person per day').toBe(1);
     expect(r.total).toBe(387.5);                               // 310 minutes at $75
   });
 
@@ -990,7 +1022,7 @@ test.describe('Invoice: add time from the day', () => {
     await openIt(page);
     const r = await page.evaluate(() => ({ extras: _qi.tracked.filter(l => l.extra).map(l => l.extra), text: document.getElementById('qi-page').textContent, total: _qiTotal() }));
     expect(r.extras).toEqual(['e103', 's202', 'e105']);
-    expect(r.text).toContain('At the shop, between visits');
+    expect(r.text).toContain('+ 50m shop run');
     expect(r.total).toBe(387.5);                               // the same 310 minutes, shop instead of Ferguson
   });
 
