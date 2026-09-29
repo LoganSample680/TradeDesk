@@ -5189,7 +5189,7 @@ function _tmStateName(st){
 // the terms and the Rate row on the document.
 function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
 function _tmHideRateDefault(){
-  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+  try{return typeof copyShows==='function'?!copyShows('proposal','rate'):!!(typeof S!=='undefined'&&S&&S.tmHideRate);}catch(_e){return false;}
 }
 function _tmSetHideRate(v){
   if(!_tmCanHideRate()){_tmHideRate=false;}
@@ -5198,7 +5198,8 @@ function _tmSetHideRate(v){
   // An assignment alone lives until the tab closes, which is not "remembered"
   // and is certainly not "follows him to the tablet in the truck".
   try{
-    if(typeof S!=='undefined'&&S){
+    if(typeof setCopyShows==='function')setCopyShows('proposal','rate',!_tmHideRate);
+    else if(typeof S!=='undefined'&&S){
       S.tmHideRate=_tmHideRate;
       if(typeof _settingsChanged==='function')_settingsChanged();
     }

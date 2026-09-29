@@ -180,7 +180,7 @@ test.describe('Quick invoice', () => {
     expect(r.lines).toEqual([{ who: 'Mike Sample', mins: 240 }, { who: 'Jack Sample', mins: 120 }]);
     expect(r.mode).toBe('hourly');
     expect(r.text).not.toContain('Nothing tracked');
-    expect(r.nav).toBe('Preview');
+    expect(r.nav, 'Save top right, the way proposals do it; Preview sits by Send').toBe('Save');
   });
 
   // Owner 2026-09-27: "drive time should have a toggle that's set by user
@@ -462,7 +462,7 @@ test.describe('Quick invoice', () => {
     await page.click('text=Add from price book');
     await page.click('.qi-pb button:has-text("Replace water heater")');
     expect(await page.textContent('#qi-total')).toBe('$1,400.00');
-    await page.click('text=Add a line');
+    await page.click('text=Add a charge');   // a charge is one line, one price; a part has a count
     await page.locator('.qi-desc').nth(1).fill('Haul away');
     await page.locator('#qi-page .ios-val input').nth(1).fill('75');
     expect(await page.textContent('#qi-total')).toBe('$1,475.00');
@@ -485,7 +485,9 @@ test.describe('Quick invoice', () => {
     });
     // The invoice carries its days, never a through-mark: a through-mark lost a
     // day he left for later (Earl's audit 2026-09-29).
-    expect(r.bid).toEqual({ kind: 'quick_invoice', status: 'Closed Won', amount: 1307.5, lines: 3, exp: ['e1'], through: false, days: ['2026-09-24'] });
+    // One line for the day: parts cost is off by default, so the day's labor and
+    // parts go out as one amount (owner 2026-09-29).
+    expect(r.bid).toEqual({ kind: 'quick_invoice', status: 'Closed Won', amount: 1307.5, lines: 1, exp: ['e1'], through: false, days: ['2026-09-24'] });
     expect(r.balance).toBe(1307.5);
     expect(r.inCollect).toBe(true);
     expect(r.mode).toBe('hourly');
@@ -546,7 +548,14 @@ test.describe('Quick invoice', () => {
     });
     expect(r.cover, 'the same cover the proposal opens on').toBe(true);
     expect(r.text).toContain('Billed to');
-    expect(r.text).toContain('Jack Sample: 6h 30m on site');
+    // Time on site and crew size, never man-hours or names (owner 2026-09-29).
+    expect(r.text).toContain('Labor · 6.5 hrs on site · 2 techs');
+    // Parts default to "in the total, not listed" (owner 2026-09-29).
+    expect(r.text).not.toContain('Materials included');
+    expect(r.text).not.toContain('$300.00');
+    expect(r.text).not.toContain('Jack Sample');
+    expect(r.text).not.toContain('Draft');
+    expect(r.text).toContain('INV-');
     expect(r.text).toContain('Total due');
     expect(r.text).toContain('$1,307.50');
     expect(r.text).not.toContain('Valid until');
@@ -595,9 +604,10 @@ test.describe('Quick invoice', () => {
       window.open = orig;
       return out;
     });
-    expect(html).toContain('Jack Sample: 6h 30m on site');
-    // Receipts go to the customer as one Materials line, never the store receipts.
-    expect(html).toContain('Materials');
+    expect(html).toContain('Labor · 6.5 hrs on site · 2 techs');
+    expect(html).not.toContain('Jack Sample');
+    // Parts default to in the total and not listed; never the store receipts.
+    expect(html).not.toContain('Materials included');
     expect(html).not.toContain('Ferguson');
   });
 

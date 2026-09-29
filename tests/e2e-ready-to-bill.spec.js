@@ -52,6 +52,10 @@ async function boot(page, w) {
     ] };
     window._supaUser = { id: 'boss-uid' }; window.supaEnabled = () => true; window._supa = window._supa || {};
     window._settingsChanged = () => {};
+    // Sending opens an sms: link, which can navigate the page out from under
+    // a test that keeps working after Send (midnight clock run, 2026-09-29).
+    // These tests are about what gets billed, not the text itself.
+    window._sendPaidInvoice = () => {};
     window._fetchCrewLabor = async () => window._rtbLab;
     _tb = { at: Date.now(), lab: window._rtbLab };
   }, { D1, D2, D3 });
@@ -156,7 +160,7 @@ test.describe('Ready to bill', () => {
     expect(r.head).toContain('Tue, Sep 22');
     expect(r.head).toContain('Jack · 6h');
     expect(r.head).toContain('$636.00');
-    expect(r.opened.lines, 'Jack, Materials, and Add crew').toBe(3);
+    expect(r.opened.lines, 'what was done, Jack, Materials, and Add crew').toBe(4);
     expect(r.opened.exp).toBe('true');
     expect(r.off).toBe(true);
     expect(r.reopened, 'opening a day left off checks it back in').toEqual({ off: false, open: true });
@@ -468,4 +472,262 @@ test.describe('Ready to bill', () => {
       assertNoErrors(page, 'ready to bill ' + w);
     });
   }
+});
+
+// ── The customer's copy, Save, set price, photos (owner 2026-09-29) ─────────
+// Owner: "we do not want to show the price per employee", "putting nine hours
+// on their [bill] confuse them", "No. Draft doesn't show a number", "the save
+// in the top right hand corner on their proposals needs to carry over", "a
+// preview button down at the bottom next to send", "allow them to set a fixed
+// price", and TrueShot's before and after on the bill.
+test.describe('Invoice: the customer copy', () => {
+  const doc = (page) => page.evaluate(() => _qiDocHtml());
+  // Illinois (the fixture's state) requires the rate on a T&M bill, so these
+  // run at a Kansas house, where he decides; the Arizona test covers the lock.
+  const ks = (page) => page.evaluate(() => { getClientById(701).addr = '2210 Birch Ln, Topeka, KS 66615'; });
+
+  test('the invoice has its number from the moment it opens, on the screen, the preview and the sent bill', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const num = _qiNum(), sub = document.querySelector('#qi-page .ios-sub').textContent, d = _qiDocHtml();
+      const bid = qiSend();
+      return { num, sub, inDoc: d.includes(num), sent: 'INV-' + String(bid.id).slice(-6) };
+    });
+    expect(r.num).toMatch(/^INV-\w{6}$/);
+    expect(r.sub).toContain(r.num);
+    expect(r.inDoc).toBe(true);
+    expect(r.sent).toBe(r.num);
+  });
+
+  test('by default: each day is the work, time on site and crew size; no names, no man-hours, no rate, parts included', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await page.evaluate(() => { S.qiRiders = { 'John Miller': 'Jack Sample' }; });
+    await open(page, 701);
+    await page.evaluate(() => { _qi.dayNote['2026-09-22'] = 'Replaced the main shutoff'; });
+    const d = await doc(page);
+    expect(d).toContain('Replaced the main shutoff');
+    expect(d).toContain('Labor · 6 hrs on site · 2 techs');     // two people for 6 hours, never "12 hrs"
+    expect(d).not.toContain('12 hrs');
+    expect(d).not.toContain('Jack');
+    expect(d).not.toContain('John Miller');
+    expect(d).not.toContain('/hr');
+    // Parts: in the total, not listed, by default (owner 2026-09-29).
+    expect(d).not.toMatch(/(Parts|Materials)/);
+    expect(d).not.toContain('$186.00');                          // the parts money is only inside the day's total
+    expect(d).toContain('$1,386.00');
+  });
+
+  test('Show my hourly rate and parts With prices put them on; Always makes it every invoice', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await page.evaluate(() => { S.qiRiders = { 'John Miller': 'Jack Sample' }; });
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-show-rate').click();
+      document.querySelector('#qi-parts-mode [data-mode="priced"]').click();
+      const d = _qiDocHtml();
+      const n = [...document.querySelectorAll('#qi-page .qi-always')].filter(b => b.textContent === 'Always').length;
+      document.querySelector('#qi-page .qi-always').click();
+      document.querySelector('#qi-page .qi-always').click();
+      openQuickInvoice(701, '');
+      return { d, n, copy: JSON.parse(JSON.stringify(S.copyShow)), next: { rate: _qiShowRate(), parts: _qiPartsMode() } };
+    });
+    expect(r.d).toContain('$75 to $125/hr');
+    expect(r.d).toContain('$186.00');
+    expect(r.d).toContain('$1,200.00');                          // labor on its own line once parts are shown
+    expect(r.n).toBe(2);
+    expect(r.copy.invoice).toEqual({ rate: true, partsMode: 'priced' });
+    expect(r.next).toEqual({ rate: true, parts: 'priced' });
+  });
+
+  // Owner 2026-09-29: "default to show a total price not showing materials
+  // and prices ... toggle it on if they want to show the materials no price
+  // and a third to show materials and price".
+  test('parts three ways: total only (default), listed without prices, listed with prices; the total never changes', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      _qiAddPart();
+      const i = _qi.typed.length - 1;
+      _qi.typed[i].desc = 'Supply line'; _qi.typed[i].amount = '18';
+      _qiQtyStep(i, 1);
+      const seen = {};
+      ['total', 'items', 'priced'].forEach(m => {
+        _qiSetPartsMode(m);
+        const d = _qiDocHtml(), items = _qiCustomerItems();
+        seen[m] = { list: d.includes('2 supply lines') || d.includes('2 × Supply line'), price: d.includes('$36.00'), receipts: items.some(l => /Materials$/.test(l.desc) && l.amount === 186),
+          total: _qiTotal(), sum: Math.round(items.reduce((s2, l) => s2 + l.amount, 0) * 100) / 100 };
+      });
+      return { def: copyPartsMode('invoice'), seen, qty: _qi.typed[i].qty, seg: [...document.querySelectorAll('#qi-parts-mode button')].map(b => b.textContent) };
+    });
+    expect(r.def).toBe('total');
+    expect(r.qty).toBe(2);
+    expect(r.seg).toEqual(['Total only', 'List them', 'With prices']);
+    expect(r.seen.total).toEqual({ list: false, price: false, receipts: false, total: 1084.5, sum: 1084.5 });
+    expect(r.seen.items).toEqual({ list: true, price: false, receipts: false, total: 1084.5, sum: 1084.5 });
+    expect(r.seen.priced).toEqual({ list: true, price: true, receipts: true, total: 1084.5, sum: 1084.5 });
+  });
+
+  test('a part has a count: minus and plus change it, never below one, and the line is count times the price of one', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-add-part').click();
+      const row = [...document.querySelectorAll('#qi-page .qi-part')].pop();
+      row.querySelector('.qi-desc').value = 'Fill valve'; row.querySelector('.qi-desc').dispatchEvent(new Event('input'));
+      const price = row.querySelector('.ios-val input'); price.value = '22'; price.dispatchEvent(new Event('input'));
+      const [minus, plus] = row.querySelectorAll('.qi-qty button');
+      plus.click(); plus.click(); const three = { n: row.querySelector('.qi-qty b').textContent, total: document.getElementById('qi-total').textContent };
+      minus.click(); minus.click(); minus.click(); minus.click();
+      return { three, floor: row.querySelector('.qi-qty b').textContent, line: _qiLines().find(l => l.part) };
+    });
+    expect(r.three).toEqual({ n: '3', total: '$1,114.50' });
+    expect(r.floor).toBe('1');
+    expect(r.line.amount).toBe(22);
+  });
+
+  test('where the state requires the rate on a time and materials bill, the switch is on and locked', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => { getClientById(701).addr = '2210 Birch Ln, Phoenix, AZ 85001'; });
+    await open(page, 701);
+    const r = await page.evaluate(() => ({ locked: document.getElementById('qi-show-rate').disabled, on: _qiShowRate(), doc: _qiDocHtml().includes('/hr') }));
+    expect(r).toEqual({ locked: true, on: true, doc: true });
+  });
+
+  test('the proposal and the invoice read one setting for the rate, each with its own starting point', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      delete S.copyShow; delete S.tmHideRate;
+      const start = { proposal: copyShows('proposal', 'rate'), invoice: copyShows('invoice', 'rate'), parts: copyShows('invoice', 'parts') };
+      _tmSetHideRate(true);
+      return { start, proposal: copyShows('proposal', 'rate'), legacy: S.tmHideRate, def: _tmHideRateDefault() };
+    });
+    expect(r.start).toEqual({ proposal: true, invoice: false, parts: false });
+    expect(r.proposal).toBe(false);
+    expect(r.legacy).toBe(true);
+    expect(r.def).toBe(true);
+  });
+
+  test('Save keeps the invoice as a draft on Ready to bill; it is not a sale and it opens again as he left it', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      const n = bids.length, id = _qi.id;
+      _qi.dayNote['2026-09-23'] = 'Snaked the kitchen drain';
+      document.querySelector('#qi-page .qi-day[data-day="2026-09-24"] .qi-chk-btn').click();
+      document.getElementById('qi-fixed-on').click();
+      const f = document.getElementById('qi-fixed'); f.value = '900'; f.dispatchEvent(new Event('input'));
+      document.getElementById('qi-save').click();
+      _renderToBill();
+      const home = document.querySelector('#dash-to-bill .tb-sub') && [...document.querySelectorAll('#dash-to-bill .tb-row')].map(b => b.textContent);
+      const saved = { bids: bids.length - n, page: document.querySelector('.pg.active').id };
+      openQuickInvoice(701);
+      await new Promise(r => setTimeout(r, 30));
+      return { saved, home, back: { id: _qi.id === id, note: _qi.dayNote['2026-09-23'], off: [..._qi.off], fixed: _qi.fixed, total: document.getElementById('qi-total').textContent } };
+    });
+    expect(r.saved).toEqual({ bids: 0, page: 'pg-dash' });
+    expect(r.home.join(' ')).toContain('Draft ·');
+    expect(r.home.join(' ')).toContain('$900');
+    expect(r.back).toEqual({ id: true, note: 'Snaked the kitchen drain', off: ['2026-09-24'], fixed: 900, total: '$900.00' });
+  });
+
+  test('sending a saved draft sends it once and clears the draft', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      qiSaveDraft();
+      openQuickInvoice(701);
+      await new Promise(r => setTimeout(r, 30));
+      const bid = qiSend();
+      return { drafts: Object.keys(getClientById(701).qiDrafts || {}).length, kind: bid.kind };
+    });
+    expect(r).toEqual({ drafts: 0, kind: 'quick_invoice' });
+  });
+
+  test('a set price: the customer sees the work and one number; the days are still billed', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      document.getElementById('qi-fixed-on').click();
+      const start = document.getElementById('qi-total').textContent;
+      const f = document.getElementById('qi-fixed'); f.value = '950'; f.dispatchEvent(new Event('input'));
+      const d = _qiDocHtml();
+      const bid = qiSend();
+      return { start, hrs: /hrs? on site/.test(d), has: d.includes('$950.00'), amount: bid.amount, days: bid.qiDays, items: bid.lineItems.length };
+    });
+    expect(r.start).toBe('$1,048.50');
+    expect(r.hrs).toBe(false);
+    expect(r.has).toBe(true);
+    expect(r.amount).toBe(950);
+    expect(r.days).toEqual(['2026-09-22', '2026-09-23', '2026-09-24']);
+    expect(r.items).toBe(1);
+  });
+
+  test('before and after from TrueShot: the newest pair at this house goes on; tap for another; the switch takes them off', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const ph = (id, type, at) => ({ id, type, client_id: 701, addr: '2210 Birch Ln, Springfield, IL', thumbUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', uploadedAt: at });
+      photos.splice(0, photos.length, ph(1, 'before', '2026-09-22T15:00:00Z'), ph(2, 'before', '2026-09-22T16:00:00Z'), ph(3, 'after', '2026-09-24T16:00:00Z'),
+        Object.assign(ph(4, 'after', '2026-09-24T16:00:00Z'), { client_id: 702 }));
+      openQuickInvoice(701);
+      await new Promise(r => setTimeout(r, 30));
+      const first = _qiPhotoPair();
+      const d1 = _qiDocHtml();
+      _qiPhotoNext('before');
+      const second = _qiPhotoPair().before.id;
+      document.getElementById('qi-photos-on').click();
+      const d2 = _qiDocHtml();
+      return { b: first.before.id, a: first.after.id, docHas: />Before</.test(d1) && />After</.test(d1), second, off: />Before</.test(d2) };
+    });
+    expect(r.b, 'the newest Before').toBe(2);
+    expect(r.a, 'this customer only').toBe(3);
+    expect(r.docHas).toBe(true);
+    expect(r.second).toBe(1);
+    expect(r.off).toBe(false);
+  });
+
+  // Owner 2026-09-29: "I don't even think Settings is the right spot for your
+  // hourly rate. I think it belongs under team."
+  test('rates live under Team: yours and the default; Settings points there; the invoice reads them', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      goPg('pg-team'); renderTeam();
+      const own = document.getElementById('team-owner-rate'), def = document.getElementById('team-labor-rate');
+      const before = { own: own.value, def: def.value };
+      own.value = '140'; own.dispatchEvent(new Event('change'));
+      def.value = '65'; def.dispatchEvent(new Event('change'));
+      return { before, owner: S.ownerBillRate, labor: S.laborRate, johnRate: _qiRateFor('John Miller'), stranger: _qiRateFor('Rico Diaz'),
+        settingsField: !!document.getElementById('set-labor-rate'), toTeam: !!document.getElementById('set-rates-team') };
+    });
+    expect(r.before).toEqual({ own: '125', def: '70' });
+    expect(r.owner).toBe(140);
+    expect(r.labor).toBe(65);
+    expect(r.johnRate, 'the owner bills his own rate').toBe(140);
+    expect(r.stranger, 'anyone without a rate gets the default').toBe(65);
+    expect(r.settingsField, 'the old Settings box is gone').toBe(false);
+    expect(r.toTeam).toBe(true);
+  });
+
+  test('Preview sits in the pinned bar with Send and opens the customer copy; Save is top right', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const row = document.querySelector('#qi-page .qi-act-row');
+      document.getElementById('qi-preview').click();
+      const ov = document.getElementById('_prop-preview-ov');
+      const bar = document.querySelector('#qi-page .qi-actions');
+      return { inRow: !!row.querySelector('#qi-preview') && !!bar.querySelector('#qi-send'), preview: !!ov, save: document.querySelector('#qi-page .ios-nav .ios-navbtn.bold').textContent };
+    });
+    expect(r).toEqual({ inRow: true, preview: true, save: 'Save' });
+    assertNoErrors(page, 'invoice copy');
+  });
 });

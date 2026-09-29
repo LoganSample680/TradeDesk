@@ -1601,10 +1601,33 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-rate input{width:4ch;min-width:2ch;border:0!important;background:none!important;box-shadow:none!important;padding:0;font:inherit;color:inherit;text-align:right}
 #qi-page .qi-x{margin-left:8px;min-width:44px;min-height:44px}
 /* Send and Take card stay on screen (Earl): pinned above the tab bar. */
-#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;margin:0 -16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
+#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;margin:0;padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
 #qi-page .qi-actions .ios-btn{margin:0}
-#qi-page .qi-actions .ios-btn+.ios-btn{margin-top:8px}
-@media(max-width:767px){#qi-page .qi-actions{bottom:calc(var(--mtb-h) + env(safe-area-inset-bottom,0px));padding-bottom:10px}}
+#qi-page .qi-act-row{display:flex;gap:8px;margin-top:8px}
+#qi-page .qi-act-row .ios-btn,#qi-page .qi-act-row #qi-paynow{flex:1;min-width:0;margin:0}
+#qi-page #qi-send{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#qi-page .qi-note-row .qi-desc{font-size:16px}
+/* A part's count (Jack 2026-09-29): minus, the number, plus. */
+#qi-page .qi-part{gap:8px}
+#qi-page .qi-qty{display:inline-flex;align-items:center;flex-shrink:0;border-radius:10px;background:var(--bg2)}
+#qi-page .qi-qty button{width:36px;height:36px;border:0;background:none;font:inherit;font-size:20px;line-height:1;color:var(--ios-tint);cursor:pointer}
+#qi-page .qi-qty b{min-width:22px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
+#qi-page .qi-part .ios-val input{width:5ch}
+#qi-page .qi-parts-row{padding-bottom:0}
+#qi-page .qi-parts-row::after{display:none}
+#qi-page .qi-parts-seg{padding-top:8px}
+#qi-page .qi-parts-seg .ios-seg{width:100%}
+#qi-page .qi-parts-seg .ios-seg button{flex:1;font-size:14px;padding:8px 4px}
+#qi-page .ios-large .ios-sub{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:359px){#qi-page .qi-send-amt{display:none}}
+#qi-page .qi-act-row>*{max-width:100%}
+#qi-page .qi-photos{gap:10px;align-items:stretch}
+#qi-page .qi-photos.off{opacity:.4}
+#qi-page .qi-ph{flex:1;min-width:0;border:0;background:none;padding:0;font:inherit;cursor:pointer;text-align:center}
+#qi-page .qi-ph img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;display:block;background:var(--bg2)}
+#qi-page .qi-ph span{display:block;margin-top:4px;font-size:13px;font-weight:600;color:var(--ios-2)}
+/* Clear of Tim's round button, which rises above the tab bar. */
+@media(max-width:767px){#qi-page .qi-actions{bottom:calc(var(--mtb-h) + env(safe-area-inset-bottom,0px));padding-bottom:30px}}
 #qi-page .qi-day-hd .ios-lbl b{font-weight:700}
 #qi-page .qi-day-hd .qi-dt{font-weight:700}
 #qi-page .qi-chk{position:relative;flex-shrink:0;width:24px;height:24px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--ios-2)}
@@ -4811,7 +4834,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div style="padding:16px">
       <div class="fg fg2" style="margin-top:4px">
         <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
-        <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
+        <button type="button" class="f" id="set-rates-team" onclick="_closeSetDetail&&_closeSetDetail();goPg('pg-team')" style="display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);padding:10px 12px;font:inherit;font-size:14px;color:var(--text);cursor:pointer;text-align:left">Hourly rates are under Team<span style="color:var(--text3)">›</span></button>
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
         <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new proposal (0 = no deposit)</div></div>
         <div class="f"><label>Price good for (days)</label><input type="number" id="set-est-valid-days" min="1" max="365" step="1" placeholder="30"><div style="font-size:10px;color:var(--text3);margin-top:3px">Printed on every proposal and stamped when you send it. Shorter windows close faster when material costs move.</div></div>

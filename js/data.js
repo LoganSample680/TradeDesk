@@ -478,6 +478,56 @@ function setPropertyData(client,addr,data){
   // Mirror to legacy client-level fields for the primary address (back-compat).
   if(k===_addrKey(client.addr))_PROP_FIELDS.forEach(f=>{if(data[f]!=null)client[f]=data[f];});
 }
+// WHAT THE CUSTOMER'S COPY SHOWS (owner 2026-09-29: "the toggle we have on
+// rate should carry over"). One place for both documents' switches, so the
+// proposal and the invoice read the same setting and the same code. The
+// starting points differ on purpose: a T&M proposal shows the rate the
+// customer is agreeing to; an invoice shows the hours and one total, and
+// never parts cost unless he turns it on ("for a pissed off old man, I doubt
+// it"). A state that requires the rate overrides both (statePriceRule).
+const _COPY_DEFAULTS={proposal:{rate:true,parts:true},invoice:{rate:false,parts:false}};
+function copyShows(doc,what){
+  const d=(_COPY_DEFAULTS[doc]||{})[what];
+  if(typeof S==='undefined'||!S)return !!d;
+  // The proposal's rate lives where it always has (S.tmHideRate, which the
+  // proposal screen and every saved account already carry); setCopyShows
+  // keeps it in step.
+  if(doc==='proposal'&&what==='rate'&&typeof S.tmHideRate==='boolean')return !S.tmHideRate;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc][what];
+  if(typeof v==='boolean')return v;
+  return !!d;
+}
+// Parts on the customer's copy is three ways, not on and off (owner
+// 2026-09-29, "default to show a total price not showing materials and
+// prices, but toggle it on if they want to show the materials no price, and
+// a third to show materials and price"):
+//   'total'   the parts money is in the total, the parts are not named
+//   'items'   the parts are named with their counts, no prices
+//   'priced'  the parts, their counts and their prices
+const _PARTS_MODES=['total','items','priced'];
+function copyPartsMode(doc){
+  const def=doc==='proposal'?'priced':'total';
+  if(typeof S==='undefined'||!S)return def;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].partsMode;
+  if(_PARTS_MODES.includes(v))return v;
+  const b=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].parts;
+  return typeof b==='boolean'?(b?'priced':def):def;
+}
+function setCopyPartsMode(doc,mode){
+  if(!_PARTS_MODES.includes(mode)||typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{partsMode:mode});
+  S.copyShow=all;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+function setCopyShows(doc,what,on){
+  if(typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{[what]:!!on});
+  S.copyShow=all;
+  if(doc==='proposal'&&what==='rate')S.tmHideRate=!on;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
 // WHAT A PERSON BILLS AN HOUR (owner 2026-09-29: "updates in one spot show
 // all"). One lookup for every screen that charges for somebody's hour: the
 // T&M and BYO estimate (_billRateFor), the quick invoice and Ready to bill

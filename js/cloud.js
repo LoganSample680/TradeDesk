@@ -4001,6 +4001,31 @@ async function _denyPermissionRequest(reqId){
   }catch(e){console.warn('deny failed:',e);}
 }
 
+// RATES LIVE WITH THE PEOPLE (owner 2026-09-29: "I don't even think Settings
+// is the right spot for your hourly rate. I think it belongs under team").
+// What the owner bills, and the default for anyone without a rate of their
+// own. Each crew member's rate is on their own card (emp-bill-rate). Read by
+// the one lookup every estimate and invoice uses (personBillRate, js/data.js).
+function _teamRatesHtml(){
+  if(!(typeof _ownerUI==='function'&&_ownerUI()))return '';
+  const v=n=>Number(n)>0?String(Number(n)):'';
+  const f=(id,lbl,sub,val,key,ph)=>'<div class="f" style="margin:0"><label for="'+id+'">'+lbl+'</label>'+
+    '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" onchange="_teamRateSet(\''+key+'\',this.value)" style="font-size:14px;padding:10px;flex:1"><span style="font-size:13px;color:var(--text3)">/hr</span></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:4px">'+sub+'</div></div>';
+  return '<div class="card" id="team-rates" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">What you bill an hour</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      f('team-owner-rate','You','Your own hour on a bill',v(S.ownerBillRate),'ownerBillRate',v(S.laborRate)||'95')+
+      f('team-labor-rate','Everyone else','Anyone without a rate on their card',v(S.laborRate),'laborRate','75')+
+    '</div></div>';
+}
+function _teamRateSet(key,val){
+  const r=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
+  if(key==='laborRate'&&!(r>0))return;
+  S[key]=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
@@ -4144,7 +4169,7 @@ function renderTeam(){
       '</div>';
     }).join('');
   if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  if(el2)el2.innerHTML=_teamRatesHtml()+_reqHtml+_ownerRowHtml+empHtml;
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
