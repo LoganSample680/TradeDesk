@@ -282,7 +282,64 @@ function _qiSetBillDrive(on){
 function _qiRebuild(){
   if(!_qi)return;
   const lines=(_qi.base||[]).map(l=>Object.assign({},l));
-  _qi.tracked=_qiWithAdded(_qiKeepRates(_qiWithExtras(lines))).filter(l=>!_qi.dropped.has(_qiLineKey(l)));
+  _qi.tracked=_qiRiderHours(_qiWithAdded(_qiKeepRates(_qiWithExtras(lines)))).filter(l=>!_qi.dropped.has(_qiLineKey(l)));
+}
+// A rider's hours are a guess: the same as the person he rode with, because
+// nothing logged his (owner 2026-09-29: "did he spend the same amount of time
+// on the job that Jack did? no way to know without them being on the app").
+// So the guess is on screen, and the hours he types for that day win.
+function _qiRiderHours(lines){
+  const H=(_qi&&_qi.riderMins)||{};
+  lines.forEach(l=>{
+    if(l.kind!=='time'||!l.rider||l.extra)return;
+    const m=H[l.day+'|'+l.who];
+    if(!(m>=0))return;
+    l.mins=m;l.amount=Math.round(m/60*l.rate*100)/100;
+    l.detail=_qiMins(m)+', with '+String(l.rider).split(' ')[0];l.desc=l.who+': '+l.detail;l.riderSet=true;
+  });
+  return lines.filter(l=>!(l.kind==='time'&&l.rider&&!(l.mins>0)));
+}
+function _qiRiderSet(day,who,v){
+  if(!_qi)return;
+  const h=parseFloat(String(v).replace(/[^0-9.]/g,''));
+  if(!(h>=0)||h>24)return;
+  _qi.riderMins=Object.assign({},_qi.riderMins||{},{[day+'|'+who]:Math.round(h*60)});
+  _qiRebuild();renderQuickInvoice();
+}
+// ANYONE WITH JACK? (owner 2026-09-29: "John doesn't have an account ... we
+// would have Jack's name but we wouldn't have John's name"). Asked once, the
+// first time a bill has people on the team with no time of their own: tap
+// who was with him and they ride along on every invoice (S.qiRiders).
+function _qiRiderCandidates(){
+  if(!_qi||_qi.mode!=='hourly'||(typeof S!=='undefined'&&S&&S.qiRidersAsked))return {lead:null,list:[]};
+  const time=_qi.tracked.filter(l=>l.kind==='time'&&!l.rider);
+  if(!time.length)return {lead:null,list:[]};
+  const per={};time.forEach(l=>{per[l.who]=(per[l.who]||0)+l.mins;});
+  const lead=Object.keys(per).sort((a,b)=>per[b]-per[a])[0];
+  const riders=_qiRiders();
+  const list=_qiPeople().filter(n=>!per[n]&&!riders[n]&&!_qi.tracked.some(l=>l.who===n));
+  return {lead,list};
+}
+function _qiRiderAskHtml(){
+  const {lead,list}=_qiRiderCandidates();
+  if(!lead||!list.length)return '';
+  const first=String(lead).split(' ')[0];
+  const b=(fn,label,cls)=>'<button type="button"'+(cls?' class="'+cls+'"':'')+' onclick="'+fn+'">'+escHtml(label)+'</button>';
+  return '<div class="ios-group qi-ask" id="qi-ask">'+
+    '<div class="ios-row"><span class="ios-lbl"><b>Anyone with '+escHtml(first)+'?</b><small>Only '+escHtml(first)+'\'s phone logged these days. Tap who was there too; they ride along from now on.</small></span></div>'+
+    '<div class="qi-pb qi-crew">'+list.map(n=>b('_qiRiderPick(\''+escHtml(n).replace(/'/g,'&#39;')+'\',\''+escHtml(lead).replace(/'/g,'&#39;')+'\')',n.split(' ')[0])).join('')+
+      b('_qiRiderNone()','Just '+first,'qi-ask-no')+'</div></div>';
+}
+function _qiRiderPick(name,lead){
+  if(typeof S==='undefined'||!S)return;
+  S.qiRidersAsked=true;
+  _qiRideAlways(name,lead);
+}
+function _qiRiderNone(){
+  if(typeof S==='undefined'||!S)return;
+  S.qiRidersAsked=true;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  renderQuickInvoice();
 }
 function _qiLineKey(l){return (l.day||'')+'|'+(l.kind||'')+'|'+(l.who||l.desc||'')+'|'+(l.extra||'');}
 // ── ADD TIME FROM THE DAY (Jack 2026-09-29, the Tagen Burnett bid: the app
@@ -292,9 +349,11 @@ function _qiLineKey(l){return (l.day||'')+'|'+(l.kind||'')+'|'+(l.who||l.desc||'
 // (_qiVisitsFor). A run to the supply house or the shop that leaves his house
 // and comes straight back to it, with no other customer between, is his too:
 // counted, labeled, one tap takes it off. Everything else from that day (the
-// supply stop on the way there, the drive back to the shop, shop time) is
-// offered in Add time, checked already when he was the only customer that
-// day, and counts once he has looked at it.
+// supply stop on the way there, the drive back to the shop, shop time before
+// the job) is left off and offered in Add time for the odd miss. Owner
+// 2026-09-29: "what about the times that you're in the shop for three hours
+// before a job, that's not billable": nothing outside the job is billed on
+// its own, not even on a day he was the only customer.
 function _qiPulledAll(){
   const out=new Set();
   (bids||[]).forEach(b=>{if(b&&b.kind==='quick_invoice')(b.qiPulled||[]).forEach(k=>out.add(String(k)));});
@@ -329,8 +388,6 @@ function _qiExtras(day){
   const site=e=>!_QI_DRIVE.test(String(e.source||''))&&!_QI_NOT_A_VISIT.test(String(e.source||''))&&isHis(e.dest_place);
   const people=[...new Set(E.filter(site).map(e=>String(e.employee_user_id)))];
   if(!people.length)return [];
-  // Was he the only customer that day, for these people?
-  const only=!E.some(e=>people.includes(String(e.employee_user_id))&&!_QI_DRIVE.test(String(e.source||''))&&isOther(e.dest_place));
   const billed=_qiPulledAll();
   const who=uid=>(ctx.name&&ctx.name[uid])||(String(uid)===String(_qiBizUid())?_qiOwnerName():'Crew');
   const out=[];
@@ -361,7 +418,7 @@ function _qiExtras(day){
       const prevSite=[...rows.slice(0,i)].reverse().find(x=>x.kind==='stay'&&(isHis(x.e.dest_place)||isOther(x.e.dest_place)));
       const nextSite=rows.slice(i+1).find(x=>x.kind==='stay'&&(isHis(x.e.dest_place)||isOther(x.e.dest_place)));
       const between=!!(prevSite&&nextSite&&isHis(prevSite.e.dest_place)&&isHis(nextSite.e.dest_place));
-      out.push({key,uid,who:who(uid),kind,label,mins:_qiMinsOf(e),at:e.arrived_at,auto:between,suggest:only&&!between});
+      out.push({key,uid,who:who(uid),kind,label,mins:_qiMinsOf(e),at:e.arrived_at,auto:between});
     });
   });
   return out;
@@ -393,10 +450,7 @@ function _qiExtraOpen(day){
   if(!_qi)return;
   if(_qi.xOpen===day){_qi.xOpen=null;renderQuickInvoice();return;}
   _qi.xOpen=day;
-  // Opening it is looking at it: the ones that were his only job that day
-  // start checked.
-  _qiExtras(day).forEach(x=>{if(x.suggest&&!_qi.xOff.has(x.key))_qi.xOn.add(x.key);});
-  _qiRebuild();renderQuickInvoice();
+  renderQuickInvoice();
 }
 function _qiExtraToggle(key){
   if(!_qi)return;
@@ -411,7 +465,7 @@ function _qiExtraHtml(day){
   if(!X.length)return '';
   const open=_qi.xOpen===day;
   return '<button type="button" class="ios-row ios-link" id="qi-addtime-'+day+'" onclick="_qiExtraOpen(\''+day+'\')">Add time from this day ('+X.length+')</button>'+
-    (open?'<div class="qi-xlist">'+(X.some(x=>x.suggest)?'<div class="qi-xnote">Only job that day, so these are checked. Uncheck what was not his.</div>':'')+
+    (open?'<div class="qi-xlist">'+
       X.map(x=>{const on=_qi.xOn.has(x.key);
         return '<button type="button" class="ios-row qi-x-row" onclick="_qiExtraToggle(\''+x.key+'\')" aria-pressed="'+on+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span>'+
           '<span class="ios-lbl">'+escHtml(x.label)+'<small>'+escHtml(x.who.split(' ')[0]+' · '+_qiMins(x.mins)+(x.kind==='drive'&&!_qiBillDrive()?' · drive time is off':''))+'</small></span></button>';}).join('')+'</div>':'');
@@ -646,8 +700,21 @@ function renderQuickInvoice(){
     // won (Earl: "which rate wins?").
     const riderAsk=l.rider&&_qiRiders()[l.who]!==l.rider
       ?' <button type="button" class="qi-always" onclick="_qiRideAlways(\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',\''+escHtml(l.rider).replace(/'/g,'&#39;')+'\')">Every day</button>':'';
+    // A rider's hours are the guess, so they are the thing he can change.
+    const riderHrs=(l.kind==='time'&&l.rider&&!l.extra)
+      ?'<span class="qi-hrs"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(l.mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+escHtml(l.who).replace(/'/g,'&#39;')+'\',this.value)">h</span> with '+escHtml(String(l.rider).split(' ')[0])
+      :'';
+    // No rate yet (a first invoice for somebody): the box is orange and asks,
+    // rather than billing them at $0 (owner 2026-09-29: "first time people
+    // may not have a rate ... how do you make that smart?"). What he types is
+    // theirs from then on (_qiRememberRate).
+    // Billed at the business default because they have no rate of their own:
+    // still orange, with a question mark, until he looks at it once. Leaving
+    // the box keeps what is in it as theirs.
+    const need=l.kind==='time'&&!(Number(l.rate)>0);
+    const guess=l.kind==='time'&&!need&&!l.rateSet&&!(personBillRate(l.who)>0);
     const sub=l.kind==='time'
-      ?escHtml(l.detail||(_qiMins(l.mins)+' on site'))+' at <span class="qi-rate">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')">/hr</span>'+riderAsk
+      ?(riderHrs||escHtml(l.detail||(_qiMins(l.mins)+' on site')))+' at <span class="qi-rate'+(need?' need':guess?' guess':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="Rate?" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr'+(guess?'?':'')+'</span>'+riderAsk
       :escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')));
     const name=l.kind==='time'?l.who:l.desc;
     return '<div class="ios-row"><span class="ios-lbl">'+escHtml(name)+'<small>'+sub+'</small></span>'+
@@ -672,13 +739,16 @@ function renderQuickInvoice(){
     // opens it. One day on the bill opens by itself.
     const open=on&&(_qi.open.has(day)||dayList.length===1);
     const mins=who.filter(x=>!x.l.rider).reduce((s2,x)=>s2+x.l.mins,0);
+    const noRate=[...new Set(who.filter(x=>!(Number(x.l.rate)>0)).map(x=>x.l.who))];
     // Swipe the day left for Already billed (owner 2026-09-29), the same
     // swipe the estimate uses to delete a step (_tmWireSwipe).
     return '<div class="ios-group qi-day'+(on?'':' qi-day-off')+(open?' qi-day-open':'')+'" data-day="'+day+'">'+
       '<div class="ios-swipe" data-kind="day"><div class="ios-row qi-day-hd">'+
         '<button type="button" class="qi-chk-btn" onclick="_qiDayToggle(\''+day+'\')" aria-pressed="'+on+'" aria-label="Bill '+escHtml(_qiDayLabel(day))+'"><span class="qi-chk'+(on?' on':'')+'" aria-hidden="true"></span></button>'+
         '<button type="button" class="qi-day-open-btn" onclick="_qiDayOpen(\''+day+'\')" aria-expanded="'+open+'">'+
-          '<span class="ios-lbl"><b>'+escHtml(_qiDayLabel(day))+'</b><small>'+escHtml((_qi.dayNote[day]?_qi.dayNote[day]+' · ':'')+hrs+(mins>0?' · '+_qiMins(mins):''))+'</small></span>'+
+          '<span class="ios-lbl"><b>'+escHtml(_qiDayLabel(day))+'</b><small>'+escHtml((_qi.dayNote[day]?_qi.dayNote[day]+' · ':'')+hrs+(mins>0?' · '+_qiMins(mins):''))+
+            // Folded, a missing rate would only read as a low total.
+            (noRate.length?' · <span class="qi-need-lbl">'+escHtml(noRate[0].split(' ')[0])+' needs a rate</span>':'')+'</small></span>'+
           '<span class="ios-fact qi-dt" id="qi-dt-'+day+'">'+_qiMoney(_qiDayTotal(day))+'</span>'+
           '<span class="ios-chev qi-day-chev" aria-hidden="true">›</span></button></div>'+
         '<button type="button" class="ios-del qi-billed" tabindex="-1" onclick="qiBilledElsewhere(\''+day+'\')">Already billed</button></div>'+
@@ -726,6 +796,7 @@ function renderQuickInvoice(){
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       (hourly?'<div class="ios-sec"><div class="ios-h"><span>'+(dayList.length>1?'Days at this house':'Since the last invoice')+'</span>'+
           (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Select all':'Select none')+'</button>':'')+'</div>'+
+        (tracked&&!_qi.loading?_qiRiderAskHtml():'')+
         (tracked||('<div class="ios-group">'+((_qi.loading&&typeof _tdSkelRows==='function')?'<div class="ios-row" style="display:block">'+_tdSkelRows(2,14)+'</div>':'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing tracked at '+escHtml(c.name||'this customer')+' since the last invoice.</small></span></div>')+'</div>'))+
         (tracked&&_qi.loading&&typeof _tdSkelRows==='function'?'<div class="ios-group qi-day"><div class="ios-row" style="display:block">'+_tdSkelRows(1,14)+'</div></div>':'')+
         '<div class="ios-group"><label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Bill drive time<small>Your setting for every invoice</small></span>'+
@@ -769,13 +840,27 @@ function _qiRate(i,v){
     if(x.kind!=='time'||x.who!==l.who)return;
     x.rate=rate;x.rateSet=true;x.amount=Math.round(x.mins/60*rate*100)/100;
     const a=document.getElementById('qi-amt-'+j);if(a)a.textContent=_qiMoney(x.amount);
-    if(j!==i){const inp=a&&a.parentElement&&a.parentElement.querySelector('.qi-rate input');if(inp)inp.value=rate||'';}
+    const pill=a&&a.parentElement&&a.parentElement.querySelector('.qi-rate');
+    if(pill){pill.classList.toggle('need',!(rate>0));pill.classList.remove('guess');}
+    if(j!==i){const inp=pill&&pill.querySelector('input');if(inp)inp.value=rate||'';}
   });
   _qi.rates[l.who]=rate;
   _qiDays(_qi.tracked).forEach(d=>{const e=document.getElementById('qi-dt-'+d);if(e)e.textContent=_qiMoney(_qiDayTotal(d));});
   _qiTotalsPaint();
 }
-function _qiRateDone(i){const l=_qi&&_qi.tracked[i];if(l)_qiRememberRate(l.who,l.rate);}
+// Leaving the box is his answer: whatever is in it is now that person's rate
+// if they had none (a default he looked at and kept counts).
+function _qiRateDone(i){
+  const l=_qi&&_qi.tracked[i];if(!l)return;
+  if(!(Number(l.rate)>0))return;
+  const had=personBillRate(l.who)>0;
+  _qiRememberRate(l.who,l.rate);
+  if(!had){
+    _qi.tracked.forEach(x=>{if(x.kind==='time'&&x.who===l.who)x.rateSet=true;});
+    document.querySelectorAll('#qi-page .qi-rate.guess').forEach(p=>{const inp=p.querySelector('input');if(inp&&inp.getAttribute('aria-label')==='Rate for '+l.who){p.classList.remove('guess');p.lastChild&&p.lastChild.nodeType===3&&(p.lastChild.textContent='/hr');}});
+    if(typeof showToast==='function')showToast(l.who.split(' ')[0]+' bills $'+l.rate+'/hr from now on','✓',2200);
+  }
+}
 function _qiTyped(i,k,v){
   const l=_qi&&_qi.typed[i];if(!l)return;
   l[k]=k==='amount'?(String(v).replace(/[^0-9.]/g,'')):v;
@@ -1043,7 +1128,22 @@ function qiBilledElsewhere(oneDay){
   else go();
 }
 // Text them the link to pay later.
+// Who on the checked days has no rate yet. Nothing goes out at $0 an hour.
+function _qiMissingRates(){
+  if(!_qi||_qi.mode!=='hourly')return [];
+  return [...new Set(_qi.tracked.filter(l=>l.kind==='time'&&!_qi.off.has(l.day)&&!(Number(l.rate)>0)).map(l=>l.who))];
+}
+function _qiRatesReady(){
+  const miss=_qiMissingRates();
+  if(!miss.length)return true;
+  const first=miss[0].split(' ')[0];
+  if(typeof showToast==='function')showToast((miss.length===1?first+' needs':'Some of the crew need')+' a rate first','✏️',3000);
+  const inp=document.querySelector('#qi-page .qi-rate.need input');
+  if(inp){try{inp.scrollIntoView({block:'center'});}catch(_e){}inp.focus();}
+  return false;
+}
 function qiSend(){
+  if(!_qiRatesReady())return false;
   const bid=_qiSave();if(!bid)return false;
   if(typeof _sendPaidInvoice==='function')_sendPaidInvoice(bid.id);
   return bid;
@@ -1052,6 +1152,7 @@ function qiSend(){
 // card by QR, cash, check, Venmo, Zelle), so the payment is recorded against
 // this invoice and it reads paid everywhere.
 function qiPayNow(){
+  if(!_qiRatesReady())return false;
   const bid=_qiSave();if(!bid)return false;
   if(typeof openPayPanel==='function')openPayPanel(bid.id,'final');
   return bid;
@@ -1261,6 +1362,7 @@ function _qiDraftApply(d){
   _qi.added=Array.isArray(d.added)?d.added.slice():[];
   _qi.photos=Object.assign({on:true,before:null,after:null},d.photos||{});
   _qi.xOn=new Set(d.xOn||[]);_qi.xOff=new Set(d.xOff||[]);_qi.dropped=new Set(d.dropped||[]);
+  _qi.riderMins=Object.assign({},d.riderMins||{});
 }
 function qiSaveDraft(){
   if(!_qi)return;
@@ -1268,7 +1370,7 @@ function qiSaveDraft(){
   const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};
   D[_qiDraftKey(c,_qi.addr)]={id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
-    added:_qi.added.slice(),photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],
+    added:_qi.added.slice(),photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
   c.qiDrafts=D;
   saveAll();

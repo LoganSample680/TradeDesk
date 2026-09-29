@@ -1612,6 +1612,17 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 /* The rate reads as something to tap (Earl: "looks like part of the sentence"). */
 #qi-page .qi-rate{display:inline-flex;align-items:center;gap:1px;margin:2px 0;padding:4px 8px;border-radius:8px;background:var(--blue-lt);color:var(--ios-tint);font-weight:600;white-space:nowrap}
 #qi-page .qi-rate input{width:4ch;min-width:2ch;border:0!important;background:none!important;box-shadow:none!important;padding:0;font:inherit;color:inherit;text-align:right}
+#qi-page .qi-rate.need{background:#FFF1E0;color:#B45309;box-shadow:inset 0 0 0 1.5px #F59E0B}
+#qi-page .qi-rate.need input::placeholder{color:#B45309;opacity:1}
+#qi-page .qi-rate.need input{width:5ch}
+#qi-page .qi-rate.guess{background:#FFF7ED;color:#B45309}
+#qi-page .qi-need-lbl{color:#B45309;font-weight:600}
+#qi-page .qi-ask{margin-bottom:12px;box-shadow:inset 0 0 0 1.5px var(--ios-tint)}
+#qi-page .qi-ask .ios-lbl b{font-weight:700}
+#qi-page .qi-ask .qi-pb{padding:0 12px 12px}
+#qi-page .qi-ask .qi-ask-no{background:none;box-shadow:inset 0 0 0 1px var(--ios-sep);color:var(--ios-2)}
+#qi-page .qi-hrs{display:inline-flex;align-items:center;padding:2px 6px;border-radius:8px;background:var(--bg2);box-shadow:inset 0 0 0 1px var(--ios-sep)}
+#qi-page .qi-hrs input{width:3.4ch;border:0;background:none;font:inherit;color:var(--text);text-align:right;padding:0;outline:none}
 #qi-page .qi-x{margin-left:8px;min-width:44px;min-height:44px}
 /* Send and Take card stay on screen (Earl): pinned above the tab bar. */
 @media(min-width:768px){#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;margin:14px 0 0;padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
@@ -1623,7 +1634,6 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-note-row .qi-desc{font-size:16px}
 /* Add time from this day (Jack 2026-09-29). */
 #qi-page .qi-xlist{background:var(--bg2)}
-#qi-page .qi-xnote{padding:10px 16px 2px;font-size:13px;color:var(--ios-2)}
 #qi-page .qi-x-row{background:transparent;cursor:pointer}
 #qi-page .qi-x-row .qi-chk{margin-right:2px}
 /* A part's count (Jack 2026-09-29): minus, the number, plus. */
