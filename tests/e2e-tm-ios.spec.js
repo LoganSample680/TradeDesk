@@ -164,9 +164,16 @@ test.describe('the T&M screen, as an iPhone app', () => {
                  leftGap: left, rightGap: n(t.width) - left - n(k.width), H, W };
       };
       const off = gaps();
+      // Measure where the knob RESTS, not mid-slide: a loaded WebKit runner
+      // was still 1px short of the end 350ms in. With the slide off, the
+      // on position is exact the moment it is set.
+      const st = document.createElement('style');
+      st.textContent = '.ios-switch::before{transition:none!important}';
+      document.head.appendChild(st);
       sw.checked = true;
-      await new Promise(res => setTimeout(res, 350));   // the knob slides for .2s
+      await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
       const on = gaps();
+      st.remove();
       sw.checked = false; _tmMoreOpen = false; _tmApplyLayers();
       return { off, on };
     });

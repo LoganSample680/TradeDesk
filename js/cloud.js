@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.28.26.6';
+const APP_VERSION='09.28.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4722,6 +4722,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
+    // What this person's hour is SOLD for (Earl 2026-09-29: "Jack's rate goes
+    // on Jack, in the Team screen"). The one bill rate every estimate and
+    // invoice reads (personBillRate, js/data.js). Never the pay rate above.
+    '<div class="f" style="margin:0 0 14px"><label for="emp-bill-rate">Bills customers (per hour)</label>'+
+      '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+      '<input id="emp-bill-rate" type="text" inputmode="decimal" value="'+(Number(e.billRate)>0?String(e.billRate):'')+'" placeholder="Your labor rate" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
@@ -4831,6 +4837,8 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
+  const _billEl=document.getElementById('emp-bill-rate');
+  const _billRate=_billEl?(parseFloat(String(_billEl.value).replace(/[^0-9.]/g,''))||0):null;
   // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
   // alone, so every field the form does not show was dropped on save: editing
   // somebody's phone number mid-morning silently wiped truckDay, their vehicle
@@ -4841,6 +4849,7 @@ async function _saveEmployee(idx){
   const _usualEl=document.getElementById('emp-usual-vehicle');
   const _usualVal=_usualEl?_usualEl.value:'';
   const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  if(_billRate!=null)emp.billRate=_billRate;
   // The standing vehicle answer. '' means nobody has said yet, which the
   // dispatch board reports as a gap rather than guessing.
   if(_usualEl){
