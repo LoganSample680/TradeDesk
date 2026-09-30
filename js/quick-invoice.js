@@ -1764,11 +1764,11 @@ function _tbTap(){
 }
 function _renderToBill(){
   const el=document.getElementById('dash-to-bill');if(!el)return;
-  const hide=()=>{el.innerHTML='';el.style.display='none';};
+  const hide=()=>{el.innerHTML='';el._tbHtml='';el.style.display='none';};
   if(!_tbCan()||!_tbOnline())return hide();
   if(!_tb){
     el.style.display='';
-    el.innerHTML='<div class="ios-sec"><div class="ios-group"><div class="ios-row tb-sum" style="display:block">'+(typeof _tdSkelRows==='function'?_tdSkelRows(1,14):'')+'</div></div></div>';
+    el._tbHtml='';el.innerHTML='<div class="ios-sec"><div class="ios-group"><div class="ios-row tb-sum" style="display:block">'+(typeof _tdSkelRows==='function'?_tdSkelRows(1,14):'')+'</div></div></div>';
     _tbLoad();return;
   }
   if(_tb.stale||Date.now()-_tb.at>5*60000){_tb.stale=false;_tbLoad();}
@@ -1782,7 +1782,7 @@ function _renderToBill(){
   const nDraft=rows.filter(r=>r.draft).length;
   const what=(rows.length===1?rows[0].name:rows.length+' houses')+(nDraft&&rows.length>1?' · '+nDraft+' draft'+(nDraft>1?'s':''):'');
   el.style.display='';
-  el.innerHTML='<div class="ios-sec"><div class="ios-group">'+
+  const html='<div class="ios-sec"><div class="ios-group">'+
     '<button type="button" class="ios-row tb-sum'+(late?' late':'')+(open?'':' nosep')+'" onclick="_tbTap()" aria-expanded="'+open+'">'+
       '<span class="tb-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M13 11.5c-.5-.6-1.3-.9-2-.9-1.1 0-2 .6-2 1.5 0 2 4 1.2 4 3.2 0 .9-.9 1.5-2 1.5-.8 0-1.6-.3-2.1-.9M11 9.5v1.1M11 17.3v1.1"/></svg></span>'+
       '<span class="ios-lbl"><b>Ready to bill</b><small class="tb-age">'+escHtml(what+' · '+_tbAge(rows[0].oldest))+'</small></span>'+
@@ -1795,6 +1795,11 @@ function _renderToBill(){
         '<span class="ios-lbl"><b class="tb-name">'+escHtml(r.name)+'</b><small class="tb-sub">'+escHtml(_tbSub(r))+'</small></span>'+
         '<span class="ios-fact tb-amt">'+escHtml(_qiMoney(r.total).replace(/\.00$/,''))+'</span><span class="ios-chev" aria-hidden="true">›</span></button>').join('')+
     '</div></div></div>';
+  // Every dashboard repaint calls this. Rebuilding the same card swaps each
+  // row out from under a thumb that is already on its way down, so the tap
+  // lands on nothing; write only when something on it changed.
+  if(el._tbHtml===html&&el.firstChild)return;
+  el._tbHtml=html;el.innerHTML=html;
 }
 function _tbOpen(i){
   const r=_tbLast[i];if(!r)return;

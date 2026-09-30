@@ -1266,6 +1266,23 @@ test.describe('Ready to bill: drafts', () => {
 test.describe('Invoice start to finish', () => {
 // Owner 2026-09-29: "honestly run a playwright test on invoice from start to
 // finish from bill section to completion, how long are we looking at?"
+test('a repaint with nothing new keeps the same rows, so a tap on the way down still lands', async ({ page }) => {
+  await boot(page, 390);
+  const r = await page.evaluate(async () => {
+    goPg('pg-dash'); _renderToBill();
+    for (let i = 0; i < 40 && !document.querySelector('#dash-to-bill .tb-sum .tb-total'); i++) await new Promise(res => setTimeout(res, 50));
+    _tbExpanded = true; _renderToBill();
+    const row = document.querySelector('#dash-to-bill .tb-row');
+    _renderToBill(); if (typeof renderDash === 'function') renderDash();
+    const same = document.querySelector('#dash-to-bill .tb-row') === row && row.isConnected;
+    _tbExpanded = false; _renderToBill();
+    const closed = !document.querySelector('#dash-to-bill .tb-list.open');
+    return { row: !!row, same, closed };
+  });
+  expect(r).toEqual({ row: true, same: true, closed: true });
+  assertNoErrors(page, 'ready to bill repaint');
+});
+
 test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the work in his own sentence case', async ({ page }) => {
   test.setTimeout(120000);
   await boot(page, 390);
