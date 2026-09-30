@@ -76,5 +76,7 @@ function _geoIsHeldSource(s){return /-held$/.test(String(s||''));}
 //
 // 'place-home' rides along: the deriver stopped writing it (rule 12) but the
 // rows it wrote are still there and js/timelog.js still reads them on purpose.
-const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1};
+// 'place-personal' is a saved Personal place (the gym, church): shown on the
+// rail under its own name and never paid (owner 2026-09-30).
+const _GEO_OFFICE_SOURCES={'place-office':1,'place-home':1,'place-personal':1};
 function _geoIsOffJobSource(s){const k=String(s||'');return k==='stop'||_GEO_OFFICE_SOURCES[k]===1;}

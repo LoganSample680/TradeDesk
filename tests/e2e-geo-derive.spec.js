@@ -5333,6 +5333,125 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 26: THE GYM IS NOT DON'S (owner 2026-09-30) ───────────────────
+  // Jack's real coordinates. Don's building (a customer with a job on it) and
+  // the gym in front of it are one 600 ft circle apart from nothing. His gym
+  // mornings cluster 276 ft from Don's pin; his real visit today clustered
+  // 95 ft from it. "You can tell."
+  test.describe('rule 26: the cluster names the building, not the circle', () => {
+    const DON = { id: 'job-don', kind: 'job', name: 'Don Ixshu', jobId: 9901, lat: 39.0306563, lng: -95.7598769 };
+    const GYM_AT = { lat: 39.031371, lng: -95.759558 };            // his gym mornings
+    const DON_AT = { lat: 39.030763, lng: -95.759567 };            // his visit at Don's
+    const GYM = { id: 'place-gym', kind: 'personal', name: 'Colaw gym', lat: GYM_AT.lat, lng: GYM_AT.lng };
+    const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const visit = (at, fences, clocks) => base({
+      fences: [JHOME].concat(fences),
+      tape: [mo(T(8, 0), 'automotive'), mo(T(8, 11), 'onFoot'), mo(T(9, 52), 'automotive'), mo(T(10, 5), 'onFoot')],
+      fixes: [fix(T(7, 58), JHOME),
+        fix(T(8, 11, 10), at), fix(T(8, 30), at), fix(T(9, 0), at), fix(T(9, 30), at), fix(T(9, 50), at),
+        fix(T(10, 5, 10), JHOME), fix(T(10, 30), JHOME)],
+      clocks: clocks || [{ start: T(7, 55), end: T(12, 0) }],
+      nowMs: T(12, 0),
+    });
+    const names = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c', clocks: i.clocks });
+      const d = r.dwells.find(x => x.startTs >= Date.parse('2026-09-01T13:00:00Z') && x.kind !== 'home_office' && x.kind !== 'office');
+      const row = rows.job_time_entries.find(t => !/^drive/.test(t.source) && t.source !== 'place-office');
+      return JSON.parse(JSON.stringify({ name: d && d.name, far: !!(d && d.farFromFence),
+        source: row && row.source, dest: row && row.dest_place, job: row && row.job_id,
+        offJob: row ? _geoIsOffJobSource(row.source) : null }));
+    }, inp);
+
+    test('a gym morning 276 ft from Don\'s pin is not Don\'s', async () => {
+      const r = await names(visit(GYM_AT, [DON]));
+      // The dwell keeps the fence it arrived in for the day's other rules
+      // (rule 22), so the NAME is judged on the row, which is what every
+      // screen reads.
+      expect(r.far, 'it is somewhere nobody saved yet').toBe(true);
+      expect(r.source, 'an unsaved stop with a Save button').toMatch(/^unsaved/);
+      expect(r.job, 'no row lands on Don\'s job').toBe(null);
+      expect(r.dest, 'and none carries his name').toBe(null);
+    });
+
+    test('a real visit 95 ft from the pin is still Don\'s', async () => {
+      const r = await names(visit(DON_AT, [DON]));
+      expect(r.name).toBe('Don Ixshu');
+      expect(r.source).toBe('geofence');
+      expect(r.job).toBe('9901');
+    });
+
+    test('with the gym saved as Personal, the gym morning is the gym, and never paid', async () => {
+      const r = await names(visit(GYM_AT, [DON, GYM]));
+      expect(r.name).toBe('Colaw gym');
+      expect(r.source).toBe('place-personal');
+      expect(r.offJob, 'a personal place earns nothing').toBe(true);
+    });
+
+    test('with both saved, a visit at Don\'s is still Don\'s, not the gym next door', async () => {
+      const r = await names(visit(DON_AT, [DON, GYM]));
+      expect(r.name).toBe('Don Ixshu');
+      expect(r.job).toBe('9901');
+    });
+
+    test('a customer whose pin is geocoded 217 ft off where he parks is still that customer', async () => {
+      // Tagen Lindstrom, 28 September: four visits at 159 to 217 ft from a pin
+      // rule 23 has not learned yet. The threshold is set above them.
+      const r = await page.evaluate(() => {
+        const tagen = { id: 'c-t', kind: 'client', name: 'Tagen Lindstrom', clientId: 5, lat: 39.0354693, lng: -95.7319935 };
+        return (_gdNameAt({ lat: 39.035566, lng: -95.731237 }, [tagen], 600) || {}).name || null;
+      });
+      expect(r).toBe('Tagen Lindstrom');
+    });
+
+    test('the yard and the house keep their rank, four metres apart', async () => {
+      // Rank still decides whenever a base kind is in range: his shop and his
+      // home office share a lot on purpose and are paid differently.
+      const r = await page.evaluate(() => {
+        const shop = { id: 's', kind: 'shop', name: 'Shop', lat: 39.0307066, lng: -95.7112082 };
+        const home = { id: 'h', kind: 'home_office', name: 'Home', lat: 39.0307378, lng: -95.7112674 };
+        const at = { lat: 39.0307378, lng: -95.7112674 };     // standing on the home pin
+        return _gdNameAt(at, [home, shop], 600).name;
+      });
+      expect(r, 'the shop outranks the house, as it always has').toBe('Shop');
+    });
+
+    test('a place with its own typed radius keeps it', async () => {
+      const r = await page.evaluate(() => {
+        const big = { id: 'j', kind: 'job', name: 'Mall reroof', jobId: 1, lat: 39.0, lng: -95.0, radiusFt: 900 };
+        return (_gdNameAt({ lat: 39.0 + 0.002, lng: -95.0 }, [big], 600) || {}).name || null;   // ~730 ft
+      });
+      expect(r, 'a person said how big it is').toBe('Mall reroof');
+    });
+
+    test('junk in, nothing out', async () => {
+      const r = await page.evaluate(() => [
+        _gdNameAt(null, [], 600), _gdNameAt({ lat: 1, lng: 1 }, null, 600),
+        _gdNameAt({ lat: null, lng: 1 }, [{ lat: 1, lng: 1, kind: 'client' }], 600),
+      ]);
+      expect(r).toEqual([null, null, null]);
+    });
+
+    test('a Personal place does not offer "I report here"', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 39.031371, -95.759558);
+        const row = () => document.getElementById('place-commute-row').style.display;
+        _placeKindChanged('personal'); const personal = row();
+        _placeKindChanged('supply'); const supply = row();
+        document.getElementById('place-modal')?.remove();
+        return { personal, supply };
+      });
+      expect(r).toEqual({ personal: 'none', supply: 'flex' });
+    });
+
+    test('Personal is a place kind the Save chooser offers', async () => {
+      const r = await page.evaluate(() => ({ label: PLACE_KINDS.personal, icon: _PLACE_KIND_ICON.personal,
+        paid: _geoIsOffJobSource('place-personal'), word: _tlSourceLabel('place-personal') }));
+      expect(r).toEqual({ label: 'Personal', icon: '🙋', paid: true, word: 'Personal' });
+    });
+  });
+
   test.describe('rule 22: a stop is named from the middle of itself', () => {
     const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
     const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
@@ -5386,11 +5505,17 @@ test.describe('geo-derive: the day deriver', () => {
     // in, and still refuses to name one at all when the cluster is on no
     // fence. What it cannot do is separate two houses closer together than
     // the radius, and no re-seating rule can.
-    test('at 600 ft the house up the street is inside her circle, and says so', async () => {
+    // ── AND WHAT RULE 26 CHANGED (owner 2026-09-30) ──────────────────────
+    // OLD: 295 ft up the street is inside her 600 ft circle, so the stop took
+    // her name; that was the stated trade above. NEW: the circle still decides
+    // that he ARRIVED somewhere known, but a customer's name needs the cluster
+    // within GEO_NAME_FT (250 ft) of her pin. Jack's gym, 276 ft from Don's
+    // building, is the case that made the owner call it: "you can tell".
+    test('295 ft up the street is inside her circle but is not her house (rule 26)', async () => {
       const r = await stop(day(PARKED));
-      expect(r.far, '295 ft is well inside a 600 ft fence').toBe(false);
-      expect(r.source).toBe('client');
-      expect(r.dest, 'save the real address and the next stop there names itself').toBe('Laurie Schonfeldt');
+      expect(r.far, 'inside the circle, outside the name').toBe(true);
+      expect(r.source).toBe('unsaved');
+      expect(r.dest, 'it asks for a name instead of borrowing hers').toBe(null);
     });
 
     test('a cluster on no fence at all is still an unsaved stop, not a borrowed name', async () => {
@@ -5446,20 +5571,18 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dest).toBe('Ray Finsbury');
     });
 
-    // The one caveat, stated as a test so nobody has to remember it: rank
-    // beats distance ACROSS kinds. A job saved at the neighbour's outranks a
-    // client (job 0, client 3) and takes the stop even parked in the client's
-    // driveway. Two fences of the SAME kind are always decided by distance,
-    // which is the case the owner asked about.
-    test('a job at the neighbour outranks a client he is parked at', async () => {
+    // OLD: rank beat distance across kinds, so a job saved at the neighbour's
+    // (job 0, client 3) took the stop even parked in the client's driveway;
+    // this test called that the known trade. NEW (rule 26, owner 2026-09-30):
+    // between two named places the nearer pin wins, whatever their kinds.
+    // Rank still decides only when the yard or the house is one of them.
+    test('a job at the neighbour no longer takes a stop parked at the client (rule 26)', async () => {
       const inp = day(ODD);
       inp.fences = inp.fences.concat([{ id: 'job-6713', kind: 'job', name: 'Ray Finsbury reroof',
         jobId: 6713, lat: EVEN.lat, lng: EVEN.lng }]);
       const r = await stop(inp);
-      // A job dwell is named by the job and carries job_id rather than a
-      // client's dest_place, so the fence name is what says who took it.
-      expect(r.name, 'kind rank wins across kinds: this is the known trade').toBe('Ray Finsbury reroof');
-      expect(r.source).toBe('geofence');
+      expect(r.name, 'the nearer pin wins').toBe('Laurie Schonfeldt');
+      expect(r.source).toBe('client');
     });
 
     test('parked in her driveway: still her house, nothing changes', async () => {
