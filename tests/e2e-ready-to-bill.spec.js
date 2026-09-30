@@ -1052,6 +1052,30 @@ test.describe('Invoice: add time from the day', () => {
     expect(r.total).toBe(387.5);                               // 310 minutes at $75
   });
 
+  // Owner 2026-09-29, a screenshot: Logan 9.7h, Blake "same hours as Logan"
+  // 8.5h. "it's not, why?" Blake rode along for the runs too.
+  test('someone added with no app gets the same hours as the lead, runs included; typed hours are the whole day', async ({ page }) => {
+    await boot(page, 390);
+    await day(page);
+    await openIt(page);
+    const r = await page.evaluate(() => {
+      _qiAddPerson('Blake Sample', '45');
+      const mins = who => _qi.tracked.filter(l => l.kind === 'time' && l.who === who && l.day === '2026-09-25').reduce((s2, l) => s2 + l.mins, 0);
+      const row = [...document.querySelectorAll('#qi-page .qi-day[data-day="2026-09-25"] .qi-time')].find(e => /Blake/.test(e.textContent));
+      const same = { jack: mins('Jack Sample'), blake: mins('Blake Sample'), hrs: row.querySelector('.qi-hrs input').value, from: row.querySelector('.qi-from').textContent,
+        top: row.querySelector('.qi-p-top').textContent.replace(/\s+/g, ' ').trim() };
+      _qiRiderSet('2026-09-25', 'Blake Sample', '4');
+      return { same, typed: mins('Blake Sample'), bleed: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(r.same.blake).toBe(r.same.jack);
+    expect(r.same.jack).toBe(310);
+    expect(r.same.hrs).toBe('5.2');
+    expect(r.same.from).toContain('Same hours as Jack');
+    expect(r.same.top).toBe('Blake Sample$232.50×');
+    expect(r.typed).toBe(240);
+    expect(r.bleed).toBeLessThanOrEqual(1);
+  });
+
   // Owner 2026-09-29: "what about the times that you're in the shop for three
   // hours before a job, that's not billable". Nothing outside the job counts on
   // its own, not even on a day he was the only customer; Add time is for the
