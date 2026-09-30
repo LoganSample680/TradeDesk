@@ -423,6 +423,15 @@ async function _drainHubQueue(){
   }catch(_e){}
 }
 function _relTime(ts){if(!ts)return'';try{const d=Math.round((Date.now()-new Date(ts).getTime())/60000);if(d<2)return'just now';if(d<60)return d+'m ago';if(d<1440)return Math.round(d/60)+'h ago';return Math.round(d/1440)+'d ago';}catch(e){return '';}}
+// Who a text is from: the person who signs his proposals and the business,
+// never "TradeDesk" (the app is not who the customer hired). "- John,
+// Plumbing Solutions By JS"; either one alone when that is all there is.
+function _smsSignOff(d){
+  const biz=(()=>{const b=String((d&&d.bname)||'').trim()||String((typeof getBusinessName==='function'&&getBusinessName())||'').trim();return (b&&b!=='TradeDesk'&&!b.includes('@'))?b:'';})();
+  const who=String((typeof _propSigner==='function'&&_propSigner())||'').trim().split(/\s+/)[0]||'';
+  const line=[who,biz].filter(Boolean).join(', ');
+  return line?'- '+line:'';
+}
 function sendOnboardingLink(clientId){
   const c=getClientById(clientId);if(!c)return;
   if(!_supaUser){zAlert('Sign in to send the onboarding link.');return;}
@@ -683,9 +692,13 @@ function sendProposalViaSms(){
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
   const ownerName=(typeof _propSigner==='function'&&_propSigner())||getOwnerName()||d.bname;
+  // THE LINK GOES LAST (owner 2026-09-30, a screenshot of a plain blue text
+  // with the link buried in it). iMessage only draws the preview card, his
+  // logo and "Your Project Hub", when the link ends the message; with words
+  // after it the whole thing goes out as plain text.
   const msg=isPortfolioOn
-    ?'Hey '+firstName+'!\n\nGreat talking with you, your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n- '+d.bname
-    :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour '+_smsProposalWord()+' is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n- '+d.bname;
+    ?'Hey '+firstName+'!\n\nGreat talking with you, your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide. Questions? Just reply.\n\n'+_smsSignOff(d)+'\n\n'+d.url
+    :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour '+_smsProposalWord()+' is ready. Everything we went over is at the link below, and you can sign there when you\'re ready. Any questions at all, just shoot me a text.\n\n'+_smsSignOff(d)+'\n\n'+d.url;
   const href='sms:'+(d.cphone||'')+'?body='+encodeURIComponent(msg);
   // Fire SMS FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
@@ -1863,7 +1876,7 @@ function _sendCOViaSms(){
   const d=_coShareData;if(!d)return;
   if(!d.cphone){zAlert('No phone number on file for this client. Add one in Clients first.',{title:'No client phone'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const msg='Hey '+firstName+'!\n\nQuick update on your project, Change Order #'+d.coNum+' is ready for your review. Tap the link below to see the details and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text!\n\n- '+d.bname;
+  const msg='Hey '+firstName+'!\n\nQuick update on your project, Change Order #'+d.coNum+' is ready for your review. The details are at the link below, and you can sign there when you\'re ready. Any questions at all, just shoot me a text!\n\n'+_smsSignOff(d)+'\n\n'+d.url;
   // Fire SMS FIRST while the user gesture is fresh (same as sendProposalViaSms)
   window.location.href='sms:'+d.cphone+'?body='+encodeURIComponent(msg);
   setTimeout(()=>autoLogContact(d.clientId,'change_order_sent'),400);
