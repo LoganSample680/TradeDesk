@@ -1605,7 +1605,10 @@ let _timTalkTarget='_tim-say';
 const _TIM_MIC_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>';
 function _timSayVoice(){return typeof _voiceCapable==='function'&&!!_voiceCapable();}
 function timSayField(id,placeholder,done){
-  return '<textarea id="'+escHtml(id)+'" class="ios-say" rows="3" data-tim-done="'+escHtml(done||'')+'" placeholder="'+escHtml(placeholder||'')+'"></textarea>';
+  // Sentences, not Every Word (found 2026-09-29 driving an invoice start to
+  // finish): what he types here lands on the customer's copy, and the app-wide
+  // words default turned "replaced the water heater" into Title Case.
+  return '<textarea id="'+escHtml(id)+'" class="ios-say" rows="3" autocapitalize="sentences" data-tim-done="'+escHtml(done||'')+'" placeholder="'+escHtml(placeholder||'')+'"></textarea>';
 }
 function timMicBtn(id){
   return _timSayVoice()?'<button type="button" class="ios-btn ios-btn-tint" onclick="_timTalkToggle(\''+escHtml(id)+'\')">'+_TIM_MIC_SVG+'Talk to Tim</button>':'';

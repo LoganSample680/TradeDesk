@@ -126,7 +126,7 @@ function htmlTemplate(
     <p>If the button above doesn't work, copy and paste this link into your browser:</p>
     <p><a class="plain-link" href="${escHtml(proposalUrl)}">${escHtml(displayUrl)}</a></p>
     <hr class="divider">
-    <p>This proposal was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
+    <p>This ${K.noun} was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
   </div>
 </div>
 </td></tr>
