@@ -4098,6 +4098,19 @@ function _updateMarginGauge(type,total){
 function _byoDelItem(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems.splice(idx,1);_byoRenderSections();_byoUpdateRail();_byoAutosave();}
 }
+// What a line is for sales tax, one answer for the rail and the saved total.
+// The Work section is his labor, so a lump price there is not taxed as if it
+// were all parts (Jack 2026-09-30: $2,800 under Work drew $182 "materials tax"
+// in Kansas, where repair labor is exempt). Materials and supply house lines
+// are parts; anything unnamed stays parts, the safe side.
+function _geiTaxLineType(l){
+  if(l._taxPaid)return 'taxpaid';
+  if(l._supply)return 'materials';
+  const sec=(l._byoSection||'').toLowerCase();
+  if(sec==='materials')return 'materials';
+  if(sec==='work'||sec==='interior'||sec==='exterior')return 'labor';
+  return null;
+}
 function _byoUpdateRail(){
   // The name follows the work: adding or turning off a line renames the
   // proposal live, unless he has named it himself (_geiDescUserSet).
@@ -4122,9 +4135,7 @@ function _byoUpdateRail(){
     const _stScope=_geiJobScope||'repair';
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
-        const sec=(l._byoSection||'').toLowerCase();
-        const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
-        return {desc:l.desc,total:l.total,lineType};
+        return {desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)};
       })});
     salesTax=_stResult.taxAmount||0;
     if(taxRow&&taxAmt&&taxLbl){
@@ -7391,9 +7402,7 @@ function calcGeiTotal(){
   if(typeof calcSalesTax==='function'&&_stRate>0){
     const _liItems=_geiLines.map(l=>{
       if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
-      const sec=(l._byoSection||'').toLowerCase();
-      const lineType=l._taxPaid?'taxpaid':sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
-      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
+      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:_geiTaxLineType(l)};
     });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_liItems});
@@ -7553,7 +7562,7 @@ function saveGenericEstimate(draft,opts){
       const _wasEmpty=_geiDraftIsEmpty(b);
       b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';b.descUserSet=!!_geiDescUserSet;
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
-      b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
+      b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       b.scopeChips=[..._geiScopeChips];
