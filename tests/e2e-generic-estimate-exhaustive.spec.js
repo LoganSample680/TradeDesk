@@ -4960,7 +4960,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
   });
 
   test.describe('the proposal names itself', () => {
-    test('one item names it, several add "+N more", nothing falls back to the trade label', async () => {
+    // Changed 2026-09-30 (owner): the name was the first scope line "+N more",
+    // which was often Tim's first step ("Shut the water off +13 more"). It is
+    // the street and the trade's proposal label now, whatever the lines are.
+    test('the name is the street and the trade, not the first line of scope', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90202, name: 'Auto Name Client', addr: '12 Name Rd' };
         clients = clients.filter(x => x.id !== 90202).concat([c]);
@@ -4978,10 +4981,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const twoOn = _geiAutoName();
         return { none, one, three, twoOn, label: _tradeProposalLabel('plumbing') };
       });
-      expect(r.none).toBe(r.label);
-      expect(r.one).toBe('Water heater replacement');
-      expect(r.three).toBe('Water heater replacement +2 more');
-      expect(r.twoOn).toBe('Water heater replacement +1 more');
+      const named = '12 Name Rd · ' + r.label;
+      expect(r.none).toBe(named);
+      expect(r.one).toBe(named);
+      expect(r.three).toBe(named);
+      expect(r.twoOn).toBe(named);
     });
 
     test('the auto name lands on the bid, and a name he typed is never overwritten', async () => {
@@ -5002,7 +5006,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiSyncAutoName();
         return { auto, after: document.getElementById('gei-desc').value, userSet: _geiDescUserSet };
       });
-      expect(r.auto).toBe('Panel upgrade');
+      expect(r.auto).toMatch(/^13 Name Rd · /);
       expect(r.userSet).toBe(true);
       expect(r.after).toBe('Smith job, phase 1');
     });
@@ -5032,12 +5036,12 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
           liveDesc: document.getElementById('gei-desc').value
         };
       });
-      expect(r.beforeName).toBe('Panel upgrade');
-      expect(r.aType).toBe('Panel upgrade, Option A');
+      expect(r.beforeName).toMatch(/^16 Option Rd · /);
+      expect(r.aType).toBe(r.beforeName + ', Option A');
       expect(r.aUserSet).toBe(true);
-      expect(r.bType).toBe('Panel upgrade, Option B');
+      expect(r.bType).toBe(r.beforeName + ', Option B');
       expect(r.bUserSet).toBe(true);
-      expect(r.liveDesc, 'adding work to Option B must not rename it').toBe('Panel upgrade, Option B');
+      expect(r.liveDesc, 'adding work to Option B must not rename it').toBe(r.beforeName + ', Option B');
     });
 
     test('_geiAutoName survives junk state', async () => {
