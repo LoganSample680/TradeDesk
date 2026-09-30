@@ -2058,33 +2058,94 @@ function timLetter(text){
   try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());}}catch(_e){}
   const sents=t.split(/(?<=[.!?])\s+/);
   if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
+  // The courtesy is not scope, but it is his to say: it goes on the proposal
+  // as his note, word for word (owner 2026-09-30: the faith and trust line "is
+  // very important to John"). The signature gives the note its name.
+  const note=[];let noteBy='';
   const keep=sents.filter((x,i)=>{
     const q=x.trim();if(!q)return false;
     if(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?\d{1,3}\s+days?\b/i.test(q)&&/\b(?:estimate|quote|price|bid|offer|this)\b/i.test(q))return false;
-    if(_TIMK_COURTESY.test(q)){letter=true;return false;}
-    if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q))return false;
+    if(_TIMK_COURTESY.test(q)){letter=true;note.push(q);return false;}
+    if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q)){note.push(q);return false;}
     const low=q.toLowerCase().replace(/[.!?]+$/,'');
-    if(bizNames.some(b=>b&&low.includes(b)))return false;
+    if(bizNames.some(b=>b&&low.includes(b))){if(i===sents.length-1)noteBy=_timkSigner(q,bizNames.slice(0,1));return false;}
     // The signature: in a letter only, the last sentence, two words or more,
     // every word capitalised. "Interconnect." on a spoken walk is a step.
-    if(letter&&i===sents.length-1&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
+    if(letter&&i===sents.length-1&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&(noteBy=_timkSigner(q,bizNames.slice(0,1)),true)&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
     return true;
   });
-  return {text:keep.join(' ').trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean)};
+  const tidy=x=>x.replace(/\basap\b/gi,'ASAP').replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').replace(/,\s*or\s+/g,', or ').trim();
+  return {text:keep.join(' ').trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
+    note:note.map(x=>{x=tidy(x);return /[.!?]$/.test(x)?x:x+'.';}).join(' '),noteBy};
+}
+// "John Schonfeldt Plumbing Solutions by JS": the person, without the business.
+function _timkSigner(line,bizNames){
+  let v=String(line||'').replace(/[.!?]+$/,'').trim();
+  (bizNames||[]).forEach(b=>{if(b)v=v.replace(new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),'');});
+  v=v.replace(/\s{2,}/g,' ').trim();
+  const w=v.split(/\s+/).filter(Boolean);
+  return (w.length>=1&&w.length<=4&&w.every(x=>/^[A-Z][a-z'.-]*$/.test(x)))?w.join(' '):'';
 }
 // A WRITTEN estimate keeps his sentences (Jack 2026-09-30: when Tim chopped
 // his letter into "Drill hole" and "Existing washer lines" it "didn't make
 // much sense"). He already wrote it in order, one thing per sentence; Tim only
 // takes the "I will" and "I have included" off the front so each reads as a
 // step. Spoken walks still go through the step splitter.
+// How a written line reads on a customer's copy (owner 2026-09-30: "Rough
+// surface mounted washer box drain and water and vent. Why can't this say
+// Rough in surface mounted washer box drain, water lines and vent pipe").
+// Rules, not a model: each one is a trade habit, checked in e2e-byo-ios.
+const _TIMK_POLISH=[
+  [/^rough\s+(?!in\b)/i,'Rough in '],
+  [/\bsurface\s+mounted\b/gi,'surface-mounted'],
+  [/\b(washer|laundry)\s+box\s+drain\b/gi,'$1 box: drain'],
+  [/\bdrain\s+and\s+water\s+and\s+vent\b/gi,'drain, water lines and vent'],
+  [/: drain and water and vent\b/gi,': drain, water lines and vent'],
+  [/^electrical\s+for\s+(?:the\s+)?(\w+)\s+receptacle\s+and\s+(?:a\s+)?receptacle\s+for\s+(?:the\s+)?(\w+)/i,'Rough in electrical outlets for the $1 and $2'],
+  [/^electrical\s+for\b/i,'Rough in electrical for'],
+  [/^drill\s+(?:a\s+)?hole\s+and\s+run\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/i,'Drill an exterior hole and run the dryer vent outside'],
+  [/\brun\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/gi,'run the dryer vent outside'],
+  [/^(\d+)\s+hose\s+bibs?\b/i,'Install $1 hose bibs'],
+  [/^(?:a\s+)?(?:new\s+)?(water\s+heater|toilet|faucet|sink|disposal|sump\s+pump|shut\s*off|hose\s+bib)\b/i,'Install a $1'],
+  [/\bcap\s+(?:the\s+)?gas\s+line\s+to\s+the\s+gas\s+light\s+out\s+front\b/gi,'cap the gas line to the gas light out front'],
+  [/\band\s+existing\s+/gi,'and the existing '],
+  [/^seal\s+(?:the\s+)?duct(?:s|work)?\b/i,'Seal the ductwork'],
+  [/\bexcept\s+enough\s+to\s+keep\b/gi,', leaving enough open to keep'],
+  [/\bcrawl(?!\s*space|space)\b/gi,'crawlspace'],
+  [/\bkeep\s+crawlspace\b/gi,'keep the crawlspace'],
+  [/\basap\b/g,'ASAP'],
+  [/\s+,/g,','],
+];
+// One sentence, two jobs ("cap the gas line ... and seal duct ..."): each is
+// its own line, split where a second work verb starts.
+const _TIMK_JOIN_SPLIT=/\s+and\s+(?=(?:cap|seal|install|replace|remove|secure|run|drill|set|hang|add|patch|repair|test|flush|tie\s+in|hook\s+up|haul)\b)/i;
+function timPolish(v){
+  let o=String(v||'').trim();
+  _TIMK_POLISH.forEach(([re,to])=>{o=o.replace(re,to);});
+  o=o.replace(/\s{2,}/g,' ').trim();
+  return o?o.charAt(0).toUpperCase()+o.slice(1):'';
+}
+function _timkStripFirst(x){
+  let v=String(x).trim().replace(/[.!?]+$/,'');
+  v=v.replace(/^(?:and\s+)?(?:i|we)(?:'ll|\s+will|\s+would|\s+can|\s+am\s+going\s+to|'m\s+going\s+to|\s+are\s+going\s+to)\s+/i,'');
+  v=v.replace(/^(?:i|we)(?:'ve|\s+have)\s+(?:also\s+)?(?:included|added|figured|priced(?:\s+in)?)\s+/i,'');
+  v=v.replace(/^(?:this\s+)?(?:includes|price\s+includes|estimate\s+includes)\s+/i,'');
+  return v.replace(/\s+as\s+well$/i,'').replace(/\s{2,}/g,' ').trim();
+}
 function timLetterSteps(sentences){
-  return (sentences||[]).map(x=>{
-    let v=String(x).trim().replace(/[.!?]+$/,'');
-    v=v.replace(/^(?:and\s+)?(?:i|we)(?:'ll|\s+will|\s+would|\s+can|\s+am\s+going\s+to|'m\s+going\s+to|\s+are\s+going\s+to)\s+/i,'');
-    v=v.replace(/^(?:i|we)(?:'ve|\s+have)\s+(?:also\s+)?(?:included|added|figured|priced(?:\s+in)?)\s+/i,'');
-    v=v.replace(/^(?:this\s+)?(?:includes|price\s+includes|estimate\s+includes)\s+/i,'');
-    v=v.replace(/\s+as\s+well$/i,'').replace(/\s{2,}/g,' ').trim();
-    return v?v.charAt(0).toUpperCase()+v.slice(1):'';
+  const parts=[];
+  // Polish first, so a phrase the rules rewrite whole ("drill hole and run the
+  // dryer vent outside") is not split in half; a split needs a real clause on
+  // each side (six words or more on the left).
+  (sentences||[]).forEach(x=>{
+    const bits=timPolish(_timkStripFirst(x)).split(_TIMK_JOIN_SPLIT);
+    const out=[];
+    bits.forEach(b=>{if(out.length&&out[out.length-1].split(/\s+/).length<6)out[out.length-1]+=' and '+b;else out.push(b);});
+    out.forEach(p=>parts.push(p));
+  });
+  return parts.map(x=>{
+    let v=_timkStripFirst(x);
+    return timPolish(v);
   }).filter(v=>v.replace(/[^a-z]/gi,'').length>=3);
 }
 function timScopeBuild(text,opts){
@@ -2128,6 +2189,9 @@ function timScopeBuild(text,opts){
     // price for the whole job, null when he did not say.
     validDays:_letter.validDays,
     jobPrice:_letter.jobPrice,
+    // His closing words, kept for the proposal as his note, and whose they are.
+    note:_letter.note||'',
+    noteBy:_letter.noteBy||'',
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
     outOfOrder:staged.some((r,i)=>r.text!==steps[i]),

@@ -673,7 +673,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_geiNote='';_geiNoteBy='';_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -1786,6 +1786,10 @@ let _byoJobPrice=0;
 // selector, but if we put it's valid for x days Tim prefills that live").
 // 0 means his standard (Settings, _estValidDays).
 let _geiValidDays=0;
+// HIS NOTE (owner 2026-09-30: John's "I appreciate your faith and trust ..."
+// is very important to him). Printed word for word under the scope, signed.
+// Tim fills it from a pasted letter; he can write or change it by hand.
+let _geiNote='',_geiNoteBy='';
 const _GEI_VALID_CHOICES=[7,14,30,60,90];
 function _geiValidDaysNow(){return _geiValidDays>0?_geiValidDays:_estValidDays();}
 function _geiSetValidDays(n){
@@ -1842,6 +1846,7 @@ function _byoShowPage(){
   _byoCustomTerms=b?.byoCustomTerms||'';
   _byoJobPrice=Number(b&&b.byoJobPrice)>0?Number(b.byoJobPrice):0;
   _geiValidDays=Number(b&&b.validDays)>0?Number(b.validDays):0;
+  _geiNote=String(b&&b.closeNote||'');_geiNoteBy=String(b&&b.closeNoteBy||'');
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
@@ -3003,6 +3008,7 @@ function _byoSayBuild(){
   const _filled=[];
   if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
   if(built.validDays>0){_geiValidDays=built.validDays;_filled.push('good for '+built.validDays+' days');}
+  if(built.note&&!String(_geiNote||'').trim()){_geiNote=built.note;_geiNoteBy=built.noteBy||'';_filled.push('your note');}
   if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
   _byoSayOpen=false;
@@ -3087,13 +3093,17 @@ function _byoRenderSections(){
   const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
   // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
   // page so autosave and the proposal keep reading it by its id.
+  const noteFold='<div id="byo-note-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your note to them</span></div>'+
+    '<div class="ios-group"><textarea id="byo-note" class="ios-say" rows="4" placeholder="e.g. I appreciate your trust in us and look forward to the work." '+
+      'oninput="_geiNote=this.value;_byoAutosave()">'+escHtml(_geiNote||'')+'</textarea></div>'+
+    '<div class="ios-foot">Printed under the scope, word for word, with your name.</div></div></div>';
   const terms='<div id="byo-terms-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your own terms</span></div>'+
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
     '<div class="ios-foot">Printed under the standard terms on the proposal.</div></div></div>';
   // Materials is its own step (2), the same card T&M draws (js/materials.js).
   const matWrap=document.getElementById('byo-mat-wrap');
-  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(matWrap?'':_matCardHTML())+(_byoItems.length?_attachCardHTML():'')+group+terms;
+  wrap.innerHTML=(!_byoItems.length?_pkgCardHTML():'')+say+lines+_byoMissedHtml()+(matWrap?'':_matCardHTML())+(_byoItems.length?_attachCardHTML():'')+group+noteFold+terms;
   if(matWrap){matWrap.innerHTML=_matCardHTML();_matClaim(matWrap);}
   else _matClaim(wrap);
   _tmWireSwipe(wrap);
@@ -3188,6 +3198,7 @@ function _byoRenderPrice(st){
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
       '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
+    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-note-wrap\')"><span class="ios-lbl">Your note to them<small>'+(String(_geiNote||'').trim()?'On the proposal':'Optional')+'</small></span><span class="ios-chev">›</span></button>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
   const foot=document.getElementById('byo-price-foot');
   if(foot)foot.textContent='The customer sees the total and the deposit. Line prices, your cost and your profit stay on this screen.';
@@ -3279,6 +3290,7 @@ function _byoAutosave(){
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoJobPrice=_byoJobPrice||0;
   b.validDays=_geiValidDays||0;
+  b.closeNote=_geiNote||'';b.closeNoteBy=_geiNoteBy||'';
   b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
@@ -7967,6 +7979,20 @@ function _propBrand(){
 }
 function _propDoc(inner){return '<div style="background:#fff;color:#0b1220;font-family:-apple-system,BlinkMacSystemFont,&quot;SF Pro Text&quot;,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;-webkit-font-smoothing:antialiased;border-radius:22px;overflow:hidden;border:1px solid #e8eaef;box-shadow:0 1px 2px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06),0 24px 60px rgba(15,23,42,.06)">'+inner+'</div>';}
 // The closing line, his name and a thank-you. The wording is the document's.
+// His note, in his colour, signed: the words he would have closed a letter
+// with, where the customer reads them before the price.
+function _propNoteHtml(note,by){
+  const t=String(note||'').trim();if(!t)return '';
+  const who=String(by||'').trim()||(typeof S!=='undefined'&&S&&(S.ownerName||''))||'';
+  const first=who.split(/\s+/)[0]||'';
+  const biz=(typeof S!=='undefined'&&S&&S.bname)||'';
+  return `<div style="margin:6px 24px 8px;padding:18px 18px 16px;border-radius:14px;background:${_PT.wash};border:1px solid ${_PT.line}">`+
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${_PT.a}">${first?'A note from '+escHtml(first):'A note from us'}</div>`+
+    `<div style="font-size:15px;line-height:1.6;color:#1e293b;margin-top:10px;white-space:pre-line">${escHtml(t)}</div>`+
+    (who?`<div style="margin-top:12px;font-size:14px;font-weight:700;color:#0b1220">${escHtml(who)}</div>`:'')+
+    (biz?`<div style="font-size:12.5px;color:#64748b">${escHtml(biz)}</div>`:'')+
+  `</div>`;
+}
 function _propSignoff(nm,lead){
   nm=String(nm||'').trim();
   if(!nm)return '';
@@ -8616,7 +8642,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _scopeHasStages=_scopeBlocks.some(b=>String(b).indexOf('class="prop-stage"')>=0);
   const _scopeSection=(_scopeBlocks.length
     ?_propSection('Scope of work',_scopeHasStages?'How the work goes':'',_scopeBlocks.join(''),{noRule:true})
-    :'')+_includedSection;
+    :'')+_includedSection+_propNoteHtml(_geiIsFreeForm?_geiNote:'',_geiNoteBy);
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
   // address this estimate is for (bid addr, else client primary), not the client
