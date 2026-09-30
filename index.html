@@ -1906,7 +1906,7 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-stephead[d
      editor on an iPhone has one bar at the top and its own at the bottom.
      :has() rather than a class a script must remember to take off: the moment
      the T&M page is not the one showing, the app's bars are back. */
-  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim,#clock-banner,.drive-banner){display:none!important}
   body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
   /* No enter animation here: a transform animation, even finished and held,
      makes the page the box a fixed bar is pinned to, and the bar rode 1,000px
@@ -2426,7 +2426,11 @@ body.dark .cal-cell.other{background:var(--cream)}
   .drive-active .pg{padding-top:60px}
   .clock-active .pg{padding-top:60px}
   .drive-active.clock-active .pg{padding-top:110px}
-  .drive-active #clock-banner{top:98px}
+  /* Clock bar on a phone (owner 2026-09-30, photo of Jack's screen): the
+     tablet rule above left it starting 180px in, pinned under the status bar.
+     Full width, under the top bar, the same place the drive bar sits. */
+  #clock-banner{left:0;top:calc(56px + env(safe-area-inset-top,0px))}
+  .drive-active #clock-banner{top:calc(98px + env(safe-area-inset-top,0px))}
   .tbar-title{font-size:22px;letter-spacing:-.5px}
   .tbar{margin-bottom:14px}
   .card{padding:14px;border-radius:12px}

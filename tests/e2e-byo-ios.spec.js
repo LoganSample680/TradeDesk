@@ -400,6 +400,26 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(await page.evaluate(() => _byoItems.length)).toBe(0);
   });
 
+  test('the job clock bar never sits under the status bar: hidden in the editor, full width under the top bar elsewhere (owner 2026-09-30)', async () => {
+    await open();
+    const r = await page.evaluate(async () => {
+      _activeTimer = { clientName: 'Tagen Lindstrom', scopeLabel: 'General', start: Date.now() };
+      showClockBanner();
+      const b = document.getElementById('clock-banner');
+      const inEditor = getComputedStyle(b).display;
+      goPg('pg-dash');
+      await new Promise(res => setTimeout(res, 150));
+      const rc = b.getBoundingClientRect(), tb = document.getElementById('mobile-topbar').getBoundingClientRect();
+      const out = { inEditor, left: rc.left, width: rc.width, top: rc.top, under: tb.bottom, vw: innerWidth };
+      hideClockBanner(); _activeTimer = null;
+      return out;
+    });
+    expect(r.inEditor).toBe('none');
+    expect(r.left).toBe(0);
+    expect(r.width).toBe(r.vw);
+    expect(r.top).toBeGreaterThanOrEqual(r.under - 1);
+  });
+
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
