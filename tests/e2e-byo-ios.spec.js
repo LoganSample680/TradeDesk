@@ -322,6 +322,12 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r['Outside']).toEqual(['Install 3 hose bibs with piping', 'Cap the gas line to the gas light out front']);
     const titles = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .room-name')].map(b => b.textContent.trim()));
     expect(titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    const shared = await page.evaluate(() => {
+      let n = 0; const o = window._roomStackHtml;
+      window._roomStackHtml = function (...a) { n++; return o.apply(this, a); };
+      try { _byoRenderSections(); return n; } finally { window._roomStackHtml = o; }
+    });
+    expect(shared).toBe(1);   // the same stack T&M draws with
     const d = await doc();
     const at = k => d.indexOf(k);
     expect(at('Laundry room')).toBeGreaterThan(-1);

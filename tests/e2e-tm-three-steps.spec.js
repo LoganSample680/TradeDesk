@@ -304,6 +304,16 @@ test.describe('T&M in three steps', () => {
     }));
     expect(ui.titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
     expect(ui.nums).toEqual(['1', '2', '3', '4', '5', '6']);
+    // One stack of rooms for both screens (owner 2026-09-30: "merge the room
+    // stacking code too"): T&M and Build Your Own draw through _roomStackHtml.
+    const shared = await page.evaluate(() => {
+      let n = 0; const o = window._roomStackHtml;
+      window._roomStackHtml = function (...a) { n++; return o.apply(this, a); };
+      try { _renderScopeChips('tm-scope-wrap'); return { n, hint: document.querySelector('#tm-scope-wrap .ios-foot')?.textContent || '' }; }
+      finally { window._roomStackHtml = o; }
+    });
+    expect(shared.n).toBe(1);
+    expect(shared.hint).toContain('Hold a step');
     expect(ui.sort).toBe(false);
     const d = await page.evaluate(async () => {
       let h = ''; const o = window._showProposalPreviewOverlay;
