@@ -187,6 +187,26 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(await bar()).toEqual(['Set the price']);
   });
 
+  test('a scope line is words and a price: no how many, no each (owner 2026-09-30)', async () => {
+    await open();
+    await say('pull the old water heater, set a tankless');
+    const r = await page.evaluate(() => {
+      _byoEditItem(0);
+      const m = document.getElementById('_byo-add-modal');
+      const shown = id => { const e = document.getElementById(id); return !!e && e.type !== 'hidden' && !!e.offsetParent; };
+      const out = { qty: shown('_bya-qty'), unit: shown('_bya-unit'), price: shown('_bya-price'), title: m.textContent.includes('Edit this line') };
+      document.getElementById('_bya-price').value = '650';
+      _byaEditConfirm(0);
+      out.saved = { qty: _byoItems[0].qty, price: _byoItems[0].price };
+      // A materials line keeps how many and what each.
+      _byoAddItem('Materials');
+      out.matQty = shown('_bya-qty'); out.matUnit = shown('_bya-unit');
+      document.getElementById('_byo-add-modal').remove();
+      return out;
+    });
+    expect(r).toEqual({ qty: false, unit: false, price: true, title: true, saved: { qty: 1, price: 650 }, matQty: true, matUnit: true });
+  });
+
   test('the job price is never learned as one line\'s price, and it saves with the draft', async () => {
     await open();
     await say('pull the old water heater, set a tankless');

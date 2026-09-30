@@ -4255,7 +4255,7 @@ function _byoAddItem(sec){
     '<div id="_bya-book"></div>'+
     '<div class="f" style="margin-bottom:4px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" placeholder="'+escHtml(_byaExample(0))+'" autocomplete="off"></div>'+
     '<div id="_bya-sugg" style="margin-bottom:10px"></div>'+
-    _byaQtyRateHTML(1,'','')+
+    _byaQtyRateHTML(1,'','',_byaIsScopeSec(sec))+
     _byaDescFieldHTML('')+
     '<div style="display:flex;gap:10px;margin-top:14px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1" id="_bya-close">Cancel</button>'+
@@ -4383,8 +4383,24 @@ function _byaUnitList(trade){
   });
   return out;
 }
-function _byaQtyRateHTML(qty,unit,rate){
+// A SCOPE LINE IS WORDS AND A PRICE (owner 2026-09-30: "Don't have to say
+// one each or one quantity, that's left up to materials"). He types the job,
+// Tim splits it, and he tags a price on a line if he wants to. How many and
+// what each belongs to the materials sheet, which keeps the full row.
+function _byaIsScopeSec(sec){return String(sec||'').toLowerCase()!=='materials';}
+// Only a Build Your Own line has a section; T&M and invoice parts do not, and
+// they keep how many and what each.
+function _byaIsScopeLine(it){return !!(it&&it.section)&&!it._supply&&_byaIsScopeSec(it.section);}
+function _byaQtyRateHTML(qty,unit,rate,scope){
   const q=(Number(qty)>0)?Number(qty):1;
+  if(scope){
+    return '<div class="f" style="margin-bottom:6px">'+
+      '<label>Price <span style="font-weight:400;color:var(--text3)">, optional. Leave it blank and price the whole job on Their price.</span></label>'+
+      '<input type="hidden" id="_bya-qty" value="'+q+'"><input type="hidden" id="_bya-unit" value="'+escHtml(unit||'ea')+'">'+
+      '<div class="input-prefix"><span>$</span>'+
+        '<input type="text" inputmode="decimal" id="_bya-price" value="'+(rate?Number(rate).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" placeholder="0" oninput="_fmtMoneyInput(this)" aria-label="Price"></div>'+
+    '</div>';
+  }
   const units=_byaUnitList();
   const cur=unit||units[0]||'ea';
   // A unit saved on an older line (or by a trade he has since switched away
@@ -4510,9 +4526,12 @@ function _byoEditItem(idx){
   const ov=document.createElement('div');ov.id='_byo-add-modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
-    '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
+    '<div style="font-weight:800;font-size:16px;margin-bottom:16px">'+(_byaIsScopeLine(it)?'Edit this line':'Edit item')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="'+escHtml(_byaExample(0))+'"></div>'+
-    _byaQtyRateHTML(it.qty,it.unit,(Number(it.rate)>0?it.rate:it.price))+
+    // A scope line prices the whole line: rate times quantity, as saved.
+    (_byaIsScopeLine(it)
+      ?_byaQtyRateHTML(1,it.unit,(Number(it.price)>0?it.price:(Number(it.rate)||0)),true)
+      :_byaQtyRateHTML(it.qty,it.unit,(Number(it.rate)>0?it.rate:it.price)))+
     _byaDescFieldHTML(it.notes||'')+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+

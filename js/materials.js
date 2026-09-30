@@ -51,7 +51,7 @@ function _matView(i){
     return {label:l.desc||'',notes:l.notes||'',qty,unit:l.unit||'ea',rate:rate||price,price,on:true};
   }
   const it=(_byoItems||[])[i];if(!it)return null;
-  return {label:it.label||'',notes:it.notes||'',qty:it.qty,unit:it.unit,rate:it.rate,price:Number(it.price)||0,on:it.on!==false};
+  return {label:it.label||'',notes:it.notes||'',qty:it.qty,unit:it.unit,rate:it.rate,price:Number(it.price)||0,on:it.on!==false,section:it.section||'',_supply:!!it._supply};
 }
 // A new line. sec is the BYO section the sheet was opened for; a T&M estimate
 // has one list, so it is ignored there.

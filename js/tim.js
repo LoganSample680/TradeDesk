@@ -180,7 +180,69 @@ const TIM_PHOTO_WORDS=['photos','photo','pictures','picture','pics','pic','shots
 // auxiliaries that carry them, and the bare s left behind by an apostrophe
 // (_timNorm strips punctuation, so "pepe's" arrives as "pepe s").
 const _TIM_PHOTO_FILLER=['show','me','my','the','a','of','for','at','from','on','open','find','get','pull','up','all','job','jobs','site','house','place',
-  'where','wheres','are','is','was','were','do','did','does','i','we','have','has','had','any','some','got','there','see','look','looking','need','want','to','s','take','took','taken','can','could','please'];
+  'where','wheres','are','is','was','were','do','did','does','i','we','have','has','had','any','some','got','there','see','look','looking','need','want','to','s','take','took','taken','can','could','please',
+  've','ive','ones','that','these','those','just','hey','hi','ok','okay','tim','yo'];
+// ── His rate, asked for out loud (Jack 2026-09-29: "I need to change my
+// hourly rate", then "What are you charged") ─────────────────────────────
+// A simple ask and a simple answer: Tim asks what he wants it to be, he says
+// 125, and it is saved everywhere a rate lives for the owner: the business
+// rate anyone without their own bills at (S.laborRate) and what he bills
+// himself (S.ownerBillRate), through the one settings save. "Change my rate
+// to 125" skips the question.
+const _TIM_RATE_SAID=[
+  / (change|set|update|raise|lower|bump|adjust|edit|fix) (up )?(my |the |our )?(hourly |labor |bill |billing |shop )?(rate|hourly) /,
+  / (what s|whats|what is|what are) (my|our) (hourly |labor |bill |billing )?(rate|rates) /,
+  // "what do I charge for X" is the price book's question (tim-ask.js), not this.
+  / what (am|are) (i|you|we) (charg|bill)\w* /,
+];
+function timRateAsk(text){
+  const t=_timNorm(text);
+  if(!_TIM_RATE_SAID.some(re=>re.test(t)))return null;
+  // A rate on one job belongs to that job's estimate, not his standing rate.
+  if(/ (job|proposal|estimate|invoice|bid) /.test(t))return null;
+  const m=t.match(/ (?:to|at|is|be) (\d{2,4}(?: \d{2})?) /)||t.match(/ (\d{2,4}) (?:an|a|per) (?:hour|hr) /);
+  const to=m?parseFloat(m[1].replace(' ','.')):null;
+  return {to:(to>0&&to<10000)?to:null};
+}
+function _timRateNow(){
+  const own=Number(S&&S.ownerBillRate),biz=Number(S&&S.laborRate);
+  return own>0?own:(biz>0?biz:0);
+}
+function _timSetRate(r){
+  r=Math.round(Number(r)*100)/100;
+  if(!(r>0))return false;
+  S.laborRate=r;S.ownerBillRate=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof showToast==='function')showToast('Your rate is $'+r.toLocaleString('en-US')+' an hour. Saved everywhere.','✓',3200);
+  return true;
+}
+function _timAskRate(){
+  const now=_timRateNow();
+  zPrompt(now>0?'Right now it is $'+now.toLocaleString('en-US')+' an hour.':'You have no rate set yet.',v=>{
+    const r=parseFloat(String(v||'').replace(/[^0-9.]/g,''));
+    if(!(r>0)){if(typeof showToast==='function')showToast('Nothing changed','ℹ️',2200);return;}
+    _timSetRate(r);
+  },{title:'What would you like to change it to?',placeholder:'125'});
+  const inp=document.getElementById('zprompt-inp');
+  if(inp){inp.setAttribute('inputmode','decimal');inp.setAttribute('aria-label','Hourly rate');}
+}
+
+// Where the photos live, walked the way he would: open More, tap Photos. He
+// sees where it is so next time he goes himself (owner 2026-09-30: "Tim
+// clicks More, Tim clicks Photos, there they are"). On a wide screen Photos
+// sits in the sidebar, so it just opens.
+function _timWalkTo(pg,mmiId){
+  const pop=document.getElementById('mtb-more-popup');
+  const row=document.getElementById(mmiId);
+  const bar=document.getElementById('mobile-tabbar');
+  const phone=!!(pop&&row&&bar&&getComputedStyle(bar).display!=='none');
+  if(!phone||typeof openMobileMore!=='function'){if(typeof goPg==='function')goPg(pg);return 'direct';}
+  openMobileMore();
+  row.classList.add('tim-point');
+  setTimeout(()=>{row.classList.remove('tim-point');if(typeof mobileNavTo==='function')mobileNavTo(pg);else goPg(pg);},650);
+  return 'walk';
+}
+
 function timPhotoQuery(text){
   const t=_timNorm(text);
   if(!TIM_PHOTO_WORDS.some(w=>t.includes(' '+w+' ')))return null;
@@ -401,6 +463,9 @@ function timParse(text,opts){
   const off=timTimeOff(said,o.now);
   if(off)return off.open?{text:said,kind:'timeoff-open'}:{text:said,kind:'timeoff',start:off.start,end:off.end,label:off.label};
 
+  const rate=timRateAsk(said);
+  if(rate)return {text:said,kind:'rate',to:rate.to};
+
   const lead=timLead(said);
   if(lead&&lead.name){
     const pick=timLeadJob(lead.job,o.trade||'general',o.book,o.catalog);
@@ -417,6 +482,9 @@ function timParse(text,opts){
     return {text:said,kind:'newclient',subject};
 
   const pho=timPhotoQuery(said);
+  // No subject left ("where are my photos", "open photos"): that is the
+  // Photos page, not an empty search box.
+  if(pho&&!pho.q)return {text:said,kind:'nav',pg:'pg-photos',name:'Photos',year:null};
   if(pho){
     // Resolved here, not at run time, so the preview line can say what is
     // about to happen: one place opens, several ask which, none searches.
@@ -438,6 +506,7 @@ function timParse(text,opts){
 function timSay(p){
   if(!p||p.kind==='none')return '';
   if(p.kind==='nav')return 'Open '+p.name+(p.year?' for '+p.year:'');
+  if(p.kind==='rate')return p.to?'Set your rate to $'+p.to.toLocaleString('en-US')+' an hour':'Change your hourly rate';
   if(p.kind==='photos'){
     const n=(p.places||[]).length;
     if(n===1){
@@ -522,6 +591,11 @@ function timRun(text){
     return p;
   }
 
+  if(p.kind==='rate'){
+    if(p.to)_timSetRate(p.to);else _timAskRate();
+    return p;
+  }
+  if(p.kind==='nav'&&p.pg==='pg-photos'){_timWalkTo('pg-photos','mmi-photos');return p;}
   if(p.kind==='nav'&&typeof goPg==='function'){
     goPg(p.pg);
     // The year goes on AFTER the page exists, because setting it renders the
