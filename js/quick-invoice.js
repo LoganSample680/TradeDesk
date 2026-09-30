@@ -894,7 +894,10 @@ function renderQuickInvoice(){
       _qiStep(1,DOC_STEP.work)+
       _qiSayHtml()+
       (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-group">'+
-        _qi.work.map((w,i)=>'<div class="ios-row"><span class="ios-lbl">'+escHtml(w)+'</span><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
+        // Each line is his to fix (owner 2026-09-29: "I want the ability to click
+        // into these steps and edit them, right now they are hard locked if I
+        // talk to Tim"). Tap the words and type; empty it and it goes.
+        _qi.work.map((w,i)=>'<div class="ios-row qi-work"><textarea class="qi-work-in" rows="1" autocapitalize="sentences" aria-label="Work done, line '+(i+1)+'" oninput="_qiWorkEdit('+i+',this)" onblur="_qiWorkDone('+i+',this)">'+escHtml(w)+'</textarea><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
         '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
       _qiPhotosHtml()+
       (hourly?_qiStep(2,DOC_STEP.time)+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days not billed yet</span>':'<div class="ios-h" style="display:none"><span></span>')+
@@ -932,6 +935,7 @@ function renderQuickInvoice(){
       '</div>'+
     '</div>';
   if(typeof _matClaim==='function')_matClaim(document.getElementById('qi-mat'));
+  host.querySelectorAll('.qi-work-in').forEach(_qiWorkFit);
   if(typeof _tmWireSwipe==='function')_tmWireSwipe(host);
 }
 // A person's rate is one number on the whole invoice: change Jack's on
@@ -1148,6 +1152,20 @@ function _qiMatDesc(m){
   return n+unit+' '+item;
 }
 function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);renderQuickInvoice();}
+// Typing into a line changes the line; the box grows with the words.
+function _qiWorkEdit(i,el){
+  if(!_qi||i<0||i>=_qi.work.length||!el)return;
+  _qi.work[i]=String(el.value||'');
+  _qiWorkFit(el);
+}
+function _qiWorkFit(el){if(!el)return;el.style.height='auto';el.style.height=el.scrollHeight+'px';}
+// Leaving a line he emptied takes it off, the same as the ×.
+function _qiWorkDone(i,el){
+  if(!_qi||i<0||i>=_qi.work.length)return;
+  const v=String((el&&el.value)||'').trim();
+  if(!v){_qiDropWork(i);return;}
+  _qi.work[i]=v;
+}
 
 function _qiDocHtml(num){
   if(!_qi)return '';
