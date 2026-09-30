@@ -2096,7 +2096,13 @@ function timLetter(text){
   });
   const tidy=x=>x.replace(/\basap\b/gi,'ASAP').replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').replace(/,\s*or\s+/g,', or ').trim();
   if(!noteBy)sigBy.some(x=>(noteBy=_timkSigner(x,bizNames.slice(0,1)))&&!bizNames.some(b=>b&&x.toLowerCase().includes(b)));
-  return {text:keep.join(' ').trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
+  // A pasted email's line breaks were its sentence ends. Joined back with a
+  // bare space, the materials reader read across them: "a dryer receptacle"
+  // at the end of one bullet and "Drill through" at the start of the next
+  // came back as one part (owner 2026-09-30). Each line keeps its full stop.
+  const _lines=/\n/.test(String(text||''));
+  const _joined=_lines?keep.map(x=>{x=x.trim();return x&&!/[.!?:;,]$/.test(x)?x+'.':x;}).join(' '):keep.join(' ');
+  return {text:_joined.trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
     note:note.map(x=>{x=tidy(x);return /[.!?]$/.test(x)?x:x+'.';}).join(' '),noteBy};
 }
 // "John Schonfeldt Plumbing Solutions by JS": the person, without the business.
@@ -2208,6 +2214,9 @@ function timScopeBuild(text,opts){
   let materials=[];
   try{materials=timSaidMaterials(said);}catch(_e){materials=[];}
   const _written=_letter.letter&&_letter.sentences.length>=2;
+  // In a written estimate "a dryer receptacle" is grammar, not a count of
+  // parts to buy: only a number he wrote ("3 hose bibs") makes a material.
+  if(_written)materials=materials.filter(m=>!(m&&m.kind==='list'&&/^(?:a|an|the)\s/i.test(String(m.said||'').trim())));
   const priced=_timkFoldPrices((_written?timLetterSteps(_letter.sentences):timScopeFrom(said)).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
     // "Pour the pad, figure 40 bags of Quikrete and 6 sticks of rebar": the
     // shopping list after the comma comes off the step.

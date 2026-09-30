@@ -3307,7 +3307,11 @@ test.describe('a battery we could not read never erases the one we could', () =>
         window._isEmployee = saved.emp; window._geoTdPlugin = saved.td;
         window._geoReadPermission = saved.read; window._geoAutoPrecise = saved.prec;
       }
-      const hit = rec.find(x => x.tbl === 'device_status');
+      // The LAST status row is this report's: it waits for the battery, so
+      // it writes after anything the app's own background report pushed
+      // through the stand-in client during the 120ms (seen on WebKit CI,
+      // 2026-09-30, where that earlier row had no battery on it).
+      const hit = rec.filter(x => x.tbl === 'device_status').pop();
       return hit ? hit.row : null;
     });
     expect(r, 'the row was written').toBeTruthy();
