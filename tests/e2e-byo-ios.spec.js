@@ -297,6 +297,14 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     await page.evaluate(() => { _byoJobPrice = 0; S.depositPct = 25; });
   });
 
+  test('the text says his trade: a plumber\'s proposal is never "painting" (2026-09-30)', async () => {
+    await open();
+    const r = await page.evaluate(() => { const b = bids.find(x => x.id === _geiEditBidId); if (b) b.trade_type = 'plumbing'; _geiTrade = 'plumbing'; return _smsProposalWord(); });
+    expect(r).toBe('plumbing proposal');
+    const src = await page.evaluate(() => String(sendProposalViaSms));
+    expect(src).not.toMatch(/painting proposal/);
+  });
+
   test('a scope line is words and a price: no how many, no each (owner 2026-09-30)', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
