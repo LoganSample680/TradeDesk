@@ -1343,9 +1343,31 @@ function _qiRatesReady(){
 function qiSend(){
   if(!_qiRatesReady())return false;
   if(!_qi.due){if(typeof showToast==='function')showToast('Pick when it\'s due first','⚠️');_qiAskDue();return false;}
+  // NOT SENT IS NOT SENT (owner 2026-09-29: "I got to that screen and didn't
+  // send it but yet it disappeared from my invoices, why?"). The invoice is
+  // made so the link exists, but it only counts once he texts, emails or
+  // copies it. Closing the send screen puts it back as a draft on Ready to
+  // bill, days and all, under the same number.
+  const snap=_qiDraftSnap(),cid=_qi.cid,addr=_qi.addr;
   const bid=_qiSave();if(!bid)return false;
-  if(typeof _sendPaidInvoice==='function')_sendPaidInvoice(bid.id);
+  if(typeof _sendPaidInvoice==='function')_sendPaidInvoice(bid.id,{onUnsent:()=>_qiUnsend(bid.id,cid,addr,snap)});
   return bid;
+}
+function _qiUnsend(bidId,cid,addr,snap){
+  const i=(bids||[]).findIndex(b=>String(b.id)===String(bidId));
+  if(i<0)return;
+  const b=bids[i];
+  if(b.sentAt||(typeof getBidPaid==='function'&&getBidPaid(b.id)>0))return;   // it went out, or he took money on it
+  bids.splice(i,1);
+  const c=getClientById(cid);
+  if(c){
+    const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};
+    D[_qiDraftKey(c,addr)]=snap;c.qiDrafts=D;
+  }
+  saveAll();
+  _tbInvalidate();
+  if(typeof _renderToBill==='function')_renderToBill();
+  if(typeof showToast==='function')showToast('Not sent. It waits on Ready to bill as a draft','✓');
 }
 // Settle it now, in person: the same pay panel every job uses (Tap to Pay,
 // card by QR, cash, check, Venmo, Zelle), so the payment is recorded against
@@ -1568,14 +1590,19 @@ function _qiDraftApply(d){
   _qi.xOn=new Set(d.xOn||[]);_qi.xOff=new Set(d.xOff||[]);_qi.dropped=new Set(d.dropped||[]);
   _qi.riderMins=Object.assign({},d.riderMins||{});
 }
+// Everything on the screen, as a draft. qiSaveDraft keeps it; qiSend holds it
+// so an invoice he never sent can go back to being a draft.
+function _qiDraftSnap(){
+  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
+    typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
+    added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
+    total:_qiTotal(),at:new Date().toISOString()};
+}
 function qiSaveDraft(){
   if(!_qi)return;
   const c=getClientById(_qi.cid);if(!c)return;
   const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};
-  D[_qiDraftKey(c,_qi.addr)]={id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
-    typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
-    added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
-    total:_qiTotal(),at:new Date().toISOString()};
+  D[_qiDraftKey(c,_qi.addr)]=_qiDraftSnap();
   c.qiDrafts=D;
   saveAll();
   _tbInvalidate();
