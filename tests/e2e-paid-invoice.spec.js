@@ -72,14 +72,18 @@ test.describe('Paid invoice: contractor side', () => {
     const r = await page.evaluate(async () => {
       document.querySelectorAll('.zmodal-overlay,[style*="slideDown"]').forEach(e => e.remove());
       await _sendPaidInvoice(950100);
+      // The address is not printed on the send screen any more (owner
+      // 2026-09-29); it rides in the message the buttons send.
       const box = document.querySelector('.zmodal-overlay .zmodal');
       const txt = box ? box.textContent : '';
-      const url = (txt.match(/https?:\/\/\S+/) || [''])[0];
+      const btn = box && (box.querySelector('[data-inv-text]') || box.querySelector('[data-inv-email]'));
+      const msg = btn ? (btn.dataset.body || decodeURIComponent(btn.dataset.href || '')) : '';
+      const url = (msg.match(/https?:\/\/\S+/) || [''])[0];
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       return { url, hasHash: /#invoice-950100$/.test(url), title: txt.slice(0, 40) };
     });
     expect(r.hasHash, `deep link must end in #invoice-950100, got ${r.url}`).toBe(true);
-    expect(r.title).toMatch(/Paid invoice ready/i);
+    expect(r.title).toMatch(/Paid in full/i);
   });
 });
 
