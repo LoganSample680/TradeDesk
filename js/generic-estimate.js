@@ -8785,7 +8785,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _rsCapLeads=_tmNteCap>0;
   const _rateFooterRows=_rsCapLeads
     ?`${_propPriceRow('Most you&apos;ll pay',_tmCapFineTxt,_rsMoney(_tmNteCap),_pAccent)}`+
-      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}</strong> for the hours worked and the materials used, with the time sheet on every bill.</td></tr>`+
+      `<tr style="background:#fff;color:#334155"><td colspan="2" style="padding:15px 24px;font-size:14px;line-height:1.5;border-top:1px solid #eceef2"><strong style="color:#0b1220;font-weight:700">${_rsCadence}.</strong> You pay for the hours worked and the materials used, and each bill shows the hours behind it.</td></tr>`+
       (_rsFlatDep>0?`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">Up Front, Before Work Begins</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${_rsMoney(_rsFlatDep)}</td></tr>`:'')
     // A rate with no ceiling has no number to put here, so the card says how
     // it bills, as its headline, instead of standing empty over a "Billing"
@@ -8793,7 +8793,7 @@ async function sendGenericProposal(previewOnly,opts){
     :`<tr style="background:${_pAccent};color:#fff"><td colspan="2" style="padding:26px 24px 24px;background:${_pAccent};color:#fff;background-image:linear-gradient(135deg,${_pAccent} 0%,${_PT.deep} 100%)">`+
       `<div style="font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85">TIME &amp; MATERIALS</div>`+
       `<div style="font-weight:800;font-size:26px;letter-spacing:-.025em;line-height:1.15;margin-top:8px">${_rsCadence}</div>`+
-      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">For the hours worked and the materials used, with the time sheet on every bill.</div></td></tr>`+
+      `<div style="font-size:13px;font-weight:400;line-height:1.5;opacity:.9;margin-top:8px">You pay for the hours worked and the materials used. Each bill shows the hours behind it.</div></td></tr>`+
     // THEIR WORDS, NOT THE TRADE'S. Homeowners never say "not to exceed".
     // Across the customer-side research the question they actually ask is
     // "what's the most this could be?", so that is what the line says. The

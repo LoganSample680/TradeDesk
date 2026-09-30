@@ -249,6 +249,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(d).not.toContain('The new work');
   });
 
+  const EMAIL_BULLETS = "Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Electrical for the washer receptacle and a dryer receptacle\n- Drill through and run the dryer vent to the outside\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nThis estimate is good for 14 days. If you approve, I can start as soon as possible.\n\nI appreciate your faith and trust in our plumbing services and look forward to working with you on this project, as well as any future projects or service and maintenance needs.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
   test('a pasted email with bullets and line breaks: every bullet is a step (owner 2026-09-30, "I can\'t find a line in that")', async () => {
     await open();
     const r = await page.evaluate(() => {
@@ -279,6 +280,11 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.days).toBe(14);
     expect(r.note).toMatch(/faith and trust/);
     expect(r.by).toBe('John Schonfeldt');
+    // Materials: only what he counted. The line break ends a line, so "a dryer
+    // receptacle" and the next bullet's "Drill through" are never one part,
+    // and "a" is grammar in a written estimate, not a count (owner 2026-09-30).
+    const m = await page.evaluate((t) => timScopeBuild(t).materials.map(x => x.item), EMAIL_BULLETS);
+    expect(m).toEqual(['Hose bibs']);
   });
 
   test('Proposals signed by: a note with no signer comes from that name, blank falls back to the owner (owner 2026-09-30)', async () => {
