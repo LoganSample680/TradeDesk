@@ -1684,6 +1684,29 @@ function timSayField(id,placeholder,done){
   // words default turned "replaced the water heater" into Title Case.
   return '<textarea id="'+escHtml(id)+'" class="ios-say" rows="3" autocapitalize="sentences" data-tim-done="'+escHtml(done||'')+'" placeholder="'+escHtml(placeholder||'')+'"></textarea>';
 }
+// THE KEYBOARD'S CHECK BUILDS IT (owner 2026-09-30: "when you get done
+// dropping into Tim's box we got to check box the keyboard so Tim parses it at
+// that point"). Pasting John's email and closing the keyboard is the whole
+// gesture; he should not have to hunt for a button under it. A tap on one of
+// the box's own buttons (the mic, Cancel, Add a line) is not "done", and
+// dictation finishes through its own Done.
+function _timSayBlur(e){
+  const el=e&&e.target;
+  if(!el||el.tagName!=='TEXTAREA'||!el.dataset||!el.dataset.timDone)return;
+  const fn=window[el.dataset.timDone];
+  if(typeof fn!=='function')return;
+  const v=String(el.value||'').trim();
+  if(!v||el.dataset.timBuilt===v)return;
+  if(typeof _timTalking!=='undefined'&&_timTalking)return;
+  const sec=el.closest('.ios-sec');
+  const to=e.relatedTarget;
+  if(to&&sec&&sec.contains(to))return;
+  el.dataset.timBuilt=v;
+  // After the blur settles, so a re-render does not pull the box out from
+  // under the event that is still running.
+  setTimeout(()=>{if(document.body.contains(el)&&String(el.value||'').trim()===v)fn();},0);
+}
+if(typeof document!=='undefined')document.addEventListener('focusout',_timSayBlur);
 function timMicBtn(id){
   return _timSayVoice()?'<button type="button" class="ios-btn ios-btn-tint" onclick="_timTalkToggle(\''+escHtml(id)+'\')">'+_TIM_MIC_SVG+'Talk to Tim</button>':'';
 }

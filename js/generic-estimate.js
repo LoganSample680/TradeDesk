@@ -3000,7 +3000,16 @@ function _byoSayBuild(){
     if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;
   }
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
-  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());
+  // By room when the job spans rooms (owner 2026-09-30, Jack picked the room
+  // layout): each room is a section he can rename or drag lines between.
+  // Painting keeps Interior and Exterior, its own two.
+  const _tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  const _roomSec=st=>{
+    if(!built.byRoom||!st.room||_tr==='painting')return undefined;
+    if(!_byoSections().includes(st.room)&&!_byoCustomSections.includes(st.room))_byoCustomSections.push(st.room);
+    return st.room;
+  };
+  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,_roomSec(st),st.price);have.add(st.text.toLowerCase());
     // His own written order stands on the customer's copy (no regrouping).
     if(st.written){const it=_byoItems[_byoItems.length-1];if(it&&it.label===st.text)it._written=true;}}});
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
@@ -3068,7 +3077,7 @@ function _byoRenderSections(){
       const idx=_byoItems.indexOf(it);
       const priced=Number(it.price)>0;
       const note=(it.notes&&!it._rrp)?it.notes:'';
-      return '<div class="ios-swipe" data-kind="line"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
+      return '<div class="ios-swipe" data-kind="line" data-idx="'+idx+'"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
           '<button type="button" class="ios-check'+(it.on?' on':'')+'" aria-label="'+(it.on?'On the proposal':'Off the proposal')+'" '+
             (it.required?'disabled ':'')+'onclick="event.stopPropagation();_byoToggle('+idx+')">'+(it.on?_TM_TICK:'')+'</button>'+
           // A small grid: check, title and price on one line, the description
@@ -3081,13 +3090,13 @@ function _byoRenderSections(){
         (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
       '</div>';
     }).join('');
-    return '<div class="ios-sec">'+
-      (titled?'<div class="ios-h"><span>'+escHtml(sec)+'</span>'+
+    return '<div class="ios-sec" data-byo-sec="'+escHtml(sec)+'">'+
+      (titled?'<div class="ios-h"><button type="button" class="byo-sec-name" data-sec="'+escHtml(sec)+'" aria-label="Rename '+escHtml(sec)+'" onclick="_byoRenameSection(this.dataset.sec)">'+escHtml(sec)+_BYO_PENCIL+'</button>'+
         (isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'')+'</div>':'')+
       '<div class="ios-group">'+(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
         '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'+
         (sec===used[used.length-1]&&!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':'')+
-      '</div></div>';
+      '</div>'+(titled&&sec===used[used.length-1]?'<div class="ios-foot">Tap a title to rename it. Hold a line to drag it to another section.</div>':'')+'</div>';
   }).join('');
   const say=(!_byoItems.length||_byoSayOpen)?_byoSayHtml():'';
   const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
@@ -3107,6 +3116,7 @@ function _byoRenderSections(){
   if(matWrap){matWrap.innerHTML=_matCardHTML();_matClaim(matWrap);}
   else _matClaim(wrap);
   _tmWireSwipe(wrap);
+  if(titled)_byoWireDrag(wrap);
   _byoRenderSteps();
 }
 function _byoDelLine(idx){
@@ -4579,6 +4589,7 @@ function _byaConfirmAndNext(sec){
   _byoAddItem(sec);
 }
 function _byoEditItem(idx){
+  if(window._byoDragJustEnded&&Date.now()-window._byoDragJustEnded<400)return;
   // Read through the shared store so a T&M material line opens in this same sheet.
   const it=_matView(idx);if(!it)return;
   document.getElementById('_byo-add-modal')?.remove();
@@ -4669,6 +4680,127 @@ function _byoConfirmSection(){
   _byoCustomSections.push(name);
   document.getElementById('_byo-sec-modal')?.remove();
   _byoRenderSections();_byoAutosave();
+}
+// DRAG A LINE TO ANOTHER ROOM (owner 2026-09-30: "click drag and drop them
+// into other sections, kinda like a kanban"). Hold a line, it lifts, drag it
+// over another section (or between two lines) and let go. A hold, not a
+// grab: a quick swipe still opens Delete and a flick still scrolls.
+function _byoMoveLine(from,toSec,beforeIdx){
+  const it=_byoItems[from];if(!it||!toSec)return false;
+  const before=beforeIdx!=null&&beforeIdx!==from?_byoItems[beforeIdx]:null;
+  _byoItems.splice(from,1);
+  it.section=toSec;
+  let at=before?_byoItems.indexOf(before):-1;
+  if(at<0){
+    // The end of that section, so it lands where he dropped it.
+    let last=-1;_byoItems.forEach((x,i)=>{if(x.section===toSec)last=i;});
+    at=last>=0?last+1:_byoItems.length;
+  }
+  _byoItems.splice(at,0,it);
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+  return true;
+}
+let _byoDrag=null;
+function _byoWireDrag(root){
+  root.querySelectorAll('.ios-swipe[data-kind="line"]').forEach(w=>{
+    let t=null,x0=0,y0=0;
+    const cancel=()=>{if(t){clearTimeout(t);t=null;}};
+    w.addEventListener('pointerdown',e=>{
+      if(e.button!==undefined&&e.button!==0)return;
+      if(e.target.closest('.ios-check,.ios-del'))return;
+      x0=e.clientX;y0=e.clientY;cancel();
+      t=setTimeout(()=>{t=null;_byoDragStart(w,x0,y0);},380);
+    });
+    w.addEventListener('pointermove',e=>{
+      if(_byoDrag)return;
+      if(t&&Math.hypot(e.clientX-x0,e.clientY-y0)>8)cancel();
+    });
+    const up=e=>{cancel();if(_byoDrag&&_byoDrag.w===w)_byoDragEnd(e&&e.type==='pointercancel');};
+    w.addEventListener('pointerup',up);w.addEventListener('pointercancel',up);
+    w.addEventListener('contextmenu',e=>{if(_byoDrag)e.preventDefault();});
+  });
+  if(!window._byoDragTouchWired){
+    window._byoDragTouchWired=true;
+    // While a line is lifted the page must not scroll under the finger.
+    document.addEventListener('touchmove',e=>{if(_byoDrag){e.preventDefault();const p=e.touches&&e.touches[0];if(p)_byoDragMove(p.clientX,p.clientY);}},{passive:false});
+    document.addEventListener('touchend',()=>{if(_byoDrag)_byoDragEnd(false);});
+    document.addEventListener('pointermove',e=>{if(_byoDrag)_byoDragMove(e.clientX,e.clientY);});
+    document.addEventListener('pointerup',()=>{if(_byoDrag)_byoDragEnd(false);});
+  }
+}
+function _byoDragStart(w,x,y){
+  const row=w.firstElementChild;if(!row)return;
+  const r=row.getBoundingClientRect();
+  // A card with the line's words: the row's own styles live under the list,
+  // so a copy of it floating on the body would lose them.
+  const it=_byoItems[Number(w.dataset.idx)]||{};
+  const ghost=document.createElement('div');
+  ghost.id='byo-drag-ghost';
+  ghost.textContent=String(it.label||'');
+  ghost.style.cssText='position:fixed;left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;box-sizing:border-box;z-index:9500;pointer-events:none;background:var(--bg,#fff);color:var(--text,#0b1220);font-size:17px;line-height:1.35;padding:14px 16px;border-radius:14px;border:1px solid var(--border2,#dbe2ea);box-shadow:0 12px 32px rgba(0,0,0,.22);transform:scale(1.03)';
+  document.body.appendChild(ghost);
+  w.classList.add('byo-lifted');
+  _byoDrag={w,ghost,from:Number(w.dataset.idx),dy:y-r.top,dx:x-r.left,sec:null,before:null};
+  if(typeof _tdHaptic==='function')_tdHaptic('tick');
+  _byoDragMove(x,y);
+}
+function _byoDragMove(x,y){
+  const d=_byoDrag;if(!d)return;
+  d.x=x;d.y=y;
+  // Near the top or bottom edge the page scrolls, so a room off screen is
+  // still reachable with the line in hand.
+  if(!d.scroll)d.scroll=setInterval(()=>{
+    if(!_byoDrag){return;}
+    const e=70,h=window.innerHeight;
+    const v=_byoDrag.y<e?-Math.ceil((e-_byoDrag.y)/5):_byoDrag.y>h-e?Math.ceil((_byoDrag.y-(h-e))/5):0;
+    if(v){window.scrollBy(0,v);_byoDragPick(_byoDrag.x,_byoDrag.y);}
+  },16);
+  d.ghost.style.left=(x-d.dx)+'px';d.ghost.style.top=(y-d.dy)+'px';
+  _byoDragPick(x,y);
+}
+function _byoDragPick(x,y){
+  const d=_byoDrag;if(!d)return;
+  d.ghost.style.left=(x-d.dx)+'px';d.ghost.style.top=(y-d.dy)+'px';
+  document.querySelectorAll('.byo-drop-sec,.byo-drop-before').forEach(n=>n.classList.remove('byo-drop-sec','byo-drop-before'));
+  const under=document.elementFromPoint(x,Math.max(1,Math.min(window.innerHeight-1,y)));
+  const sec=under&&under.closest('[data-byo-sec]');
+  d.sec=sec?sec.dataset.byoSec:null;d.before=null;
+  if(!sec)return;
+  sec.classList.add('byo-drop-sec');
+  const line=under.closest('.ios-swipe[data-kind="line"]');
+  if(line&&line!==d.w){
+    const lr=line.getBoundingClientRect();
+    if(y<lr.top+lr.height/2){d.before=Number(line.dataset.idx);line.classList.add('byo-drop-before');}
+    else{const nx=line.nextElementSibling;if(nx&&nx.matches('.ios-swipe[data-kind="line"]')&&nx!==d.w){d.before=Number(nx.dataset.idx);nx.classList.add('byo-drop-before');}}
+  }
+}
+function _byoDragEnd(cancelled){
+  const d=_byoDrag;if(!d)return;_byoDrag=null;
+  if(d.scroll)clearInterval(d.scroll);
+  d.ghost.remove();d.w.classList.remove('byo-lifted');
+  document.querySelectorAll('.byo-drop-sec,.byo-drop-before').forEach(n=>n.classList.remove('byo-drop-sec','byo-drop-before'));
+  // The tap that ends a drag is not a tap on the line.
+  window._byoDragJustEnded=Date.now();
+  if(!cancelled&&d.sec)_byoMoveLine(d.from,d.sec,d.before);
+}
+// Tap a section's title to rename it: "Crawlspace" is a basement at this
+// house, "Outside" is Exterior to him. The lines move with the name.
+const _BYO_PENCIL='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-left:6px;vertical-align:-1px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+function _byoRenameSection(sec){
+  if(!sec)return;
+  zPrompt('Rename this section',val=>_byoApplyRename(sec,val),{title:'Rename section',placeholder:sec,value:sec,okText:'Rename'});
+}
+function _byoApplyRename(sec,val){
+  const name=String(val||'').trim().replace(/\s+/g,' ');
+  if(!name||name===sec)return false;
+  const taken=[..._byoSections(),..._byoCustomSections].some(x=>x!==sec&&x.toLowerCase()===name.toLowerCase());
+  _byoItems.forEach(it=>{if(it.section===sec)it.section=name;});
+  const i=_byoCustomSections.indexOf(sec);
+  if(i>=0){if(taken)_byoCustomSections.splice(i,1);else _byoCustomSections[i]=name;}
+  else if(!taken)_byoCustomSections.push(name);
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  return true;
 }
 function _byoDeleteSection(sec){
   if(_byoSections().includes(sec))return;
@@ -8801,7 +8933,7 @@ async function sendGenericProposal(previewOnly,opts){
     // recomputing its own +30 from createdAt and an extended price actually
     // reads as extended on the client's screen.
     validUntil:_validUntilKey,
-    notifyEmail:_supaUser.email,businessPhone:S.bphone||'',businessEmail:S.bemail||'',
+    notifyEmail:_supaUser.email,businessPhone:S.bphone||'',businessEmail:S.bemail||'',contactName:_propSigner(),
     stripeConnectEnabled:_stripeEnabled,
     // Which manual pay options the client sees at signing (Settings → How you get
     // paid). Default-true so proposals from before this shipped still show all.
@@ -9173,7 +9305,7 @@ async function _sendIndProposal(){
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
-    businessPhone:S.bphone||'',businessEmail:S.bemail||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
+    businessPhone:S.bphone||'',businessEmail:S.bemail||'',contactName:_propSigner(),stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
     acceptCash:S.acceptCash!==false,acceptCheck:S.acceptCheck!==false,allowPayLater:S.allowPayLater!==false,
     trade_type:'painting',
     yearBuilt:_indYearBuilt,
