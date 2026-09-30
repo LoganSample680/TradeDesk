@@ -157,7 +157,8 @@ test.describe('the bar walks him to Send', () => {
     expect(await byoBar()).toEqual(['Check the price']);
     expect(await page.evaluate(() => document.getElementById('byo-step-3').getAttribute('data-state')), 'not ticked while unchecked').toBe('now');
     await byoTap();
-    expect((await byoBar())[0]).toMatch(/^Yes: \$[\d,]+, 25% deposit$/);
+    // No standard deposit set: none up front (owner 2026-09-30).
+    expect((await byoBar())[0]).toMatch(/^Yes: \$[\d,]+, no deposit$/);
     await byoTap();
     expect(await byoBar()).toEqual(['Sign here', 'Send it']);
     expect(await page.evaluate(() => document.getElementById('byo-step-3').getAttribute('data-state'))).toBe('done');

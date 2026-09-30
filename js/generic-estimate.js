@@ -637,7 +637,6 @@ function _geiStartFreshDraft(){
 function _geiFacts(c){
   const pt=String((c&&c.ptype)||'').toLowerCase();
   const rate=Number(S&&S.laborRate)||0;
-  const dep=Number(S&&S.depositPct);
   return {
     // The customer's own property type, which is a strictly better answer than
     // a blank toggle: he told us when he wrote the customer down.
@@ -646,8 +645,8 @@ function _geiFacts(c){
     workScope:pt==='new construction'?'improvement':'repair',
     // His rate, not zero.
     laborRate:rate>0?rate:0,
-    // His standard deposit, and 25 only when he has never said otherwise.
-    depositPct:(dep>0&&dep<=100)?dep:25,
+    // His standard deposit, and none when he has never said otherwise.
+    depositPct:_geiDepositDefault(),
   };
 }
 // What the summary line on step 1 reads out, in his words. It states what the
@@ -1282,6 +1281,17 @@ function _geiRenderDepositField(prefix,onInputExpr){
 // ignored, and the last estimate's deposit carried into the next one. Both are
 // fixed here, on every page show: the resumed bid's own percent if it has one,
 // then his standard, then 25 for a contractor who has never said.
+// NO MONEY UP FRONT UNLESS HE ASKS FOR IT (owner 2026-09-30: "Not everybody
+// wants money upfront"). His standard is whatever he last set, zero included;
+// a contractor who has never set one starts at 0%. It used to start at 25%,
+// and a 0 he typed was thrown away (the >0 checks below and the settings save)
+// so every proposal went back to asking for a quarter up front.
+function _geiDepositDefault(){
+  const v=S?S.depositPct:undefined;
+  if(v===undefined||v===null||v==='')return 0;
+  const n=Number(v);
+  return (n>=0&&n<=100)?n:0;
+}
 function _geiApplyDepositDefault(prefix){
   const el=document.getElementById(prefix+'-deposit-pct');
   if(!el)return;
@@ -1289,10 +1299,7 @@ function _geiApplyDepositDefault(prefix){
   let pct=Number(b&&b.tmDepositPct);
   // BYO stores dollars, not a percent, so read the percent back off the pair.
   if(!(pct>0)&&b&&Number(b.amount)>0&&Number(b.deposit)>0)pct=Math.round(Number(b.deposit)/Number(b.amount)*100);
-  if(!(pct>0&&pct<=100)){
-    const own=Number(S&&S.depositPct);
-    pct=(own>0&&own<=100)?own:25;
-  }
+  if(!(pct>0&&pct<=100))pct=_geiDepositDefault();
   el.value=String(pct);
 }
 // Single source of truth for "what % deposit does this estimate use", read by
@@ -1309,9 +1316,8 @@ function _geiDepositPct(){
   // and still falls through, which is the case the default exists for.
   if(typed===0)return 0;
   // His own standard, learned the first time he changes it (_geiRememberDeposit),
-  // and 25 only for a contractor who has never said otherwise.
-  const own=Number(S&&S.depositPct);
-  return (own>0&&own<=100)?own:25;
+  // and none for a contractor who has never said otherwise.
+  return _geiDepositDefault();
 }
 // What he corrects, the app keeps. He sets a third once and every estimate
 // after it opens at a third, the same way the price book learns what he
@@ -1319,8 +1325,8 @@ function _geiDepositPct(){
 function _geiRememberDeposit(){
   const el=document.getElementById(_geiIsTM?'tm-deposit-pct':'byo-deposit-pct');
   const v=parseFloat(el?.value);
-  if(!(v>0&&v<=100))return;
-  if(Number(S.depositPct)===v)return;
+  if(!(v>=0&&v<=100))return;
+  if(S.depositPct!=null&&Number(S.depositPct)===v)return;
   S.depositPct=v;
   if(typeof _settingsChanged==='function')_settingsChanged();
 }
@@ -3200,7 +3206,7 @@ function _byoDockNext(st){
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
   return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
-    yes:'Yes: '+_byoMoney(st.total)+', '+D.pct+'% deposit'});
+    yes:'Yes: '+_byoMoney(st.total)+', '+(D.pct>0?D.pct+'% deposit':'no deposit')});
 }
 function _byoDockBuild(){
   const el=document.getElementById('byo-say');
