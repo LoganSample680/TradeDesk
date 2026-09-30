@@ -345,7 +345,7 @@ async function _verifyCoOwner(boss){
       const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
       if(!a||String(_contractorUserId)!==String(boss))return;
       const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
-      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      _account=a;if(cfg){_config=cfg;_activeTrade=(typeof _tradeStart==='function'?_tradeStart(cfg):cfg.business_type)||_activeTrade||'general';}
       try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
       if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
       applyPermissions();
@@ -469,7 +469,9 @@ async function loadAccountData(){
       if(_account?.phone&&!S.bphone){S.bphone=_account.phone;_seeded.push('bphone');}
       if(_account?.license_info&&!S.blic){S.blic=_account.license_info;_seeded.push('blic');}
       if(_account?.state&&!S.state){S.state=_account.state;_seeded.push('state');}
-      _activeTrade=_config?.business_type||'general';
+      // The trade he last picked, if it is one of his (_tradeStart), not the
+      // signup trade every time the account loads.
+      _activeTrade=(typeof _tradeStart==='function'?_tradeStart(_config):_config?.business_type)||'general';
       _renderNavTradeSwitcher();
       applyPermissions();
       // Cache for offline restore
@@ -756,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.30.26.26';
+const APP_VERSION='09.30.26.27';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard

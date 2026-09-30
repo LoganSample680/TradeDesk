@@ -2185,6 +2185,27 @@ function timLetterSteps(sentences){
     return timPolish(v);
   }).filter(v=>v.replace(/[^a-z]/gi,'').length>=3);
 }
+// WHICH TRADE THIS JOB IS (owner 2026-09-30: a dual-trade shop pasted John's
+// plumbing letter into a bid that had fallen back to landscaping, and Kansas
+// taxed the whole $2,800 as a landscaping service). The words say the trade:
+// washer box, hose bibs and a tub spout are plumbing. Only a clear answer
+// counts: at least three hits and twice the runner up, else null.
+const _TIMK_TRADE_WORDS={
+  plumbing:/\b(?:plumb\w*|pipe|piping|pex|copper|drain|sewer|water\s+(?:line|heater|main)|washer\s+box|hose\s+bibs?|spigots?|faucets?|toilets?|tub|shower|sinks?|disposal|shut\s*off|valves?|gas\s+line|p-?trap|vent\s+(?:pipe|stack)|sump|backflow|tankless)\b/gi,
+  electrical:/\b(?:electric\w*|outlets?|receptacles?|breakers?|panel|circuits?|wiring|wire|gfci|afci|switch(?:es)?|fixtures?|conduit|amp|volt\w*|meter\s+base|light(?:s|ing)?)\b/gi,
+  hvac:/\b(?:hvac|furnace|condenser|air\s+handler|heat\s+pump|a\/?c|air\s+condition\w*|thermostat|refrigerant|freon|mini\s*split|blower|ductwork|ducts?|registers?)\b/gi,
+  painting:/\b(?:paint\w*|prime|primer|coats?|stain|caulk\w*|sand(?:ing)?|scrape|drywall|mud|texture|trim|cabinets?|walls?|ceilings?)\b/gi,
+  roofing:/\b(?:roof\w*|shingles?|flashing|gutters?|underlayment|ridge|soffit|fascia|decking|tear\s*off)\b/gi,
+  landscaping:/\b(?:landscap\w*|mow\w*|mulch|sod|lawn|hedges?|shrubs?|trees?|edging|aerat\w*|seed\w*|irrigation|sprinklers?|leaves|beds?)\b/gi,
+};
+function timTradeOf(text,allowed){
+  const t=String(text||'');
+  const ok=Array.isArray(allowed)&&allowed.length?allowed:Object.keys(_TIMK_TRADE_WORDS);
+  const score=ok.filter(k=>_TIMK_TRADE_WORDS[k]).map(k=>[k,(t.match(_TIMK_TRADE_WORDS[k])||[]).length]).sort((a,b)=>b[1]-a[1]);
+  if(!score.length)return null;
+  const [top,n]=score[0],second=score[1]?score[1][1]:0;
+  return (n>=3&&n>=second*2)?top:null;
+}
 // WHERE IN THE HOUSE (owner 2026-09-30, Jack approved the room layout): the
 // scope reads by room on the customer's copy, "Laundry room", "Outside",
 // "Crawlspace". First match wins, and a fixture outranks a direction: "run

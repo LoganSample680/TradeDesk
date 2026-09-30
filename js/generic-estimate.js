@@ -279,7 +279,31 @@ let _activeTrade=null; // set on login from account_config.business_type
 // TRADE_META, it has its own services and scope chips, and _tradeProposalLabel
 // below prints it as plain "Proposal" rather than branding his document with a
 // word he never chose.
-function getActiveTrade(){return _activeTrade||_config?.business_type||'general';}
+function getActiveTrade(){return _activeTrade||_tradeStart(_config);}
+// WHICH TRADE THE APP STARTS ON (owner 2026-09-30, a painting + plumbing shop
+// whose account still said landscaping from signup: every reload put him back
+// on landscaping, and Kansas taxed a plumbing job as a landscaping service).
+// The trade he last picked, if it is one of his; else his main trade, if it is
+// one of his; else his first trade line. Never a trade he does not run.
+function _tradeKey(){try{return 'zp3_active_trade_'+((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'');}catch(_e){return 'zp3_active_trade_';}}
+function _tradeLinesOf(cfg){
+  const raw=cfg&&cfg.trade_lines;
+  if(!raw)return [];
+  return (Array.isArray(raw)?raw:String(raw).split(',')).map(x=>String(x).trim()).filter(Boolean);
+}
+function _tradeStart(cfg){
+  const lines=_tradeLinesOf(cfg);
+  let saved=null;try{saved=localStorage.getItem(_tradeKey());}catch(_e){}
+  if(saved&&(lines.length?lines.includes(saved):saved===(cfg&&cfg.business_type)))return saved;
+  const bt=cfg&&cfg.business_type;
+  if(bt&&(!lines.length||lines.includes(bt)))return bt;
+  return lines[0]||bt||'general';
+}
+function _rememberTrade(t){try{if(t)localStorage.setItem(_tradeKey(),t);}catch(_e){}}
+// A saved bid's own trade, for reopening it.
+function _geiBidTrade(bidId){
+  try{const b=(bids||[]).find(x=>String(x.id)===String(bidId));return (b&&b.trade_type&&b.trade_type!=='general')?b.trade_type:null;}catch(_e){return null;}
+}
 
 // What a proposal calls itself. A plumber's says Plumbing, a roofer's says
 // Roofing, and one we cannot name says Proposal: never another trade's word.
@@ -292,7 +316,7 @@ function _tradeProposalLabel(trade,opts){
 }
 
 function setActiveTrade(type){
-  _activeTrade=type;
+  _activeTrade=type;_rememberTrade(type);
   _renderNavTradeSwitcher();
   _renderDevTradeCard();
   _renderSettingsTradeSections();
@@ -499,7 +523,9 @@ function _maybeResumeActiveEstimate(){
 //  • only empty stubs (or nothing) → open directly; empty stubs are reused
 //    silently so abandoning the type picker twice never piles up blank drafts
 function _geiOpenModeEstimate(c,bidId,mode){
-  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;} // resume keeps the bid's own address
+  // Resume keeps the bid's own address AND its own trade: a plumbing draft
+  // reopened after a reload must not come back as the account's first trade.
+  if(bidId){openGenericEstimate(c,bidId,_geiBidTrade(bidId),{mode});return;}
   // Owner spec: for a NEW estimate on a client with 2+ properties, pick the
   // address FIRST (right after choosing T&M/BYO), before the builder appears, so
   // it can never land on the wrong one. Add-new is inside the picker. Single-
@@ -599,7 +625,7 @@ function _geiResumeChosenDraft(bidId){
   const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
   ov?.remove();
   const c=getClientById(clientId);if(!c)return;
-  openGenericEstimate(c,Number(bidId)||bidId,null,{mode});
+  openGenericEstimate(c,Number(bidId)||bidId,_geiBidTrade(bidId),{mode});
 }
 function _geiStartFreshDraft(){
   const ov=document.getElementById('_gei-draft-chooser');
@@ -2086,6 +2112,7 @@ function _geiScopeBuild(containerId){
   }
   if(typeof timScopeBuild!=='function')return;
   const rejected=(typeof timDropped==='function')?[]:[];
+  if(_geiIsTM)_scopeTradeCheck('tm',said);
   const built=timScopeBuild(said,{rejected,trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   // Every job walk and what Tim made of it, so a bad split is visible to the
   // owner instead of only to the homeowner (js/tim-log.js timLogScope).
@@ -3016,6 +3043,7 @@ function _byoSayBuild(){
   const said=timSaid('byo-say','Type or say the job in the box first');
   if(!said)return;
   if(typeof timScopeBuild!=='function')return;
+  _scopeTradeCheck('byo',said);
   const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   if(typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
   const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
@@ -4177,6 +4205,12 @@ function _geiTaxLineType(l){
   const sec=(l._byoSection||'').toLowerCase();
   if(sec==='materials')return 'materials';
   if(sec==='work'||sec==='interior'||sec==='exterior')return 'labor';
+  // A room is a work section too (owner 2026-09-30: with John's letter split
+  // into Laundry room, Outside and Bathroom, no section matched above, every
+  // line fell to "unclassified", which the tax engine treats as materials, and
+  // a Kansas plumbing repair with no parts was taxed 9.15% on all $2,800).
+  // Add-ons and the lead-safe steps stay unclassified, as before.
+  if(sec&&sec!=='add-ons'&&!/^rrp\b/.test(sec))return 'labor';
   return null;
 }
 // The job price rides on the first work line as whatever the priced lines
@@ -4940,6 +4974,18 @@ function _scopePlaceAt(arr,rec,stage,last){
 // Tim's steps onto the list open now. One set of rules for both screens:
 // the rooms he reads, a step already there is not added twice, and what he
 // left out comes back as the offer.
+// WHICH TRADE, READ FROM THE WORDS: on a multi-trade account, the first scope
+// typed into a new estimate settles its trade when Tim can tell (timTradeOf):
+// John's washer box, hose bibs and tub spout make it a plumbing bid, so its
+// tax, its suggestions and its title are plumbing's.
+function _scopeTradeCheck(key,said){
+  if(typeof timTradeOf!=='function')return;
+  if(_scopeWork(_scopeArr(key)).length)return;
+  const lines=_getTradeLines();
+  if(lines.length<2)return;
+  const t=timTradeOf(said,lines);
+  if(t&&t!==_geiTrade){_geiTrade=t;_activeTrade=t;_rememberTrade(t);if(typeof _renderNavTradeSwitcher==='function')try{_renderNavTradeSwitcher();}catch(_e){}}
+}
 function _scopeTakeBuilt(key,built){
   const arr=_scopeArr(key);
   const tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
