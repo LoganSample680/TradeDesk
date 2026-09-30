@@ -2995,7 +2995,9 @@ function _byoSayBuild(){
     if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;
   }
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
-  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());}});
+  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());
+    // His own written order stands on the customer's copy (no regrouping).
+    if(st.written){const it=_byoItems[_byoItems.length-1];if(it&&it.label===st.text)it._written=true;}}});
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
   // filled in where they go instead of printed as steps.
   const _filled=[];
@@ -8015,7 +8017,7 @@ function _byoPrintItems(items){
     const lbl=String(it.label||'').trim();
     if(lbl&&!/^\d+\s+\S+.*\b(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|way|pl|place|cir|circle|ter|terrace|pkwy|hwy)\b\.?$/i.test(lbl)&&!steps.some(t=>t.toLowerCase()===lbl.toLowerCase()))
       out.push(Object.assign({},it,{notes:''}));
-    steps.forEach(t=>out.push({label:t,notes:'',qty:1,unit:'ea',section:it.section,on:true,_fromNotes:true}));
+    steps.forEach(t=>out.push({label:t,notes:'',qty:1,unit:'ea',section:it.section,on:true,_fromNotes:true,_written:true}));
   });
   return out;
 }
@@ -8477,8 +8479,11 @@ async function sendGenericProposal(previewOnly,opts){
       // headings say more, same as the time and materials steps.
       // Steps Tim added land at the end of the list on the screen; on the
       // customer's copy they go where the work happens.
-      const _ord=(_scopeSecs2.length===1&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
-      const _grp=_scopeSecs2.length===1?_propStageGroups(_ord.map(it=>it.label)):null;
+      // A written estimate is already in his order: no reshuffle, no stage
+      // headings over it (Jack's letter came out regrouped, first step last).
+      const _mine=its.some(it=>it._written);
+      const _ord=(_scopeSecs2.length===1&&!_mine&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
+      const _grp=(_scopeSecs2.length===1&&!_mine)?_propStageGroups(_ord.map(it=>it.label)):null;
       if(_grp)return _propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_li(_ord[i]))})));
       const rows=_propUl(its.map(_li).join(''));
       // Sub-section headers match the document's one header style (accent, same

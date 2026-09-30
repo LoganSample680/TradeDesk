@@ -3057,6 +3057,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
           { id: 1, section: 'Interior', label: 'Work', price: 400, on: true },
           { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
         ];
+        // Its own deposit: the box no longer starts at a built-in 25%, so this
+        // test only passed after another test had left 25 in it.
+        const dep = document.getElementById('byo-deposit-pct'); if (dep) dep.value = '25';
+        // And a total to take it of: a $0 deposit is no longer printed.
+        _byoUpdateRail();
       }
       // T&C is no longer part of the proposal document/preview at all, it
       // only shows in the accordion under the signature at the actual sign
