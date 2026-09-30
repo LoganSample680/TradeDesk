@@ -327,6 +327,8 @@ Object.defineProperty(window,'_geiEditBidId',{get:()=>_geiEditBidId,set:v=>{_gei
 Object.defineProperty(window,'_geiLines',{get:()=>_geiLines,set:v=>{_geiLines=v;},configurable:true});
 Object.defineProperty(window,'_geiTrade',{get:()=>_geiTrade,set:v=>{_geiTrade=v;},configurable:true});
 let _geiScopeChips=[];
+// T&M step -> room (owner 2026-09-30), saved on the bid as scopeRooms.
+let _geiScopeRooms={};
 Object.defineProperty(window,'_geiScopeChips',{get:()=>_geiScopeChips,set:v=>{_geiScopeChips=v;},configurable:true});
 let _geiScopeNoScope=false;
 Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=>{_geiScopeNoScope=v;},configurable:true});
@@ -673,7 +675,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_geiNote='';_geiNoteBy='';_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_geiNote='';_geiNoteBy='';_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeRooms={};_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -794,6 +796,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
+      _geiScopeRooms=Object.assign({},b.scopeRooms||{});
       if(Array.isArray(b.exclusions))_geiExclusions=[...b.exclusions];
       _geiScopeNoScope=!!(b.scopeNoScope);
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
@@ -874,6 +877,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
+      _geiScopeRooms=Object.assign({},_b.scopeRooms||{});
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
       _geiScopeNoScope=!!(_b.scopeNoScope);
       // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
@@ -1979,19 +1983,32 @@ function _tmScopeIosHtml(){
       links:'<button type="button" onclick="_openScopeSheet(\''+cid+'\')">Pick from a list</button>'});
   }
   const ed=_tmScopeEditing;
-  const rows=steps.map((l,i)=>
-    '<div class="ios-swipe" data-kind="step">'+
+  const rooms=_tmRoomsOn();
+  if(rooms)_tmGroupChips();
+  const row=(l,i)=>
+    '<div class="ios-swipe" data-kind="step" data-room-key="'+i+'">'+
       '<div class="ios-row">'+
         (ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(l)+'" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">−</button>':'')+
-        '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl">'+escHtml(l)+'</span>'+
+        '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl" data-room-text>'+escHtml(l)+'</span>'+
       '</div>'+
       '<button type="button" class="ios-del" tabindex="-1" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">Delete</button>'+
-    '</div>').join('');
-  const reorder=(steps.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder())
+    '</div>';
+  const rows=steps.map(row).join('');
+  // By room, the steps keep one count down the page (step 5 is still step 5)
+  // and "Put these in work order" steps aside: he grouped them himself.
+  const reorder=(!rooms&&steps.length>1&&typeof _geiScopeOutOfOrder==='function'&&_geiScopeOutOfOrder())
     ?'<button type="button" class="ios-row ios-link" onclick="_geiPutScopeInOrder()">Put these in work order</button>':'';
   const more=_tmSayMoreOpen
     ?timSayField('gei-scope-say','What else? Say it the way you would tell your crew.','_geiScopeSayDone')
     :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
+  if(rooms){
+    const order=[];steps.forEach(l=>{const r=_tmRoomOf(l);if(!order.includes(r))order.push(r);});
+    const last=order.length-1;
+    return order.map((r,ri)=>'<div class="ios-sec" data-room="'+escHtml(r)+'" data-room-list="tm">'+_roomHeadHtml('tm',r)+
+      '<div class="ios-group">'+steps.map((l,i)=>_tmRoomOf(l)===r?row(l,i):'').join('')+(ri===last?more:'')+'</div>'+
+      (ri===last?(_tmSayMoreOpen?btns:'')+'<div class="ios-foot">Tap a title to rename it. Hold a step to drag it to another section.</div>':'')+
+    '</div>').join('')+_geiScopeMissedHtml();
+  }
   return '<div class="ios-sec">'+
       '<div class="ios-group">'+rows+reorder+more+'</div>'+
       (_tmSayMoreOpen?btns:'')+
@@ -2087,9 +2104,16 @@ function _geiScopeBuild(containerId){
   // the driveway and once after he has walked the crawlspace.
   // A price he said stays on the step here: a T&M scope has no line price to
   // carry it, and dropping a number he said out loud is losing his words.
+  // By room when the job spans rooms, the same reading Build Your Own uses
+  // (timScopeBuild's byRoom). Painting keeps its own interior and exterior.
+  const _tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  const _roomsNow=_tmRoomsOn();
   built.steps.forEach(st=>{
     const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
-    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))_geiScopeChips.push(t);
+    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase())){
+      _geiScopeChips.push(t);
+      if(_tr!=='painting'&&(built.byRoom||_roomsNow)&&st.room)_tmSetRoom(t,st.room);
+    }
   });
   // The whole point of the feature, held until he says yes to each one.
   // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
@@ -2350,6 +2374,7 @@ function _renderScopeChips(containerId){
     wrap.style.display='block';
     wrap.innerHTML=_tmScopeIosHtml();
     _tmWireSwipe(wrap);
+    if(_tmRoomsOn())_roomWireDrag(wrap);
     if(typeof _tmRenderAddRow==='function'){try{_tmRenderAddRow(_tmStateRule(),_tmLockedLayers());}catch(_e){}}
     return;
   }
@@ -3077,22 +3102,21 @@ function _byoRenderSections(){
       const idx=_byoItems.indexOf(it);
       const priced=Number(it.price)>0;
       const note=(it.notes&&!it._rrp)?it.notes:'';
-      return '<div class="ios-swipe" data-kind="line" data-idx="'+idx+'"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
+      return '<div class="ios-swipe" data-kind="line" data-idx="'+idx+'" data-room-key="'+idx+'"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
           '<button type="button" class="ios-check'+(it.on?' on':'')+'" aria-label="'+(it.on?'On the proposal':'Off the proposal')+'" '+
             (it.required?'disabled ':'')+'onclick="event.stopPropagation();_byoToggle('+idx+')">'+(it.on?_TM_TICK:'')+'</button>'+
           // A small grid: check, title and price on one line, the description
           // full width under them (an earlier owner report: notes squeezed
           // into a narrow middle column left grey space under the price).
-          '<span class="byo-title">'+escHtml(it.label)+'</span>'+
+          '<span class="byo-title" data-room-text>'+escHtml(it.label)+'</span>'+
           (priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>')+
           (note?'<small class="byo-note">'+escHtml(note)+'</small>':'')+
         '</div>'+
         (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
       '</div>';
     }).join('');
-    return '<div class="ios-sec" data-byo-sec="'+escHtml(sec)+'">'+
-      (titled?'<div class="ios-h"><button type="button" class="byo-sec-name" data-sec="'+escHtml(sec)+'" aria-label="Rename '+escHtml(sec)+'" onclick="_byoRenameSection(this.dataset.sec)">'+escHtml(sec)+_BYO_PENCIL+'</button>'+
-        (isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'')+'</div>':'')+
+    return '<div class="ios-sec" data-room="'+escHtml(sec)+'" data-room-list="byo">'+
+      (titled?_roomHeadHtml('byo',sec,isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':''):'')+
       '<div class="ios-group">'+(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
         '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'+
         (sec===used[used.length-1]&&!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':'')+
@@ -3116,7 +3140,7 @@ function _byoRenderSections(){
   if(matWrap){matWrap.innerHTML=_matCardHTML();_matClaim(matWrap);}
   else _matClaim(wrap);
   _tmWireSwipe(wrap);
-  if(titled)_byoWireDrag(wrap);
+  if(titled)_roomWireDrag(wrap);
   _byoRenderSteps();
 }
 function _byoDelLine(idx){
@@ -3327,7 +3351,7 @@ function _byoAutosave(){
   // hours behind it has no promise to be over.
   b.estHours=_estLaborHours();
   b.estCrewSize=_estCrew.length||1;
-  b.scopeChips=[..._geiScopeChips];
+  b.scopeChips=[..._geiScopeChips];b.scopeRooms=_tmScopeRoomsSaved();
   b.scopeNoScope=_geiScopeNoScope||false;
   const _termsEl=document.getElementById('byo-custom-terms');
   if(_termsEl)b.byoCustomTerms=_termsEl.value;
@@ -4589,7 +4613,7 @@ function _byaConfirmAndNext(sec){
   _byoAddItem(sec);
 }
 function _byoEditItem(idx){
-  if(window._byoDragJustEnded&&Date.now()-window._byoDragJustEnded<400)return;
+  if(window._roomDragJustEnded&&Date.now()-window._roomDragJustEnded<400)return;
   // Read through the shared store so a T&M material line opens in this same sheet.
   const it=_matView(idx);if(!it)return;
   document.getElementById('_byo-add-modal')?.remove();
@@ -4681,118 +4705,140 @@ function _byoConfirmSection(){
   document.getElementById('_byo-sec-modal')?.remove();
   _byoRenderSections();_byoAutosave();
 }
-// DRAG A LINE TO ANOTHER ROOM (owner 2026-09-30: "click drag and drop them
-// into other sections, kinda like a kanban"). Hold a line, it lifts, drag it
-// over another section (or between two lines) and let go. A hold, not a
-// grab: a quick swipe still opens Delete and a flick still scrolls.
-function _byoMoveLine(from,toSec,beforeIdx){
-  const it=_byoItems[from];if(!it||!toSec)return false;
-  const before=beforeIdx!=null&&beforeIdx!==from?_byoItems[beforeIdx]:null;
-  _byoItems.splice(from,1);
-  it.section=toSec;
-  let at=before?_byoItems.indexOf(before):-1;
-  if(at<0){
-    // The end of that section, so it lands where he dropped it.
-    let last=-1;_byoItems.forEach((x,i)=>{if(x.section===toSec)last=i;});
-    at=last>=0?last+1:_byoItems.length;
-  }
-  _byoItems.splice(at,0,it);
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
-  if(typeof _tdHaptic==='function')_tdHaptic('tick');
-  return true;
+// ── ROOMS: one module for Build Your Own AND time and materials ─────────────
+//
+// Owner 2026-09-30, Jack picked the room layout, then: "roll the room stuff to
+// BYO as well as T&M, that should be shared code". A list drawn by room names
+// itself here (_ROOM_LISTS) with three things: move a line, rename a room, and
+// nothing else. The markup contract is the whole interface:
+//   a room      [data-room="Laundry room"][data-room-list="byo"]
+//   a line      .ios-swipe[data-room-key="3"]   (its words in [data-room-text])
+//   its title   _roomHeadHtml(list, room, extra)
+// So the title you tap, the hold-and-drag and the drop highlight are the same
+// code on both screens, and a third list gets them by registering.
+const _ROOM_LISTS={};
+const _ROOM_PENCIL='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-left:6px;vertical-align:-1px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+function _roomHeadHtml(list,room,extra){
+  return '<div class="ios-h"><button type="button" class="room-name" data-room-list="'+escHtml(list)+'" data-room="'+escHtml(room)+'" aria-label="Rename '+escHtml(room)+'" '+
+    'onclick="_roomRename(this.dataset.roomList,this.dataset.room)">'+escHtml(room)+_ROOM_PENCIL+'</button>'+(extra||'')+'</div>';
 }
-let _byoDrag=null;
-function _byoWireDrag(root){
-  root.querySelectorAll('.ios-swipe[data-kind="line"]').forEach(w=>{
+// Tap a title to rename it: "Crawlspace" is a basement at this house,
+// "Outside" is Exterior to him. The lines go with the name.
+function _roomRename(list,room){
+  const L=_ROOM_LISTS[list];if(!L||!room)return;
+  zPrompt('Rename this section',val=>L.rename(room,val),{title:'Rename section',placeholder:room,value:room,okText:'Rename'});
+}
+function _roomCleanName(val){return String(val||'').trim().replace(/\s+/g,' ');}
+// DRAG A LINE TO ANOTHER ROOM ("click drag and drop them into other sections,
+// kinda like a kanban"). Hold a line, it lifts, drag it over another room (or
+// between two lines) and let go. A hold, not a grab: a quick swipe still opens
+// Delete and a flick still scrolls.
+let _roomDrag=null;
+function _roomWireDrag(root){
+  root.querySelectorAll('.ios-swipe[data-room-key]').forEach(w=>{
     let t=null,x0=0,y0=0;
     const cancel=()=>{if(t){clearTimeout(t);t=null;}};
     w.addEventListener('pointerdown',e=>{
       if(e.button!==undefined&&e.button!==0)return;
-      if(e.target.closest('.ios-check,.ios-del'))return;
+      if(e.target.closest('.ios-check,.ios-del,.ios-minus'))return;
       x0=e.clientX;y0=e.clientY;cancel();
-      t=setTimeout(()=>{t=null;_byoDragStart(w,x0,y0);},380);
+      t=setTimeout(()=>{t=null;_roomDragStart(w,x0,y0);},380);
     });
     w.addEventListener('pointermove',e=>{
-      if(_byoDrag)return;
+      if(_roomDrag)return;
       if(t&&Math.hypot(e.clientX-x0,e.clientY-y0)>8)cancel();
     });
-    const up=e=>{cancel();if(_byoDrag&&_byoDrag.w===w)_byoDragEnd(e&&e.type==='pointercancel');};
+    const up=e=>{cancel();if(_roomDrag&&_roomDrag.w===w)_roomDragEnd(e&&e.type==='pointercancel');};
     w.addEventListener('pointerup',up);w.addEventListener('pointercancel',up);
-    w.addEventListener('contextmenu',e=>{if(_byoDrag)e.preventDefault();});
+    w.addEventListener('contextmenu',e=>{if(_roomDrag)e.preventDefault();});
   });
-  if(!window._byoDragTouchWired){
-    window._byoDragTouchWired=true;
+  if(!window._roomDragWired){
+    window._roomDragWired=true;
     // While a line is lifted the page must not scroll under the finger.
-    document.addEventListener('touchmove',e=>{if(_byoDrag){e.preventDefault();const p=e.touches&&e.touches[0];if(p)_byoDragMove(p.clientX,p.clientY);}},{passive:false});
-    document.addEventListener('touchend',()=>{if(_byoDrag)_byoDragEnd(false);});
-    document.addEventListener('pointermove',e=>{if(_byoDrag)_byoDragMove(e.clientX,e.clientY);});
-    document.addEventListener('pointerup',()=>{if(_byoDrag)_byoDragEnd(false);});
+    document.addEventListener('touchmove',e=>{if(_roomDrag){e.preventDefault();const p=e.touches&&e.touches[0];if(p)_roomDragMove(p.clientX,p.clientY);}},{passive:false});
+    document.addEventListener('touchend',()=>{if(_roomDrag)_roomDragEnd(false);});
+    document.addEventListener('pointermove',e=>{if(_roomDrag)_roomDragMove(e.clientX,e.clientY);});
+    document.addEventListener('pointerup',()=>{if(_roomDrag)_roomDragEnd(false);});
   }
 }
-function _byoDragStart(w,x,y){
+function _roomDragStart(w,x,y){
   const row=w.firstElementChild;if(!row)return;
+  const sec=w.closest('[data-room]');if(!sec)return;
   const r=row.getBoundingClientRect();
   // A card with the line's words: the row's own styles live under the list,
   // so a copy of it floating on the body would lose them.
-  const it=_byoItems[Number(w.dataset.idx)]||{};
+  const words=(w.querySelector('[data-room-text]')||row).textContent;
   const ghost=document.createElement('div');
-  ghost.id='byo-drag-ghost';
-  ghost.textContent=String(it.label||'');
+  ghost.id='room-drag-ghost';
+  ghost.textContent=String(words||'').trim();
   ghost.style.cssText='position:fixed;left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;box-sizing:border-box;z-index:9500;pointer-events:none;background:var(--bg,#fff);color:var(--text,#0b1220);font-size:17px;line-height:1.35;padding:14px 16px;border-radius:14px;border:1px solid var(--border2,#dbe2ea);box-shadow:0 12px 32px rgba(0,0,0,.22);transform:scale(1.03)';
   document.body.appendChild(ghost);
-  w.classList.add('byo-lifted');
-  _byoDrag={w,ghost,from:Number(w.dataset.idx),dy:y-r.top,dx:x-r.left,sec:null,before:null};
+  w.classList.add('room-lifted');
+  _roomDrag={w,ghost,list:sec.dataset.roomList,from:Number(w.dataset.roomKey),dy:y-r.top,dx:x-r.left,room:null,before:null};
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
-  _byoDragMove(x,y);
+  _roomDragMove(x,y);
 }
-function _byoDragMove(x,y){
-  const d=_byoDrag;if(!d)return;
+function _roomDragMove(x,y){
+  const d=_roomDrag;if(!d)return;
   d.x=x;d.y=y;
   // Near the top or bottom edge the page scrolls, so a room off screen is
   // still reachable with the line in hand.
   if(!d.scroll)d.scroll=setInterval(()=>{
-    if(!_byoDrag){return;}
+    if(!_roomDrag)return;
     const e=70,h=window.innerHeight;
-    const v=_byoDrag.y<e?-Math.ceil((e-_byoDrag.y)/5):_byoDrag.y>h-e?Math.ceil((_byoDrag.y-(h-e))/5):0;
-    if(v){window.scrollBy(0,v);_byoDragPick(_byoDrag.x,_byoDrag.y);}
+    const v=_roomDrag.y<e?-Math.ceil((e-_roomDrag.y)/5):_roomDrag.y>h-e?Math.ceil((_roomDrag.y-(h-e))/5):0;
+    if(v){window.scrollBy(0,v);_roomDragPick(_roomDrag.x,_roomDrag.y);}
   },16);
-  d.ghost.style.left=(x-d.dx)+'px';d.ghost.style.top=(y-d.dy)+'px';
-  _byoDragPick(x,y);
+  _roomDragPick(x,y);
 }
-function _byoDragPick(x,y){
-  const d=_byoDrag;if(!d)return;
+function _roomDragPick(x,y){
+  const d=_roomDrag;if(!d)return;
   d.ghost.style.left=(x-d.dx)+'px';d.ghost.style.top=(y-d.dy)+'px';
-  document.querySelectorAll('.byo-drop-sec,.byo-drop-before').forEach(n=>n.classList.remove('byo-drop-sec','byo-drop-before'));
+  document.querySelectorAll('.room-drop,.room-drop-before').forEach(n=>n.classList.remove('room-drop','room-drop-before'));
   const under=document.elementFromPoint(x,Math.max(1,Math.min(window.innerHeight-1,y)));
-  const sec=under&&under.closest('[data-byo-sec]');
-  d.sec=sec?sec.dataset.byoSec:null;d.before=null;
-  if(!sec)return;
-  sec.classList.add('byo-drop-sec');
-  const line=under.closest('.ios-swipe[data-kind="line"]');
+  const sec=under&&under.closest('[data-room]');
+  // Only rooms of the list the line came from.
+  d.room=(sec&&sec.dataset.roomList===d.list)?sec.dataset.room:null;d.before=null;
+  if(!d.room)return;
+  sec.classList.add('room-drop');
+  const line=under.closest('.ios-swipe[data-room-key]');
   if(line&&line!==d.w){
     const lr=line.getBoundingClientRect();
-    if(y<lr.top+lr.height/2){d.before=Number(line.dataset.idx);line.classList.add('byo-drop-before');}
-    else{const nx=line.nextElementSibling;if(nx&&nx.matches('.ios-swipe[data-kind="line"]')&&nx!==d.w){d.before=Number(nx.dataset.idx);nx.classList.add('byo-drop-before');}}
+    if(y<lr.top+lr.height/2){d.before=Number(line.dataset.roomKey);line.classList.add('room-drop-before');}
+    else{const nx=line.nextElementSibling;if(nx&&nx.matches('.ios-swipe[data-room-key]')&&nx!==d.w){d.before=Number(nx.dataset.roomKey);nx.classList.add('room-drop-before');}}
   }
 }
-function _byoDragEnd(cancelled){
-  const d=_byoDrag;if(!d)return;_byoDrag=null;
+function _roomDragEnd(cancelled){
+  const d=_roomDrag;if(!d)return;_roomDrag=null;
   if(d.scroll)clearInterval(d.scroll);
-  d.ghost.remove();d.w.classList.remove('byo-lifted');
-  document.querySelectorAll('.byo-drop-sec,.byo-drop-before').forEach(n=>n.classList.remove('byo-drop-sec','byo-drop-before'));
+  d.ghost.remove();d.w.classList.remove('room-lifted');
+  document.querySelectorAll('.room-drop,.room-drop-before').forEach(n=>n.classList.remove('room-drop','room-drop-before'));
   // The tap that ends a drag is not a tap on the line.
-  window._byoDragJustEnded=Date.now();
-  if(!cancelled&&d.sec)_byoMoveLine(d.from,d.sec,d.before);
+  window._roomDragJustEnded=Date.now();
+  const L=_ROOM_LISTS[d.list];
+  if(!cancelled&&d.room&&L){L.move(d.from,d.room,d.before);if(typeof _tdHaptic==='function')_tdHaptic('tick');}
 }
-// Tap a section's title to rename it: "Crawlspace" is a basement at this
-// house, "Outside" is Exterior to him. The lines move with the name.
-const _BYO_PENCIL='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-left:6px;vertical-align:-1px"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-function _byoRenameSection(sec){
-  if(!sec)return;
-  zPrompt('Rename this section',val=>_byoApplyRename(sec,val),{title:'Rename section',placeholder:sec,value:sec,okText:'Rename'});
+// Move one entry of an array to a room: before a given entry, else to the end
+// of that room. Shared by both lists so a drop lands the same way on each.
+function _roomMoveIn(arr,from,before,roomOf,setRoom,toRoom){
+  const it=arr[from];if(it===undefined||!toRoom)return false;
+  const anchor=before!=null&&before!==from?arr[before]:undefined;
+  arr.splice(from,1);
+  setRoom(it,toRoom);
+  let at=anchor!==undefined?arr.indexOf(anchor):-1;
+  if(at<0){let last=-1;arr.forEach((x,i)=>{if(roomOf(x)===toRoom)last=i;});at=last>=0?last+1:arr.length;}
+  arr.splice(at,0,it);
+  return true;
+}
+
+// Build Your Own: a room is a section, a line is an item.
+function _byoMoveLine(from,toSec,beforeIdx){
+  const ok=_roomMoveIn(_byoItems,from,beforeIdx,x=>x.section,(x,r)=>{x.section=r;},toSec);
+  if(ok){_byoRenderSections();_byoUpdateRail();_byoAutosave();}
+  return ok;
 }
 function _byoApplyRename(sec,val){
-  const name=String(val||'').trim().replace(/\s+/g,' ');
+  const name=_roomCleanName(val);
   if(!name||name===sec)return false;
   const taken=[..._byoSections(),..._byoCustomSections].some(x=>x!==sec&&x.toLowerCase()===name.toLowerCase());
   _byoItems.forEach(it=>{if(it.section===sec)it.section=name;});
@@ -4801,6 +4847,44 @@ function _byoApplyRename(sec,val){
   else if(!taken)_byoCustomSections.push(name);
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
   return true;
+}
+_ROOM_LISTS.byo={move:_byoMoveLine,rename:_byoApplyRename};
+
+// Time and materials: the scope is a list of step strings, so the room is
+// kept beside it, step -> room (saved on the bid as scopeRooms). A step with
+// no room reads as "Other work" once the list is by room.
+const _TM_NO_ROOM='Other work';
+function _tmRoomsOn(){return (_geiScopeChips||[]).some(l=>_geiScopeRooms[l]);}
+function _tmRoomOf(l){return _geiScopeRooms[l]||_TM_NO_ROOM;}
+function _tmSetRoom(l,r){if(!r||r===_TM_NO_ROOM)delete _geiScopeRooms[l];else _geiScopeRooms[l]=r;}
+// Keep the array grouped by room, rooms in the order they first appear, so
+// the numbers, the screen and the customer's copy all agree. A step Tim adds
+// later (a missed item) joins the room it names when that room is already on
+// the list.
+function _tmGroupChips(){
+  if(!_tmRoomsOn())return;
+  const have=new Set(_geiScopeChips.map(l=>_geiScopeRooms[l]).filter(Boolean));
+  _geiScopeChips.forEach(l=>{if(!_geiScopeRooms[l]&&typeof timRoomOf==='function'){const r=timRoomOf(l);if(r&&have.has(r))_geiScopeRooms[l]=r;}});
+  const order=[];_geiScopeChips.forEach(l=>{const r=_tmRoomOf(l);if(!order.includes(r))order.push(r);});
+  const sorted=order.flatMap(r=>_geiScopeChips.filter(l=>_tmRoomOf(l)===r));
+  _geiScopeChips.length=0;sorted.forEach(l=>_geiScopeChips.push(l));
+}
+function _tmMoveStep(from,toRoom,before){
+  const ok=_roomMoveIn(_geiScopeChips,from,before,_tmRoomOf,_tmSetRoom,toRoom);
+  if(ok){_renderScopeChips('tm-scope-wrap');if(typeof _byoAutosave==='function')_byoAutosave();}
+  return ok;
+}
+function _tmApplyRename(room,val){
+  const name=_roomCleanName(val);
+  if(!name||name===room)return false;
+  _geiScopeChips.forEach(l=>{if(_tmRoomOf(l)===room)_tmSetRoom(l,name);});
+  _renderScopeChips('tm-scope-wrap');if(typeof _byoAutosave==='function')_byoAutosave();
+  return true;
+}
+_ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename};
+// What is saved: only the steps still on the list.
+function _tmScopeRoomsSaved(){
+  const o={};(_geiScopeChips||[]).forEach(l=>{if(_geiScopeRooms[l])o[l]=_geiScopeRooms[l];});return o;
 }
 function _byoDeleteSection(sec){
   if(_byoSections().includes(sec))return;
@@ -7816,7 +7900,7 @@ function saveGenericEstimate(draft,opts){
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
-      b.scopeChips=[..._geiScopeChips];
+      b.scopeChips=[..._geiScopeChips];b.scopeRooms=_tmScopeRoomsSaved();
       b.scopeNoScope=_geiScopeNoScope||false;
       // The promise, stamped on the deliberate save too, not only on autosave
       // (_byoAutosave). Relying on an autosave having happened first is how a
@@ -7850,7 +7934,7 @@ function saveGenericEstimate(draft,opts){
       ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
-      scopeChips:[..._geiScopeChips],
+      scopeChips:[..._geiScopeChips],scopeRooms:_tmScopeRoomsSaved(),
       scopeNoScope:_geiScopeNoScope||false,
       estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
       exclusions:[..._geiExclusions],
@@ -8200,6 +8284,11 @@ function _byoPrintItems(items){
     steps.forEach(t=>out.push({label:t,notes:'',qty:1,unit:'ea',section:it.section,on:true,_fromNotes:true,_written:true}));
   });
   return out;
+}
+// One room's heading and its lines on the customer's copy. Build Your Own's
+// sections and a T&M scope by room print through this one block.
+function _propRoomBlock(name,rows){
+  return `<div style="margin-bottom:14px"><div style="font-size:15.5px;font-weight:700;color:#0b1220;margin-bottom:4px">${escHtml(name)}</div>${rows}</div>`;
 }
 function _propStepsHtml(texts,li){
   const t=(texts||[]).map(x=>String(x==null?'':x).trim()).filter(Boolean);
@@ -8626,7 +8715,12 @@ async function sendGenericProposal(previewOnly,opts){
     // In work order, under the customer's words for each stage, so a long job
     // reads as a plan they can follow instead of a wall of steps. Numbering
     // runs on across the headings: step 7 is still step 7.
-    _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
+    // By room when he grouped it that way, the same headings Build Your Own
+    // prints (_propRoomBlock).
+    if(_geiIsTM&&_tmRoomsOn()){
+      const _rOrder=[];_chipsToPrint.forEach(l=>{const r=_tmRoomOf(l);if(!_rOrder.includes(r))_rOrder.push(r);});
+      _scopeBlocks.push(_rOrder.map(r=>_propRoomBlock(r,_propUl(_chipsToPrint.filter(l=>_tmRoomOf(l)===r).map(_chipLi).join('')))).join(''));
+    }else _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
   }
   // A line whose description is a whole letter ("Here's my estimate ... I will
   // drill hole ... We will secure the tub spout ...") printed as one giant
@@ -8670,7 +8764,7 @@ async function sendGenericProposal(previewOnly,opts){
       // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
       if(_scopeSecs2.length===1)return rows;
-      return `<div style="margin-bottom:14px"><div style="font-size:15.5px;font-weight:700;color:#0b1220;margin-bottom:4px">${escHtml(sec)}</div>${rows}</div>`;
+      return _propRoomBlock(sec,rows);
     }).join('');
     _scopeBlocks.push(_secBlocks2);
   }

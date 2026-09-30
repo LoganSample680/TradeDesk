@@ -1731,14 +1731,14 @@ div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #gei-byo-page #byo-price-group .ios-val input{width:112px;text-align:right}
 #gei-byo-page #byo-price-group .ios-val input#byo-dep-in{width:62px}
 #gei-byo-page #byo-price-group .ios-val input:focus,#gei-byo-page #byo-price-group .ios-val select:focus{border-color:var(--denim,#2d5da8)!important;box-shadow:0 0 0 3px rgba(45,93,168,.16)!important;outline:none}
-/* Rooms (owner 2026-09-30): the title is a button, tap to rename. */
-.byo-sec-name{background:none;border:0;padding:12px 0;margin:-12px 0;font:inherit;color:var(--text)!important;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:left;min-height:44px}
-/* Hold a line to drag it to another section. */
-#byo-sections .byo-line{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#byo-sections .ios-swipe.byo-lifted{opacity:.35}
-#byo-sections [data-byo-sec]{transition:background-color .15s ease;border-radius:14px}
-#byo-sections [data-byo-sec].byo-drop-sec{background-color:rgba(45,93,168,.08)}
-#byo-sections .ios-swipe.byo-drop-before{box-shadow:inset 0 3px 0 var(--denim,#2d5da8)}
+/* Rooms (owner 2026-09-30), one set for Build Your Own and T&M: the title is
+   a button, tap to rename; hold a line to drag it to another room. */
+.room-name{background:none;border:0;padding:12px 0;margin:-12px 0;font:inherit;color:var(--text)!important;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:left;min-height:44px}
+.ios-swipe[data-room-key] .ios-row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.ios-swipe.room-lifted{opacity:.35}
+[data-room]{transition:background-color .15s ease;border-radius:14px}
+[data-room].room-drop{background-color:rgba(45,93,168,.08)}
+.ios-swipe.room-drop-before{box-shadow:inset 0 3px 0 var(--denim,#2d5da8)}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px 0 -8px -6px;color:var(--ios-tint);flex-shrink:0}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename svg{width:20px;height:20px}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub{font-size:15px;color:var(--ios-2);margin-top:5px;line-height:1.4}

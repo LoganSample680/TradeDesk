@@ -284,6 +284,73 @@ test.describe('T&M in three steps', () => {
     expect(await shown('#tm-mat-add')).toBe(false);
   });
 
+  // ── Rooms on T&M: the same module Build Your Own uses (owner 2026-09-30) ──
+  const TM_EMAIL = "Hi Tagen,\n\nHere's my estimate for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+  const tmRooms = () => page.evaluate(() => {
+    const out = {};
+    _geiScopeChips.forEach(l => { const r = _tmRoomOf(l); (out[r] = out[r] || []).push(l); });
+    return out;
+  });
+
+  test('rooms: a T&M walk that spans rooms is grouped by room on screen and on the customer copy', async () => {
+    await open({ say: TM_EMAIL });
+    const r = await tmRooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    expect(r['Laundry room']).toEqual(['Rough in a surface-mounted washer box: drain, water lines and vent', 'Cap the existing washer lines']);
+    const ui = await page.evaluate(() => ({
+      titles: [...document.querySelectorAll('#tm-scope-wrap .room-name')].map(b => b.textContent.trim()),
+      nums: [...document.querySelectorAll('#tm-scope-wrap .ios-num')].map(n => n.textContent),
+      sort: [...document.querySelectorAll('#tm-scope-wrap button')].some(b => /work order/.test(b.textContent)),
+    }));
+    expect(ui.titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    expect(ui.nums).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(ui.sort).toBe(false);
+    const d = await page.evaluate(async () => {
+      let h = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = x => { h = x; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return h;
+    });
+    expect(d.indexOf('Laundry room')).toBeGreaterThan(-1);
+    expect(d.indexOf('Laundry room')).toBeLessThan(d.indexOf('Outside'));
+    expect(d.indexOf('Crawlspace')).toBeLessThan(d.indexOf('Bathroom'));
+    // Saved with the bid, so the rooms come back on the next open.
+    const saved = await page.evaluate(() => { const b = {}; b.scopeChips = [..._geiScopeChips]; b.scopeRooms = _tmScopeRoomsSaved(); return b.scopeRooms['Secure the tub spout']; });
+    expect(saved).toBe('Bathroom');
+  });
+
+  test('rooms: rename a room and drag a step into another, on T&M', async () => {
+    await open({ say: TM_EMAIL });
+    await page.locator('#tm-scope-wrap .room-name', { hasText: 'Crawlspace' }).click();
+    await page.fill('#zprompt-inp', 'Basement');
+    await page.click('#zprompt-ok');
+    let r = await tmRooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Basement', 'Bathroom']);
+    const row = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Secure the tub spout' });
+    const target = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Seal the ductwork' });
+    await target.evaluate(e => e.scrollIntoView({ block: 'center' }));
+    const a = await row.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    // The hold is 380ms; wait for the lift itself, not a guess at the clock.
+    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 3000 });
+    const b = await target.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
+    await page.mouse.up();
+    r = await tmRooms();
+    expect(r['Basement'][0]).toBe('Secure the tub spout');
+    expect(r['Bathroom']).toBeUndefined();
+    // Numbers follow the new order, one count down the page.
+    const nums = await page.evaluate(() => [...document.querySelectorAll('#tm-scope-wrap .ios-num')].map(n => n.textContent));
+    expect(nums).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  test('rooms: a one-room walk on T&M stays one numbered list', async () => {
+    await open({ say: 'Replace the toilet, reset the vanity and caulk the tub' });
+    const r = await page.evaluate(() => ({ on: _tmRoomsOn(), titles: document.querySelectorAll('#tm-scope-wrap .room-name').length }));
+    expect(r).toEqual({ on: false, titles: 0 });
+  });
+
   test('no console errors, T&M three steps', async () => {
     assertNoErrors(page, 'T&M three steps');
   });
