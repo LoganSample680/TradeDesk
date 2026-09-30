@@ -320,7 +320,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
       'Cap the existing washer lines',
     ]);
     expect(r['Outside']).toEqual(['Install 3 hose bibs with piping', 'Cap the gas line to the gas light out front']);
-    const titles = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .byo-sec-name')].map(b => b.textContent.trim()));
+    const titles = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .room-name')].map(b => b.textContent.trim()));
     expect(titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
     const d = await doc();
     const at = k => d.indexOf(k);
@@ -342,7 +342,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('rooms: tap a title to rename it, and its lines go with it', async () => {
     await open();
     await page.evaluate((t) => { document.getElementById('byo-say').value = t; _byoSayBuild(); }, EMAIL);
-    await page.locator('#byo-sections .byo-sec-name', { hasText: 'Crawlspace' }).click();
+    await page.locator('#byo-sections .room-name', { hasText: 'Crawlspace' }).click();
     await page.fill('#zprompt-inp', 'Basement');
     await page.click('#zprompt-ok');
     const r = await rooms();
@@ -365,8 +365,9 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     const a = await row.boundingBox();
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
     await page.mouse.down();
-    await page.waitForTimeout(500);
-    const lifted = await page.evaluate(() => !!document.getElementById('byo-drag-ghost'));
+    // The hold is 380ms; wait for the lift itself, not a guess at the clock.
+    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 3000 });
+    const lifted = await page.evaluate(() => !!document.getElementById('room-drag-ghost'));
     const b = await target.boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
     await page.mouse.up();
@@ -375,7 +376,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r['Crawlspace'][0]).toBe('Secure the tub spout');
     expect(r['Bathroom']).toBeUndefined();
     // A quick tap is still a tap: it opens the line, it does not move it.
-    const ghost = await page.evaluate(() => !!document.getElementById('byo-drag-ghost'));
+    const ghost = await page.evaluate(() => !!document.getElementById('room-drag-ghost'));
     expect(ghost).toBe(false);
     const moved = await page.evaluate(() => {
       const i = _byoItems.findIndex(x => x.label === 'Cap the existing washer lines');
