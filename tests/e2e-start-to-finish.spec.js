@@ -77,7 +77,12 @@ async function proposal(page, kind, o) {
   const root = tm ? '#gei-tm-page' : '#gei-byo-page', dock = tm ? '#tm-dock' : '#byo-dock', go = tm ? '#tm-dock-go' : '#byo-dock-go';
   const d = driver(page, dock);
   const t0 = Date.now();
-  await d.tap('New proposal', 'button:has-text("New proposal")');
+  // The customer page's own button, once the page has stopped moving. A bare
+  // "New proposal" matched a hidden copy on another page, and on a loaded
+  // WebKit runner the customer page was still sliding in (CI shard 3).
+  await page.waitForSelector('#pg-client-detail.active button[onclick^="openEstimateForClient"]');
+  await page.waitForTimeout(400);
+  await d.tap('New proposal', '#pg-client-detail.active button[onclick^="openEstimateForClient"]');
   await d.tap(tm ? 'Time & Materials' : 'Build Your Own', '#_style-pick-ov [data-type="' + (tm ? 'tm' : 'freeform') + '"]');
   await page.waitForTimeout(400);
   await d.type('the work', tm ? '#gei-scope-say' : '#byo-say', tm ? 'Replace the water heater and the shutoff valve.' : 'Replace the 50 gallon water heater and the shutoff valve.');
