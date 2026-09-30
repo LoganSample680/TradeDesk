@@ -288,7 +288,7 @@ test.describe('T&M in three steps', () => {
   const TM_EMAIL = "Hi Tagen,\n\nHere's my estimate for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
   const tmRooms = () => page.evaluate(() => {
     const out = {};
-    _geiScopeChips.forEach(l => { const r = _tmRoomOf(l); (out[r] = out[r] || []).push(l); });
+    _tmItems().forEach(x => { (out[x.section] = out[x.section] || []).push(x.label); });
     return out;
   });
 
@@ -325,7 +325,7 @@ test.describe('T&M in three steps', () => {
     expect(d.indexOf('Laundry room')).toBeLessThan(d.indexOf('Outside'));
     expect(d.indexOf('Crawlspace')).toBeLessThan(d.indexOf('Bathroom'));
     // Saved with the bid, so the rooms come back on the next open.
-    const saved = await page.evaluate(() => { const b = {}; b.scopeChips = [..._geiScopeChips]; b.scopeRooms = _tmScopeRoomsSaved(); return b.scopeRooms['Secure the tub spout']; });
+    const saved = await page.evaluate(() => _tmSaved().find(x => x.label === 'Secure the tub spout').section);
     expect(saved).toBe('Bathroom');
   });
 
@@ -338,12 +338,16 @@ test.describe('T&M in three steps', () => {
     expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Basement', 'Bathroom']);
     const row = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Secure the tub spout' });
     const target = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Seal the ductwork' });
+    // A "Set $2,800 ..." toast lands at the bottom a moment after a build;
+    // clear it so the finger presses the row, not the toast.
+    await page.waitForTimeout(450);
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await target.evaluate(e => e.scrollIntoView({ block: 'center' }));
     const a = await row.boundingBox();
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
     await page.mouse.down();
     // The hold is 380ms; wait for the lift itself, not a guess at the clock.
-    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 3000 });
+    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 6000 });
     const b = await target.boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
     await page.mouse.up();
@@ -353,6 +357,82 @@ test.describe('T&M in three steps', () => {
     // Numbers follow the new order, one count down the page.
     const nums = await page.evaluate(() => [...document.querySelectorAll('#tm-scope-wrap .ios-num')].map(n => n.textContent));
     expect(nums).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  test('one scope, two estimate types: the same words give the same lines, rooms, offers and customer copy on T&M and BYO (owner 2026-09-30)', async () => {
+    const walks = [TM_EMAIL, 'Tear out the old water heater, set the new 50 gallon, run new gas line and haul the old one away'];
+    for (const say of walks) {
+      await open({ say });
+      const tm = await page.evaluate(() => ({
+        lines: _tmItems().map(x => x.section + ' | ' + x.label),
+        offers: _geiScopeMissed.map(m => m.id).sort(),
+        copy: _propScopeItemsHtml(_tmItems()),
+      }));
+      const byo = await page.evaluate((t) => {
+        openGenericEstimate(getClientById(92001), null, null, { mode: 'byo' });
+        _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+        document.getElementById('byo-say').value = t; _byoSayBuild();
+        const work = _byoItems.filter(x => !x._supply && !x._rrp && x.label !== 'Materials');
+        return {
+          lines: work.map(x => x.section + ' | ' + x.label),
+          offers: _byoMissed.map(m => m.id).sort(),
+          copy: _propScopeItemsHtml(work),
+        };
+      }, say);
+      expect(byo.lines).toEqual(tm.lines);
+      expect(byo.offers).toEqual(tm.offers);
+      expect(byo.copy).toEqual(tm.copy);
+      expect(tm.lines.length).toBeGreaterThan(2);
+    }
+  });
+
+  test('a T&M step taken from "you left out" lands where BYO puts it, and old T&M bids open with their rooms', async () => {
+    await open({ say: 'Tear out the old water heater, set the new 50 gallon and run new gas line' });
+    const r = await page.evaluate(() => {
+      const im = _geiScopeMissed.find(m => m.step && !m.ask);
+      if (!im) return { none: true };
+      _geiScopeTakeMissed(im.id);
+      const at = _tmItems().findIndex(x => x.label === im.step);
+      return { at, n: _tmItems().length, names: _geiScopeChips.slice(), recs: _tmItems().map(x => x.label) };
+    });
+    if (!r.none) {
+      expect(r.at).toBeGreaterThan(-1);
+      expect(r.names).toEqual(r.recs);           // the name list and the records agree
+    }
+    // A bid saved before this change: names plus the room map.
+    const old = await page.evaluate(() => {
+      _geiScopeChips = ['Secure the tub spout', 'Install 3 hose bibs'];
+      _tmLoad({ scopeChips: _geiScopeChips.slice(), scopeRooms: { 'Secure the tub spout': 'Bathroom', 'Install 3 hose bibs': 'Outside' } });
+      return _tmItems().map(x => x.section);
+    });
+    expect(old).toEqual(['Bathroom', 'Outside']);
+    // A writer that only knows names (the pick-from-a-list sheet, Tim's job
+    // reorder) still works: the records follow, keeping each step's room.
+    const byName = await page.evaluate(() => {
+      _geiScopeChips.reverse();
+      return _tmItems().map(x => x.label + ' | ' + x.section);
+    });
+    expect(byName).toEqual(['Install 3 hose bibs | Outside', 'Secure the tub spout | Bathroom']);
+  });
+
+  test('a pasted letter on T&M sets the days and his signed note, and T&M has the same note row BYO has', async () => {
+    const letter = "Hi Tagen,\n\n- Secure the tub spout\n- Install 3 hose bibs with piping\n\nThis estimate is good for 14 days.\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+    await open({ say: letter });
+    const r = await page.evaluate(async () => {
+      const row = document.querySelector('#tm-sec-note .ios-row')?.textContent || '';
+      let h = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = x => { h = x; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return { days: _geiValidDays, note: _geiNote, by: _geiNoteBy, row, doc: /A note from John/.test(h) && /faith and trust/.test(h) };
+    });
+    expect(r.days).toBe(14);
+    expect(r.note).toMatch(/faith and trust/);
+    expect(r.by).toBe('John Schonfeldt');
+    expect(r.row).toContain('Your note to them');
+    expect(r.doc).toBe(true);
+    // Tap the row, the box opens with his words in it.
+    await page.locator('#tm-sec-note .ios-row').click();
+    expect(await page.locator('#tm-note').inputValue()).toMatch(/faith and trust/);
   });
 
   test('rooms: a one-room walk on T&M stays one numbered list', async () => {

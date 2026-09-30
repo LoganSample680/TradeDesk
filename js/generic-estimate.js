@@ -327,8 +327,6 @@ Object.defineProperty(window,'_geiEditBidId',{get:()=>_geiEditBidId,set:v=>{_gei
 Object.defineProperty(window,'_geiLines',{get:()=>_geiLines,set:v=>{_geiLines=v;},configurable:true});
 Object.defineProperty(window,'_geiTrade',{get:()=>_geiTrade,set:v=>{_geiTrade=v;},configurable:true});
 let _geiScopeChips=[];
-// T&M step -> room (owner 2026-09-30), saved on the bid as scopeRooms.
-let _geiScopeRooms={};
 Object.defineProperty(window,'_geiScopeChips',{get:()=>_geiScopeChips,set:v=>{_geiScopeChips=v;},configurable:true});
 let _geiScopeNoScope=false;
 Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=>{_geiScopeNoScope=v;},configurable:true});
@@ -675,7 +673,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_geiNote='';_geiNoteBy='';_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeRooms={};_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_geiNote='';_geiNoteBy='';_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_tmRecs=[];_tmMirror='';_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -796,7 +794,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
-      _geiScopeRooms=Object.assign({},b.scopeRooms||{});
+      _tmLoad(b);
       if(Array.isArray(b.exclusions))_geiExclusions=[...b.exclusions];
       _geiScopeNoScope=!!(b.scopeNoScope);
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
@@ -877,7 +875,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmHideRate=(_b.tmHideRate!==undefined)?!!_b.tmHideRate:_tmHideRateDefault();}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
-      _geiScopeRooms=Object.assign({},_b.scopeRooms||{});
+      _tmLoad(_b);
       if(Array.isArray(_b.exclusions))_geiExclusions=[..._b.exclusions];
       _geiScopeNoScope=!!(_b.scopeNoScope);
       // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
@@ -1934,10 +1932,13 @@ function _tmUndoToast(msg,fn){
 }
 function _tmDelStep(label){
   const i=_geiScopeChips.indexOf(label);if(i<0)return;
+  // Undo puts the step back in its room, not just its name back on the list.
+  const was=_geiIsTM?Object.assign({},_tmItems().find(r=>r.label===label)||{}):null;
   _toggleScopeChip(label);
   _tmUndoToast('Step removed',()=>{
     if(_geiScopeChips.indexOf(label)>=0)return;
     _geiScopeChips.splice(Math.min(i,_geiScopeChips.length),0,label);
+    if(was&&was.label){const r=_tmItems().find(x=>x.label===label);if(r){r.section=was.section;r.notes=was.notes||'';}}
     ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
     if(typeof _tmRenderSteps==='function')_tmRenderSteps();
     if(typeof _byoAutosave==='function')_byoAutosave();
@@ -1984,7 +1985,8 @@ function _tmScopeIosHtml(){
   }
   const ed=_tmScopeEditing;
   const rooms=_tmRoomsOn();
-  if(rooms)_tmGroupChips();
+  if(rooms)_tmGroup();
+  const recs=_tmItems();
   const row=(l,i)=>
     '<div class="ios-swipe" data-kind="step" data-room-key="'+i+'">'+
       '<div class="ios-row">'+
@@ -2002,8 +2004,8 @@ function _tmScopeIosHtml(){
     ?timSayField('gei-scope-say','What else? Say it the way you would tell your crew.','_geiScopeSayDone')
     :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
   if(rooms){
-    return _roomStackHtml('tm',_roomOrder(steps,_tmRoomOf).map(r=>({room:r,
-      body:steps.map((l,i)=>_tmRoomOf(l)===r?row(l,i):'').join('')})),
+    return _roomStackHtml('tm',_roomOrder(recs,x=>x.section).map(r=>({room:r,
+      body:recs.map((x,i)=>x.section===r?row(x.label,i):'').join('')})),
       {titled:true,noun:'step',lastBody:more,lastAfter:_tmSayMoreOpen?btns:''})+_geiScopeMissedHtml();
   }
   return '<div class="ios-sec">'+
@@ -2101,24 +2103,20 @@ function _geiScopeBuild(containerId){
   // the driveway and once after he has walked the crawlspace.
   // A price he said stays on the step here: a T&M scope has no line price to
   // carry it, and dropping a number he said out loud is losing his words.
-  // By room when the job spans rooms, the same reading Build Your Own uses
-  // (timScopeBuild's byRoom). Painting keeps its own interior and exterior.
-  const _tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
-  const _roomsNow=_tmRoomsOn();
-  built.steps.forEach(st=>{
-    const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
-    if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase())){
-      _geiScopeChips.push(t);
-      if(_tr!=='painting'&&(built.byRoom||_roomsNow)&&st.room)_tmSetRoom(t,st.room);
-    }
-  });
-  // The whole point of the feature, held until he says yes to each one.
-  // ONLY THE ONES THAT ARE STEPS. TIM_IMPLIED also carries supply-only rules
-  // (prep-consumables is primer, masking and sandpaper) and those belong on the
-  // supply list, not numbered on a contract a homeowner signs. A rule with a
-  // `step` is a thing you do; a rule without one is a thing you buy.
-  _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
-    .filter(im=>!im.step||!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  if(_geiIsTM){
+    // The same build Build Your Own runs (_scopeTakeBuilt): steps, rooms, and
+    // what he left out, onto the T&M list.
+    _geiScopeMissed=_scopeTakeBuilt('tm',built).filter(im=>im.step||im.ask);
+    const _filled=_scopeTakeLetter(built);
+    if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
+  }else{
+    built.steps.forEach(st=>{
+      const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+      if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))_geiScopeChips.push(t);
+    });
+    _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
+      .filter(im=>!im.step||!_geiScopeChips.some(c=>String(c).toLowerCase()===String(im.step).toLowerCase()));
+  }
   _geiScopeNoScope=false;
   // CARD FIRST, ROWS SECOND. _geiRenderScopeCard rebuilds the wrap the rows
   // live in, so painting them before it throws them away, which is how the
@@ -2318,6 +2316,7 @@ function _timMissAskRow(im,take,drop){
 function _timMissTakeable(list){return (list||[]).filter(im=>!im.optIn&&!im.ask);}
 
 function _geiScopeTakeMissed(id){
+  if(_geiIsTM){_scopeTakeMissed('tm',id);return;}
   const im=_geiScopeMissed.filter(x=>String(x.id)===String(id))[0];
   if(!im)return;
   if(im.ask){
@@ -2355,10 +2354,12 @@ function _geiScopeTakeMissed(id){
 // yes; the only thing saved is his thumb. Offered from two up, because "Add all
 // one" is not a sentence.
 function _geiScopeTakeAllMissed(){
+  if(_geiIsTM){_scopeTakeAllMissed('tm');return;}
   _timMissTakeable(_geiScopeMissed).forEach(im=>_geiScopeTakeMissed(im.id));
 }
 
 function _geiScopeDropMissed(id){
+  if(_geiIsTM){_scopeDropMissed('tm',id);return;}
   const _im=_geiScopeMissed.find(x=>String(x.id)===String(id));
   if(_im)_timMissLearn(_im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
   _geiScopeMissed=_geiScopeMissed.filter(x=>String(x.id)!==String(id));
@@ -3004,12 +3005,13 @@ function _byoPriceFor(text){
 }
 // said: a price he said out loud for this line. His number, so it beats the
 // book (PRICES STAY HIS, CLAUDE.md 18.2).
-function _byoAddLine(text,sec,said){
+function _byoLineRec(text,sec,said){
   text=_tradeSpellFix(text);
   const p=Number(said)>0?{rate:Number(said),unit:'ea',notes:'',from:'said'}:_byoPriceFor(text);
   const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
-  _byoItems.push(_byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from}));
+  return _byoNormItem({id:nid,section:sec||_byoWorkSection(),label:text,qty:1,unit:p.unit,rate:p.rate,price:p.rate,notes:p.notes,on:true,_from:p.from});
 }
+function _byoAddLine(text,sec,said){_byoItems.push(_byoLineRec(text,sec,said));}
 function _byoSayBuild(){
   const said=timSaid('byo-say','Type or say the job in the box first');
   if(!said)return;
@@ -3021,58 +3023,21 @@ function _byoSayBuild(){
     if(matsIn.rows+matsIn.listed){_byoSayOpen=false;_byoRenderSections();_byoUpdateRail();_byoAutosave();if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return;}
     if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;
   }
-  const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
-  // By room when the job spans rooms (owner 2026-09-30, Jack picked the room
-  // layout): each room is a section he can rename or drag lines between.
-  // Painting keeps Interior and Exterior, its own two.
-  const _tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
-  const _roomSec=st=>{
-    if(!built.byRoom||!st.room||_tr==='painting')return undefined;
-    if(!_byoSections().includes(st.room)&&!_byoCustomSections.includes(st.room))_byoCustomSections.push(st.room);
-    return st.room;
-  };
-  built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,_roomSec(st),st.price);have.add(st.text.toLowerCase());
-    // His own written order stands on the customer's copy (no regrouping).
-    if(st.written){const it=_byoItems[_byoItems.length-1];if(it&&it.label===st.text)it._written=true;}}});
+  // The same build T&M runs (_scopeTakeBuilt): steps, rooms, what he left out.
+  _byoMissed=_scopeTakeBuilt('byo',built);
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
   // filled in where they go instead of printed as steps.
   const _filled=[];
   if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
-  if(built.validDays>0){_geiValidDays=built.validDays;_filled.push('good for '+built.validDays+' days');}
-  if(built.note&&!String(_geiNote||'').trim()){_geiNote=built.note;_geiNoteBy=built.noteBy||'';_filled.push('your note');}
+  _filled.push(..._scopeTakeLetter(built));
   if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
-  _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
 }
-function _byoTakeMissed(id){
-  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
-  if(im.ask){
-    const val=_timMissAskVal(id);
-    if(!val){_timMissAskNeed(id);return;}
-    const on=_byoItems.filter(it=>it&&!it._rrp);
-    const i=_timMissAskTarget(on.map(it=>String(it.label||'')));
-    if(i>=0)on[i].label=String(on[i].label).replace(/[,\s]+$/,'')+', '+val;
-    else _byoAddLine('Set the '+val);
-    _timMissLearn(im,true);
-    _byoMissed=_byoMissed.filter(x=>x!==im);
-    _byoRenderSections();_byoUpdateRail();_byoAutosave();
-    return;
-  }
-  _byoAddLine(im.step);
-  if(im.pairs&&im.pairs.step)_byoAddLine(im.pairs.step);
-  _timMissLearn(im,true);
-  _byoMissed=_byoMissed.filter(x=>x!==im);
-  _byoRenderSections();_byoUpdateRail();_byoAutosave();
-}
-function _byoTakeAllMissed(){_timMissTakeable(_byoMissed).forEach(im=>_byoTakeMissed(im.id));}
-function _byoDropMissed(id){
-  const im=_byoMissed.find(x=>String(x.id)===String(id));if(!im)return;
-  _timMissLearn(im,false);
-  _byoMissed=_byoMissed.filter(x=>x!==im);
-  _byoRenderSections();
-}
+function _byoTakeMissed(id){_scopeTakeMissed('byo',id);}
+function _byoTakeAllMissed(){_scopeTakeAllMissed('byo');}
+function _byoDropMissed(id){_scopeDropMissed('byo',id);}
 function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
   return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
@@ -3347,7 +3312,7 @@ function _byoAutosave(){
   // hours behind it has no promise to be over.
   b.estHours=_estLaborHours();
   b.estCrewSize=_estCrew.length||1;
-  b.scopeChips=[..._geiScopeChips];b.scopeRooms=_tmScopeRoomsSaved();
+  b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
   b.scopeNoScope=_geiScopeNoScope||false;
   const _termsEl=document.getElementById('byo-custom-terms');
   if(_termsEl)b.byoCustomTerms=_termsEl.value;
@@ -4860,40 +4825,180 @@ function _byoApplyRename(sec,val){
 }
 _ROOM_LISTS.byo={move:_byoMoveLine,rename:_byoApplyRename};
 
-// Time and materials: the scope is a list of step strings, so the room is
-// kept beside it, step -> room (saved on the bid as scopeRooms). A step with
-// no room reads as "Other work" once the list is by room.
-const _TM_NO_ROOM='Other work';
-function _tmRoomsOn(){return (_geiScopeChips||[]).some(l=>_geiScopeRooms[l]);}
-function _tmRoomOf(l){return _geiScopeRooms[l]||_TM_NO_ROOM;}
-function _tmSetRoom(l,r){if(!r||r===_TM_NO_ROOM)delete _geiScopeRooms[l];else _geiScopeRooms[l]=r;}
-// Keep the array grouped by room, rooms in the order they first appear, so
-// the numbers, the screen and the customer's copy all agree. A step Tim adds
-// later (a missed item) joins the room it names when that room is already on
-// the list.
-function _tmGroupChips(){
-  if(!_tmRoomsOn())return;
-  const have=new Set(_geiScopeChips.map(l=>_geiScopeRooms[l]).filter(Boolean));
-  _geiScopeChips.forEach(l=>{if(!_geiScopeRooms[l]&&typeof timRoomOf==='function'){const r=timRoomOf(l);if(r&&have.has(r))_geiScopeRooms[l]=r;}});
-  const sorted=_roomOrder(_geiScopeChips,_tmRoomOf).flatMap(r=>_geiScopeChips.filter(l=>_tmRoomOf(l)===r));
-  _geiScopeChips.length=0;sorted.forEach(l=>_geiScopeChips.push(l));
+// ── THE WORK: one list for Build Your Own and T&M (owner 2026-09-30) ────────
+//
+// "The logic is the same, you type up your scope and it should break it out
+// the exact same, show the same recommendations and by room on both." A T&M
+// step and a Build Your Own line are the same record: {label, section (its
+// room), notes, on}. Build Your Own keeps its lines in _byoItems because they
+// carry a price; T&M keeps its steps in _tmRecs because it bills by the hour.
+// Everything that reads or changes either goes through the same functions:
+//   Tim's build            _scopeTakeBuilt
+//   what he left out       _scopeTakeMissed / _scopeDropMissed
+//   where a step lands     _scopePlaceAt
+//   rooms                  _ROOM_LISTS, _roomStackHtml
+//   the customer's copy    _propScopeItemsHtml
+//
+// _geiScopeChips stays T&M's list of step NAMES. About twenty readers use it
+// (the hub, the job card, Tim's nudges, crew hours, the rate sheet) and a few
+// older writers change it (the pick-from-a-list sheet, Tim's job reorder, the
+// work-order sort). It is kept equal to the records both ways: a change made
+// through the records rewrites it (_tmWrote), and a change made to it by name
+// is taken up by the records on the next read (_tmItems), each step keeping
+// its room and notes by name.
+let _tmRecs=[],_tmMirror='',_tmRecSeq=0;
+function _tmNamesKey(a){return (a||[]).map(String).join('\u0001');}
+function _tmRec(label,section,notes){return {id:++_tmRecSeq,label:String(label),section:section||_byoWorkSection(),notes:notes||'',on:true};}
+function _tmItems(){
+  const now=_tmNamesKey(_geiScopeChips);
+  if(now!==_tmMirror){
+    const by=new Map(_tmRecs.map(r=>[r.label,r]));
+    const inUse=new Set(_tmRecs.map(r=>r.section));
+    _tmRecs=(_geiScopeChips||[]).map(l=>{
+      l=String(l);const r=by.get(l);if(r)return r;
+      // A step added by name joins the room it names, when that room is on.
+      const room=(typeof timRoomOf==='function')?timRoomOf(l):null;
+      return _tmRec(l,(room&&inUse.has(room))?room:_byoWorkSection());
+    });
+    _tmMirror=now;
+  }
+  return _tmRecs;
+}
+function _tmWrote(){
+  if(!Array.isArray(_geiScopeChips))_geiScopeChips=[];
+  _geiScopeChips.length=0;_tmRecs.forEach(r=>_geiScopeChips.push(r.label));
+  _tmMirror=_tmNamesKey(_geiScopeChips);
+}
+// A saved bid's steps. Older T&M bids saved names only (and, for an hour on
+// 2026-09-30, a room map beside them), so those still open with their rooms.
+function _tmLoad(b){
+  _tmRecs=[];_tmMirror='';
+  const items=Array.isArray(b&&b.scopeItems)?b.scopeItems.filter(x=>x&&x.label):[];
+  if(items.length){
+    _tmRecs=items.map(x=>{const r=_tmRec(x.label,x.section,x.notes);r.on=x.on!==false;if(x._written)r._written=true;return r;});
+  }else{
+    const rooms=(b&&b.scopeRooms)||{};
+    _tmRecs=(_geiScopeChips||[]).map(l=>_tmRec(l,rooms[l]));
+  }
+  _tmWrote();
+}
+function _tmSaved(){
+  return _tmItems().map(r=>{const o={label:r.label,section:r.section,notes:r.notes||'',on:r.on!==false};if(r._written)o._written=true;return o;});
+}
+// Rooms on: more than one section in use, the rule both screens use.
+function _tmRoomsOn(){return new Set(_tmItems().map(r=>r.section)).size>1;}
+// Keep each room's lines together, rooms in the order they first appear, so
+// the step numbers run down the page. Both lists are kept this way.
+function _scopeGroupArr(arr){
+  const g=_roomOrder(arr,r=>r.section).flatMap(o=>arr.filter(r=>r.section===o));
+  const moved=g.some((r,i)=>r!==arr[i]);
+  if(moved)arr.splice(0,arr.length,...g);
+  return moved;
+}
+function _tmGroup(){if(_scopeGroupArr(_tmItems()))_tmWrote();}
+function _tmCommit(){
+  _tmWrote();
+  _renderScopeChips('tm-scope-wrap');
+  if(typeof _tmRenderSteps==='function')try{_tmRenderSteps();}catch(_e){}
+  if(typeof _byoAutosave==='function')_byoAutosave();
 }
 function _tmMoveStep(from,toRoom,before){
-  const ok=_roomMoveIn(_geiScopeChips,from,before,_tmRoomOf,_tmSetRoom,toRoom);
-  if(ok){_renderScopeChips('tm-scope-wrap');if(typeof _byoAutosave==='function')_byoAutosave();}
+  const ok=_roomMoveIn(_tmItems(),from,before,x=>x.section,(x,r)=>{x.section=r;},toRoom);
+  if(ok)_tmCommit();
   return ok;
 }
 function _tmApplyRename(room,val){
   const name=_roomCleanName(val);
   if(!name||name===room)return false;
-  _geiScopeChips.forEach(l=>{if(_tmRoomOf(l)===room)_tmSetRoom(l,name);});
-  _renderScopeChips('tm-scope-wrap');if(typeof _byoAutosave==='function')_byoAutosave();
+  _tmItems().forEach(r=>{if(r.section===room)r.section=name;});
+  _tmCommit();
   return true;
 }
 _ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename};
-// What is saved: only the steps still on the list.
-function _tmScopeRoomsSaved(){
-  const o={};(_geiScopeChips||[]).forEach(l=>{if(_geiScopeRooms[l])o[l]=_geiScopeRooms[l];});return o;
+
+// The list open right now, in the one shape both screens answer to.
+function _scopeKey(){return (typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm':'byo';}
+function _scopeArr(key){return (key||_scopeKey())==='tm'?_tmItems():_byoItems;}
+function _scopeWork(arr){return (arr||[]).filter(x=>x&&!x._supply&&!x._rrp);}
+function _scopeNewRec(key,text,sec,price){return key==='tm'?_tmRec(text,sec):_byoLineRec(text,sec,price);}
+function _scopeCommit(key){
+  if(key==='tm'){_tmCommit();return;}
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+}
+// Where a step he took from Tim lands: in the room it names when rooms are
+// on, and by Tim's stage (access first, cleanup last) when Tim knows it.
+function _scopePlaceAt(arr,rec,stage,last){
+  const secs=new Set(_scopeWork(arr).map(x=>x.section));
+  if(secs.size>1&&typeof timRoomOf==='function'){const r=timRoomOf(rec.label);if(r&&secs.has(r))rec.section=r;}
+  if(last||!stage||stage==='restore'||stage==='clean'||typeof timStageOf!=='function'||typeof TIM_STAGES==='undefined'){arr.push(rec);return;}
+  const mid=TIM_STAGES.findIndex(x=>x.k==='install');
+  const ix=k=>{const i=TIM_STAGES.findIndex(x=>x.k===k);return i===-1?mid:i;};
+  const mine=ix(stage);
+  const at=arr.findIndex(x=>x&&!x._supply&&!x._rrp&&ix(timStageOf(String(x.label||'')))>mine);
+  if(at<0)arr.push(rec);else arr.splice(at,0,rec);
+}
+// Tim's steps onto the list open now. One set of rules for both screens:
+// the rooms he reads, a step already there is not added twice, and what he
+// left out comes back as the offer.
+function _scopeTakeBuilt(key,built){
+  const arr=_scopeArr(key);
+  const tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  const inUse=new Set(_scopeWork(arr).map(x=>x.section));
+  const have=new Set(arr.map(x=>String(x.label).toLowerCase()));
+  (built.steps||[]).forEach(st=>{
+    // T&M has no line price: a price he said stays in the step's words.
+    const text=(key==='tm'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    if(have.has(text.toLowerCase()))return;
+    have.add(text.toLowerCase());
+    // Painting keeps its own two, Interior and Exterior.
+    let sec=(st.room&&tr!=='painting')?st.room:undefined;
+    if(!sec&&inUse.size>1&&typeof timRoomOf==='function'){const r=timRoomOf(text);if(r&&inUse.has(r))sec=r;}
+    if(key==='byo'&&sec&&!_byoSections().includes(sec)&&!_byoCustomSections.includes(sec))_byoCustomSections.push(sec);
+    const rec=_scopeNewRec(key,key==='tm'?text:st.text,sec,st.price);
+    // His own written order stands on the customer's copy (no regrouping).
+    if(st.written)rec._written=true;
+    arr.push(rec);
+  });
+  _scopeGroupArr(arr);
+  if(key==='tm')_tmWrote();
+  return (built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
+}
+// From a pasted letter, on both screens: the days the price holds and his
+// closing words, signed. (The one job price is Build Your Own's alone: T&M
+// has no single price to fill.)
+function _scopeTakeLetter(built){
+  const filled=[];
+  if(built.validDays>0){_geiValidDays=built.validDays;filled.push('good for '+built.validDays+' days');}
+  if(built.note&&!String(_geiNote||'').trim()){_geiNote=built.note;_geiNoteBy=built.noteBy||'';filled.push('your note');}
+  return filled;
+}
+function _scopeMissedOf(key){return key==='tm'?_geiScopeMissed:_byoMissed;}
+function _scopeSetMissed(key,v){if(key==='tm')_geiScopeMissed=v;else _byoMissed=v;}
+function _scopeTakeMissed(key,id){
+  const list=_scopeMissedOf(key);
+  const im=list.find(x=>String(x.id)===String(id));if(!im)return;
+  const arr=_scopeArr(key);
+  if(im.ask){
+    const val=_timMissAskVal(id);
+    if(!val){_timMissAskNeed(id);return;}
+    const work=_scopeWork(arr);
+    const i=_timMissAskTarget(work.map(x=>String(x.label||'')));
+    if(i>=0)work[i].label=String(work[i].label).replace(/[,\s]+$/,'')+', '+val;
+    else _scopePlaceAt(arr,_scopeNewRec(key,'Set the '+val),im.stage||'install',false);
+  }else{
+    _scopePlaceAt(arr,_scopeNewRec(key,im.step||im.say),im.stage,false);
+    if(im.pairs&&im.pairs.step)_scopePlaceAt(arr,_scopeNewRec(key,im.pairs.step),im.pairs.stage,!!im.pairs.last);
+  }
+  _timMissLearn(im,true);
+  _scopeSetMissed(key,_scopeMissedOf(key).filter(x=>x!==im));
+  _scopeCommit(key);
+}
+function _scopeTakeAllMissed(key){_timMissTakeable(_scopeMissedOf(key)).forEach(im=>_scopeTakeMissed(key,im.id));}
+function _scopeDropMissed(key,id){
+  const im=_scopeMissedOf(key).find(x=>String(x.id)===String(id));
+  if(im)_timMissLearn(im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
+  _scopeSetMissed(key,_scopeMissedOf(key).filter(x=>String(x.id)!==String(id)));
+  if(key==='tm')_renderScopeChips('tm-scope-wrap');else _byoRenderSections();
 }
 function _byoDeleteSection(sec){
   if(_byoSections().includes(sec))return;
@@ -6369,7 +6474,25 @@ function _tmStepsState(all){
     :(crewOn&&L.has('rate')&&_tmCrewMissing().length?(_crewFirst(_tmCrewMissing()[0])+' needs a rate'):need);
   return {one,two,s1,s2};
 }
+// His note on T&M, the same row and box Build Your Own has (owner 2026-09-30:
+// the two should read the same at the customer).
+function _tmRenderNote(){
+  const host=document.getElementById('tm-sec-note');if(!host)return;
+  const has=!!String(_geiNote||'').trim();
+  const open=host.dataset.open==='1';
+  host.innerHTML='<div class="ios-group">'+
+    '<button type="button" class="ios-row" onclick="_tmNoteToggle()"><span class="ios-lbl">Your note to them<small>'+(has?'On the proposal':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(open?'90':'0')+'deg)">›</span></button>'+
+    (open?'<textarea id="tm-note" class="ios-say" rows="4" placeholder="e.g. I appreciate your trust in us and look forward to the work." oninput="_geiNote=this.value;_byoAutosave()">'+escHtml(_geiNote||'')+'</textarea>':'')+
+  '</div><div class="ios-foot">Printed under the scope, word for word, with your name.</div>';
+}
+function _tmNoteToggle(){
+  const host=document.getElementById('tm-sec-note');if(!host)return;
+  host.dataset.open=host.dataset.open==='1'?'0':'1';
+  _tmRenderNote();
+  if(host.dataset.open==='1')document.getElementById('tm-note')?.focus();
+}
 function _tmRenderSteps(all,rule){
+  if(!document.activeElement||document.activeElement.id!=='tm-note')_tmRenderNote();
   const st=_tmStepsState(all);
   rule=rule||_tmStateRule();
   const blocked=rule.rule==='block';
@@ -7909,7 +8032,7 @@ function saveGenericEstimate(draft,opts){
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
-      b.scopeChips=[..._geiScopeChips];b.scopeRooms=_tmScopeRoomsSaved();
+      b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
       b.scopeNoScope=_geiScopeNoScope||false;
       // The promise, stamped on the deliberate save too, not only on autosave
       // (_byoAutosave). Relying on an autosave having happened first is how a
@@ -7943,7 +8066,7 @@ function saveGenericEstimate(draft,opts){
       ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
-      scopeChips:[..._geiScopeChips],scopeRooms:_tmScopeRoomsSaved(),
+      scopeChips:[..._geiScopeChips],scopeItems:_geiIsTM?_tmSaved():undefined,
       scopeNoScope:_geiScopeNoScope||false,
       estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
       exclusions:[..._geiExclusions],
@@ -8293,6 +8416,49 @@ function _byoPrintItems(items){
     steps.forEach(t=>out.push({label:t,notes:'',qty:1,unit:'ea',section:it.section,on:true,_fromNotes:true,_written:true}));
   });
   return out;
+}
+// THE SCOPE ON THE CUSTOMER'S COPY, one block for Build Your Own and T&M
+// (owner 2026-09-30: the two "should really look damn near identical"). By
+// room when the list uses more than one, in the order he has them on screen.
+function _propScopeItemsHtml(items){
+  items=items||[];
+  const _scopeSecs2=[...(new Set(items.map(it=>it.section)))].filter(Boolean);
+  return _scopeSecs2.map(sec=>{
+      const its=items.filter(it=>it.section===sec);
+      // Items without notes get a quiet section-appropriate descriptor, a bare
+      // one-word line ("1. Room") next to fully-described scope items reads as an
+      // unfinished document to the client. Only for a bare one-word name ("Room"). A line that already says what
+      // is being done reads as padding with it: "Set the new tankless, Labor
+      // and materials per agreed scope" on every row is what a careful buyer
+      // circles and asks about.
+      const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
+      const _needsFill=it=>!String(it.notes||'').trim()&&!/\s/.test(String(it.label||'').trim());
+      // The count is part of the scope, not a pricing detail: "12 doors" and
+      // "1 door" are different jobs and the client should read which one they
+      // agreed to. The RATE stays off the proposal, same one-price rule the
+      // document already follows.
+      const _li=it=>{
+        const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
+        return _propLi(`${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:13px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}`);
+      };
+      // One section is the usual Build Your Own: everything Tim built lands in
+      // it, and one heading over the lot says nothing. The customer's stage
+      // headings say more, same as the time and materials steps.
+      // Steps Tim added land at the end of the list on the screen; on the
+      // customer's copy they go where the work happens.
+      // A written estimate is already in his order: no reshuffle, no stage
+      // headings over it (Jack's letter came out regrouped, first step last).
+      const _mine=its.some(it=>it._written);
+      const _ord=its;
+      const _grp=(_scopeSecs2.length===1&&!_mine)?_propStageGroups(_ord.map(it=>it.label)):null;
+      if(_grp)return _propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_li(_ord[i]))})));
+      const rows=_propUl(its.map(_li).join(''));
+      // Sub-section headers match the document's one header style (accent, same
+      // scale as "Scope of work"): the old hardcoded gray read as a different
+      // font family entirely and made the section look mismatched.
+      if(_scopeSecs2.length===1)return rows;
+      return _propRoomBlock(sec,rows);
+    }).join('');
 }
 // One room's heading and its lines on the customer's copy. Build Your Own's
 // sections and a T&M scope by room print through this one block.
@@ -8726,8 +8892,11 @@ async function sendGenericProposal(previewOnly,opts){
     // runs on across the headings: step 7 is still step 7.
     // By room when he grouped it that way, the same headings Build Your Own
     // prints (_propRoomBlock).
-    if(_geiIsTM&&_tmRoomsOn()){
-      _scopeBlocks.push(_roomOrder(_chipsToPrint,_tmRoomOf).map(r=>_propRoomBlock(r,_propUl(_chipsToPrint.filter(l=>_tmRoomOf(l)===r).map(_chipLi).join('')))).join(''));
+    if(_geiIsTM){
+      // The same block Build Your Own prints (_propScopeItemsHtml).
+      const _desc=l=>{const c=_allChipDefs.find(x=>x.label===l);return (c&&c.clientDesc)||'';};
+      const _print=_tmItems().filter(r=>r.on!==false&&_chipsToPrint.includes(r.label)).map(r=>Object.assign({},r,{notes:r.notes||_desc(r.label)}));
+      _scopeBlocks.push(_propScopeItemsHtml(_print));
     }else _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
   }
   // A line whose description is a whole letter ("Here's my estimate ... I will
@@ -8737,44 +8906,7 @@ async function sendGenericProposal(previewOnly,opts){
   // steps and the price, the days and the sign-off stay out of it.
   const _byoWorkItems2=_geiIsFreeForm?_byoPrintItems(_byoItems.filter(it=>it.on&&!it._rrp)):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
-    const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
-    const _secBlocks2=_scopeSecs2.map(sec=>{
-      const its=_byoWorkItems2.filter(it=>it.section===sec);
-      // Items without notes get a quiet section-appropriate descriptor, a bare
-      // one-word line ("1. Room") next to fully-described scope items reads as an
-      // unfinished document to the client. Only for a bare one-word name ("Room"). A line that already says what
-      // is being done reads as padding with it: "Set the new tankless, Labor
-      // and materials per agreed scope" on every row is what a careful buyer
-      // circles and asks about.
-      const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
-      const _needsFill=it=>!String(it.notes||'').trim()&&!/\s/.test(String(it.label||'').trim());
-      // The count is part of the scope, not a pricing detail: "12 doors" and
-      // "1 door" are different jobs and the client should read which one they
-      // agreed to. The RATE stays off the proposal, same one-price rule the
-      // document already follows.
-      const _li=it=>{
-        const _q=(Number(it.qty)>1)?` <span style="font-size:12.5px;color:#64748b">(${escHtml(String(it.qty))}${it.unit&&it.unit!=='ea'?' '+escHtml(it.unit):''})</span>`:'';
-        return _propLi(`${escHtml(_propSentence(it.label))}${_q}${(String(it.notes||'').trim()||_needsFill(it))?`<span style="font-size:13px;color:#64748b">, ${escHtml(it.notes||_fallbackDesc)}</span>`:''}`);
-      };
-      // One section is the usual Build Your Own: everything Tim built lands in
-      // it, and one heading over the lot says nothing. The customer's stage
-      // headings say more, same as the time and materials steps.
-      // Steps Tim added land at the end of the list on the screen; on the
-      // customer's copy they go where the work happens.
-      // A written estimate is already in his order: no reshuffle, no stage
-      // headings over it (Jack's letter came out regrouped, first step last).
-      const _mine=its.some(it=>it._written);
-      const _ord=(_scopeSecs2.length===1&&!_mine&&typeof timOrderScope==='function')?timOrderScope(its.map(it=>({text:it.label,src:it}))).map(r=>r.src.src):its;
-      const _grp=(_scopeSecs2.length===1&&!_mine)?_propStageGroups(_ord.map(it=>it.label)):null;
-      if(_grp)return _propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_li(_ord[i]))})));
-      const rows=_propUl(its.map(_li).join(''));
-      // Sub-section headers match the document's one header style (accent, same
-      // scale as "Scope of work"): the old hardcoded gray read as a different
-      // font family entirely and made the section look mismatched.
-      if(_scopeSecs2.length===1)return rows;
-      return _propRoomBlock(sec,rows);
-    }).join('');
-    _scopeBlocks.push(_secBlocks2);
+    _scopeBlocks.push(_propScopeItemsHtml(_byoWorkItems2));
   }
   // EVERY ESTIMATE TYPE GETS A SCOPE SECTION, not just BYO. Until now the
   // section was built from scope chips plus BYO items only, so a T&M or
@@ -8898,7 +9030,7 @@ async function sendGenericProposal(previewOnly,opts){
   const _scopeHasStages=_scopeBlocks.some(b=>String(b).indexOf('class="prop-stage"')>=0);
   const _scopeSection=(_scopeBlocks.length
     ?_propSection('Scope of work',_scopeHasStages?'How the work goes':'',_scopeBlocks.join(''),{noRule:true})
-    :'')+_includedSection+_propNoteHtml(_geiIsFreeForm?_geiNote:'',_geiNoteBy);
+    :'')+_includedSection+_propNoteHtml((_geiIsFreeForm||_geiIsTM)?_geiNote:'',_geiNoteBy);
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
   // address this estimate is for (bid addr, else client primary), not the client

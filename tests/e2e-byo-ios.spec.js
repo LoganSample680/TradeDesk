@@ -262,13 +262,16 @@ test.describe('Build Your Own, as an iPhone editor', () => {
       const steps = _byoItems.filter(x => !x._supply && x.label !== 'Materials');
       return { labels: steps.map(x => x.label), price: _byoJobPrice, days: _geiValidDays, note: _geiNote, by: _geiNoteBy };
     });
+    // Stored grouped by room (2026-09-30, one list for BYO and T&M), the same
+    // order the screen and the customer's copy show: the washer lines join
+    // the laundry room, the gas light stays outside.
     expect(r.labels).toEqual([
       'Rough in a surface-mounted washer box: drain, water lines and vent',
       'Rough in electrical outlets for the washer and dryer',
       'Drill an exterior hole and run the dryer vent outside',
+      'Cap the existing washer lines',
       'Install 3 hose bibs with piping',
       'Cap the gas line to the gas light out front',
-      'Cap the existing washer lines',
       'Seal the ductwork, leaving enough open to keep the crawlspace from freezing',
       'Secure the tub spout',
     ]);
@@ -367,12 +370,16 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     const row = page.locator('#byo-sections .byo-line', { hasText: 'Secure the tub spout' });
     const target = page.locator('#byo-sections .byo-line', { hasText: 'Seal the ductwork' });
     // Both mid-screen, clear of the edges where a held line scrolls the page.
+    // A "Set $2,800 ..." toast lands at the bottom a moment after a build;
+    // clear it so the finger presses the row, not the toast.
+    await page.waitForTimeout(450);
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await target.evaluate(e => e.scrollIntoView({ block: 'center' }));
     const a = await row.boundingBox();
     await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
     await page.mouse.down();
     // The hold is 380ms; wait for the lift itself, not a guess at the clock.
-    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 3000 });
+    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 6000 });
     const lifted = await page.evaluate(() => !!document.getElementById('room-drag-ghost'));
     const b = await target.boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
