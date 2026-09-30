@@ -65,7 +65,7 @@ function _supPriced(d){
 
 // "3 ea 3/4 ball valve", "20ft 2in pvc", "1 coil pex", "ball valve".
 // A leading count and an optional unit; everything else is the description.
-const _SUP_UNITS=['ea','ft','lf','pc','pcs','box','bx','bag','roll','rl','cl','coil','gal','sq','sqft','bdl','bundle','lot','pr','set','cs','case','lb','lbs','tube','stick','sheet','pk','pkg'];
+const _SUP_UNITS=['ea','ft','foot','feet','lf','pc','pcs','box','bx','bag','roll','rl','cl','coil','gal','sq','sqft','bdl','bundle','lot','pr','set','cs','case','lb','lbs','tube','stick','sheet','pk','pkg'];
 function _supParseLine(raw){
   const s=String(raw==null?'':raw).trim().replace(/\s+/g,' ');
   if(!s)return null;
@@ -170,8 +170,10 @@ function _supCardHTML(){
     const flag=it.flag?'<div style="font-size:11px;color:var(--amber-dk,#b45309);margin-top:2px">'+escHtml(it.flag)+'</div>':'';
     return '<div class="sup-row'+(off?' off':'')+'" data-i="'+i+'">'+
       '<button type="button" class="byo-check'+(off?'':' on')+'" aria-label="'+(off?'Include':'Leave out')+'" onclick="_supToggle('+i+')">'+(off?'':svgIcon('✓',{size:14}))+'</button>'+
-      '<div class="sup-qty">'+escHtml(String(it.qty))+' '+escHtml(it.unit||'ea')+'</div>'+
-      '<div class="sup-desc">'+escHtml(it.desc)+flag+'</div>'+
+      // The count and the words are his to fix (owner 2026-09-29, a line Tim
+      // misheard): tap either and it opens as one line to retype.
+      '<button type="button" class="sup-qty sup-edit" aria-label="Edit '+escHtml(it.desc)+'" onclick="_supEditItem('+i+')">'+escHtml(String(it.qty))+' '+escHtml(it.unit||'ea')+'</button>'+
+      '<button type="button" class="sup-desc sup-edit" onclick="_supEditItem('+i+')">'+escHtml(it.desc)+flag+'</button>'+
       '<button type="button" class="sup-cost" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supMoney(it.cost):'<span class="sup-cost-add">+ price</span>')+'</button>'+
       '<button type="button" class="sup-del" aria-label="Remove" onclick="_supDel('+i+')">'+svgIcon('✕',{size:12})+'</button>'+
     '</div>';
@@ -235,6 +237,20 @@ function _supDel(i){
 }
 // Any line's price, by hand: a flagged line from the reader, a quote read on
 // a computer where there is no reader, or a supply house that phoned it in.
+// The whole line as he would type it ("10 ft PEX-A pipe"), read back with
+// the same rule as the add box; the price stays. Emptied, the line goes.
+function _supEditItem(i){
+  const d=_supData();if(!d||!d.items[i])return;
+  const it=d.items[i];
+  const apply=v=>{
+    const t=String(v==null?'':v).trim();
+    if(!t){_supDel(i);return;}
+    const p=_supParseLine(t);if(!p)return;
+    it.qty=p.qty;it.unit=p.unit;it.desc=p.desc;it.flag='';
+    _supSync();
+  };
+  if(typeof zPrompt==='function')zPrompt('Count, unit and what it is',apply,{title:'Edit this line',placeholder:'10 ft PEX-A pipe',value:it.qty+' '+(it.unit||'ea')+' '+it.desc});
+}
 function _supEditCost(i){
   const d=_supData();if(!d||!d.items[i])return;
   const it=d.items[i];

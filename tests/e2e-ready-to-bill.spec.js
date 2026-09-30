@@ -743,6 +743,27 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.card).toContain('Ball valve');
   });
 
+  // Owner 2026-09-29: a supply line Tim misheard ("copper pipe with pex a
+  // pipe") had no way to be fixed. Tap it, retype it, the price stays.
+  test('a supply house line is tapped and retyped; its price stays; emptied, it goes', async ({ page }) => {
+    await boot(page, 390);
+    await open(page, 701);
+    await page.evaluate(() => { const h = _supHost(true); h._supply.items = [{ qty: 10, unit: 'foot', desc: 'Copper pipe with PEX a pipe', cost: 38, on: true }, { qty: 2, unit: 'ea', desc: 'Sharkbite coupling', cost: 12, on: true }]; _supSync(); });
+    await page.locator('#qi-mat .sup-row[data-i="0"] .sup-desc').click();
+    const inp = page.locator('#zprompt-inp');
+    await inp.fill('10 ft PEX-A pipe');
+    await page.locator('#zprompt-ok').click();
+    const a = await page.evaluate(() => ({ items: _supData().items.map(it => it.qty + ' ' + it.unit + ' ' + it.desc + ' ' + it.cost), shown: document.querySelector('#qi-mat .sup-row[data-i="0"]').textContent }));
+    await page.locator('#qi-mat .sup-row[data-i="1"] .sup-qty').click();
+    await page.locator('#zprompt-inp').fill('');
+    await page.locator('#zprompt-ok').click();
+    const b = await page.evaluate(() => _supData().items.length);
+    expect(a.items).toEqual(['10 ft PEX-A pipe 38', '2 ea Sharkbite coupling 12']);
+    expect(a.shown).toContain('PEX-A pipe');
+    expect(b).toBe(1);
+    assertNoErrors(page, 'supply line edit');
+  });
+
   test('edit and delete go through the same card; the old part rows and their stepper are gone', async ({ page }) => {
     await boot(page);
     await open(page, 701);
