@@ -4854,6 +4854,28 @@ function _geoClearParkTimer(){
 }
 // One question, one place, and a seam the pocket-condition tests can stub.
 function _geoAppOnScreen(){try{return typeof document!=='undefined'&&document.visibilityState==='visible';}catch(_e){return false;}}
+// ── ON SCREEN IS NOT MOVING (owner 2026-09-30, "we really need to make sure
+// this battery issue resolves") ─────────────────────────────────────────
+// Opening the app used to switch full-accuracy GPS on every time, because a
+// phone pulled out at the truck mount should pick the drive up at the
+// driveway. Jack opened the app 65 times one morning, mostly standing at the
+// yard or at home, and every open lit the GPS: 33 full-accuracy starts, the
+// park and unpark flapping every minute or two at the shop.
+//
+// The drive does not need it any more: the automotive flip itself starts the
+// GPS (the drive window), and the motion history is re-read every 15 seconds
+// while the app is held awake (setMotionPoll). So an open lights the GPS only
+// when the tape says the truck is moving, or a drive is already running. A
+// phone with no motion reading yet behaves exactly as before.
+function _geoLooksMoving(){
+  try{
+    if(typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())return true;
+    if(_geoDriveStartedAt)return true;
+    const k=String(_geoLastMotionKind||'');
+    if(!k)return true;
+    return k==='automotive'||k==='driving'||k==='cycling';
+  }catch(_e){return true;}
+}
 function _geoEnterParkMode(spot){
   _geoClearParkTimer();
   if(_geoParkModeOn)return;
@@ -4863,7 +4885,7 @@ function _geoEnterParkMode(spot){
   // iOS wake-up region fires hundreds of meters past the fence. On screen =
   // GPS stays live; the countdown re-arms, and the firing after the app is
   // backgrounded parks for real.
-  if(_geoAppOnScreen()){
+  if(_geoAppOnScreen()&&_geoLooksMoving()){
     _geoParkNote('park-defer','app on screen');
     _geoArmParkTimer(spot);
     return;
@@ -6162,14 +6184,14 @@ function startGeoTracking(){
   // through _geoExitParkMode with the flag down); a hidden one (a background
   // relaunch, a reload behind the lock screen) stays parked on the fences.
   if(_geoParkModeOn){
-    if(_geoAppOnScreen()){_geoExitParkMode();return;}
+    if(_geoAppOnScreen()&&_geoLooksMoving()){_geoExitParkMode();return;}
     // A reload while parked lands here with empty memory. Anything the old
     // JS left running is in the list, and nothing else will ever come back
     // for it: startGeoTracking's sweep is the only other reader and this is
     // the branch that never reaches it.
     const orphans=_geoDropWatchers('reload while parked');
     if(orphans)_geoParkNote('start-drop',orphans+' orphaned');
-    _geoParkNote('start-skip','parked, app hidden');
+    _geoParkNote('start-skip',_geoAppOnScreen()?'parked, not moving':'parked, app hidden');
     return;
   }
   const BG=_geoNativePlugin();
@@ -7240,11 +7262,11 @@ function _geoTrackInit(){
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
         _geoWakeNudge();                       // resolve where we ARE now, not eventually
-        // Same rule as the enter-side defer: an app being LOOKED AT runs live
-        // GPS. Exiting here restarts the watcher, so pulling the phone out at
-        // the truck mount picks the drive up at the driveway, not a quarter
-        // mile down the road when the wake-up region finally fires.
-        if(_geoParkModeOn)_geoExitParkMode();
+        // Same rule as the enter-side defer: an app being looked at IN A
+        // MOVING TRUCK runs live GPS, so the drive is picked up at the
+        // driveway. Standing still it does not (_geoLooksMoving, owner
+        // 2026-09-30): the automotive flip starts the GPS itself.
+        if(_geoParkModeOn&&_geoLooksMoving())_geoExitParkMode();
       }
     });
     // Queued entries also flush the moment connectivity returns.
