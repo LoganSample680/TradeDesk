@@ -243,21 +243,22 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
     expect(r.list).toEqual(['3 box Mud', '1 roll Tape']);
   });
 
-  test('Quick invoice: each part is a line, priced from his book or left blank', async () => {
+  test('Quick invoice: parts land the way they land on a proposal: priced ones are Materials rows, the rest wait on the supply house list', async () => {
     const r = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       openQuickInvoice(99951); _qiSetMode('set');
       document.getElementById('qi-say').value = 'Poured the step. Used 12 bags of quikrete and 2 sticks of rebar.';
       _qiSayBuild();
-      // A part is its own line with its count on the stepper and the price of
-      // one (Jack 2026-09-29: a quantity selector); the customer reads it as
-      // "12 bags Quikrete".
-      return _qi.typed.map(l => l.desc + ' = ' + l.amount + (l.part ? ' x' + l.qty + ' ' + (l.unit || 'ea') + ' | ' + _qiPartLabel(l) : ''));
+      // One rule for every document (timAddMaterials, js/materials.js): a part
+      // his book prices is a Materials row; an unpriced one goes on the supply
+      // house list, never a $0 line.
+      return { lines: _qi.typed.filter(l => !l._supply).map(l => l.desc + ' = ' + l.amount + (l.part ? ' x' + l.qty + ' ' + (l.unit || 'ea') + ' | ' + _qiPartLabel(l) : '')),
+        list: ((_supData() || {}).items || []).map(it => it.qty + ' ' + it.unit + ' ' + it.desc) };
     });
-    expect(r).toContain('Poured the step = ');
-    expect(r).toContain('Quikrete = 6.5 x12 bag | 12 bags Quikrete');
-    expect(r).toContain('Rebar =  x2 stick | 2 sticks rebar');
-    expect(r.some(l => /used 12 bags/i.test(l))).toBe(false);
+    expect(r.lines).toContain('Poured the step = ');
+    expect(r.lines.some(l => / x12 bag \| 12 bags Quikrete$/i.test(l))).toBe(true);
+    expect(r.list).toEqual(['2 stick Rebar']);
+    expect(r.lines.some(l => /used 12 bags/i.test(l))).toBe(false);
   });
 
   test('no console errors', async () => {
