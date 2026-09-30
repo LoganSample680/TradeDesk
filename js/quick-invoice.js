@@ -292,8 +292,12 @@ function _qiRiderHours(lines){
   const H=(_qi&&_qi.riderMins)||{};
   lines.forEach(l=>{
     if(l.kind!=='time'||!l.rider||l.extra)return;
-    const m=H[l.day+'|'+l.who];
-    if(!(m>=0))return;
+    const t=H[l.day+'|'+l.who];
+    if(!(t>=0))return;
+    // What he types is the whole day, runs included, the same as _qiFixHours.
+    const ex=lines.filter(x=>x.kind==='time'&&x.extra&&x.day===l.day&&x.who===l.who).reduce((s2,x)=>s2+x.mins,0);
+    if(t===l.mins+ex)return;
+    const m=Math.max(0,t-ex);
     l.mins=m;l.amount=Math.round(m/60*l.rate*100)/100;
     l.detail=_qiMins(m)+', with '+String(l.rider).split(' ')[0];l.desc=l.who+': '+l.detail;l.riderSet=true;
   });
@@ -484,17 +488,28 @@ function _qiExtraHtml(day){
 // (added) still land where they were.
 function _qiWithAdded(lines){
   const lead=day=>lines.filter(l=>l.day===day&&l.kind==='time'&&!l.rider&&!l.extra).sort((a,b)=>b.mins-a.mins)[0];
+  // SAME HOURS MEANS THE SAME HOURS (owner 2026-09-29, a screenshot of Logan
+  // at 9.7h and Blake, "same hours as Logan", at 8.5h: "it's not, why?").
+  // The rider got the lead's own time and none of his runs to the shop or
+  // the supply house, and he was in the truck for those too. He gets the
+  // lead's runs as well, the way a saved rider already did (_qiWithExtras).
+  const ride=(day,rider,L)=>{
+    lines.push(_qiRiderLine(day,rider,L.who,L.mins));
+    const rate=_qiRateFor(rider);
+    lines.filter(x=>x.kind==='time'&&x.extra&&!x.rider&&x.day===day&&x.who===L.who).forEach(x=>
+      lines.push(Object.assign({},x,{who:rider,rate,rider:L.who,desc:rider+': '+x.detail,amount:Math.round(x.mins/60*rate*100)/100})));
+  };
   (_qi&&_qi.crew||[]).forEach(name=>{
     [...new Set(lines.filter(l=>l.kind==='time').map(l=>l.day))].forEach(day=>{
       if(lines.some(l=>l.day===day&&l.who===name))return;
       const L=lead(day);
-      if(L)lines.push(_qiRiderLine(day,name,L.who,L.mins));
+      if(L)ride(day,name,L);
     });
   });
   (_qi&&_qi.added||[]).forEach(x=>{
     if(lines.some(l=>l.day===x.day&&l.who===x.rider))return;
-    const L=lines.find(l=>l.day===x.day&&l.who===x.lead&&l.kind==='time');
-    if(L)lines.push(_qiRiderLine(x.day,x.rider,x.lead,L.mins));
+    const L=lines.find(l=>l.day===x.day&&l.who===x.lead&&l.kind==='time'&&!l.extra);
+    if(L)ride(x.day,x.rider,L);
   });
   return lines;
 }
@@ -788,11 +803,14 @@ function renderQuickInvoice(){
     const from=l.rider?'No app. Same hours as '+escHtml(String(l.rider).split(' ')[0]):
       l.edited?'<span class="qi-edited">You changed this. The phone said '+escHtml(_qiMins(l.origTotal!=null?l.origTotal:l.orig))+'.</span> <button type="button" class="qi-fix" onclick="_qiFixReset(\''+l.day+'\',\''+qk+'\')">Put it back</button>':
       'From the phone: '+escHtml((l.extra?'':(l.detail||(_qiMins(l.mins)+' on site')))+runs);
-    return '<div class="ios-row qi-line qi-time"><span class="ios-lbl">'+escHtml(l.who)+
-        '<span class="qi-math">'+hrsBox+' at '+rateBox+'</span>'+
-        '<small class="qi-from">'+from+'</small></span>'+
-      '<span class="ios-fact qi-amt qi-pamt" data-day="'+l.day+'" data-who="'+escHtml(l.who)+'" id="qi-amt-'+i+'">'+_qiMoney(amount)+'</span>'+
-      '<button type="button" class="qi-x" aria-label="Take '+escHtml(l.who)+' off this day" onclick="_qiDropPerson(\''+l.day+'\',\''+qk+'\')">×</button></div>';
+    // Name and amount on one line, the hours and rate under the name, where
+    // they came from under that, all the full width of the row (owner
+    // 2026-09-29, a screenshot of the old narrow column: "god ugly").
+    return '<div class="ios-row qi-line qi-time"><div class="qi-p-top"><span class="qi-p-name">'+escHtml(l.who)+'</span>'+
+        '<span class="ios-fact qi-amt qi-pamt" data-day="'+l.day+'" data-who="'+escHtml(l.who)+'" id="qi-amt-'+i+'">'+_qiMoney(amount)+'</span>'+
+        '<button type="button" class="qi-x" aria-label="Take '+escHtml(l.who)+' off this day" onclick="_qiDropPerson(\''+l.day+'\',\''+qk+'\')">×</button></div>'+
+      '<span class="qi-math">'+hrsBox+' at '+rateBox+'</span>'+
+      '<small class="qi-from">'+from+'</small></div>';
   };
   // A receipt line: what was bought that day.
   const row=(l,i)=>'<div class="ios-row qi-line"><span class="ios-lbl">'+escHtml(l.desc)+
