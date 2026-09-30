@@ -249,6 +249,32 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(d).not.toContain('The new work');
   });
 
+  test('a pasted email with bullets and line breaks: every bullet is a step (owner 2026-09-30, "I can\'t find a line in that")', async () => {
+    await open();
+    const r = await page.evaluate(() => {
+      S.bname = 'Plumbing Solutions by JS'; S.ownerName = 'Logan Sample';
+      document.getElementById('byo-say').value = "Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Electrical for the washer receptacle and a dryer receptacle\n- Drill through and run the dryer vent to the outside\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nThis estimate is good for 14 days. If you approve, I can start as soon as possible.\n\nI appreciate your faith and trust in our plumbing services and look forward to working with you on this project, as well as any future projects or service and maintenance needs.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+      _byoSayBuild();
+      // "3 hose bibs with piping" also names what he buys; that lands in its
+      // own Materials section, which is not a scope line.
+      const steps = _byoItems.filter(x => !x._supply && x.label !== 'Materials');
+      return { labels: steps.map(x => x.label), price: _byoJobPrice, days: _geiValidDays, note: _geiNote, by: _geiNoteBy };
+    });
+    expect(r.labels).toEqual([
+      'Rough in a surface-mounted washer box: drain, water lines and vent',
+      'Rough in electrical outlets for the washer and dryer',
+      'Drill an exterior hole and run the dryer vent outside',
+      'Install 3 hose bibs with piping',
+      'Cap the gas line to the gas light out front and the existing washer lines',
+      'Seal the ductwork, leaving enough open to keep the crawlspace from freezing',
+      'Secure the tub spout',
+    ]);
+    expect(r.price).toBe(2800);
+    expect(r.days).toBe(14);
+    expect(r.note).toMatch(/faith and trust/);
+    expect(r.by).toBe('John Schonfeldt');
+  });
+
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
