@@ -2002,12 +2002,9 @@ function _tmScopeIosHtml(){
     ?timSayField('gei-scope-say','What else? Say it the way you would tell your crew.','_geiScopeSayDone')
     :'<button type="button" class="ios-row ios-link" onclick="_geiScopeSayMore(\''+cid+'\')">Say or type more</button>';
   if(rooms){
-    const order=[];steps.forEach(l=>{const r=_tmRoomOf(l);if(!order.includes(r))order.push(r);});
-    const last=order.length-1;
-    return order.map((r,ri)=>'<div class="ios-sec" data-room="'+escHtml(r)+'" data-room-list="tm">'+_roomHeadHtml('tm',r)+
-      '<div class="ios-group">'+steps.map((l,i)=>_tmRoomOf(l)===r?row(l,i):'').join('')+(ri===last?more:'')+'</div>'+
-      (ri===last?(_tmSayMoreOpen?btns:'')+'<div class="ios-foot">Tap a title to rename it. Hold a step to drag it to another section.</div>':'')+
-    '</div>').join('')+_geiScopeMissedHtml();
+    return _roomStackHtml('tm',_roomOrder(steps,_tmRoomOf).map(r=>({room:r,
+      body:steps.map((l,i)=>_tmRoomOf(l)===r?row(l,i):'').join('')})),
+      {titled:true,noun:'step',lastBody:more,lastAfter:_tmSayMoreOpen?btns:''})+_geiScopeMissedHtml();
   }
   return '<div class="ios-sec">'+
       '<div class="ios-group">'+rows+reorder+more+'</div>'+
@@ -3095,7 +3092,7 @@ function _byoRenderSections(){
   // (js/materials.js, #97), and the supply house card lives inside it.
   const used=sections.filter(sec=>sec!==_MAT_SEC&&(_byoItems.some(it=>it.section===sec&&!it._supply)||_byoCustomSections.includes(sec)));
   const titled=used.length>1||_byoCustomSections.length>0;
-  const lines=!_byoItems.length?'':used.map(sec=>{
+  const lines=!_byoItems.length?'':_roomStackHtml('byo',used.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
     const rowHtml=rows.map(it=>{
@@ -3115,13 +3112,12 @@ function _byoRenderSections(){
         (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
       '</div>';
     }).join('');
-    return '<div class="ios-sec" data-room="'+escHtml(sec)+'" data-room-list="byo">'+
-      (titled?_roomHeadHtml('byo',sec,isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':''):'')+
-      '<div class="ios-group">'+(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
-        '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'+
-        (sec===used[used.length-1]&&!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':'')+
-      '</div>'+(titled&&sec===used[used.length-1]?'<div class="ios-foot">Tap a title to rename it. Hold a line to drag it to another section.</div>':'')+'</div>';
-  }).join('');
+    return {room:sec,
+      extra:isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'',
+      body:(rowHtml||'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">Nothing here yet.</small></span></div>')+
+        '<button type="button" class="ios-row ios-link" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">Add a line</button>'};
+  }),{titled,noun:'line',
+    lastBody:!_byoSayOpen?'<button type="button" class="ios-row ios-link" onclick="_byoSayOpen=true;_byoRenderSections()">Say or type more</button>':''});
   const say=(!_byoItems.length||_byoSayOpen)?_byoSayHtml():'';
   const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
   // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
@@ -4728,6 +4724,20 @@ function _roomRename(list,room){
   const L=_ROOM_LISTS[list];if(!L||!room)return;
   zPrompt('Rename this section',val=>L.rename(room,val),{title:'Rename section',placeholder:room,value:room,okText:'Rename'});
 }
+// The rooms in the order they first appear on a list.
+function _roomOrder(arr,roomOf){const o=[];(arr||[]).forEach(x=>{const r=roomOf(x);if(!o.includes(r))o.push(r);});return o;}
+// THE STACK OF ROOMS, drawn once for both screens. Each room: its title (when
+// titled), its lines, and whatever that list puts under its lines. The last
+// room carries the list's closing rows (Say or type more) and the one-line
+// hint. rooms: [{room, body, extra}]; o: {titled, noun, lastBody, lastAfter}.
+function _roomStackHtml(list,rooms,o){
+  o=o||{};const last=rooms.length-1;
+  return rooms.map((r,i)=>'<div class="ios-sec" data-room="'+escHtml(r.room)+'" data-room-list="'+escHtml(list)+'">'+
+    (o.titled?_roomHeadHtml(list,r.room,r.extra||''):'')+
+    '<div class="ios-group">'+(r.body||'')+(i===last?(o.lastBody||''):'')+'</div>'+
+    (i===last?(o.lastAfter||'')+(o.titled?'<div class="ios-foot">Tap a title to rename it. Hold a '+escHtml(o.noun||'line')+' to drag it to another section.</div>':''):'')+
+  '</div>').join('');
+}
 function _roomCleanName(val){return String(val||'').trim().replace(/\s+/g,' ');}
 // DRAG A LINE TO ANOTHER ROOM ("click drag and drop them into other sections,
 // kinda like a kanban"). Hold a line, it lifts, drag it over another room (or
@@ -4865,8 +4875,7 @@ function _tmGroupChips(){
   if(!_tmRoomsOn())return;
   const have=new Set(_geiScopeChips.map(l=>_geiScopeRooms[l]).filter(Boolean));
   _geiScopeChips.forEach(l=>{if(!_geiScopeRooms[l]&&typeof timRoomOf==='function'){const r=timRoomOf(l);if(r&&have.has(r))_geiScopeRooms[l]=r;}});
-  const order=[];_geiScopeChips.forEach(l=>{const r=_tmRoomOf(l);if(!order.includes(r))order.push(r);});
-  const sorted=order.flatMap(r=>_geiScopeChips.filter(l=>_tmRoomOf(l)===r));
+  const sorted=_roomOrder(_geiScopeChips,_tmRoomOf).flatMap(r=>_geiScopeChips.filter(l=>_tmRoomOf(l)===r));
   _geiScopeChips.length=0;sorted.forEach(l=>_geiScopeChips.push(l));
 }
 function _tmMoveStep(from,toRoom,before){
@@ -8718,8 +8727,7 @@ async function sendGenericProposal(previewOnly,opts){
     // By room when he grouped it that way, the same headings Build Your Own
     // prints (_propRoomBlock).
     if(_geiIsTM&&_tmRoomsOn()){
-      const _rOrder=[];_chipsToPrint.forEach(l=>{const r=_tmRoomOf(l);if(!_rOrder.includes(r))_rOrder.push(r);});
-      _scopeBlocks.push(_rOrder.map(r=>_propRoomBlock(r,_propUl(_chipsToPrint.filter(l=>_tmRoomOf(l)===r).map(_chipLi).join('')))).join(''));
+      _scopeBlocks.push(_roomOrder(_chipsToPrint,_tmRoomOf).map(r=>_propRoomBlock(r,_propUl(_chipsToPrint.filter(l=>_tmRoomOf(l)===r).map(_chipLi).join('')))).join(''));
     }else _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
   }
   // A line whose description is a whole letter ("Here's my estimate ... I will
