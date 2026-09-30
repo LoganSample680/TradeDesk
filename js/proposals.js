@@ -280,7 +280,9 @@ async function _ensureLogoUrl(){
     const{error}=await _supa.storage.from('gallery').upload(path,blob,{contentType:m[1],upsert:true,cacheControl:'31536000'});
     if(error)return '';
     const{data}=_supa.storage.from('gallery').getPublicUrl(path);
-    const url=data?data.publicUrl||'':'';
+    // Stored as the gallery's own address, never the /api proxy's: the link
+    // preview and the sign page only show a logo from the gallery itself.
+    const url=String(data?data.publicUrl||'':'').replace(/^https:\/\/[^/]+\/api\/storage\/v1\/object\/public\/gallery\//,'https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/');
     if(url){S.logoUrl=url;S.logoHash=_h;saveAll();}
     return url;
   }catch(_e){return '';}

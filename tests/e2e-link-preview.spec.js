@@ -82,6 +82,15 @@ test.describe('Texted link preview: his name and his logo', () => {
     expect(other).toEqual({ name: 'X', image: '' });
   });
 
+  test('a logo saved through the /api proxy is still his logo (owner 2026-09-30, blank square on the card)', async () => {
+    const viaProxy = 'https://uat.tradedesk-cyp.pages.dev/api/storage/v1/object/public/gallery/u1/branding/logo-9.jpg';
+    const b = L.previewBrand({ contractorName: 'X', logoUrl: viaProxy }, 'https://a.test');
+    expect(b.image).toBe('https://a.test/img/gallery/u1/branding/logo-9.jpg');
+    // Only the gallery: another bucket through the proxy is not a logo.
+    const notGallery = L.previewBrand({ contractorName: 'X', logoUrl: 'https://uat.tradedesk-cyp.pages.dev/api/storage/v1/object/public/proposals/x.png' }, 'https://a.test');
+    expect(notGallery.image).toBe('');
+  });
+
   test('the route files exist for both spellings of both pages', async () => {
     const fs = require('fs');
     for (const f of ['client.js', 'client.html.js', 'sign.js', 'sign.html.js'])

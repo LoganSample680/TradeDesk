@@ -2434,6 +2434,9 @@ test.describe('sign.html: his logo, his business email, nothing under the bar', 
     }), LOGO);
     expect(r.top).toBe(LOGO);
     expect(r.trust).toEqual([LOGO, '', '', 'data:image/png;base64,AA', '']);
+    // Saved through the /api proxy: the same gallery file.
+    const proxied = await page.evaluate(() => _signLogoSrc({ logoUrl: 'https://uat.tradedesk-cyp.pages.dev/api/storage/v1/object/public/gallery/u1/branding/logo-1.png' }));
+    expect(proxied).toBe('https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/u1/branding/logo-1.png');
   });
 
   test('the contact footer shows the business email, not the login', async () => {
