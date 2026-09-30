@@ -184,9 +184,12 @@ test.describe('a line is a quantity at a rate', () => {
 
   // ── 4. He can see the math ─────────────────────────────────────────────────
 
+  // Changed 2026-09-30 (owner: a scope line is words and a price, "one each
+  // or one quantity, that's left up to materials"). The multiply lives on the
+  // materials sheet now; a Work line has no count to multiply.
   test('the modal does the multiply out loud, and stays quiet at one', async () => {
     const r = await page.evaluate(() => {
-      _byoAddItem('Work');
+      _byoAddItem('Materials');
       document.getElementById('_bya-qty').value = '12';
       document.getElementById('_bya-price').value = '95';
       _byaLineMath();

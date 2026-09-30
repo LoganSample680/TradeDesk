@@ -19,6 +19,18 @@ test.describe('traced trips', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    await page.evaluate(() => { window.__tracedRealSupa = window._supa; });
+  });
+  // Several tests swap in a hand-made _supa that knows only update(). A save
+  // they trigger is debounced two seconds, so on a slow engine it fired in a
+  // LATER test against that stub and logged "select is not a function"
+  // (webkit, PR #129). Each test puts the real client back and drops the
+  // pending save it started, so no test's stub outlives the test.
+  test.afterEach(async () => {
+    await page.evaluate(() => {
+      if (typeof _syncTimer !== 'undefined' && _syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+      if (window.__tracedRealSupa !== undefined) window._supa = window.__tracedRealSupa;
+    });
   });
   test.afterAll(async () => { await page.context().close(); });
 
