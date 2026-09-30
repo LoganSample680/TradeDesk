@@ -34,7 +34,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
-import { centralDayKey, daysToDerive, deriveDayServer } from "../_shared/derive-day.mjs";
+import { centralDayKey, daysToDerive, deriveDayServer, workSettings } from "../_shared/derive-day.mjs";
 import { railCardFor } from "../_shared/live-card.mjs";
 import { pushLiveCard } from "../_shared/live-push.ts";
 import { sendSilentWake } from "../_shared/silent-push.ts";
@@ -182,6 +182,65 @@ function isWorkRegion(rid: string): boolean {
   return rid === "shop" || rid.startsWith("job-") || rid.startsWith("place-") || rid.startsWith("client-");
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidOrNull = (v: unknown): string | null =>
+  (typeof v === "string" && UUID_RE.test(v.trim())) ? v.trim().toLowerCase() : null;
+
+type GeoRow = {
+  type: string; ts: string; lat: number | null; lon: number | null; region_id: string;
+  kind: string | null; flip_id: string | null; arrival_ts: string | null; detail: unknown;
+};
+type Began =
+  | { ok: true; uid: string; cid: string; empName: string | null; state: unknown; stateUpdatedAt: string | null }
+  | { ok: false; status: number; error: string };
+
+// ── ONE TRIP PER UPLOAD (2026-09-28) ────────────────────────────────────────
+// Key check, crew link, store the events, read the device state: one call to
+// geo_ingest_begin (migration 20261055) instead of four in a row. Phones
+// uploaded 14,212 times on 2026-09-27. Until the migration is live the same
+// four steps run the old way, one after another, with the same results.
+async function beginIngest(
+  svc: any, svcAuth: any, uid: string, deviceId: string, key: string | null, rows: GeoRow[],
+  wantCid: string | null,
+): Promise<Began> {
+  const { data, error } = await svc.rpc("geo_ingest_begin",
+    { p_uid: uid, p_device: deviceId, p_key: key, p_rows: rows, p_cid: wantCid });
+  if (!error && data) {
+    if (!data.ok) return { ok: false, status: 401, error: "no valid auth" };
+    return { ok: true, uid, cid: String(data.cid || uid), empName: data.emp_name || null,
+      state: data.state ?? null, stateUpdatedAt: data.state_updated_at ? String(data.state_updated_at) : null };
+  }
+  const missing = !!error && (error.code === "PGRST202" || /could not find the function/i.test(String(error.message || "")));
+  if (error && !missing) return { ok: false, status: 500, error: "geo_events: " + error.message };
+  if (key) {
+    const { data: k } = await svcAuth.from("geo_flush_keys")
+      .select("user_id,key").eq("user_id", uid).eq("device_id", deviceId).maybeSingle();
+    if (!(k && k.key && k.key === key)) return { ok: false, status: 401, error: "no valid auth" };
+    uid = k.user_id;
+  }
+  // The same rule as geo_ingest_begin: the business the phone names, if it
+  // is the poster's own or one they hold an active crew link to.
+  let cid = uid;
+  let empName: string | null = null;
+  if (wantCid && wantCid !== uid) {
+    const { data: tm } = await svc.from("team_members")
+      .select("name").eq("employee_user_id", uid).eq("contractor_user_id", wantCid).eq("active", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (tm) { cid = wantCid; empName = tm.name || null; }
+  }
+  if (rows.length) {
+    const { error: insErr } = await svc.from("geo_events").upsert(
+      rows.map((r) => ({ contractor_user_id: cid, employee_user_id: uid, device_id: deviceId, ...r })),
+      { onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true },
+    );
+    if (insErr) return { ok: false, status: 500, error: "geo_events: " + insErr.message };
+  }
+  const { data: stRow } = await svc.from("geo_device_state")
+    .select("state,updated_at").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
+  return { ok: true, uid, cid, empName, state: stRow?.state ?? null,
+    stateUpdatedAt: stRow?.updated_at ? String(stRow.updated_at) : null };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -202,27 +261,23 @@ Deno.serve(async (req) => {
       const { data: { user } } = await userClient.auth.getUser();
       if (user) uid = user.id;
     }
-    if (!uid && body.user_id && body.key && deviceId) {
-      const { data: k } = await svcAuth.from("geo_flush_keys")
-        .select("user_id,key").eq("user_id", String(body.user_id)).eq("device_id", deviceId).maybeSingle();
-      if (k && k.key && k.key === String(body.key)) uid = k.user_id;
-    }
-    if (!uid) return json({ ok: false, error: "no valid auth" }, 401);
+    // The flush key is checked inside geo_ingest_begin, in the same trip that
+    // stores the events (migration 20261055).
+    const keyUid = (!uid && body.user_id && body.key && deviceId) ? String(body.user_id) : null;
+    const flushKey = keyUid ? String(body.key) : null;
+    // WHICH HAT (§9.10). The phone names the business it is working for: the
+    // native flush in the URL it was configured with, the JS poster in its
+    // body. geo_ingest_begin decides whether it is allowed.
+    const wantCid = uuidOrNull(new URL(req.url).searchParams.get("cid")) || uuidOrNull(body.cid);
+    if (!uid && !keyUid) return json({ ok: false, error: "no valid auth" }, 401);
     const rawEvents = Array.isArray(body.events) ? (body.events as Ev[]).slice(0, 400) : [];
-    if (!rawEvents.length) return json({ ok: true, stored: 0, derived: 0 });
-
     const svc = createClient(SUPABASE_URL, SERVICE_KEY);
-
-    // Whose account do this device's rows belong to: the crew link if one
-    // exists, else the poster is the owner. Same resolution as _geoCid().
-    let cid = uid;
-    let empName: string | null = null;
-    {
-      const { data: tm } = await svc.from("team_members")
-        .select("contractor_user_id,name,status")
-        .eq("employee_user_id", uid).limit(5);
-      const live = (tm || []).find((r) => r.status !== "removed" && r.contractor_user_id);
-      if (live) { cid = live.contractor_user_id; empName = live.name || null; }
+    if (!rawEvents.length) {
+      if (keyUid) {
+        const b = await beginIngest(svc, svcAuth, keyUid, deviceId, flushKey, [], wantCid);
+        if (!b.ok) return json({ ok: false, error: b.error }, b.status);
+      }
+      return json({ ok: true, stored: 0, derived: 0 });
     }
 
     // Normalize, sort by capture time, and store the raw stream. The unique
@@ -279,26 +334,34 @@ Deno.serve(async (req) => {
         flipId: typeof e.flipId === "string" ? e.flipId.slice(0, 40) : null,
       }))
       .sort((a, b) => a.ts - b.ts);
-    if (!evs.length) return json({ ok: true, stored: 0, derived: 0 });
+    const rows: GeoRow[] = evs.map((e) => ({
+      type: e.type, ts: new Date(e.ts).toISOString(),
+      lat: e.lat, lon: e.lng, region_id: e.regionId, kind: e.kind,
+      // Stored, not just used. The state machine below has always had this
+      // in memory; putting it on the row is what lets one departure be
+      // followed from the flip to the two rows it produced, instead of
+      // being reasoned about backwards from whichever one came out wrong
+      // (owner 2026-08-31, and the 20260904 migration says the rest).
+      flip_id: e.flipId,
+      arrival_ts: e.arrivalTs ? new Date(e.arrivalTs).toISOString() : null,
+      // The radio ledger's payload; null on every other row.
+      detail: e.detail,
+    }));
+    if (!evs.length) {
+      if (keyUid) {
+        const b = await beginIngest(svc, svcAuth, keyUid, deviceId, flushKey, [], wantCid);
+        if (!b.ok) return json({ ok: false, error: b.error }, b.status);
+      }
+      return json({ ok: true, stored: 0, derived: 0 });
+    }
 
-    const { error: insErr } = await svc.from("geo_events").upsert(
-      evs.map((e) => ({
-        contractor_user_id: cid, employee_user_id: uid, device_id: deviceId,
-        type: e.type, ts: new Date(e.ts).toISOString(),
-        lat: e.lat, lon: e.lng, region_id: e.regionId, kind: e.kind,
-        // Stored, not just used. The state machine below has always had this
-        // in memory; putting it on the row is what lets one departure be
-        // followed from the flip to the two rows it produced, instead of
-        // being reasoned about backwards from whichever one came out wrong
-        // (owner 2026-08-31, and the 20260904 migration says the rest).
-        flip_id: e.flipId,
-        arrival_ts: e.arrivalTs ? new Date(e.arrivalTs).toISOString() : null,
-        // The radio ledger's payload; null on every other row.
-        detail: e.detail,
-      })),
-      { onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true },
-    );
-    if (insErr) return json({ ok: false, error: "geo_events: " + insErr.message }, 500);
+    // One trip: key check, crew link, store, and the device state the state
+    // machine below starts from.
+    const began = await beginIngest(svc, svcAuth, (uid || keyUid) as string, deviceId, flushKey, rows, wantCid);
+    if (!began.ok) return json({ ok: false, error: began.error }, began.status);
+    uid = began.uid;
+    const cid = began.cid;
+    const empName = began.empName;
 
     // ── The state machine, under an optimistic lock ─────────────────────────
     // geo_device_state was read, computed on, and written back blind. Two
@@ -341,8 +404,16 @@ Deno.serve(async (req) => {
     let casWon = false;
     for (let attempt = 0; attempt < STATE_CAS_TRIES && !casWon; attempt++) {
       // ── The state machine ───────────────────────────────────────────────────
-      const { data: stRow } = await svc.from("geo_device_state")
-        .select("state,updated_at").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
+      // The first pass starts from the state geo_ingest_begin already read; a
+      // pass that lost the swap re-reads the winner's.
+      let stRow: { state: unknown; updated_at: unknown } | null;
+      if (attempt === 0) {
+        stRow = began.stateUpdatedAt ? { state: began.state, updated_at: began.stateUpdatedAt } : null;
+      } else {
+        const { data } = await svc.from("geo_device_state")
+          .select("state,updated_at").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
+        stRow = data;
+      }
       // The compare half of the compare-and-swap below. null means "no row
       // yet", which takes the insert path rather than an update that would
       // match nothing and look like a lost race forever.
@@ -673,17 +744,6 @@ Deno.serve(async (req) => {
       }
     } catch (e) { console.error("[live-push] " + String(e).slice(0, 200)); }
 
-    // Fleet & Team liveness for free: the newest fix stamps the device row.
-    const newest = [...evs].reverse().find((e) => e.lat != null);
-    if (newest) {
-      // device_id here is the SAME zp3 device id JS registers in device_status
-      // (handed to the plugin via configureFlush), so this lands on the one
-      // row the roster actually renders; a mismatch updates nothing, safely.
-      await svc.from("device_status").update({
-        location_checked_at: new Date(newest.ts).toISOString(),
-      }).eq("user_id", uid).eq("device_id", deviceId).then(() => {}, () => {});
-    }
-
     // ── A CLOSE EARNS ONE WAKE (owner 2026-09-28: "do the swipe fix") ─────
     // The phone now sends its close as it dies. If that close is fresh and
     // inside the working day, one silent push brings the app straight back
@@ -693,12 +753,13 @@ Deno.serve(async (req) => {
     try {
       if (evs.some((e) => e.type === "app-terminate") && apnsConfigured()) {
         const key = "wake:" + uid;
-        const [{ data: cfgRow }, { data: wm }] = await Promise.all([
-          svc.from("zj_data").select("settings").eq("user_id", cid).maybeSingle(),
+        // workHours only, never the whole settings blob (egress, 2026-09-28).
+        const [cfgRow, { data: wm }] = await Promise.all([
+          workSettings(svc, cid),
           svc.from("cron_watermarks").select("ran_at").eq("name", key).maybeSingle(),
         ]);
         const lastWake = wm?.ran_at ? Date.parse(wm.ran_at) : NaN;
-        if (terminateWakeDue(evs, Date.now(), workHoursFromSettings(cfgRow?.settings), lastWake)) {
+        if (terminateWakeDue(evs, Date.now(), workHoursFromSettings(cfgRow), lastWake)) {
           await svc.from("cron_watermarks").upsert({ name: key, ran_at: new Date().toISOString() });
           const { data: toks } = await svc.from("device_tokens")
             .select("token").eq("user_id", uid).is("invalid_at", null);

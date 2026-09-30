@@ -986,6 +986,9 @@ function updateClockTimer(){
 
 function showClockBanner(){
   const b=document.getElementById('clock-banner');if(!b)return;
+  // A read-only support view (ops portal) is looking, not working: no clock
+  // bar, and no Next / Done / clock-out buttons that would act on a clock.
+  if(typeof opsReadOnly==='function'&&opsReadOnly()){hideClockBanner();return;}
   const jn=document.getElementById('clock-banner-job');
   if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
   const bt=document.getElementById('clock-banner-time');

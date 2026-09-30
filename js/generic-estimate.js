@@ -731,7 +731,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // His hourly rate comes from Settings. It used to start at 0, which made him
   // type his own rate on every bid and blocked Send until he did.
   _geiChecking=false;
-  _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
+  _tmCrewCount=1;_tmRatePerMan=_facts.laborRate;_tmEstHours=0;_tmBillingCycle=_tmLastCadence();_tmPayOpen=false;_tmCapAction='Stop & get re-approval';
   // ── A NEW T&M PROPOSAL STARTS WITH THE RATE ON ─────────────────────────────
   //
   // It started at NOTHING until 2026-09-22, and the reasoning then was sound:
@@ -2203,12 +2203,29 @@ function _timMissLearn(im,yes){
 // the same card from two copies, and only T&M's got the No. Tinted, his mark
 // on it, a filled Add, and a visible No beside every Add: the bar walks him to
 // this card, so turning one down has to be one tap too, not a swipe.
+// ONE LINE UNTIL HE ASKS (owner 2026-09-29: "Tim's suggestions fold to one
+// line"). Six rows of things he did not say pushed Who's going off the screen.
+// Folded, it is Tim, how many, Add all, and Review. Open when he taps Review,
+// when he is editing, and when what is left is only his to answer (a permit, a
+// model number): Add all cannot take those, so hiding them hides the question.
+let _timMissOpen=false;
+Object.defineProperty(window,'_timMissOpen',{get:()=>_timMissOpen,set:v=>{_timMissOpen=!!v;},configurable:true});
+function _timMissToggle(el){
+  _timMissOpen=!_timMissOpen;
+  const g=el&&el.closest&&el.closest('.ios-tim');
+  if(g)g.classList.toggle('open',_timMissOpen);
+  const r=el&&el.querySelector&&el.querySelector('.tim-rev');
+  if(r)r.textContent=_timMissOpen?'Hide':'Review';
+}
 function _timMissCardHtml(list,take,drop,takeAll,ed){
   const n=_timMissTakeable(list).length;
+  const open=_timMissOpen||ed||n===0;
+  const cnt=list.length;
   return '<div class="ios-sec">'+
-    '<div class="ios-group ios-tim">'+
+    '<div class="ios-group ios-tim'+(open?' open':'')+'">'+
       '<div class="ios-tim-h">'+(typeof timMark==='function'?timMark(22):'')+
-        '<span class="who">You did not say</span>'+
+        '<span class="who"'+(n>0&&!ed?' role="button" onclick="_timMissToggle(this)"':'')+'>You did not say'+
+          '<small>'+cnt+' thing'+(cnt>1?'s':'')+(n>0&&!ed?' · <span class="tim-rev">'+(open?'Hide':'Review')+'</span>':'')+'</small></span>'+
         (n>1?'<button type="button" class="ios-pill" onclick="'+takeAll+'()">Add all '+n+'</button>':'')+
       '</div>'+
       list.map(im=>{
@@ -3600,7 +3617,9 @@ function _estLaborCost(){
   const hrs=_estLaborHours();
   if(hrs<=0)return 0;
   if(_estCrew.length&&_hasEmployees()){
-    const crewRate=_estCrew.reduce((s,email)=>s+_empLoadedFor(email),0);
+    // The owner can be on the crew now (Who's going), and his cost is his own
+    // loaded rate, not a team_members row he does not have.
+    const crewRate=_estCrew.reduce((s,email)=>s+((typeof _personIsOwner==='function'&&_personIsOwner(String(email)))?_ownerLoadedHourly():_empLoadedFor(email)),0);
     return Math.round(hrs*crewRate);
   }
   const own=_ownerLoadedHourly();
@@ -3633,9 +3652,7 @@ function _billRateFor(email){
   if(!k)return 0;
   const own=Number(_estCrewRates&&_estCrewRates[k]);
   if(own>0)return own;
-  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-  const def=Number(e&&e.billRate);
-  return def>0?def:0;
+  return personBillRate(k);                      // the one lookup (js/data.js)
 }
 // What the crew on site bills, per hour, all in. Zero when nobody on this job
 // has a rate of their own, which is the signal to fall back to crew × flat.
@@ -3658,10 +3675,7 @@ function _setBillRate(email,rate,asDefault){
   const r=Math.max(0,Number(rate)||0);
   if(!k)return;
   if(r>0)_estCrewRates[k]=r;else delete _estCrewRates[k];
-  if(asDefault){
-    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
-    if(e){e.billRate=r||0;if(typeof _settingsChanged==='function')_settingsChanged();}
-  }
+  if(asDefault)setPersonBillRate(k,r);
   if(_geiIsTM&&typeof _tmInputChange==='function')_tmInputChange();
   else{if(typeof _byoUpdateRail==='function')_byoUpdateRail();if(typeof _byoAutosave==='function')_byoAutosave();}
 }
@@ -3692,11 +3706,125 @@ function _billRateHabit(email){
 // rate is not one number any more.
 function _crewRateWords(){
   return _estCrew.map(email=>{
-    const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===String(email).toLowerCase());
-    const first=((e&&e.name)||email||'').split(' ')[0]||email;
+    const first=_crewFirst(email);
     const r=_billRateFor(email);
     return first+(r>0?(' at $'+r.toLocaleString()):'');
   }).join(', ');
+}
+// ── WHO'S GOING (owner 2026-09-29) ──────────────────────────────────────────
+//
+// "Pick crew including the owner. This sets the people count AND the hourly
+// rate." Before this the page asked for People on site and an Hourly rate as
+// two separate numbers, and the crew (the people who ARE the rate) was a chip
+// row at the bottom of the rail. Now he taps who is going, the hour bills at
+// the sum of their rates, and anyone with no rate gets an orange Rate? right
+// there. The rate he types is saved on the person, so it is asked once.
+// The customer reads "2 techs", never the names.
+function _tmCrewOn(){return _hasEmployees()&&_estCrew.length>0;}
+function _tmCrewMissing(){return _estCrew.filter(k=>!(_billRateFor(k)>0));}
+function _tmOwnerKey(){
+  const mail=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
+  if(mail)return mail;
+  return String((typeof getOwnerName==='function'&&getOwnerName())||(S&&S.ownerName)||'').trim().toLowerCase();
+}
+function _crewFirst(k){
+  k=String(k||'').toLowerCase();
+  const e=(S.employees||[]).find(x=>x&&String(x.email||'').toLowerCase()===k);
+  if(e)return (e.name||'').split(' ')[0]||e.name||k;
+  if(typeof _personIsOwner==='function'&&_personIsOwner(k)){
+    const n=String((typeof getOwnerName==='function'&&getOwnerName())||(S&&S.ownerName)||'').trim();
+    return n.split(' ')[0]||'You';
+  }
+  return k.split('@')[0]||k;
+}
+function _tmWhoPeople(){
+  const out=[];
+  const ok=_tmOwnerKey();
+  if(ok)out.push({k:ok,first:_crewFirst(ok)});
+  _crewByTrust((S.employees||[]).filter(e=>e&&e.name&&e.email)).forEach(e=>{
+    const k=String(e.email).toLowerCase();
+    if(k!==ok)out.push({k,first:(e.name||'').split(' ')[0]||e.name});
+  });
+  return out;
+}
+function _tmRenderWho(){
+  const w=document.getElementById('tm-who');if(!w)return;
+  const crew=_tmCrewOn();
+  const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
+  // Picking the crew replaces both numbers it decides.
+  show('tm-rate-row',!crew);
+  show('tm-crew-row',!crew);
+  if(!_hasEmployees()){w.innerHTML='';return;}
+  const chips=_tmWhoPeople().map(p=>{
+    const on=_estCrew.indexOf(p.k)>=0;
+    return '<button type="button" class="tm-who-chip'+(on?' on':'')+'" aria-pressed="'+on+'" data-who="'+escHtml(p.k)+'" '+
+      'onclick="_toggleCrewMember('+escHtml(JSON.stringify(p.k))+')">'+escHtml(p.first)+'</button>';
+  }).join('');
+  // The step heading already says Who's going; the row under it is the chips.
+  let html='<div class="tm-who-chips">'+chips+'</div>';
+  if(crew&&_tmLayers.has('rate')){
+    _estCrew.forEach(k=>{
+      const r=_billRateFor(k),need=!(r>0),first=_crewFirst(k);
+      html+='<label class="ios-row tm-who-rate"><span class="ios-lbl">'+escHtml(first)+
+          (need?'<small class="qi-need-lbl">Needs a rate</small>':'')+'</span>'+
+        '<span class="ios-val qi-rate'+(need?' need':'')+'">$<input type="text" inputmode="decimal" value="'+(r>0?r:'')+'" placeholder="Rate?" '+
+          'aria-label="What '+escHtml(first)+' bills per hour" onchange="_tmWhoRate(this,'+escHtml(JSON.stringify(k))+')">/hr</span></label>';
+    });
+    const n=_estCrew.length;
+    const miss=_tmCrewMissing().length;
+    html+='<div class="ios-row tm-who-sum"><span class="ios-lbl">'+n+' '+(n>1?'people':'person')+(miss?'<small>Not counting '+escHtml(_tmCrewMissing().map(_crewFirst).join(', '))+' yet</small>':'')+'</span>'+
+      '<span class="ios-val">$'+_crewHourlyBill().toLocaleString('en-US')+'/hr</span></div>';
+  }
+  w.innerHTML=html;
+}
+// The rate typed here is the person's rate from now on: it lives on the worker.
+function _tmWhoRate(el,k){
+  const r=Math.max(0,parseFloat(String(el&&el.value||'').replace(/[^0-9.]/g,''))||0);
+  _setBillRate(k,r,true);
+}
+// ── GETTING PAID: one line, filled in, tap to change ─────────────────────────
+let _tmPayOpen=false;
+Object.defineProperty(window,'_tmPayOpen',{get:()=>_tmPayOpen,set:v=>{_tmPayOpen=!!v;},configurable:true});
+// Open on its own only when something in it needs him: the law, or money up
+// front that the state or the limit will not allow.
+function _tmPayAttention(){
+  if(!_geiIsTM)return false;
+  const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
+  if(legal.some(p=>p.k==='cap'||p.k==='dep'))return true;
+  const D=(typeof _tmDepositState==='function'&&_tmLayers.has('dep'))?_tmDepositState():null;
+  return !!(D&&(D.over||D.needCap));
+}
+function _tmPaySummary(){
+  const parts=[];
+  const dep=_tmLayers.has('dep')?(typeof _tmDeposit==='function'?_tmDeposit():0):0;
+  parts.push(dep>0?('$'+dep.toLocaleString('en-US')+' deposit'):'No deposit');
+  if(_tmLayers.has('rate'))parts.push({weekly:'bills weekly',milestone:'bills at milestones',completion:'bills at the end'}[_tmBillingCycle||'weekly']||'bills weekly');
+  const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
+  const sub=cap>0?('The most it can cost: $'+cap.toLocaleString('en-US')):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
+  return {main:parts.join(', '),sub};
+}
+function _tmRenderPay(){
+  const g=document.getElementById('tm-pay-group');if(!g)return;
+  const rule=(typeof _tmStateRule==='function')?_tmStateRule():{};
+  const sec=document.getElementById('tm-sec-pay');
+  if(sec)sec.style.display=rule.rule==='block'?'none':'';
+  if(_tmPayAttention())_tmPayOpen=true;
+  g.classList.toggle('open',_tmPayOpen);
+  const sum=document.getElementById('tm-pay-sum');if(!sum)return;
+  const t=_tmPaySummary();
+  sum.innerHTML='<button type="button" class="ios-row" id="tm-pay-btn" onclick="_tmPayToggle()" aria-expanded="'+(_tmPayOpen?'true':'false')+'">'+
+    '<span class="ios-lbl">'+escHtml(t.main.charAt(0).toUpperCase()+t.main.slice(1))+'<small>'+escHtml(t.sub)+(_tmPayOpen?'':' · Tap to change')+'</small></span>'+
+    '<span class="ios-chev" style="transform:rotate('+(_tmPayOpen?'90':'0')+'deg);transition:transform .2s ease">›</span></button>';
+}
+function _tmPayToggle(){_tmPayOpen=!_tmPayOpen;_tmRenderPay();}
+// A new T&M bills the way his last one did. Weekly when there is no last one.
+function _tmLastCadence(){
+  const list=(typeof bids!=='undefined'&&Array.isArray(bids))?bids:[];
+  for(let i=list.length-1;i>=0;i--){
+    const c=list[i]&&list[i].isTM&&list[i].tmBillingCycle;
+    if(c==='weekly'||c==='milestone'||c==='completion')return c;
+  }
+  return 'weekly';
 }
 function _takeBillRateDefault(email,rate){
   _setBillRate(email,rate,true);
@@ -3813,8 +3941,11 @@ function _renderLaborPicker(type){
   let body;
   // Check if any selected crew member has an upcoming booking conflict.
   const bookedSelected=emps.filter(e=>_estCrew.indexOf((e.email||'').toLowerCase())>=0&&_empNextJob(e));
+  // T&M picks the crew in Who's going (step 2); the rail only states the cost.
+  // One control per job, never the same chips twice (15.1).
+  const tm=type==='tm';
   if(!_estCrew.length){
-    body='<span style="color:var(--text3)">Tap a name to add who\'s on this job, their pay + benefits become a job cost.</span>';
+    body='<span style="color:var(--text3)">'+(tm?'Pick who\'s going in step 2, their pay + benefits become a job cost.':'Tap a name to add who\'s on this job, their pay + benefits become a job cost.')+'</span>';
   }else if(cost<=0){
     // TWO NUMBERS, AND THIS LINE IS ONLY ABOUT ONE OF THEM. With per-person
     // bill rates on screen above it, the old wording ("set pay rates") read as
@@ -3833,8 +3964,7 @@ function _renderLaborPicker(type){
   wrap.style.display='';
   wrap.innerHTML=
     '<div class="td-micro" style="margin-bottom:6px">Crew on this job <span style="font-weight:500;color:var(--text3);text-transform:none;letter-spacing:0">(their pay is your cost)</span></div>'+
-    '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+
-    _crewRatesHtml(emps)+
+    (tm?'':'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+_crewRatesHtml(emps))+
     '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
     '<div class="summary-divider"></div>';
 }
@@ -4843,6 +4973,8 @@ function _tmInputChange(){
   // Crew count driven by stepper; read stepper display, not a select
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
+  // Who's going IS the people count when he has picked them.
+  if(_tmCrewOn()){_tmCrewCount=_estCrew.length;if(crewDisp)crewDisp.textContent=_tmCrewCount;}
   // The field is "Estimated days", _tmEstHours (shared with save/resume/the legacy
   // wizard) stays a real hour count internally, just derived from days×8 now.
   //
@@ -4877,7 +5009,9 @@ function _tmInputChange(){
   const desc=_hideRate
     ? ('Labor'+(_tmCrewCount>1?(', '+_tmCrewCount+' workers'):''))
     : (crewRates
-      ? ('Labor: '+_crewRateWords()+' · $'+perHour.toLocaleString()+'/hr on site')
+      // Never names: the customer reads "2 techs", not who they are
+      // (owner 2026-09-29). The names are his, on the rail.
+      ? ('Labor: '+_estCrew.length+' tech'+(_estCrew.length>1?'s':'')+' · $'+perHour.toLocaleString()+'/hr on site')
       : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
   const line=_hideRate
     ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
@@ -4956,6 +5090,7 @@ function _tmInputChange(){
   if(typeof calcGeiTotal==='function')calcGeiTotal();
   // Crew picker (shared with BYO), who's actually on this job drives true labor cost.
   if(typeof _renderLaborPicker==='function')_renderLaborPicker('tm');
+  _tmRenderWho();_tmRenderPay();
   // TRUE cost feeds the gauge: materials at raw cost + what the selected crew
   // actually costs the business (loaded pay rates × the T&M hours). No employees
   //, or none selected, means the OWNER is on the job, and his hours are now
@@ -5194,7 +5329,7 @@ function _tmStateName(st){
 // the terms and the Rate row on the document.
 function _tmShowRateOnDoc(){return !!(_geiIsTM&&Number(_tmRatePerMan)>0&&!(_tmHideRate&&_tmCanHideRate()));}
 function _tmHideRateDefault(){
-  try{return (typeof S!=='undefined'&&S)?!!S.tmHideRate:false;}catch(_e){return false;}
+  try{return typeof copyShows==='function'?!copyShows('proposal','rate'):!!(typeof S!=='undefined'&&S&&S.tmHideRate);}catch(_e){return false;}
 }
 function _tmSetHideRate(v){
   if(!_tmCanHideRate()){_tmHideRate=false;}
@@ -5203,7 +5338,8 @@ function _tmSetHideRate(v){
   // An assignment alone lives until the tab closes, which is not "remembered"
   // and is certainly not "follows him to the tablet in the truck".
   try{
-    if(typeof S!=='undefined'&&S){
+    if(typeof setCopyShows==='function')setCopyShows('proposal','rate',!_tmHideRate);
+    else if(typeof S!=='undefined'&&S){
       S.tmHideRate=_tmHideRate;
       if(typeof _settingsChanged==='function')_settingsChanged();
     }
@@ -5843,7 +5979,8 @@ function _tmStepsState(all){
   const one=_tmScopeDone();
   const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
   const rate=Number(_tmRatePerMan)||0, cap=_tmCapVal();
-  const rateOk=!L.has('rate')||rate>0;
+  const crewOn=_tmCrewOn();
+  const rateOk=!L.has('rate')||(crewOn?(!_tmCrewMissing().length&&_crewHourlyBill()>0):rate>0);
   const estOk=!L.has('est')||Number(_tmEstHours)>0;
   const two=rateOk&&estOk&&!legal.length;
   const chips=(_geiScopeChips||[]).length;
@@ -5854,8 +5991,8 @@ function _tmStepsState(all){
   const need=legal.length?legal[0].fix.replace(/\.$/,'')
     :!rateOk?'Put in your rate':!estOk?'Say how many days':'';
   const s2=two
-    ?(L.has('rate')?('$'+rate.toLocaleString('en-US')+'/hr'+(cap>0?(' · up to $'+cap.toLocaleString('en-US')):'')):(cap>0?('Up to $'+cap.toLocaleString('en-US')):'No price, scope only'))
-    :need;
+    ?(L.has('rate')?(crewOn?(_estCrew.length+' '+(_estCrew.length>1?'people':'person')+' · $'+_crewHourlyBill().toLocaleString('en-US')+'/hr'):('$'+rate.toLocaleString('en-US')+'/hr')):'No price, scope only')
+    :(crewOn&&L.has('rate')&&_tmCrewMissing().length?(_crewFirst(_tmCrewMissing()[0])+' needs a rate'):need);
   return {one,two,s1,s2};
 }
 function _tmRenderSteps(all,rule){
@@ -5879,7 +6016,8 @@ function _tmRenderSteps(all,rule){
   // Not ticked until he has looked at the numbers: a pre-filled rate is not a
   // checked one.
   const chk=!_tmLayers.has('rate')||_tmRateChecked();
-  head('tm-step-2',2,'How it bills',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  head('tm-step-2',2,_hasEmployees()?'Who\'s going':'Your rate',blocked?'todo':st.two?(st.one?(chk?'done':'now'):'todo'):(cur===2?'now':'todo'),blocked?'':st.s2);
+  head('tm-step-3',3,'Getting paid',blocked?'todo':_tmPayAttention()?'now':(st.one&&st.two&&chk)?'done':'todo','');
   _tmRenderDock(st,rule,all);
 }
 // ── THE BAR ─────────────────────────────────────────────────────────────────
@@ -5895,6 +6033,8 @@ function _tmDockNext(st,rule,all){
   if(rule.rule==='block')return {label:'Make it a fixed price',fn:'_tmToFixedPrice()'};
   if(!st.one)return {label:'Build the steps',fn:'_tmDockBuild()'};
   if(!st.two){
+    if(_tmCrewOn()&&_tmLayers.has('rate')&&_tmCrewMissing().length)
+      return {label:'Add '+_crewFirst(_tmCrewMissing()[0])+'\'s rate',fn:'_tmStepAct(\'rate\')'};
     const legal=(typeof _tmLegal==='function')?_tmLegal().problems:[];
     const n=(all||_tmSteps()).find(s=>s.rec&&s.k!=='scope');
     // The law first: what it asks for is the next thing, whatever the steps say.
@@ -6084,6 +6224,7 @@ function _tmDepMode(on){
 }
 function _tmRenderBillTerms(){
   if(!_geiIsTM)return;
+  _tmRenderPay();
   const segOn=(id,v)=>{const w=document.getElementById(id);if(w)w.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===String(v)));};
   const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
   const depOn=_tmLayers.has('dep');
@@ -6113,7 +6254,10 @@ function _tmRenderBillTerms(){
     // page itself (owner, 2026-09-17: "hourly rate never gets exposed to the
     // proposal itself"). This switch decides whether it is a term in the
     // contract they sign.
-    rs.textContent=shown
+    const cr=_tmCrewOn()?_crewHourlyBill():0;
+    rs.textContent=(shown&&cr>0)
+      ?('They sign to $'+cr.toLocaleString('en-US')+' an hour for the crew on site. It is in the contract terms, not on the proposal page.')
+      :shown
       ?(r>0?'They sign to '+f+' an hour, per worker. It is in the contract terms, not on the proposal page.':'They sign to your hourly rate, in the contract terms.')
       :(r>0?'Nowhere they see. You still bill the hours at '+f+'.':'Nowhere they see. You still bill the hours at your rate.');
   }
@@ -6133,6 +6277,11 @@ function _tmRenderBillTerms(){
 // off screen: he taps Add, sees nothing happen, and taps it again.
 function _tmStepAct(k){
   _tmAddLayer(k);
+  if(k==='cap'||k==='dep'){_tmPayOpen=true;_tmRenderPay();}
+  if(k==='rate'&&_tmCrewOn()){
+    const i=document.querySelector('#tm-who .qi-rate.need input')||document.querySelector('#tm-who .qi-rate input');
+    if(i){try{i.scrollIntoView({block:'center'});}catch(_e){}try{i.focus();}catch(_e){}return;}
+  }
   const id=(k==='cap')?'tm-i-nte':(k==='rate')?'tm-i-rate':(k==='est')?'tm-i-days':(k==='dep')?'tm-i-dep-flat':null;
   const el=id?document.getElementById(id):null;
   if(!el)return;
@@ -7492,7 +7641,9 @@ function _geiBuildTermsHtml(){
   // _tmCanHideRate is consulted and not just the flag, so a proposal carried
   // across a state line cannot arrive with a required term missing.
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
-    `Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+    (_tmCrewOn()&&_crewHourlyBill()>0
+      ?`Labor is billed at $${_crewHourlyBill().toLocaleString()} per hour for the crew on site, ${_estCrew.length} tech${_estCrew.length>1?'s':''}, for time worked on this project. Crew size may change with Buyer&apos;s knowledge; each tech added or removed changes the hourly figure by that tech&apos;s rate.`
+      :`Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.`)+`${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
@@ -7802,6 +7953,13 @@ function _propCover(o){
     `<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);font-size:12.5px;color:rgba(255,255,255,.72)">No. ${o.num} &nbsp;·&nbsp; Date: ${_propDate(o.date)}</div>`+
   `</div>`;
 }
+// A customer's phone as the document prints it, (555) 555-0101. One helper
+// so the proposal and the invoice never print the same number two ways.
+function _propPhone(v){
+  const raw=String(v||'');let d=raw.replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
+  return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
+}
 function _propIncludedHtml(texts,accent,title,tm,tint){
   const inc=_propIncluded(texts,tm);
   if(inc.items.length<3)return '';
@@ -7921,11 +8079,7 @@ async function sendGenericProposal(previewOnly,opts){
   // Printed the way a phone number is written, not as ten bare digits. Only a
   // clean US number is reshaped (a leading 1 dropped); anything else prints
   // exactly as he typed it, because a wrong reformat is worse than none.
-  const clientPhone=escHtml((()=>{
-    const raw=String(_clientRec?.phone||'');let d=raw.replace(/\D/g,'');
-    if(d.length===11&&d[0]==='1')d=d.slice(1);
-    return d.length===10?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):raw;
-  })());
+  const clientPhone=escHtml(_propPhone(_clientRec?.phone));
   // The Project line is the CLIENT's header, so it only carries a name the
   // contractor actually chose. The auto name (_geiAutoName) is derived from the
   // first line item and exists so he can find the proposal in his own list,

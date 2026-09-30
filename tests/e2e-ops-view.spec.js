@@ -192,6 +192,22 @@ test.describe('Ops support view: read only, both directions', () => {
     expect(src.slice(src.indexOf('function _geoEnqueue(tbl'), src.indexOf('function _geoEnqueue(tbl') + 300)).toContain('opsReadOnly()');
   });
 
+  // Owner 2026-09-29, screenshot of the portal: Jack's clock bar with Next,
+  // Done and clock out sat over the invoice. Looking is not working.
+  test('no clock bar and no clock buttons in a support view', async () => {
+    const r = await page.evaluate(() => {
+      window._opsView = { target: 'them', personUid: 'p', personName: 'Jack', business: 'X', role: 'owner', perms: {} };
+      try {
+        showClockBanner();
+        const b = document.getElementById('clock-banner');
+        return { shown: getComputedStyle(b).display !== 'none', cls: document.body.classList.contains('clock-active') };
+      } finally { window._opsView = null; hideClockBanner(); }
+    });
+    expect(r).toEqual({ shown: false, cls: false });
+    const normal = await page.evaluate(() => { showClockBanner(); const on = getComputedStyle(document.getElementById('clock-banner')).display !== 'none'; hideClockBanner(); return on; });
+    expect(normal, 'outside a view the bar still shows').toBe(true);
+  });
+
   test('the portal can switch people and hand back, and nothing else', async () => {
     const r = await page.evaluate(async () => {
       window._opsRoster = [

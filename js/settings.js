@@ -59,7 +59,7 @@ function renderPriceBookSettings(){
     if(tabs)tabs.innerHTML='';
     list.innerHTML=_offer+'<div style="padding:'+(_offer?'4px':'22px')+' 4px 22px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing here yet, and that is on purpose. Write an estimate and the lines you use twice land here on their own, with what you charged.'+
-      '</div>';
+      '</div>'+_partCostsHtml();
     return;
   }
   if(!_pbTradeTab||!trades.includes(_pbTradeTab))_pbTradeTab=trades[0];
@@ -75,13 +75,33 @@ function renderPriceBookSettings(){
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
         '<button data-i="'+i+'" onclick="_pbRename(+this.dataset.i)" style="display:block;width:100%;text-align:left;background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</button>'+
-        '<div style="font-size:11px;color:var(--text3)">'+escHtml(used)+(r.last?' · '+escHtml(r.last):'')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml(used)+(r.last?' · '+escHtml(r.last):'')+
+          // What he paid for it, from his receipts, beside what he charges.
+          (function(){const pc=(typeof partCostFor==='function')?partCostFor(r.desc):null;return pc?' · paid '+escHtml(fmt(pc.cost))+(pc.vendor?' at '+escHtml(pc.vendor):''):'';})()+'</div>'+
       '</div>'+
       '<button data-i="'+i+'" onclick="_pbReprice(+this.dataset.i)" style="background:none;border:none;padding:0;font-family:inherit;cursor:pointer;font-size:14px;font-weight:800;color:var(--blue);flex-shrink:0">'+(typeof fmt==='function'?fmt(r.rate):'$'+r.rate)+'</button>'+
       '<button data-i="'+i+'" onclick="_pbRemove(+this.dataset.i)" aria-label="Remove" style="background:none;border:none;padding:4px 2px;font-family:inherit;cursor:pointer;font-size:15px;color:var(--text3);flex-shrink:0">&times;</button>'+
     '</div>';
   }).join('')+
-  '<div style="font-size:11px;color:var(--text3);padding:12px 2px 0;line-height:1.6">A line lands here the second time you use it, so one-off descriptions never clutter it up.</div>';
+  '<div style="font-size:11px;color:var(--text3);padding:12px 2px 0;line-height:1.6">A line lands here the second time you use it, so one-off descriptions never clutter it up.</div>'+
+  _partCostsHtml();
+}
+// THE MATERIALS BOOK on the price book screen (partCostLearn, js/data.js):
+// every part off a scanned receipt, most bought first so he can see what the
+// truck has to carry, with the latest price and where it came from.
+function _pcDay(at){const m=String(at||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return '';try{return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(_e){return '';}}
+function _partCostsHtml(){
+  const rows=(typeof materialsBook==='function')?materialsBook():[];
+  const head='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Materials book'+(rows.length?' · '+rows.length+(rows.length===1?' part':' parts'):'')+'</div>';
+  if(!rows.length)return '<div id="pb-paid" style="margin-top:22px">'+head+
+    '<div style="font-size:13px;color:var(--text3);line-height:1.6">Scan a receipt and every part on it lands here with what it cost you and where. The ones you buy most sit at the top.</div></div>';
+  const q=n=>{n=Number(n)||0;return Number.isInteger(n)?String(n):String(Math.round(n*100)/100);};
+  return '<div id="pb-paid" style="margin-top:22px">'+head+
+    rows.slice(0,200).map(r=>'<div class="pb-paid-row" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.desc)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">'+escHtml(['bought '+q(r.qty||1)+((r.n||1)>1?' over '+r.n+' trips':''),r.vendor,_pcDay(r.at)].filter(Boolean).join(' · '))+'</div></div>'+
+      '<div style="font-size:14px;font-weight:700;flex-shrink:0">'+escHtml(fmt(r.cost))+'</div></div>').join('')+
+    '<div style="font-size:11px;color:var(--text3);padding:10px 2px 0;line-height:1.6">From your receipts, the latest price each time you buy it. Your cost, never what a customer is charged unless you pick it.</div></div>';
 }
 function _pbPickTrade(t){_pbTradeTab=t;renderPriceBookSettings();}
 function _pbSettingsRow(i){
@@ -992,7 +1012,7 @@ function loadSettingsForm(){
   sd('set-ksl-disp',(S.ksLow||3.1)+'%');sd('set-ksh-disp',(S.ksHigh||5.7)+'%');sd('set-kst-disp',fmt$(S.ksTop||33000));sd('set-kss-disp',fmt$(S.ksStdS||3500));sd('set-ksm-disp',fmt$(S.ksStdM||8000));
   sf('set-txstatus',S.txStatus||'single');
   sf('set-goal-monthly',S.goalMonthly||'');
-  sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
+  sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-since-year',S.sinceYear||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-est-valid-days',S.estValidDays!=null?S.estValidDays:30);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);
@@ -1055,7 +1075,8 @@ function saveSettings(){
     smsReminder:gs('set-sms-reminder')||_smsD.reminder,
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
-    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,estValidDays:Math.min(365,Math.max(1,Math.round(gf('set-est-valid-days')||30))),cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,sinceYear:parseInt(gs('set-since-year'))||0,reviewUrl:gs('set-review-url')||'',brandColor:adaBrand(gs('set-brandcolor'))||'',bwebsite:gs('set-bwebsite')||'',
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:S.laborRate||45,   // set under Team now (_teamRateSet)
+    bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,estValidDays:Math.min(365,Math.max(1,Math.round(gf('set-est-valid-days')||30))),cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,sinceYear:parseInt(gs('set-since-year'))||0,reviewUrl:gs('set-review-url')||'',brandColor:adaBrand(gs('set-brandcolor'))||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on, a condition of using TradeDesk

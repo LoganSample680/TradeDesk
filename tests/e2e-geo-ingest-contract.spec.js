@@ -88,8 +88,17 @@ test.describe('geofence ingest contract', () => {
     // The read must be INSIDE the loop, or a retry recomputes against the same
     // stale state forever and can only ever lose again.
     const loopAt = srv.indexOf('for (let attempt = 0; attempt < STATE_CAS_TRIES');
-    expect(srv.indexOf('.select("state,updated_at")') > loopAt,
-      'the state is re-read on every attempt').toBe(true);
+    // Assertion updated 2026-09-28 (section 10.4). OLD: the FIRST
+    // `.select("state,updated_at")` in the file had to sit after the loop.
+    // NEW: the first pass starts from the state geo_ingest_begin read in the
+    // same trip that stored the events, and the fallback helper that holds
+    // the old read sits above the handler, so the first occurrence moved.
+    // What this is about is unchanged: a pass that LOST the swap re-reads
+    // inside the loop, which is the else branch here.
+    expect(srv.indexOf('.select("state,updated_at")', loopAt) > loopAt,
+      'the state is re-read on every retry').toBe(true);
+    expect(srv.indexOf('if (attempt === 0) {', loopAt) > loopAt,
+      'only the first pass uses the state the trip already read').toBe(true);
     expect(srv.indexOf('const prevUpdatedAt') > loopAt,
       'and so is the value it compares against').toBe(true);
   });

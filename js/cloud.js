@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.28.26.13';
+const APP_VERSION='09.29.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4001,6 +4001,110 @@ async function _denyPermissionRequest(reqId){
   }catch(e){console.warn('deny failed:',e);}
 }
 
+// RATES LIVE WITH THE PEOPLE (owner 2026-09-29: "I don't even think Settings
+// is the right spot for your hourly rate. I think it belongs under team").
+// What the owner bills, and the default for anyone without a rate of their
+// own. Each crew member's rate is on their own card (emp-bill-rate). Read by
+// the one lookup every estimate and invoice uses (personBillRate, js/data.js).
+// WHAT EACH PERSON BILLS AN HOUR sits on that person's row (owner 2026-09-29:
+// "rate should go on the person right?"). A separate "You / Everyone else"
+// box read as two more people. The sell rate is personBillRate (js/data.js);
+// what they cost is pay_rate, shown beside it and never mixed (CLAUDE.md 18.2).
+function _teamRateChip(id,label,val,ph,onchange){
+  return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
+    // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
+    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
+}
+function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
+// A typed amount: only the money noise ($ , spaces) comes off, never the sign,
+// so "-5" is refused instead of saved as 5. Blank is 0; junk is NaN.
+function _teamMoney(v){const t=String(v==null?'':v).replace(/[$,\s]/g,'');return t===''?0:(/^\d*\.?\d+$/.test(t)?parseFloat(t):NaN);}
+// BILLS vs COSTS YOU (owner 2026-09-29: "Bill at versus true hourly rate is
+// different things"). Bills is what the customer pays for their hour. Costs
+// you is their pay times the burden from Settings (payroll taxes, comp,
+// insurance), the same _empLoadedHourly every job cost uses. What is left is
+// what the hour earns. Cost is only drawn for someone allowed to see pay.
+// Pay sits beside Bills on the row (Earl 2026-09-29: pay was in the Edit
+// screen and the rate on the row, two places for one person's money). Typed
+// here, it is the same write the Edit screen makes. A salary stays in Edit:
+// it is a yearly number, not an hourly one to nudge.
+function _teamMoneyHtml(chip,bill,comp,payId,payFn,editFn){
+  let pay='',line='';
+  if(typeof _canViewComp==='function'&&_canViewComp()){
+    comp=comp||{};
+    pay=comp.pay_type==='salary'
+      ?'<button type="button" class="td-rate-chip td-pay-chip" onclick="'+editFn+'">Pays '+fmt(Number(comp.pay_rate)||0).replace(/\.00$/,'')+'/yr</button>'
+      :_teamRateChip(payId,'Pays',_teamRateVal(comp.pay_rate),'0',payFn).replace('class="td-rate-chip"','class="td-rate-chip td-pay-chip"');
+    const wage=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
+    if(wage>0){
+      const loaded=Math.round(_empLoadedHourly(comp)*100)/100;
+      const pct=Math.round(((Number(S.laborBurden)||1.3)-1)*100);
+      const keep=bill>0?Math.round((bill-loaded)*100)/100:0;
+      line='<div class="td-rate-cost">Costs you <b>'+fmt(loaded)+'/hr</b> with '+pct+'% for taxes and insurance'+
+        (bill>0?' · you keep <b class="'+(keep<0?'neg':'')+'">'+fmt(keep)+'/hr</b>':'')+'</div>';
+    }else line='<div class="td-rate-cost">Put in pay to see what an hour earns you</div>';
+  }
+  return '<div class="td-rate-row"><div class="td-rate-chips">'+chip+pay+'</div>'+line+'</div>';
+}
+// The default for anyone without their own rate: one quiet line, not a person.
+function _teamRatesHtml(){
+  if(!(typeof _ownerUI==='function'&&_ownerUI()))return '';
+  return '<div id="team-rates" class="td-rate-default">Anyone without a rate bills '+
+    _teamRateChip('team-labor-rate','','' +_teamRateVal(S.laborRate),'75',"_teamRateSet('laborRate',this.value)")+'</div>';
+}
+function _teamRateSet(key,val){
+  const r=_teamMoney(val);
+  if(!(r>=0))return;
+  if(key==='laborRate'&&!(r>0))return;
+  S[key]=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
+// What he pays them an hour, from the row: the same team_members write the
+// Edit screen makes (pay_type/pay_rate), only those two columns, only for
+// someone who may see pay.
+async function _teamPaySet(i,val){
+  const e=(S.employees||[])[i];if(!e||!e.email||!(typeof _canViewComp==='function'&&_canViewComp()))return false;
+  const r=_teamMoney(val);
+  if(!(r>=0))return false;
+  const email=String(e.email).toLowerCase();
+  const was=_teamComp[email]||_teamComp[e.email]||{};
+  const pay_type=was.pay_type==='salary'?'salary':'hourly';
+  _teamComp[email]={pay_type,pay_rate:r};
+  if(typeof renderTeam==='function')renderTeam();
+  if(typeof showToast==='function')showToast('Pay saved','✓');
+  if(_supa&&_supaUser){
+    try{
+      const {error}=await _supa.from('team_members').update({pay_type,pay_rate:r}).eq('contractor_user_id',_effectiveUid()).eq('email',e.email);
+      if(error){console.warn('team pay save failed:',error);if(typeof showToast==='function')showToast('Pay did not save, try again','⚠️');}
+    }catch(_e){}
+  }
+  return true;
+}
+// Your own pay, hourly, from your row. A salary is set in Settings.
+function _teamOwnerPaySet(val){
+  const r=_teamMoney(val);
+  if(!(r>=0))return false;
+  if(S.ownerPayType!=='salary')S.ownerPayType='hourly';
+  S.ownerPayRate=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof renderTeam==='function')renderTeam();
+  if(typeof showToast==='function')showToast('Pay saved','✓');
+  return true;
+}
+// Your own pay lives in Settings (it feeds every job cost); this takes you there.
+function _teamOwnerPay(){
+  if(typeof goPg==='function')goPg('pg-settings');
+  setTimeout(()=>{const f=document.getElementById('set-owner-pay-rate');if(f){try{f.scrollIntoView({block:'center'});}catch(_e){}f.focus();}},250);
+}
+function _teamBillSet(i,val){
+  const e=(S.employees||[])[i];if(!e)return;
+  const r=_teamMoney(val);
+  if(!(r>=0))return;
+  if(typeof setPersonBillRate==='function'&&e.email)setPersonBillRate(e.email,r);
+  else{e.billRate=r;if(typeof _settingsChanged==='function')_settingsChanged();}
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
@@ -4054,13 +4158,15 @@ function renderTeam(){
   //
   // No Edit button, no invite badge, no permissions line: those belong to
   // someone you hired, and on your own row they read as nonsense.
-  const _ownerRowHtml=(function(){
+  // The Team page also carries your bill rate on this row, so the row shows
+  // there even when tracking is off (rateOn); the Settings list keeps the old
+  // rule and shows it only for tracking.
+  const _ownerRow=rateOn=>{
     if(typeof _isEmployee!=='undefined'&&_isEmployee)return '';
-    if(!S.teamTracking)return '';
+    if(rateOn&&!(typeof _ownerUI==='function'&&_ownerUI()))rateOn=false;
     const email=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
-    if(!email)return '';
-    const g=(typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
-    if(!g)return '';
+    const g=(S.teamTracking&&email&&typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
+    if(!g&&!rateOn)return '';
     const name=(S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'You');
     const pal=(typeof _tlAvatarPalette==='function')?_tlAvatarPalette(name):{bg:'var(--bg3)',fg:'var(--text2)'};
     const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
@@ -4072,13 +4178,16 @@ function renderTeam(){
         '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
           ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+      (rateOn?_teamMoneyHtml(_teamRateChip('team-owner-rate','Bills',_teamRateVal(S.ownerBillRate),_teamRateVal(S.laborRate)||'95',"_teamRateSet('ownerBillRate',this.value)"),
+        Number(S.ownerBillRate)||Number(S.laborRate)||0,{pay_type:S.ownerPayType||'hourly',pay_rate:Number(S.ownerPayRate)||0},'team-owner-pay','_teamOwnerPaySet(this.value)','_teamOwnerPay()'):'')+
+      (g?'<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
         '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
       ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
       (g.ping?_sub(g.ping):'')+
-      (g.fix?_sub(g.fix):'')+
+      (g.fix?_sub(g.fix):''):'')+
     '</div>';
-  })();
+  };
+  const _ownerRowHtml=_ownerRow(false);
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -4088,7 +4197,12 @@ function renderTeam(){
       const _roleLabel={tech:'Field Tech',office:'Office / CSR',manager:'Manager',owner:'Owner'}[e.role]||e.role;
       const _classTag=e.classification?'<span style="font-size:10px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text2);padding:1px 7px;border-radius:8px;margin-left:4px">'+escHtml(e.classification)+'</span>':'';
       const _ec=_teamComp[(e.email||'').toLowerCase()];
-      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
+      // Pay sits with the bill rate on the Team page (_teamMoneyHtml); the
+      // tag stays for the Settings roster, where there is no rate line.
+      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<!--pay--><span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span><!--/pay-->':'';
+      const _billChip=(e.role!=='owner'&&typeof _ownerUI==='function'&&_ownerUI())
+        ?_teamMoneyHtml(_teamRateChip('team-bill-'+i,'Bills',_teamRateVal(e.billRate),_teamRateVal(S.laborRate)||'75','_teamBillSet('+i+',this.value)'),
+          Number(e.billRate)||Number(S.laborRate)||0,_ec||{},'team-pay-'+i,'_teamPaySet('+i+',this.value)','openEditEmployeeModal('+i+')'):'';
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4098,6 +4212,7 @@ function renderTeam(){
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:13px;min-height:44px;min-width:44px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
+        '<!--rate-->'+_billChip+'<!--/rate-->'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+'</div>':'')+
         (e.role!=='owner'?(function(){
@@ -4143,8 +4258,9 @@ function renderTeam(){
         })()+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  // Rates only on the Team page; the Settings list stays a roster.
+  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml.replace(/<!--rate-->[\s\S]*?<!--\/rate-->/g,'');
+  if(el2)el2.innerHTML=_reqHtml+_ownerRow(true)+empHtml.replace(/<!--pay-->[\s\S]*?<!--\/pay-->/g,'').replace(/<!--\/?rate-->/g,'')+_teamRatesHtml();
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
@@ -4722,6 +4838,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
+    // What this person's hour is SOLD for (Earl 2026-09-29: "Jack's rate goes
+    // on Jack, in the Team screen"). The one bill rate every estimate and
+    // invoice reads (personBillRate, js/data.js). Never the pay rate above.
+    '<div class="f" style="margin:0 0 14px"><label for="emp-bill-rate">Bills customers (per hour)</label>'+
+      '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+      '<input id="emp-bill-rate" type="text" inputmode="decimal" value="'+(Number(e.billRate)>0?String(e.billRate):'')+'" placeholder="Your labor rate" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
@@ -4831,6 +4953,8 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
+  const _billEl=document.getElementById('emp-bill-rate');
+  const _billRate=_billEl?(parseFloat(String(_billEl.value).replace(/[^0-9.]/g,''))||0):null;
   // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
   // alone, so every field the form does not show was dropped on save: editing
   // somebody's phone number mid-morning silently wiped truckDay, their vehicle
@@ -4841,6 +4965,7 @@ async function _saveEmployee(idx){
   const _usualEl=document.getElementById('emp-usual-vehicle');
   const _usualVal=_usualEl?_usualEl.value:'';
   const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  if(_billRate!=null)emp.billRate=_billRate;
   // The standing vehicle answer. '' means nobody has said yet, which the
   // dispatch board reports as a gap rather than guessing.
   if(_usualEl){
@@ -6901,6 +7026,64 @@ async function _deleteReceiptFromStorage(receiptKey){
 // user hit Save then refreshed before the cloud flush finished (settings are
 // written LAST in supaSaveToCloud, after all table upserts). Local wins and we
 // flag a pending sync so the newer local settings get pushed up.
+// ── The logo rides in storage, not in the settings row (egress, 2026-09-28) ──
+// Supabase dropped every request on the project on 2026-09-28: egress 6.02 GB
+// of the 5.5 GB quota. S.logoData is the logo as base64 text, and one account's
+// was 1.5 MB. It rode inside zj_data.settings, so it went down again on every
+// settings read, every realtime settings push to every signed-in device, and
+// every server geo rebuild, about 1,000 times a day. The same bytes already
+// sit in storage (_ensureLogoUrl, js/proposals.js), with logoHash proving
+// which logoData they are. So once the upload is confirmed the settings row
+// carries logoUrl + logoHash and no logoData. A device that already has the
+// logo keeps it (_mergeIncomingSettings spreads the incoming keys over S, and
+// a missing key changes nothing); a device without it, or with an older one,
+// fetches the file once and rebuilds logoData, so every screen that paints
+// from S.logoData works as before.
+function _logoInStorage(s){
+  try{return !!(s&&s.logoData&&s.logoUrl&&typeof _hubHash==='function'&&String(s.logoHash)===String(_hubHash(s.logoData)));}catch(_e){return false;}
+}
+// Settings as they go to zj_data. The logo is left out only when the storage
+// copy is confirmed, so a failed upload keeps the old behavior (it syncs in
+// the row) rather than losing the logo on other devices. An unconfirmed logo
+// starts its upload here; _ensureLogoUrl saves again on success, and that
+// save leaves it out. One failed attempt per logo per session, so a storage
+// outage does not re-send a large file on every save.
+let _logoUploadTried='';
+function _settingsForCloud(src){
+  const{stateRates:_sr0,...out}=src||{};
+  if(_logoInStorage(out)){delete out.logoData;return out;}
+  if(out.logoData&&typeof _ensureLogoUrl==='function'&&typeof _hubHash==='function'){
+    const h=String(_hubHash(out.logoData));
+    if(_logoUploadTried!==h){_logoUploadTried=h;try{Promise.resolve(_ensureLogoUrl()).catch(()=>{});}catch(_e){}}
+  }
+  return out;
+}
+let _logoHydrating=null;
+function _hydrateLogoFromUrl(){
+  try{
+    if(_logoHydrating||typeof S==='undefined'||!S||!S.logoUrl||!S.logoHash||typeof _hubHash!=='function')return null;
+    if(S.logoData&&String(_hubHash(S.logoData))===String(S.logoHash))return null;
+    if(typeof fetch!=='function'||typeof FileReader!=='function')return null;
+    const url=S.logoUrl;
+    _logoHydrating=fetch(url).then(r=>r&&r.ok?r.blob():null).then(b=>{
+      if(!b||!b.size)return null;
+      return new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>res(null);fr.readAsDataURL(b);});
+    }).then(d=>{
+      // The logo changed or was removed while this was in flight: that one wins.
+      if(typeof d!=='string'||!/^data:image\//.test(d)||S.logoUrl!==url)return null;
+      S.logoData=d;
+      // Same bytes, so normally the same hash. If the type prefix came back
+      // different the hash follows what is now in S, which is still the file at logoUrl.
+      S.logoHash=String(_hubHash(d));
+      try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+      try{if(typeof applyBrandLogo==='function')applyBrandLogo();}catch(_e){}
+      try{if(typeof _renderLogoPreview==='function')_renderLogoPreview();}catch(_e){}
+      try{if(typeof _updateBootPreview==='function')_updateBootPreview();}catch(_e){}
+      return d;
+    }).catch(()=>null).finally(()=>{_logoHydrating=null;});
+    return _logoHydrating;
+  }catch(_e){_logoHydrating=null;return null;}
+}
 function _mergeIncomingSettings(ss,src){
   if(!ss)return false;
   // TEMP DIAGNOSTIC (automation only): trace every settings merge to find the reboot clobber.
@@ -6919,6 +7102,7 @@ function _mergeIncomingSettings(ss,src){
     if(!Array.isArray(S.vehicles))S.vehicles=[]; // never inherit the old account's vehicles
     if(S.suppliesRate===0.40)S.suppliesRate=0.25;
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+    setTimeout(_hydrateLogoFromUrl,0);
     return true;
   }
   if((S.settingsTs||0)>(ss.settingsTs||0)){
@@ -6944,6 +7128,7 @@ function _mergeIncomingSettings(ss,src){
   // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
   // until the next cloud merge; permanently if that boot happens offline).
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+  setTimeout(_hydrateLogoFromUrl,0);
   return true;
 }
 // ── Per-individual-user UI layout (dashboard widget order + nav tab order) ──
@@ -7653,7 +7838,8 @@ async function supaSaveToCloud(){
     if(_ownerUI() && _authSettingsLoaded){
       // Strip only stateRates (anon-readable reference data, never a user setting).
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
-      const{stateRates:_sr0,...sForCloud}=S;
+      // The logo's base64 is left out once storage holds it (_settingsForCloud).
+      const sForCloud=_settingsForCloud(S);
       // LAST-WRITER-WINS by settingsTs: never overwrite a NEWER cloud settings blob with our
       // (possibly stale) copy, but if that happens we STILL bump the cursor when our table rows
       // changed, else the peer that owns the newer settings would never learn of our records.
