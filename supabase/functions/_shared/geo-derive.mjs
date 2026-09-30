@@ -159,7 +159,7 @@ const GEO_DERIVE_DEFAULTS = Object.freeze({
 // office are four metres apart; nearest-wins made that a coin toss between two
 // payroll rules. Lower number wins; ties fall to the nearer fence.
 const GEO_FENCE_RANK = Object.freeze({
-  job: 0, shop: 1, home_office: 2, client: 3, supply: 4, business_meeting: 4, other: 5,
+  job: 0, shop: 1, home_office: 2, client: 3, supply: 4, business_meeting: 4, personal: 4, other: 5,
 });
 
 // ── ONE RADIUS, EVERY KIND (owner 2026-09-16) ────────────────────────────
@@ -1997,8 +1997,8 @@ function _gdWorkWindow(dwells, journeys, open) {
   const js = (journeys || []).filter(j => j && typeof j.startTs === 'number');
   if (!js.length) return null;                            // no drive: no working day
   const start = Math.min.apply(null, js.map(j => j.startTs));
-  const work = (dwells || []).filter(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office');
-  const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
+  const work = (dwells || []).filter(d => d && _gdIsWorkKind(d.kind));
+  const openWork = !!(open && _gdIsWorkKind(open.kind));
   const driving = js.some(j => j.open);
   const end = (openWork || driving) ? Infinity : (work.length ? Math.max.apply(null, work.map(d => d.endTs)) : start);
   return [start, end];
@@ -2085,6 +2085,11 @@ function _gdOffice(dwells, open, journeys, fixes, fences, appEvents, dayStart, d
 
 const _GD_BASE = { shop: 1, home_office: 1 };
 function _gdIsBaseKind(k) { return !!_GD_BASE[String(k || '')]; }
+// Is a stop of this kind WORK, for every rule that asks "has the day landed in
+// real work" (rules 11, 14, the end of the day)? Not the yard or the house
+// (base), not app-open office minutes, and not a Personal place: the gym is
+// not a job (owner 2026-09-30).
+function _gdIsWorkKind(k) { const s = String(k || ''); return !_gdIsBaseKind(s) && s !== 'office' && s !== 'personal'; }
 // A shop that shares its spot with a home office is somebody's house.
 function _gdShopIsHome(fence, fences, radiusFt) {
   if (!fence || String(fence.kind) !== 'shop') return false;
@@ -2148,7 +2153,7 @@ function _gdOpenCounts(open, dwells, win, nowMs) {
   if (!open) return false;
   if (!open.atHome) return true;
   if (win && Number(nowMs) > Number(win.close)) return false;
-  return (dwells || []).some(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  return (dwells || []).some(d => d && _gdIsWorkKind(d.kind));
 }
 function _gdHouseOffTheClock(dwells) {
   return (dwells || []).filter(d => d && String(d.kind) !== 'home_office');
@@ -2165,7 +2170,7 @@ function _gdHouseOffTheClock(dwells) {
 // at a stop that never resolves, the base dwell after the last work is not
 // a row.
 function _gdEndOfDay(dwells, fences, opts, open, driving, legs, clockSpans) {
-  const work = dwells.filter(d => !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  const work = dwells.filter(d => _gdIsWorkKind(d.kind));
   // A day with no work anywhere in it. "A yard-only day is a shift" is right
   // for a YARD and wrong for a house, and the difference had never been drawn
   // here: the exemption returned every base dwell untouched, house included.
@@ -2193,7 +2198,7 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs, clockSpans) {
     // was work, and the manual clock is how a day like that gets claimed.
     return dwells.filter(d => !(String(d.kind) === 'shop' && _gdShopIsHome(d.fence, fences, opts.radiusFt)));
   }
-  const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
+  const openWork = !!(open && _gdIsWorkKind(open.kind));
   if (openWork || driving) return dwells;                // the day is not over
   const lastWorkEnd = Math.max.apply(null, work.map(d => d.endTs));
   const firstWorkStart = Math.min.apply(null, work.map(d => d.startTs));
@@ -2999,7 +3004,7 @@ function _gdEmptyDayLegs(legs, dwells, inp, open, driving, win, fences, radiusFt
   // which is exactly why this does not save it.
   const named = (d) => !!(d && d.fence && (d.fence.name || d.fence.clientId != null || d.fence.jobId != null));
   const asking = (dwells || []).some(d => d && d.held === true && named(d) &&
-    !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+    _gdIsWorkKind(d.kind));
   return list.filter(l => !!l && (l.held !== true || covered(l) || inHours(l) || asking));
 }
 
@@ -3384,7 +3389,7 @@ function _gdReseatDwells(dwells, fixes, fences, opts) {
     if (d.unsaved === true) return d;
     const spot = _gdSpotOf(fixes, d.startTs, d.endTs, opts.maxFixAccM);
     if (!spot) return d;
-    const f = geoFenceAt(spot, fences, opts.radiusFt);
+    const f = _gdNameAt(spot, fences, opts.radiusFt);
     // The spot rides along even when nothing moves, because rule 23 needs it:
     // the visits that teach a pin where it is are overwhelmingly the ones that
     // resolved correctly, and those used to return `d` untouched with the
@@ -3395,6 +3400,65 @@ function _gdReseatDwells(dwells, fixes, fences, opts) {
     // Nowhere saved. Keep the fence for the rules, take the NAME off the row.
     return Object.assign({}, d, { farFromFence: true, spot });
   });
+}
+
+// ── RULE 26: A NAME NEEDS THE CLUSTER, NOT THE CIRCLE (owner 2026-09-30) ──
+// "Two neighbors ... categorize them at the wrong place based on GPS. You can
+// see the clusters of the GPS: he was at Colaw, it was Don, you can tell."
+//
+// Jack's gym sits in front of a customer's building. Every fix he took at the
+// gym on 29 September clustered 276 ft from Don's pin; every fix he took at
+// Don's on 30 September clustered 95 ft from it. Rule 22 already names a stop
+// from that cluster, but it asked the 600 ft circle (_gdFenceLimitFt), and
+// both clusters are inside it, so the gym was Don's too.
+//
+// The circle is the right question for ARRIVING (is he near somewhere we
+// know) and the wrong one for NAMING a customer's building. So a customer, a
+// job or a personal place names a stop only when the cluster sits within
+// GEO_NAME_FT of its pin (the pin rule 23 has already moved to where the truck
+// really parks). Past that, the stop is somewhere nobody saved, which rule 22
+// already writes as an unsaved address with a Save button: one tap and the
+// gym has a name of its own.
+//
+// WHY 250 FT, measured on his last three weeks: a real visit sits 4 to 245 ft
+// from its customer's pin (Tagen Lindstrom's pin is geocoded 160 to 220 ft off
+// where the truck parks, and rule 23 has not learned it yet), and the gym sits
+// 276 ft from Don's. Saving the gym settles it outright, because then the
+// nearer pin wins below.
+//
+// Two named places in range: the nearer pin wins. Rank (GEO_FENCE_RANK) still
+// decides whenever the yard or the house is one of them, because those are
+// the pairs that sit metres apart on purpose (his shop and his home office are
+// four metres apart) and whose payroll rules differ.
+//
+// A place somebody typed a radius for is left on that radius: that is a
+// person saying how big the place is.
+const GEO_NAME_FT = 250;
+const _GD_NAME_TIGHT = Object.freeze({ client: 1, job: 1, personal: 1 });
+function _gdNameAt(pt, fences, radiusFt) {
+  if (!pt || pt.lat == null || pt.lng == null || !Array.isArray(fences)) return null;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const hits = [];
+  for (const f of fences) {
+    if (!f || f.lat == null || f.lng == null) continue;
+    const ft = _gdMiles(pt, f) * 5280;
+    if (ft > _gdFenceLimitFt(f, r)) continue;
+    const kind = String(f.kind || 'other');
+    if (_GD_NAME_TIGHT[kind] && !(Number(f.radiusFt) > 0) && ft > GEO_NAME_FT) continue;
+    hits.push({ f, ft, kind });
+  }
+  if (!hits.length) return null;
+  if (hits.some(h => _gdIsBaseKind(h.kind))) {
+    let best = null, bestRank = Infinity, bestFt = Infinity;
+    for (const h of hits) {
+      const rank = GEO_FENCE_RANK[h.kind];
+      const rk = rank == null ? GEO_FENCE_RANK.other : rank;
+      if (rk < bestRank || (rk === bestRank && h.ft < bestFt)) { best = h.f; bestRank = rk; bestFt = h.ft; }
+    }
+    return best;
+  }
+  hits.sort((x, y) => x.ft - y.ft);
+  return hits[0].f;
 }
 
 // ── RULE 23: A SAVED ADDRESS LEARNS WHERE IT ACTUALLY IS ──────────────────
@@ -3537,7 +3601,7 @@ function geoDeriveRows(result, ids) {
         : d.held ? 'client-held'
         : (f.jobId != null ? 'geofence'
           : (f.clientId != null ? 'client'
-            : (d.kind === 'supply' ? 'place-supply' : 'place'))),
+            : (d.kind === 'supply' ? 'place-supply' : d.kind === 'personal' ? 'place-personal' : 'place'))),
     }));
   }
   for (const l of (result && result.legs) || []) {

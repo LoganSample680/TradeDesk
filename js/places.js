@@ -81,6 +81,11 @@ const PLACE_KINDS = {
   // because 'Client consult' means a paying customer and putting these there
   // would quietly overstate what customer work costs to win.
   business_meeting:'Business meeting',
+  // Somewhere he goes that is not work: the gym, church, a friend's house
+  // (owner 2026-09-30, Jack's gym sits right in front of a customer). Saving
+  // it is how a stop there stops borrowing the customer's name, and the row
+  // it writes is never paid and never asks.
+  personal:'Personal',
   other:'Other',
 };
 
@@ -760,7 +765,7 @@ function tdMapRenderFallback(o){
 // ── The Places screen (Books → Places) ────────────────────────────────────
 // Owner-facing. Lives beside Mileage since it exists to feed automatic drive
 // attribution and trip-purpose reporting, the same reason Mileage lives here.
-const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',business_meeting:'🤝',other:'📍'};
+const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',business_meeting:'🤝',personal:'🙋',other:'📍'};
 function _placeKindLabel(k){return PLACE_KINDS[k]||PLACE_KINDS.other;}
 
 // The shop was geocoded into S.officeLat/officeLon long before td_places
@@ -1014,7 +1019,8 @@ function _placeKindChanged(kind){
   // kinds where it is a real question: a second yard, a supply house somebody
   // starts their day at.
   const cm=document.getElementById('place-commute-row');
-  if(cm)cm.style.display=(kind==='home_office'||kind==='shop')?'none':'flex';
+  // Nor on a Personal place: nobody reports for work at the gym.
+  if(cm)cm.style.display=(kind==='home_office'||kind==='shop'||kind==='personal')?'none':'flex';
   // The picker opens on a greyed placeholder, so it paints muted until a real
   // type is chosen and normal text once one is. Same --text3 the hints beside
   // it use, never a hardcoded grey.
@@ -1081,7 +1087,7 @@ function openPlaceModal(id,lat,lon,kind){
     // term, and the disclaimer says which rule it is for anybody who wants to
     // check it. Not offered on a home office (that is the far end of the same
     // drive) nor on a shop (which is the rule's own anchor and needs no box).
-    '<label id="place-commute-row" style="display:'+((_plKind==='home_office'||_plKind==='shop')?'none':'flex')+';align-items:flex-start;gap:9px;margin-bottom:6px;cursor:pointer">'+
+    '<label id="place-commute-row" style="display:'+((_plKind==='home_office'||_plKind==='shop'||_plKind==='personal')?'none':'flex')+';align-items:flex-start;gap:9px;margin-bottom:6px;cursor:pointer">'+
       '<input type="checkbox" id="place-commute"'+((pl&&pl.commute)?' checked':'')+' style="margin-top:2px;width:17px;height:17px;flex-shrink:0;accent-color:var(--blue)">'+
       '<span style="font-size:13px;line-height:1.45">I report here<br><span style="font-size:11px;color:var(--text3)">The drive between home and here is a commute: no hours, no miles. Time here still counts from the moment you arrive. Your shop already works this way.</span></span>'+
     '</label>'+

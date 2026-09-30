@@ -96,6 +96,7 @@ function _tlSourceLabel(source){
   // tools in the truck.
   if(s==='place-load')return 'Loading time';
   if(s==='place-office')return 'Office';
+  if(s==='place-personal')return 'Personal';
   // Somebody's own address, so the rail stops calling a house a job site
   // (owner 2026-09-03, on Jack's rail: "why is his own address showing as on
   // site?"). It used to arrive as a bare 'place', the same bucket a supply
