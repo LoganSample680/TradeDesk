@@ -362,6 +362,26 @@ test.describe('Quick invoice', () => {
     expect(r.loading).toBe(false);
   });
 
+  // Owner 2026-09-29: "work performed doesn't title and bullet itself out on
+  // the invoice like proposals do today, can we share that code?"
+  test('work performed prints with the proposal code: a heading, then his steps as the same bullets', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX-A pipe']; renderQuickInvoice();
+      const doc = _qiDocHtml();
+      const box = document.createElement('div'); box.innerHTML = doc;
+      const lis = [...box.querySelectorAll('ul li')].map(li => li.textContent.trim());
+      return { lis, same: doc.includes(_propStepsHtml(_qi.work)), title: doc.includes('What we did'),
+        days: _qiCustomerDays().map(d => d.note), dayRow: /Wed|Thu|Fri|Mon|Tue|Sat|Sun/.test(doc) && !/·\s*Did a walk-through/.test(doc) };
+    });
+    expect(r.lis).toEqual(['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.same, 'the exact markup a proposal prints').toBe(true);
+    expect(r.title).toBe(true);
+    expect(r.days.every(n => !/walk-through/.test(n)), 'the day row carries only its own note').toBe(true);
+    expect(r.dayRow).toBe(true);
+  });
+
   // Owner 2026-09-29: "I want the ability to click into these steps and edit
   // them, right now they are hard locked if I talk to Tim". Tim heard "PEX-A"
   // as "PEX a pipe"; he taps the words and fixes them.
