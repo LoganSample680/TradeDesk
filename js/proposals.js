@@ -669,6 +669,13 @@ function _commitProposalSent(){
   // Navigate home so user sees the bid in "Sent proposals"
   goPg('pg-dash');
 }
+// "Your plumbing proposal", never another trade's word: this said "painting"
+// for every trade (found 2026-09-30 on a plumber's text).
+function _smsProposalWord(){
+  const b=(typeof _geiEditBidId!=='undefined'&&_geiEditBidId&&typeof bids!=='undefined')?bids.find(x=>x.id===_geiEditBidId):null;
+  const t=(b&&b.trade_type)||(typeof _geiTrade!=='undefined'&&_geiTrade)||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  return typeof _tradeProposalLabel==='function'?_tradeProposalLabel(t,{lower:true}).toLowerCase():'proposal';
+}
 function sendProposalViaSms(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
@@ -678,7 +685,7 @@ function sendProposalViaSms(){
   const ownerName=getOwnerName()||d.bname;
   const msg=isPortfolioOn
     ?'Hey '+firstName+'!\n\nGreat talking with you, your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n- '+d.bname
-    :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n- '+d.bname;
+    :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour '+_smsProposalWord()+' is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n- '+d.bname;
   const href='sms:'+(d.cphone||'')+'?body='+encodeURIComponent(msg);
   // Fire SMS FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
