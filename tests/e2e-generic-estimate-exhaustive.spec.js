@@ -2788,7 +2788,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         goGeiStep(2);                                       // mount the BYO page
         const bidId = _geiEditBidId;
         _editByoTitle();                                    // tap the pencil
-        const inp = document.querySelector('#byo-tbar-title input');
+        const inp = document.querySelector('#byo-pname input');
         inp.value = 'Kitchen Remodel Quote';
         inp.dispatchEvent(new Event('blur'));               // click out, no Save click
         const saved = bids.find(x => x.id === bidId);
@@ -4999,7 +4999,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiSyncAutoName();
         const auto = document.getElementById('gei-desc').value;
         _editByoTitle();
-        const inp = document.querySelector('#byo-tbar-title input');
+        const inp = document.querySelector('#byo-pname input');
         inp.value = 'Smith job, phase 1';
         inp.dispatchEvent(new Event('blur'));
         _byoItems.push({ id: 2, section: 'Work', label: 'Add EV charger', price: 900, on: true });

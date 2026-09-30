@@ -14738,6 +14738,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
     test('null jobId, starts General time (no job/client required)', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
+        // clockIn now adopts a saved OPEN row before trusting an empty memory
+        // (PR #130, one clock at a time). This page is shared across the whole
+        // file, so an open row an earlier test left behind was adopted here on
+        // a slow WebKit run (2026-09-30) and this test was no longer about a
+        // fresh General clock. Start from no open clock, which is its premise.
+        (timeEntries || []).forEach(e => { if (e && e.open) e.open = false; });
         try {
           clockIn(null, 'sand', 'Sanding');
           return { ok: true, timerSet: _activeTimer !== null, jobIdNull: _activeTimer && _activeTimer.jobId === null, jobName: _activeTimer && _activeTimer.jobName };

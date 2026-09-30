@@ -1158,13 +1158,16 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
         '<button type="button" class="ios-navbtn bold" onclick="_geiSaveAndExit()">Save</button>'+
       '</div>'+
       '<div class="ios-large">'+
-        // A div, not a <button>: the rename input is typed INTO this element,
-        // and an input inside a button is not reliably editable everywhere.
-        '<div class="ios-title" role="button" tabindex="0" onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename">'+
-          '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
-          // NAMING IT IS VISIBLE (owner, 2026-09-23: "still want the ability
-          // to name the proposal if wanted on both"). The title was always
-          // tappable; nothing said so. A pencil does.
+        // The customer heads the screen: it is what he recognises the job by.
+        '<div class="ios-title"><span id="'+prefix+'-tbar-title">'+defaultTitle+'</span></div>'+
+        // THE PROPOSAL'S NAME, SHOWN (owner 2026-09-30: "do we add a step where
+        // you name the proposal?"). No step: the name writes itself (street +
+        // trade, _geiAutoName) and sits right under the customer, so he sees
+        // what it will be called and one tap renames it. A div, not a
+        // <button>: the rename input is typed INTO this element, and an input
+        // inside a button is not reliably editable everywhere.
+        '<div class="ios-pname" role="button" tabindex="0" onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename">'+
+          '<span id="'+prefix+'-pname"></span>'+
           '<span class="ios-rename" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></div>'+
         '<div class="ios-sub" id="'+prefix+'-page-sub">-</div>'+
       '</div>';
@@ -1445,29 +1448,29 @@ function _geiRenderAddrSub(prefix){
   if(!c){sub.textContent='New proposal';return;}
   const street=(_geiSiteAddr()||'').split(',')[0];
   if(prefix!=='tm'&&prefix!=='byo'){sub.textContent=(c.name||'')+(street?' · '+street:'');return;}
-  // AN iOS TITLE NAMES THE THING ON THE SCREEN (2026-09-23). With no name of
-  // his own on it, this read "Proposal", which is every screen in this part of
-  // the app. The customer is what he will recognise it by; a name he types
-  // (tap the title) replaces it, and it is display only, so the auto name
-  // that files the proposal and heads the document is untouched.
+  // The customer is the title, always; the proposal's name is the line under
+  // it (auto until he renames it), and home or business plus the street is
+  // the line under that, with Change the way back to step 1.
   const tt=document.getElementById(prefix+'-tbar-title');
-  const own=(typeof _geiDescUserSet!=='undefined'&&_geiDescUserSet)?(document.getElementById('gei-desc')?.value||'').trim():'';
-  if(tt&&!tt.querySelector('input'))tt.textContent=own||c.name||(prefix==='tm'?'Time & Materials':'Build Your Own');
-  if(!own){
-    // The words in a span of their own, so on a phone they end in … and
-    // Change stays on the line instead of being the part that is cut off.
-    sub.innerHTML='<span class="txt">'+(_geiIsCommercial?'Business job':'Home job')+(street?' · '+escHtml(street):'')+'</span>'+
-      ' <button type="button" onclick="goGeiStep(1)">Change</button>';
-    return;
-  }
-  // T&M says WHAT it is first. The title is named after the work, so without
-  // this nothing on the page confirmed which kind of proposal he had picked.
-  // Home or business is on the line because it now decides which state law
+  if(tt)tt.textContent=c.name||(prefix==='tm'?'Time & Materials':'Build Your Own');
+  _geiPaintName(prefix);
+  // The words in a span of their own, so on a phone they end in … and
+  // Change stays on the line instead of being the part that is cut off.
+  // Home or business is on the line because it decides which state law
   // applies (_tmStateRule), and Change is the only way back to it.
-  // Styled by the page's iOS layer (.ios-sub b / button), not inline.
-  sub.innerHTML='<span class="txt">'+
-    (_geiIsCommercial?'Business job':'Home job')+' · '+escHtml(c.name||'')+(street?' · '+escHtml(street):'')+'</span>'+
+  // The automatic name already says the street, so it is only repeated here
+  // once he has named it something else.
+  const _own=typeof _geiDescUserSet!=='undefined'&&_geiDescUserSet;
+  sub.innerHTML='<span class="txt">'+(_geiIsCommercial?'Business job':'Home job')+(street&&_own?' · '+escHtml(street):'')+'</span>'+
     ' <button type="button" onclick="goGeiStep(1)">Change</button>';
+}
+// The name line under the customer: the stored name (#gei-desc), which is the
+// auto name until he types his own. Left alone while he is typing in it.
+function _geiPaintName(prefix){
+  const el=document.getElementById(prefix+'-pname');
+  if(!el||el.querySelector('input'))return;
+  if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
+  el.textContent=(document.getElementById('gei-desc')?.value||'').trim()||_geiAutoName();
 }
 function _geiSiteNoteInput(val){
   if(_geiClientId==null||!clients.find)return;
@@ -2564,7 +2567,10 @@ function _editEstTitle(titleId,btnId){
   const prev=titleEl.textContent.trim();
   const inp=document.createElement('input');
   inp.type='text';inp.value=prev;
-  inp.style.cssText='font-family:var(--font-display);font-size:inherit;font-weight:900;letter-spacing:-1.2px;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--blue);outline:none;width:240px;max-width:55vw;padding:0 0 2px;line-height:1';
+  const _isName=/-pname$/.test(titleId);
+  inp.style.cssText=_isName
+    ?'font:inherit;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--blue);outline:none;width:100%;min-width:0;padding:0 0 2px;line-height:1.3'
+    :'font-family:var(--font-display);font-size:inherit;font-weight:900;letter-spacing:-1.2px;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--blue);outline:none;width:240px;max-width:55vw;padding:0 0 2px;line-height:1';
   titleEl.textContent='';titleEl.appendChild(inp);
   // Where the title IS the rename control (T&M), hiding the control would hide
   // the box he is typing in.
@@ -2575,17 +2581,20 @@ function _editEstTitle(titleId,btnId){
   const commit=()=>{
     if(_done)return;_done=true;
     const typed=inp.value.trim();
-    // Cleared on purpose in the editors: back to the automatic name, and the
-    // customer heads the screen again.
+    // Cleared on purpose in the editors: back to the automatic name.
     if(!typed&&/^(tm|byo)-/.test(titleId)){
       if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=false;
       const descEl=document.getElementById('gei-desc');if(descEl)descEl.value='';
-      if(typeof _geiSyncAutoName==='function')_geiSyncAutoName();
-      titleEl.textContent=prev;
+      titleEl.textContent='';
       if(typeof _geiRenderAddrSub==='function')_geiRenderAddrSub(titleId.slice(0,titleId.indexOf('-')));
       if(btn)btn.style.opacity='';
       if(typeof _byoAutosave==='function')_byoAutosave();
       return;
+    }
+    // Tapped in and out without changing the automatic name: still automatic,
+    // so it keeps following the address and trade.
+    if(_isName&&typed===prev&&!(typeof _geiDescUserSet!=='undefined'&&_geiDescUserSet)){
+      titleEl.textContent=prev;if(btn)btn.style.opacity='';return;
     }
     const val=typed||prev;
     titleEl.textContent=val;
@@ -2594,6 +2603,7 @@ function _editEstTitle(titleId,btnId){
     // He named it himself, so the auto name stops writing over it, and the
     // rename is saved the way the old "Name your proposal" field's blur was.
     if(typeof _geiDescUserSet!=='undefined')_geiDescUserSet=true;
+    if(_isName&&typeof _geiRenderAddrSub==='function')_geiRenderAddrSub(titleId.slice(0,titleId.indexOf('-')));
     if(typeof _byoAutosave==='function')_byoAutosave();
   };
   const cancel=()=>{
@@ -2607,8 +2617,8 @@ function _editEstTitle(titleId,btnId){
     if(e.key==='Escape'){e.preventDefault();inp.removeEventListener('blur',commit);cancel();}
   });
 }
-function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
-function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
+function _editByoTitle(){_editEstTitle('byo-pname','byo-edit-title-btn');}
+function _editTMTitle(){_editEstTitle('tm-pname','tm-edit-title-btn');}
 
 // ── The camera on the estimate (owner 2026-09-21) ───────────────────────────
 // Every estimate type rides pg-est-generic, so one chip in this header covers
@@ -5113,8 +5123,7 @@ function _byoDuplicateBid(){
     _geiDescUserSet=true;
     const descEl=document.getElementById('gei-desc');
     if(descEl)descEl.value=src.type;
-    const titleEl=document.getElementById('byo-tbar-title');
-    if(titleEl)titleEl.textContent=src.type;
+    _geiPaintName('byo');
   }
   const copy=JSON.parse(JSON.stringify(src));
   copy.id=_newBidId();
@@ -7308,9 +7317,9 @@ function _geiSyncAutoName(){
 function _geiRefreshAutoTitle(prefix){
   if(_geiDescUserSet)return;
   _geiSyncAutoName();
-  // The iOS editors title the screen with the customer (_geiRenderAddrSub);
-  // the auto name still files the proposal, it just does not head the page.
-  if(prefix==='tm'||prefix==='byo')return;
+  // The iOS editors title the screen with the customer; the name is the line
+  // under it.
+  if(prefix==='tm'||prefix==='byo'){_geiPaintName(prefix);return;}
   const el=document.getElementById(prefix+'-tbar-title');
   if(el&&!el.querySelector('input')){
     const n=document.getElementById('gei-desc')?.value||'';
