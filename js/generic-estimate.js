@@ -673,7 +673,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoJobPrice=0;_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoJobPrice=0;_geiValidDays=0;_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -1782,6 +1782,18 @@ let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
 // The lines stay plain scope at $0; the customer never sees line prices on a
 // Build Your Own anyway. 0 means no job price: the lines add up as before.
 let _byoJobPrice=0;
+// HOW LONG THE PRICE HOLDS, per proposal (owner 2026-09-30: "we need a
+// selector, but if we put it's valid for x days Tim prefills that live").
+// 0 means his standard (Settings, _estValidDays).
+let _geiValidDays=0;
+const _GEI_VALID_CHOICES=[7,14,30,60,90];
+function _geiValidDaysNow(){return _geiValidDays>0?_geiValidDays:_estValidDays();}
+function _geiSetValidDays(n){
+  n=Math.round(Number(n)||0);
+  _geiValidDays=(n>0&&n<=365)?n:0;
+  if(typeof _byoRenderPrice==='function')_byoRenderPrice();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
 // Interior and Exterior are PAINTING words. An HVAC man swapping a condenser,
 // a plumber setting a water heater and an electrician pulling a panel all have
 // exactly one honest answer to "is this interior or exterior", which is "who
@@ -1829,6 +1841,7 @@ function _byoShowPage(){
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
   _byoJobPrice=Number(b&&b.byoJobPrice)>0?Number(b.byoJobPrice):0;
+  _geiValidDays=Number(b&&b.validDays)>0?Number(b.validDays):0;
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
@@ -2983,6 +2996,12 @@ function _byoSayBuild(){
   }
   const have=new Set(_byoItems.map(x=>String(x.label).toLowerCase()));
   built.steps.forEach(st=>{if(!have.has(st.text.toLowerCase())){_byoAddLine(st.text,undefined,st.price);have.add(st.text.toLowerCase());}});
+  // "Here's my estimate $2800 ... good for 14 days": his price and his days,
+  // filled in where they go instead of printed as steps.
+  const _filled=[];
+  if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
+  if(built.validDays>0){_geiValidDays=built.validDays;_filled.push('good for '+built.validDays+' days');}
+  if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   _byoMissed=(built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
@@ -3160,6 +3179,10 @@ function _byoRenderPrice(st){
     '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
       '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Number(cost).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
     '<div class="ios-row"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+'">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+    '<label class="ios-row"><span class="ios-lbl">Good for<small>Price holds until '+escHtml(_fmtValidUntil(addDays(todayKey(),_geiValidDaysNow())))+'</small></span>'+
+      '<span class="ios-val"><select id="byo-valid-days" aria-label="Price good for" onchange="_geiSetValidDays(this.value)">'+
+      [...new Set(_GEI_VALID_CHOICES.concat([_geiValidDaysNow()]))].sort((a,b)=>a-b).map(n=>'<option value="'+n+'"'+(n===_geiValidDaysNow()?' selected':'')+'>'+n+' days</option>').join('')+
+      '</select></span></label>'+
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
       '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
@@ -3253,6 +3276,7 @@ function _byoAutosave(){
   b.descUserSet=!!_geiDescUserSet;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoJobPrice=_byoJobPrice||0;
+  b.validDays=_geiValidDays||0;
   b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
@@ -7977,6 +8001,24 @@ function _propUl(lis){return `<ul style="list-style:none;margin:0;padding:0">${l
 // His steps in sentence case, four or more in stages down the rail, fewer as
 // a list. The proposal's scope and the invoice's work performed both print
 // from here; li is how one step reads (the proposal adds a chip's note).
+function _byoPrintItems(items){
+  const out=[];
+  (items||[]).forEach(it=>{
+    const notes=String(it&&it.notes||'').trim();
+    const many=(notes.match(/[.!?](?:\s|$)/g)||[]).length>=2;
+    if(!many||it._supply||typeof timScopeBuild!=='function'){out.push(it);return;}
+    let steps=[];
+    try{steps=timScopeBuild(notes).steps.map(x=>x.text).filter(Boolean);}catch(_e){steps=[];}
+    if(steps.length<2){out.push(it);return;}
+    // The line's own name leads unless it is only an address ("5713 SW 14th
+    // street"), which is where the work is, not a step of it.
+    const lbl=String(it.label||'').trim();
+    if(lbl&&!/^\d+\s+\S+.*\b(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|way|pl|place|cir|circle|ter|terrace|pkwy|hwy)\b\.?$/i.test(lbl)&&!steps.some(t=>t.toLowerCase()===lbl.toLowerCase()))
+      out.push(Object.assign({},it,{notes:''}));
+    steps.forEach(t=>out.push({label:t,notes:'',qty:1,unit:'ea',section:it.section,on:true,_fromNotes:true}));
+  });
+  return out;
+}
 function _propStepsHtml(texts,li){
   const t=(texts||[]).map(x=>String(x==null?'':x).trim()).filter(Boolean);
   if(!t.length)return '';
@@ -8005,6 +8047,15 @@ function _propSection(eyebrow,title,body,extra){
     `<div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${_PT.a}">${eyebrow}</div>`+
     (title?`<div style="font-size:21px;font-weight:800;letter-spacing:-.02em;color:#0b1220;margin:6px 0 16px;line-height:1.25">${title}</div>`:'<div style="height:12px"></div>')+
     body+`</div>`;
+}
+// The sign page's own frame (boot screen, top bar) wears his logo and color.
+// The proposal file never carried them, so a client tapping Review and sign
+// saw a plain header (Jack, 2026-09-30). The stored URL when the current logo
+// is confirmed uploaded, the embedded copy only when it is not.
+function _propLogoFields(){
+  if(typeof S==='undefined'||!S)return {};
+  const url=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
+  return {logoUrl:url,logoData:url?'':(S.logoData||''),brandColor:(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor)||''};
 }
 function _propLogoSrc(){
   if(typeof S==='undefined'||!S)return '';
@@ -8219,8 +8270,11 @@ async function sendGenericProposal(previewOnly,opts){
   // the portal chip and the dashboard all read the same stamp (see
   // _bidValidUntil). A preview never stamps: nothing has been promised yet.
   const _bidForValid=_geiEditBidId?bids.find(x=>x.id===_geiEditBidId):null;
-  const _validUntilKey=(_bidForValid&&_bidForValid.validUntil)||addDays(todayKey(),_estValidDays());
-  if(!previewOnly&&_bidForValid&&!_bidForValid.validUntil)_bidForValid.validUntil=_validUntilKey;
+  // A days choice made on this proposal wins over an earlier stamp, so
+  // picking 14 and sending again says 14.
+  const _validUntilKey=(_geiValidDays>0&&!(_bidForValid&&_bidForValid.signedAt))?addDays(todayKey(),_geiValidDays)
+    :((_bidForValid&&_bidForValid.validUntil)||addDays(todayKey(),_estValidDays()));
+  if(!previewOnly&&_bidForValid&&(_geiValidDays>0||!_bidForValid.validUntil))_bidForValid.validUntil=_validUntilKey;
   const _geiExpD=_fmtValidUntil(_validUntilKey);
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=_geiDepositPct();
@@ -8247,7 +8301,7 @@ async function sendGenericProposal(previewOnly,opts){
   _propTheme(_pAccent,_pRGB);
   // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=(_geiIsTM&&!(_tmDepAmt>0))?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">${_geiIsTM?'Up Front, Before Work Begins':`Deposit (${_tmDepPct}%)<div style="font-size:12.5px;font-weight:400;color:#64748b;margin-top:2px">Due before work begins</div>`}</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${depositFmt}</td></tr>`;
+  const _tmDepRow=!(_tmDepAmt>0)?'':`<tr style="background:#fff;color:#0f172a"><td style="padding:15px 24px;font-size:14px;font-weight:500;color:#334155;border-top:1px solid #eceef2">${_geiIsTM?'Up Front, Before Work Begins':`Deposit (${_tmDepPct}%)<div style="font-size:12.5px;font-weight:400;color:#64748b;margin-top:2px">Due before work begins</div>`}</td><td style="padding:15px 24px;text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;border-top:1px solid #eceef2">${depositFmt}</td></tr>`;
   // ── THE TIME AND MATERIALS FOOTER ────────────────────────────────────────
   //
   // Owner 2026-09-17: "if you place a materials section on a invoice or on a
@@ -8392,7 +8446,12 @@ async function sendGenericProposal(previewOnly,opts){
     // runs on across the headings: step 7 is still step 7.
     _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
   }
-  const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
+  // A line whose description is a whole letter ("Here's my estimate ... I will
+  // drill hole ... We will secure the tub spout ...") printed as one giant
+  // block on the customer's copy (Jack, 2026-09-30). It is split into steps
+  // by the same reader Tim uses on the box, so the customer gets the scope as
+  // steps and the price, the days and the sign-off stay out of it.
+  const _byoWorkItems2=_geiIsFreeForm?_byoPrintItems(_byoItems.filter(it=>it.on&&!it._rrp)):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
     const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
     const _secBlocks2=_scopeSecs2.map(sec=>{
@@ -8664,7 +8723,7 @@ async function sendGenericProposal(previewOnly,opts){
   // Extract optional chaining out of object literal, Safari chokes on ?. inside { }
   const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const proposalData={
-    id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
+    id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),..._propLogoFields(),
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     clientId:_geiClientId||null,
     proposalHtml,termsHtml:_fullTermsHtml,clientAddr:v('gei-addr'),
@@ -8689,7 +8748,7 @@ async function sendGenericProposal(previewOnly,opts){
     // recomputing its own +30 from createdAt and an extended price actually
     // reads as extended on the client's screen.
     validUntil:_validUntilKey,
-    notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
+    notifyEmail:_supaUser.email,businessPhone:S.bphone||'',businessEmail:S.bemail||'',
     stripeConnectEnabled:_stripeEnabled,
     // Which manual pay options the client sees at signing (Settings → How you get
     // paid). Default-true so proposals from before this shipped still show all.
@@ -9057,11 +9116,11 @@ async function _sendIndProposal(){
   const _indYearBuilt=_indProp.yearBuilt||(c?c.yearBuilt||null:null);
   const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((_indProp.rrpDisturb==='yes')||(c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const proposalData={
-    id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),
+    id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),..._propLogoFields(),
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
-    businessPhone:S.bphone||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
+    businessPhone:S.bphone||'',businessEmail:S.bemail||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
     acceptCash:S.acceptCash!==false,acceptCheck:S.acceptCheck!==false,allowPayLater:S.allowPayLater!==false,
     trade_type:'painting',
     yearBuilt:_indYearBuilt,

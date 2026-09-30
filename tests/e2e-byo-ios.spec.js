@@ -209,6 +209,85 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r).toEqual({ never: 0, learned: 0, next: 0, shown: '0' });
   });
 
+  test('a pasted estimate letter: price and days filled in, courtesy and signature left out (Jack 2026-09-30)', async () => {
+    await open();
+    const r = await page.evaluate(() => {
+      S.bname = 'Plumbing Solutions by JS'; S.ownerName = 'John Schonfeldt';
+      document.getElementById('byo-say').value = "Here’s my estimate $2800 to rough surface mounted washer box drain and water and vent. I have included electrical for washer receptacle and receptacle for dryer as well. I will drill hole and run dryer vent to outside. I have also included 3 hose bibs and piping. We will secure the tub spout. My estimate is good for 14 days. If you approve  I can  start asap. I appreciate your faith and trust in our plumbing services and look forward to working with you on this project. John Schonfeldt Plumbing Solutions by JS";
+      _byoSayBuild();
+      _byoRenderPrice();
+      const sel = document.getElementById('byo-valid-days');
+      return { labels: _byoItems.map(x => x.label), price: _byoJobPrice, days: _geiValidDays, sel: sel && sel.value,
+        total: calcGeiTotal().sub, lines: _byoItems.map(x => x.price) };
+    });
+    expect(r.price).toBe(2800);
+    expect(r.days).toBe(14);
+    expect(r.sel).toBe('14');
+    expect(r.total).toBe(2800);
+    expect(r.labels.length).toBeGreaterThanOrEqual(4);
+    r.labels.forEach(l => expect(l).not.toMatch(/estimate|\$|good for|approve|appreciate|look forward|Schonfeldt|Plumbing Solutions|start asap/i));
+  });
+
+  test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
+    await open();
+    await say('pull the old water heater, set a tankless');
+    const r = await page.evaluate(() => {
+      _geiValidDays = 0; _byoRenderPrice();
+      const sel = document.getElementById('byo-valid-days');
+      const std = sel.value;
+      sel.value = '60'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const b = bids.find(x => x.id === _geiEditBidId); if (b) _byoAutosave();
+      return { std, now: _geiValidDays, opts: [...document.getElementById('byo-valid-days').options].map(o => o.value), saved: b ? b.validDays : 'none' };
+    });
+    expect(r.std).toBe(String(await page.evaluate(() => _estValidDays())));
+    expect(r.now).toBe(60);
+    expect(r.opts).toEqual(expect.arrayContaining(['7', '14', '30', '60', '90']));
+    if (r.saved !== 'none') expect(r.saved).toBe(60);
+    await page.evaluate(() => { _geiValidDays = 0; });
+  });
+
+  test('a line whose description is a whole letter prints as steps, not one block; an address name is dropped', async () => {
+    const r = await page.evaluate(() => {
+      S.bname = 'Plumbing Solutions by JS';
+      const items = _byoPrintItems([{ label: '5713 SW 14th street', section: 'Work', on: true, price: 2800,
+        notes: 'Here’s my estimate $2800 to rough surface mounted washer box drain and water and vent. I will drill hole and run dryer vent to outside. I have also included 3 hose bibs and piping. My estimate is good for 14 days. If you approve I can start asap.' },
+        { label: 'Secure the tub spout', section: 'Work', on: true, notes: 'Tighten and caulk.' }]);
+      return items.map(x => x.label);
+    });
+    expect(r).not.toContain('5713 SW 14th street');
+    expect(r.length).toBeGreaterThanOrEqual(3);
+    expect(r[r.length - 1]).toBe('Secure the tub spout');
+    r.forEach(l => expect(l).not.toMatch(/estimate|good for|approve/i));
+  });
+
+  test('the proposal file carries his logo URL, color and business email for the sign page', async () => {
+    const r = await page.evaluate(() => {
+      const save = { u: S.logoUrl, h: S.logoHash, d: S.logoData, c: S.brandColor };
+      S.logoData = 'data:image/png;base64,AAAA'; S.logoUrl = 'https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/u/branding/logo-1.png';
+      S.logoHash = String(_hubHash(S.logoData)); S.brandColor = '#2d5da8';
+      const good = _propLogoFields();
+      S.logoHash = 'stale';
+      const stale = _propLogoFields();
+      Object.assign(S, { logoUrl: save.u, logoHash: save.h, logoData: save.d, brandColor: save.c });
+      return { good, stale };
+    });
+    expect(r.good.logoUrl).toMatch(/gallery\/u\/branding\/logo-1\.png$/);
+    expect(r.good.logoData).toBe('');
+    expect(r.good.brandColor).toBeTruthy();
+    expect(r.stale.logoUrl).toBe('');
+    expect(r.stale.logoData).toBe('data:image/png;base64,AAAA');
+  });
+
+  test('no deposit is not a line on the customer copy (owner 2026-09-30)', async () => {
+    await open();
+    await say('pull the old water heater, set a tankless');
+    await page.evaluate(() => { _byoJobPrice = 1500; _byoUpdateRail(); const el = document.getElementById('byo-deposit-pct'); el.value = '0'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    const d = await doc();
+    expect(d).not.toMatch(/Deposit \(0%\)/);
+    expect(d).toContain('1,500');
+    await page.evaluate(() => { _byoJobPrice = 0; S.depositPct = 25; });
+  });
+
   test('a scope line is words and a price: no how many, no each (owner 2026-09-30)', async () => {
     await open();
     await say('pull the old water heater, set a tankless');

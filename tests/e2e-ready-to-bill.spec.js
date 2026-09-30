@@ -1332,7 +1332,9 @@ test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the w
   expect(out).toEqual({ sent: true, total: 1048.5, days: 3, work: ['Replaced the water heater and the shutoff valve'] });
   expect(taps, log.join('\n')).toBeLessThanOrEqual(8);
   expect(keys).toBe(48);
-  expect(ms, 'the app itself is never the slow part').toBeLessThan(15000);
+  // Taps are the budget; the clock is logged, never gated (CLAUDE.md 12.2). A
+  // loaded WebKit runner took 17.4s for the same 8 taps (CI shard 3, 2026-09-30).
+  console.log('[invoice start to finish] ' + taps + ' taps, ' + keys + ' keys, ' + ms + 'ms');
   assertNoErrors(page, 'invoice start to finish');
 });
 });

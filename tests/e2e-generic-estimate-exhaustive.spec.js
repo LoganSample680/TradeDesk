@@ -3038,6 +3038,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const c = { id: clientId, name: 'Parity Client', addr: '1 Parity Rd, Wichita KS 67202' };
       clients = clients.filter(x => x.id !== clientId).concat([c]);
       bids = bids.filter(x => x.client_id !== clientId);
+      S.depositPct = 25;   // a deposit to show; with none set there is no deposit line (2026-09-30)
       openGenericEstimate(c, null, 'general');
       if (isTM) {
         _geiIsTM = true; _geiIsFreeForm = false;

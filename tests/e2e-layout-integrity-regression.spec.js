@@ -466,6 +466,7 @@ test.describe('layout integrity, mobile', () => {
       const c = { id: 79107, name: 'Total Only BYO Client', addr: '1 Total Only Rd' };
       clients = clients.filter(x => x.id !== 79107).concat([c]);
       bids = bids.filter(x => x.client_id !== 79107);
+      S.depositPct = 25;   // a deposit to show; with none set there is no deposit line (2026-09-30)
       openGenericEstimate(c, null, null, { mode: 'byo' });
       _geiIsFreeForm = true;
       _byoItems = [
