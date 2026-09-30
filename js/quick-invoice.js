@@ -1115,10 +1115,13 @@ function _qiSayBuild(){
   // Fluidmaster fill valve". Priced from his book when it knows them, blank
   // when it does not, the same rule as every other line here.
   const mats=(typeof timSaidMaterials==='function')?timSaidMaterials(said):[];
-  if(typeof timLogScope==='function')timLogScope(said,steps,'qi',null);
+  if(typeof timLogScope==='function')timLogScope(said,steps,'qi',_qi.id);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));
-    steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);have.add(st.toLowerCase());}});
+    // workTim holds what Tim wrote beside each line, so a line he retypes
+    // later is logged as a fix (timLogFix). A line he typed has none.
+    _qi.workTim=_qi.workTim||_qi.work.map(()=>null);
+    steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);_qi.workTim.push(st);have.add(st.toLowerCase());}});
   }else{
     const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
     _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
@@ -1151,7 +1154,7 @@ function _qiMatDesc(m){
   if(!name)item=item.charAt(0).toLowerCase()+item.slice(1);
   return n+unit+' '+item;
 }
-function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);renderQuickInvoice();}
+function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);if(_qi.workTim)_qi.workTim.splice(i,1);renderQuickInvoice();}
 // Typing into a line changes the line; the box grows with the words.
 function _qiWorkEdit(i,el){
   if(!_qi||i<0||i>=_qi.work.length||!el)return;
@@ -1165,6 +1168,9 @@ function _qiWorkDone(i,el){
   const v=String((el&&el.value)||'').trim();
   if(!v){_qiDropWork(i);return;}
   _qi.work[i]=v;
+  // What Tim wrote for this line, if he wrote it: the pair teaches him.
+  const tim=_qi.workTim&&_qi.workTim[i];
+  if(tim&&tim!==v&&typeof timLogFix==='function')timLogFix('work',tim,v,'qi',_qi.id);
 }
 
 function _qiDocHtml(num){
@@ -1302,6 +1308,8 @@ function _qiSave(){
     qiPulled:hourly?_qi.tracked.filter(l=>l.extra&&!_qi.off.has(l.day)).map(l=>l.extra):[],
     qiExpenseIds:hourly?_qiOnExpIds():[]};
   bids.unshift(bid);
+  // What went out, next to what Tim made (timLogScope above, same id).
+  if(hourly&&typeof timLogKept==='function')timLogKept(bid.id,_qi.work.slice(),'qi');
   c.qiMode=_qi.mode;
   _qiDraftDrop(c.id,_qi.addr);
   saveAll();

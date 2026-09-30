@@ -1435,6 +1435,9 @@ function _timkHeard1(seg){
   v=v.replace(/\bin\s+DS\b/g,'NDS');
   v=v.replace(/\b(?:(?:okay|ok|so|alright)[,\s]+)*honey[\s-]+do\s+list(?:\s+here)?[,.]?\s*/gi,'');
   _TIMK_HEARD.forEach(([re,to])=>{v=v.replace(re,to);});
+  // "Holloway the old tile" is haul away (owner 2026-09-29): a street name
+  // nobody hauls, so only where something to haul follows it.
+  v=v.replace(/\b(?:holloway|hollo\s*way|hall\s+away|haul\s*way)\b(?=[,\s]+(?:the\s+|all\s+(?:the\s+)?|any\s+|of\s+(?:the\s+)?)?(?:old|debris|trash|junk|garbage|waste|scrap|it\b|them\b|everything|drywall|carpet|tile|shingles|cabinets?|fixtures?|appliances?|materials?|brush|dirt|concrete|unit|heater|toilet|tub|vanity|pad))/gi,'haul away');
   // "PEX a pipe" is PEX-A (owner 2026-09-29), after "pecks" became PEX above.
   // The letter is the grade only in front of what PEX is sold as, so "run
   // PEX a few feet" is left alone.

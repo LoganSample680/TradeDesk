@@ -209,7 +209,7 @@ function timAddMaterials(mats){
       // What he last paid for it, off his receipts (materials book), so the
       // list is priced before the supply house quotes it.
       const paid=(typeof partCostFor==='function')?partCostFor(label):null;
-      toList.push({qty,unit,desc:label,cost:paid?Number(paid.cost)||0:0,on:true});
+      toList.push({qty,unit,desc:label,cost:paid?Number(paid.cost)||0:0,on:true,tim:qty+' '+unit+' '+label});
       haveList.add(k);listed++;
     }
   });
