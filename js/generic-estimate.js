@@ -7996,9 +7996,16 @@ function _propDoc(inner){return '<div style="background:#fff;color:#0b1220;font-
 // The closing line, his name and a thank-you. The wording is the document's.
 // His note, in his colour, signed: the words he would have closed a letter
 // with, where the customer reads them before the price.
+// Whose name a proposal goes out under (owner 2026-09-30: Jack builds the
+// bids, but "every bid needs to come from John"). Settings > Proposals
+// signed by; blank is the owner's own name, so nothing moves for anyone else.
+function _propSigner(){
+  if(typeof S==='undefined'||!S)return '';
+  return String(S.signAs||'').trim()||String((typeof getOwnerName==='function'&&getOwnerName())||S.ownerName||'').trim();
+}
 function _propNoteHtml(note,by){
   const t=String(note||'').trim();if(!t)return '';
-  const who=String(by||'').trim()||(typeof S!=='undefined'&&S&&(S.ownerName||''))||'';
+  const who=String(by||'').trim()||_propSigner();
   const first=who.split(/\s+/)[0]||'';
   const biz=(typeof S!=='undefined'&&S&&S.bname)||'';
   return `<div style="margin:6px 24px 8px;padding:18px 18px 16px;border-radius:14px;background:${_PT.wash};border:1px solid ${_PT.line}">`+

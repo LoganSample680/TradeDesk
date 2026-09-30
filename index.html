@@ -1727,7 +1727,7 @@ div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #gei-byo-page .ios-val input#byo-dep-in{width:44px}
 /* The price boxes look like boxes (owner 2026-09-30: "should all look like I
    can click into them and edit"): Their price, Your cost, Deposit, Good for. */
-#gei-byo-page #byo-price-group .ios-val input,#gei-byo-page #byo-price-group .ios-val select{border:1px solid var(--border2)!important;background:var(--bg)!important;border-radius:10px!important;padding:8px 10px!important;margin:0 0 0 4px!important;min-height:40px!important;box-sizing:border-box;font-size:17px;color:var(--text)}
+#gei-byo-page #byo-price-group .ios-val input,#gei-byo-page #byo-price-group .ios-val select{border:1px solid var(--border2)!important;background:var(--bg)!important;border-radius:10px!important;padding:8px 10px!important;margin:-2px 0 -2px 4px!important;min-height:44px!important;box-sizing:border-box;font-size:17px;color:var(--text)}
 #gei-byo-page #byo-price-group .ios-val input{width:112px;text-align:right}
 #gei-byo-page #byo-price-group .ios-val input#byo-dep-in{width:62px}
 #gei-byo-page #byo-price-group .ios-val input:focus,#gei-byo-page #byo-price-group .ios-val select:focus{border-color:var(--denim,#2d5da8)!important;box-shadow:0 0 0 3px rgba(45,93,168,.16)!important;outline:none}
@@ -4780,6 +4780,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">License #</div><div class="set-form-hint">State contractor license. Shown in your client hub footer.</div></div>
           <div class="set-form-ctrl"><input id="set-blic" placeholder="KS-PNT-2024-08812"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Proposals signed by</div><div class="set-form-hint">Whose name your proposals and notes come from, when that is not you. Blank uses your own name.</div></div>
+          <div class="set-form-ctrl"><input id="set-signas" placeholder="Your name" autocomplete="off"></div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year, no need to update it.</div></div>

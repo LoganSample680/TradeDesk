@@ -682,7 +682,7 @@ function sendProposalViaSms(){
   if(!d.cphone){zAlert('No phone number on file for this client. Add one in Clients first.',{title:'No client phone'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
-  const ownerName=getOwnerName()||d.bname;
+  const ownerName=(typeof _propSigner==='function'&&_propSigner())||getOwnerName()||d.bname;
   const msg=isPortfolioOn
     ?'Hey '+firstName+'!\n\nGreat talking with you, your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n- '+d.bname
     :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour '+_smsProposalWord()+' is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n- '+d.bname;
