@@ -786,6 +786,17 @@ test.describe("somebody else's open dwell draws", () => {
     expect(r.rows[0].minutes).toBeLessThanOrEqual(r.used.k3 + 1);
   });
 
+  test("a crew member's drive under way reads On the road, not Destination not saved", async () => {
+    // The live drive row (owner 2026-09-29): no destination YET is not the
+    // same as a destination nobody saved.
+    const r = await draw([{ id: 'k6', source: 'drive', job_id: null, employee_user_id: THEM,
+      client_key: 'j-k6', dest_place: null, origin_place: 'JS shop',
+      departed_at: null, minutes: null, agoMin: 4 }], []);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].name).toBe('On the road');
+    expect(r.rows[0].live).toBe(true);
+  });
+
   test('an open row left over from an earlier day draws nothing', async () => {
     // A dwell nobody ever closed is not "right now", and running it to the
     // current minute would put yesterday's arrival against today's clock.

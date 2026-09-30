@@ -1064,6 +1064,7 @@ function geoDeriveDay(input) {
   // The chain: the first saved origin and the automotive minutes since it.
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
+  let drivingNow = null;     // {id, startTs, from, fromHouse}: the truck on the road right now
 
   for (let ji = 0; ji < journeys.length; ji++) {
     const j = journeys[ji];
@@ -1131,7 +1132,13 @@ function geoDeriveDay(input) {
     }
 
     if (j.open) {
-      // Still driving. Nothing to write yet; the chain (if any) stays open.
+      // Still driving. No LEG yet (both ends or no leg); the chain (if any)
+      // stays open. The TIME is another matter, see _gdDrivingRow: the drive
+      // is a fact the second it starts, so it is reported here for the one
+      // live row it earns.
+      drivingNow = { id: String(j.id), startTs: j.startTs,
+        from: fromFence || (fromUnsaved ? { name: '', unsaved: true } : null),
+        fromHouse: !!(fromFence && _gdIsHouse(fromFence, fences, opts.radiusFt)) };
       if (!chain && fromFence) chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, via: [], drives: [], openSince: j.startTs };
       else if (chain) chain.openSince = j.startTs;
       break;
@@ -1798,6 +1805,7 @@ function geoDeriveDay(input) {
     const t = _gdTimeOffHold(judged, realLegs, inp, open, nowMs);
     outDwells = t.dwells; outLegs = t.legs;
     if (open && !t.openCounts) open.counts = false;
+    if (drivingNow) drivingNow.timeOffClock = _gdUnderClock(_gdClockSpans(inp), Number(drivingNow.startTs), Number(nowMs));
   }
 
   return {
@@ -1809,6 +1817,12 @@ function geoDeriveDay(input) {
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
     openWhy: open ? '' : openWhy,
+    // The drive under way, if any, and whether it would bill. Never both this
+    // and `open`: a journey that has left closes the dwell it left from.
+    driving: (drivingNow && !open) ? {
+      id: drivingNow.id, startTs: drivingNow.startTs, from: drivingNow.from,
+      counts: !drivingNow.fromHouse && (!timeOff || drivingNow.timeOffClock === true),
+    } : null,
     // How many fences this derive was handed. A client whose coordinates
     // never made it into the fence list cannot be arrived at, and that is
     // indistinguishable from a day where nobody stopped anywhere.
@@ -4081,6 +4095,35 @@ function geoDeriveRows(result, ids) {
         dest_place: _of.jobId != null ? null : (_o.name || null),
         source: 'open',
       }));
+    }
+  }
+  // ── AND SO IS THE DRIVE (owner 2026-09-29) ─────────────────────────────────
+  // "If Jack arrives at dad's shop, it shows the arrival time with no end. If a
+  // drive starts it ends the shop time and starts the drive time right away
+  // with no end. It's real time to the server and timesheet in 10 seconds."
+  //
+  // The arrival half is the block above. The drive half never existed: a
+  // journey still on the road wrote nothing until it ended, so the shop row
+  // closed at the flip and then the rail showed a hole for the whole drive,
+  // and his 29 September drives reached the server 12 to 36 minutes after
+  // they began.
+  //
+  // Same shape as the open dwell: the row the drive will become, with the end
+  // left NULL. Keyed by the journey that began it, which is exactly the key
+  // the closed drive row gets (segKey above: a segment is keyed by the flip
+  // that started it), so the finished drive lands on this same row instead of
+  // beside it. Only the TIME row: the mileage leg still needs both ends
+  // (rule 6), and the house is still never on the clock (rule 20), so a drive
+  // out of his own driveway waits to be judged as a whole.
+  const _dv = result && result.driving;
+  if (!open.length && _dv && _dv.counts !== false && Number(_dv.startTs) > 0 && _dv.id) {
+    const _dClaim = geoSpanClaim({ startTs: Number(_dv.startTs), endTs: Number(_dv.startTs) + 1, from: _dv.from, to: null }, claimCtx);
+    if (_dClaim.claim) {
+      open.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
+        arrived_at: iso(Number(_dv.startTs)), departed_at: null, minutes: null,
+        client_key: String(_dv.id), dest_place: null,
+        origin_place: (_dv.from && _dv.from.name) || null,
+        source: 'drive', _table: 'job_time_entries' });
     }
   }
 

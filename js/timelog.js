@@ -915,8 +915,12 @@ async function _timeLogRows(sinceISO,opts){
     // Rules 13, 15 and 18: anything the day could not vouch for. One predicate
   // (js/geo-track.js) rather than a string this file has to keep in step.
   const _held=(typeof _geoIsHeldSource==='function')?_geoIsHeldSource(_es):_es==='client-held';
-    const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
+    // A drive still on the road has no destination YET, which is not the same
+    // as one nobody saved (owner 2026-09-29, the live drive row).
+    const _liveDrive=_openRow&&/^drive/.test(_es);
+    const _unnamedDrive=!_liveDrive&&/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
     const clientName=/^unsaved/.test(_es)?'Unsaved address'
+      :_liveDrive?'On the road'
       :_unnamedDrive?'Destination not saved'
       :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
