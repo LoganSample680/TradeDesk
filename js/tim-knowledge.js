@@ -2056,7 +2056,16 @@ function timLetter(text){
   let letter=!!(validDays||jobPrice);
   const bizNames=[];
   try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());}}catch(_e){}
-  const sents=t.split(/(?<=[.!?])\s+/);
+  // A pasted email is lines, not sentences (the owner 2026-09-30: John's
+  // bulleted list came through as one line and Tim found nothing). A line
+  // break ends a sentence, a bullet mark comes off, and the greeting ("Hi
+  // Tagen,") and the lead-in ("the following work:") are not work.
+  let sents=t.split(/(?<=[.!?])\s+|\s*\n+\s*/).map(x=>x.replace(/^\s*(?:[-*\u2022\u00b7\u2013]+|\d{1,2}[.)])\s+/,'').trim()).filter(Boolean);
+  sents=sents.filter(x=>!(/^(?:hi|hey|hello|dear|good\s+(?:morning|afternoon|evening))\b/i.test(x)&&x.split(/\s+/).length<=4&&!/[.!?]$/.test(x))&&!(/:$/.test(x)&&x.split(/\s+/).length<=8));
+  // A signature over two lines ("John Schonfeldt" then the business): the
+  // name line joins the business line so it reads as one signature.
+  if(sents.length>=2){const a=sents[sents.length-2],b=sents[sents.length-1];
+    if(bizNames.some(n=>n&&b.toLowerCase().includes(n))&&!/[.!?,:]$/.test(a)&&a.split(/\s+/).length<=4&&a.split(/\s+/).every(w=>/^[A-Z<][\w'.>-]*$/.test(w)))sents.splice(sents.length-2,2,a+' '+b);}
   if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
   // The courtesy is not scope, but it is his to say: it goes on the proposal
   // as his note, word for word (owner 2026-09-30: the faith and trust line "is
@@ -2102,6 +2111,7 @@ const _TIMK_POLISH=[
   [/\bdrain\s+and\s+water\s+and\s+vent\b/gi,'drain, water lines and vent'],
   [/: drain and water and vent\b/gi,': drain, water lines and vent'],
   [/^electrical\s+for\s+(?:the\s+)?(\w+)\s+receptacle\s+and\s+(?:a\s+)?receptacle\s+for\s+(?:the\s+)?(\w+)/i,'Rough in electrical outlets for the $1 and $2'],
+  [/^electrical\s+for\s+(?:the\s+)?(\w+)\s+receptacle\s+and\s+(?:a|the)\s+(\w+)\s+receptacle\b/i,'Rough in electrical outlets for the $1 and $2'],
   [/^electrical\s+for\b/i,'Rough in electrical for'],
   [/^drill\s+(?:a\s+)?hole\s+and\s+run\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/i,'Drill an exterior hole and run the dryer vent outside'],
   [/\brun\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/gi,'run the dryer vent outside'],
@@ -2111,6 +2121,9 @@ const _TIMK_POLISH=[
   [/\band\s+existing\s+/gi,'and the existing '],
   [/^seal\s+(?:the\s+)?duct(?:s|work)?\b/i,'Seal the ductwork'],
   [/\bexcept\s+enough\s+to\s+keep\b/gi,', leaving enough open to keep'],
+  [/,?\s+including\s+drain,\s+water,?\s+and\s+vent\b/gi,': drain, water lines and vent'],
+  [/^drill\s+through\s+and\s+run\b/i,'Drill an exterior hole and run'],
+  [/\bcrawl\s+space\b/gi,'crawlspace'],
   [/\bcrawl(?!\s*space|space)\b/gi,'crawlspace'],
   [/\bkeep\s+crawlspace\b/gi,'keep the crawlspace'],
   [/\basap\b/g,'ASAP'],
