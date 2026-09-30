@@ -2055,7 +2055,7 @@ function timLetter(text){
   if(p){const n=parseFloat(p[1].replace(/,/g,''));if(n>0){jobPrice=n;t=t.replace(p[0],'');}}
   let letter=!!(validDays||jobPrice);
   const bizNames=[];
-  try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());}}catch(_e){}
+  try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());if(S.signAs)bizNames.push(String(S.signAs).toLowerCase());}}catch(_e){}
   // A pasted email is lines, not sentences (the owner 2026-09-30: John's
   // bulleted list came through as one line and Tim found nothing). A line
   // break ends a sentence, a bullet mark comes off, and the greeting ("Hi
@@ -2166,7 +2166,13 @@ function timLetterSteps(sentences){
     const bits=timPolish(_timkStripFirst(x)).split(_TIMK_JOIN_SPLIT);
     const out=[];
     bits.forEach(b=>{if(out.length&&out[out.length-1].split(/\s+/).length<6)out[out.length-1]+=' and '+b;else out.push(b);});
-    out.forEach(p=>parts.push(p));
+    // "Cap the gas line out front and the existing washer lines": one verb,
+    // two places. Each gets its own line so each lands in its own room.
+    out.forEach(p=>{
+      const m=p.match(/^(cap|remove|replace|seal|disconnect|abandon)\s+(.+?)\s+and\s+(the\s+(?:existing|old)\s+.+)$/i);
+      if(m&&m[2].split(/\s+/).length>=3){parts.push(m[1]+' '+m[2]);parts.push(m[1]+' '+m[3]);}
+      else parts.push(p);
+    });
   });
   return parts.map(x=>{
     let v=_timkStripFirst(x);

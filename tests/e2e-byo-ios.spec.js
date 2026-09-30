@@ -267,7 +267,8 @@ test.describe('Build Your Own, as an iPhone editor', () => {
       'Rough in electrical outlets for the washer and dryer',
       'Drill an exterior hole and run the dryer vent outside',
       'Install 3 hose bibs with piping',
-      'Cap the gas line to the gas light out front and the existing washer lines',
+      'Cap the gas line to the gas light out front',
+      'Cap the existing washer lines',
       'Seal the ductwork, leaving enough open to keep the crawlspace from freezing',
       'Secure the tub spout',
     ]);
@@ -275,6 +276,28 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.days).toBe(14);
     expect(r.note).toMatch(/faith and trust/);
     expect(r.by).toBe('John Schonfeldt');
+  });
+
+  test('Proposals signed by: a note with no signer comes from that name, blank falls back to the owner (owner 2026-09-30)', async () => {
+    await open();
+    const r = await page.evaluate(() => {
+      const was = S.signAs, wasOwner = S.ownerName;
+      try {
+        S.ownerName = 'Jack Schonfeldt';
+        S.signAs = 'John Schonfeldt';
+        const john = _propNoteHtml('I appreciate your faith and trust.', '');
+        const signer = _propSigner();
+        S.signAs = '';
+        const own = _propSigner();
+        const field = !!document.getElementById('set-signas');
+        return { john: /A note from John/.test(john), signer, own, field };
+      } finally { S.signAs = was; S.ownerName = wasOwner; }
+    });
+    expect(r.john).toBe(true);
+    expect(r.signer).toBe('John Schonfeldt');
+    expect(r.own.length).toBeGreaterThan(0);
+    expect(r.own).not.toBe('John Schonfeldt');
+    expect(r.field).toBe(true);
   });
 
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
