@@ -3977,4 +3977,193 @@ extension TdGeoPluginTests {
         XCTAssertTrue(true)
         clearSeqState()
     }
+
+    // MARK: - Re-reading the motion history while awake (owner 2026-09-28)
+
+    func testMotionPollInterval_offForNothingAndJunk() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(nil), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(0), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(-15_000), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.nan), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.infinity), 0)
+    }
+
+    func testMotionPollInterval_clampedSoItCanNeverBeABusyLoop() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1), 10_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(15_000), 15_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1e12), 300_000)
+    }
+
+    func testSetMotionPoll_armsOneTimerAndRemembersIt() {
+        let d = UserDefaults.standard
+        plugin.setMotionPollForTest(15_000)
+        XCTAssertEqual(plugin.motionPollMsForTest, 15_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollTimerForTest?.timeInterval ?? 0, 15, accuracy: 0.001)
+        XCTAssertEqual(d.double(forKey: plugin.motionPollKeyForTest), 15_000)
+        XCTAssertGreaterThan(plugin.motionPollTimerForTest?.tolerance ?? 0, 0, "slack lets iOS fold the wakes")
+        plugin.setMotionPollForTest(0)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertNil(d.object(forKey: plugin.motionPollKeyForTest), "off is forgotten, not remembered as zero")
+    }
+
+    func testSetMotionPoll_junkTurnsItOff() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.setMotionPollForTest(Double.nan)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollMsForTest, 0)
+    }
+
+    func testSetMotionPoll_rapidRepeatsLeaveExactlyOneLiveTimer() {
+        var seen: [Timer] = []
+        for i in 0..<25 {
+            plugin.setMotionPollForTest(Double(10_000 + i * 1_000))
+            if let t = plugin.motionPollTimerForTest { seen.append(t) }
+        }
+        XCTAssertEqual(seen.filter { $0.isValid }.count, 1, "every replaced timer is invalidated")
+        XCTAssertEqual(plugin.motionPollMsForTest, 34_000)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testSetMotionPoll_fromAnotherQueueStillLandsOnMain() {
+        let done = expectation(description: "off-main arm")
+        DispatchQueue.global().async {
+            self.plugin.setMotionPollForTest(20_000)
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(plugin.motionPollMsForTest, 20_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testMotionPoll_endsWithTheShiftBeat() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.hbStopForTest()
+        XCTAssertNil(plugin.motionPollTimerForTest, "the poll lives inside the shift")
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollKeyForTest))
+    }
+
+    func testMotionPoll_aQuietTickUploadsNothing() {
+        // The egress promise: a poll that finds nothing sends nothing. On the
+        // simulator there is no coprocessor, so this is also the guard path.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        withUploadsParked {
+            for _ in 0..<20 { plugin.backfillMotionPollForTest() }
+            let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertTrue(inflight.isEmpty, "no upload for a poll with nothing new")
+        }
+        clearSeqState()
+    }
+
+    func testMotionPoll_manyTicksFromTwoQueuesNeverCrash() {
+        clearSeqState()
+        let done = expectation(description: "poll ticks")
+        DispatchQueue.global().async {
+            for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+            DispatchQueue.main.async {
+                for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 30)
+        clearSeqState()
+    }
+
+    // MARK: - The sleep detector (owner 2026-09-28, "add it")
+
+    func testSleepGap_ticksThatKeepTimeAreNotSleep() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_015_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_060_000, intervalMs: 15_000),
+                     "a minute exactly is not over a minute")
+    }
+
+    func testSleepGap_aFrozenTimerIsSleepAndSaysHowLong() {
+        XCTAssertEqual(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_060_001, intervalMs: 15_000), 60_001)
+        XCTAssertEqual(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_420_000, intervalMs: 15_000), 420_000)
+    }
+
+    func testSleepGap_aLongIntervalNeedsFourMissedTicks() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 0 + 1, nowMs: 1 + 4 * 300_000, intervalMs: 300_000))
+        XCTAssertNotNil(TdGeoPlugin.sleepGapMs(lastMs: 1, nowMs: 2 + 4 * 300_000, intervalMs: 300_000))
+    }
+
+    func testSleepGap_junkAndStaleMarksAreNeverAMeasurement() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 0, nowMs: 1_000_000, intervalMs: 15_000), "no mark yet")
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: -5, nowMs: 1_000_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: Double.nan, nowMs: 1_000_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: Double.infinity, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 2_000_000, intervalMs: 0))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 2_000_000, nowMs: 1_000_000, intervalMs: 15_000), "clock went back")
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1, nowMs: 1 + 25 * 3600_000, intervalMs: 15_000), "over a day")
+    }
+
+    private func asleepRows() -> [[String: Any]] {
+        let buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        return buf.filter { ($0["type"] as? String) == "asleep" }
+    }
+
+    func testSleepTick_aNormalDayWritesNothing() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        for i in 0..<40 { plugin.motionPollTickForTest(nowMs: t0 + Double(i) * 15_000) }
+        XCTAssertTrue(asleepRows().isEmpty, "ticks on time add no rows")
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_oneRowPerSleepWithWhenAndHowLong() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        plugin.motionPollTickForTest(nowMs: t0)
+        plugin.motionPollTickForTest(nowMs: t0 + 420_000)
+        plugin.motionPollTickForTest(nowMs: t0 + 435_000)
+        let rows = asleepRows()
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?["fromMs"] as? Double, t0)
+        XCTAssertEqual(rows.first?["gapSec"] as? Double, 420)
+        XCTAssertEqual(rows.first?["relaunched"] as? Bool, false, "this process saw both ticks")
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_aMarkFromBeforeThisProcessIsARelaunch() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let now = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(now - 600_000, forKey: plugin.motionPollTickKeyForTest)
+        plugin.motionPollTickForTest(nowMs: now)
+        XCTAssertEqual(asleepRows().first?["relaunched"] as? Bool, true)
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_turningThePollOffForgetsTheMark() {
+        // An evening at home must never be reported as the phone asleep.
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        plugin.motionPollTickForTest(nowMs: t0)
+        plugin.setMotionPollForTest(0)
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollTickKeyForTest))
+        plugin.setMotionPollForTest(15_000)
+        plugin.motionPollTickForTest(nowMs: t0 + 12 * 3600_000)
+        XCTAssertTrue(asleepRows().isEmpty)
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_theShiftEndingForgetsTheMarkToo() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        plugin.motionPollTickForTest(nowMs: Date().timeIntervalSince1970 * 1000)
+        plugin.hbStopForTest()
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollTickKeyForTest))
+        clearSeqState()
+    }
 }

@@ -136,6 +136,16 @@ function lifecycleDetail(e: any): Record<string, unknown> | null {
   return Object.keys(out).length ? out : null;
 }
 
+// A stretch the phone was asleep (TdGeoPlugin.motionPollTick): when it went
+// quiet, how long, and whether iOS ended the app rather than pausing it.
+function sleepDetail(e: any): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  if (typeof e.fromMs === "number" && isFinite(e.fromMs) && e.fromMs > 0) out.fromMs = Math.round(e.fromMs);
+  if (typeof e.gapSec === "number" && isFinite(e.gapSec) && e.gapSec >= 0) out.gapSec = Math.round(e.gapSec);
+  if (e.relaunched === true) out.relaunched = true;
+  return Object.keys(out).length ? out : null;
+}
+
 function motionDetail(e: any): Record<string, unknown> | null {
   const out: Record<string, unknown> = {};
   if (e.hist === true) out.hist = true;
@@ -307,6 +317,8 @@ Deno.serve(async (req) => {
           ? motionDetail(e)
           : e.type === "app-terminate" || e.type === "memory-warning"
           ? lifecycleDetail(e)
+          : e.type === "asleep"
+          ? sleepDetail(e)
           : (typeof e.staleMs === "number" || e.blind === true
             ? {
               ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
