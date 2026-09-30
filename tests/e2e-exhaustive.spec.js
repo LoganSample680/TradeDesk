@@ -14717,8 +14717,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // clockIn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('clockIn', () => {
+    // Each test starts from NO running clock. Resetting _activeTimer alone left
+    // the saved open rows behind, and clockIn now adopts a saved open row
+    // before starting a new one (one clock at a time, 2026-09-30), so a row a
+    // previous test left open would be picked up instead of a fresh clock.
     test.beforeEach(async () => {
-      await page.evaluate(() => { _activeTimer = null; });
+      await page.evaluate(() => { _activeTimer = null; timeEntries = timeEntries.filter(e => !e.open); });
     });
 
     test.afterEach(async () => {

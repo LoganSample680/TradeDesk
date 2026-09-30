@@ -545,6 +545,14 @@ function clockIn(jobId,scopeId,scopeLabel){
   // closed job, but clockIn() is reachable directly too, never let a
   // completed/cancelled job accept a new time entry either way.
   if(j&&_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
+  // ONE CLOCK, WHATEVER THIS COPY OF THE APP REMEMBERS (owner 2026-09-30).
+  // Jack's Wednesday: Clock in at 9:10, then an update loaded a fresh copy of
+  // the app at 10:01 while the old one was still running, and the fresh copy
+  // had never adopted the 9:10 row. _activeTimer was null, so this let a
+  // second clock start at 10:05 and his day showed two running at once. The
+  // saved open row is the truth (see the note on clockIn's persistence below),
+  // so it is asked before the memory is trusted to be empty.
+  if(!_activeTimer&&typeof _rehydrateActiveTimer==='function')_rehydrateActiveTimer();
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
