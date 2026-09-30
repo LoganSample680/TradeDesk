@@ -191,6 +191,15 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-miles.sql
 
+      # A mid-trip derive wrote Jack's drive as ending at an unsaved stop, and
+      # the rule above then refused every later derive that resolved it to
+      # Bill Lorson (2026-09-29). 20261056 lets a resolved leg replace such a
+      # placeholder and nothing else; this replays his morning.
+      - name: A placeholder leg is replaced once its ends are known
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-placeholder.sql
+
       # A late tape changes a drive's key, and ingest never sweeps, so the
       # fuller answer used to land BESIDE the old one and the day counted twice
       # (Jack, 2026-09-23). 20261038 retires the older rows a write overlaps;
