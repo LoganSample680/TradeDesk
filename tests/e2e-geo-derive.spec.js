@@ -5452,6 +5452,108 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 27: A DRIVE TO YOUR OWN PLACE IS YOUR OWN (owner 2026-09-30) ──
+  // "Still got a problem with drive time now showing as Don, and Jack going
+  // from his house to the shop, that's supposed to be unpaid." His real
+  // 29 September morning: house to the gym at 05:20, the gym until 06:19,
+  // home at 06:25, then out to his dad's yard at 07:21. He answered the gap
+  // 06:25 to 07:35 as "Personal time (unpaid)".
+  test.describe('rule 27: the gym run and the drive in are his own time', () => {
+    const DON = { id: 'job-don', kind: 'job', name: 'Don Ixshu', jobId: 9901, lat: 39.0306563, lng: -95.7598769 };
+    const GYM_AT = { lat: 39.031371, lng: -95.759558 };
+    const GYM = { id: 'place-gym', kind: 'personal', name: 'Colaw gym', lat: GYM_AT.lat, lng: GYM_AT.lng };
+    const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const YARD = { id: 'place-js', kind: 'shop', name: 'JS shop', lat: 39.0900, lng: -95.6800, commute: true };
+    const CUST = { id: 'c-bill', kind: 'client', name: 'Bill Lorson', clientId: 77, lat: 39.0700, lng: -95.7000 };
+    const morning = (clocks, fences) => base({
+      fences: fences || [JHOME, DON, GYM, YARD, CUST],
+      tape: [mo(T(5, 20), 'automotive'), mo(T(5, 34), 'onFoot'),
+        mo(T(6, 19), 'automotive'), mo(T(6, 25), 'onFoot'),
+        mo(T(7, 21), 'automotive'), mo(T(7, 35), 'onFoot'),
+        mo(T(10, 3), 'automotive'), mo(T(10, 22), 'onFoot'),
+        mo(T(12, 43), 'automotive'), mo(T(13, 0), 'onFoot')],
+      fixes: [fix(T(5, 0), JHOME), fix(T(5, 19), JHOME),
+        fix(T(5, 34, 10), GYM_AT), fix(T(5, 50), GYM_AT), fix(T(6, 5), GYM_AT), fix(T(6, 18), GYM_AT),
+        fix(T(6, 25, 10), JHOME), fix(T(6, 50), JHOME), fix(T(7, 20), JHOME),
+        fix(T(7, 35, 10), YARD), fix(T(8, 30), YARD), fix(T(9, 30), YARD), fix(T(10, 2), YARD),
+        fix(T(10, 22, 10), CUST), fix(T(11, 30), CUST), fix(T(12, 42), CUST),
+        fix(T(13, 0, 10), YARD), fix(T(14, 0), YARD)],
+      clocks: clocks || [{ start: T(7, 38), end: T(16, 48) }],
+      nowMs: T(17, 0),
+    });
+    const run = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c', clocks: i.clocks });
+      const at = (h, m) => Date.parse('2026-09-01T05:00:00Z') + h * 3600000 + m * 60000;
+      const legAt = (h, m) => r.legs.find(l => Math.abs(l.startTs - at(h, m)) < 60000) || null;
+      const drives = rows.job_time_entries.filter(t => /^drive/.test(t.source))
+        .map(t => new Date(Date.parse(t.arrived_at) - 5 * 3600000).toISOString().slice(11, 16));
+      const gym = rows.job_time_entries.find(t => t.dest_place === 'Colaw gym') || null;
+      const home = legAt(6, 19);
+      return JSON.parse(JSON.stringify({ drives, mileageCount: rows.td_mileage.length,
+        gymSource: gym && gym.source,
+        homeFrom: home && home.from && home.from.name,
+        anyDon: rows.job_time_entries.some(t => /Don/.test(String(t.origin_place || '') + String(t.dest_place || ''))) }));
+    }, inp);
+
+    test('no drive time for the gym run, the drive home from it, or the drive in', async () => {
+      const r = await run(morning());
+      expect(r.drives, 'only the drive between the yard and the customer bills').toEqual(['10:03', '12:43']);
+      expect(r.gymSource).toBe('place-personal');
+    });
+
+    test('the drive home from the gym is from the gym, not from Don', async () => {
+      const r = await run(morning());
+      expect(r.homeFrom).toBe('Colaw gym');
+      expect(r.anyDon, 'no row on the day names Don').toBe(false);
+    });
+
+    test('no mileage for any of the three morning drives', async () => {
+      const r = await run(morning());
+      expect(r.mileageCount, 'yard to customer and back only').toBe(2);
+    });
+
+    test('with no gym saved, the drive in is still the commute', async () => {
+      // The first drive out of the house was the gym run. Skipping it is what
+      // keeps the drive to the yard the commute, even with no Personal place.
+      const r = await run(morning(null, [JHOME, DON, YARD, CUST]));
+      expect(r.drives).not.toContain('07:21');
+    });
+
+    test('a real clock over the gym run still outranks it, as it does the commute', async () => {
+      const r = await run(morning([{ start: T(6, 0), end: T(16, 48) }]));
+      expect(r.drives).toContain('06:19');
+    });
+
+    test('rule 27 helpers: a personal end is only a Personal place', async () => {
+      const r = await page.evaluate(() => ({
+        place: _gdPersonalEnd({ kind: 'personal', name: 'Gym' }),
+        client: _gdPersonalEnd({ kind: 'client', personal: true }),
+        unsaved: _gdPersonalEnd({ kind: 'personal', unsaved: true }),
+        none: _gdPersonalEnd(null),
+        legs: _gdPersonalLegs(null, []),
+        seats: _gdLegsFollowSeats(null, []),
+      }));
+      expect(r).toEqual({ place: true, client: false, unsaved: false, none: false, legs: null, seats: null });
+    });
+
+    test('a "Personal time" answer is never a clock the deriver sees', async () => {
+      const r = await page.evaluate(() => {
+        const keep = { timeEntries: window.timeEntries, user: window._supaUser };
+        try {
+          window._supaUser = { id: 'u-jack' };
+          timeEntries.length = 0;
+          timeEntries.push(
+            { id: 1, start_time: '2026-09-01T11:25:00Z', end_time: '2026-09-01T12:35:00Z', personal: true, unpaid: true, fromGap: true, logged_by_uid: 'u-jack' },
+            { id: 2, start_time: '2026-09-01T12:38:00Z', end_time: '2026-09-01T21:48:00Z', logged_by_uid: 'u-jack' });
+          return _geoDeriveClocks(Date.parse('2026-09-01T05:00:00Z'), Date.parse('2026-09-02T05:00:00Z'))
+            .map(c => new Date(c.start).toISOString().slice(11, 16));
+        } finally { timeEntries.length = 0; (keep.timeEntries || []).forEach(e => timeEntries.push(e)); window._supaUser = keep.user; }
+      });
+      expect(r).toEqual(['12:38']);
+    });
+  });
+
   test.describe('rule 22: a stop is named from the middle of itself', () => {
     const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
     const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
