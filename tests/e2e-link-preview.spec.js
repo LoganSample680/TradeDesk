@@ -46,7 +46,8 @@ test.describe('Texted link preview: his name and his logo', () => {
       async (url) => { asked = url; return { contractorName: 'Plumbing Solutions by JS', logoUrl: LOGO }; });
     const html = await res.text();
     expect(asked).toBe(`https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/proposals/client-hub/${U}/1789397583261_${T}.json`);
-    expect(html).toContain('<title>Plumbing Solutions by JS: your project</title>');
+    expect(html).toContain('<title>Plumbing Solutions by JS · Your Project Hub</title>');
+    expect(html).toContain('Your photos, invoices and documents, all in one place.');
     expect(html).toContain(`<meta property="og:image" content="https://uat.tradedesk-cyp.pages.dev/img/gallery/${U}/branding/logo-837763362.png">`);
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
     expect(html).toContain('og:title');

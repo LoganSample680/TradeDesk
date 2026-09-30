@@ -228,10 +228,22 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     r.labels.forEach(l => expect(l).not.toMatch(/estimate|\$|good for|approve|appreciate|look forward|Schonfeldt|Plumbing Solutions|start asap/i));
     // His sentences whole, in his order, and printed that way: no fragments
     // like "Drill hole" on their own, no stage headings reshuffling them.
-    expect(r.labels[0]).toMatch(/^Rough surface mounted washer box/);
-    expect(r.labels).toContain('Drill hole and run dryer vent to outside');
+    // Changed 2026-09-30 (owner): the lines read the way a plumber writes
+    // them on a customer's copy, and his closing words are his signed note.
+    expect(r.labels).toEqual([
+      'Rough in surface-mounted washer box: drain, water lines and vent',
+      'Rough in electrical outlets for the washer and dryer',
+      'Drill an exterior hole and run the dryer vent outside',
+      'Install 3 hose bibs and piping',
+      'Secure the tub spout',
+    ]);
+    const note = await page.evaluate(() => ({ note: _geiNote, by: _geiNoteBy }));
+    expect(note.note).toMatch(/^If you approve I can start ASAP\. I appreciate your faith and trust in our plumbing services/);
+    expect(note.by).toBe('John Schonfeldt');
     const d = await doc();
-    const i1 = d.indexOf('Rough surface mounted'), i2 = d.indexOf('Secure the tub spout');
+    expect(d).toContain('A note from John');
+    expect(d).toContain('faith and trust');
+    const i1 = d.indexOf('Rough in surface-mounted'), i2 = d.indexOf('Secure the tub spout');
     expect(i1).toBeGreaterThan(-1);
     expect(i2).toBeGreaterThan(i1);
     expect(d).not.toContain('The new work');
