@@ -2415,6 +2415,7 @@ test.describe('sign.html: his logo, his business email, nothing under the bar', 
   const PROP = Object.assign({}, MOCK_PROPOSAL_GENERAL, {
     businessName: 'Plumbing Solutions by JS', logoUrl: LOGO, logoData: '', brandColor: '#2d5da8',
     businessEmail: 'dad@plumbing.test', notifyEmail: 'jack@login.test', businessPhone: '785-555-0100',
+    contactName: 'John Schonfeldt',
   });
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -2439,6 +2440,8 @@ test.describe('sign.html: his logo, his business email, nothing under the bar', 
     const t = await page.evaluate(() => document.getElementById('prop-contact-footer')?.textContent || '');
     expect(t).toContain('dad@plumbing.test');
     expect(t).not.toContain('jack@login.test');
+    // Proposals signed by (owner 2026-09-30): the person to call is named.
+    expect(t).toContain('John Schonfeldt');
   });
 
   test('"Not interested" scrolls clear of the Approve bar', async () => {

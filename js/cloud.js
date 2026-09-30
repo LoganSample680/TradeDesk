@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.30.26.19';
+const APP_VERSION='09.30.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8041,7 +8041,7 @@ async function _reconcilePendingSigStatuses(_attempt){
       for(let attempt=0;attempt<2&&!got;attempt++){
         try{
           const{data,error}=await _supa.from('signed_proposals').select('*')
-            .eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
+            .eq('contractor_user_id',_opsReadUid()).in('bid_id',ids);
           if(error)throw error;
           got=data||[];
         }catch(e){
@@ -8138,7 +8138,7 @@ async function checkNewSignatures(_src){
     // environment; an explicit column list would fail the whole query on drift.
     const _fullPoll=()=>_supa.from('signed_proposals')
       .select('*')
-      .eq('contractor_user_id',_supaUser.id)
+      .eq('contractor_user_id',_opsReadUid())
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
@@ -8149,7 +8149,7 @@ async function checkNewSignatures(_src){
       // is an UPDATE, which the td_touch_updated_at trigger re-surfaces here.
       ({data,error}=await _supa.from('signed_proposals')
         .select('*')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',_opsReadUid())
         .gt('updated_at',_sigPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(100));
@@ -8280,6 +8280,14 @@ function _sigPollTick(){
   checkNewSignatures();_fetchProposalViews();
 }
 let _pvPollWatermark=null;
+// Whose signatures and opens to read. The support view reads the business
+// it is viewing (it has ops_view_read on these tables); everyone else reads
+// their own login's rows, exactly as before (owner 2026-09-30: opening
+// Tagen's link while viewing Jack's app never showed as opened).
+function _opsReadUid(){
+  if(typeof window!=='undefined'&&window._opsView&&window._opsView.target)return window._opsView.target;
+  return _supaUser&&_supaUser.id;
+}
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
@@ -8293,7 +8301,7 @@ async function _fetchProposalViews(){
     if(_pvPollWatermark){
       const{data:_probe,error:_pErr}=await _supa.from('proposal_views')
         .select('updated_at')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',_opsReadUid())
         .gt('updated_at',_pvPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(1);
@@ -8313,7 +8321,7 @@ async function _fetchProposalViews(){
     // rows; older rows only feed stale badges on long-closed bids.
     const{data,error}=await _supa.from('proposal_views')
       .select('*')
-      .eq('contractor_user_id',_supaUser.id)
+      .eq('contractor_user_id',_opsReadUid())
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false})
       .limit(500);
@@ -8360,7 +8368,7 @@ async function _fetchProposalViews(){
     try{
       const{data:_ae}=await _supa.from('proposal_audit_events')
         .select('bid_id,event,ip_address,user_agent,ts')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',_opsReadUid())
         .order('ts',{ascending:false})
         .limit(1500);
       if(_ae){
@@ -9048,6 +9056,15 @@ async function supaLoadFromCloud({silent=false}={}){
     // to real content exactly once (owner 2026-08-10: no mid-load stutters).
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
+    // Support view (owner 2026-09-30): the boot screen was painted before the
+    // viewed business's settings existed (ops mode hides the local cache), so
+    // it showed the TradeDesk default. Now that their settings are in, repaint
+    // it with THEIR logo. No cacheKey: nothing of theirs is kept on this device.
+    try{
+      const _ov=document.getElementById('supa-boot-overlay');
+      if(window._opsView&&_ov&&!_ov.classList.contains('td-fadeout')&&typeof tdBootFill==='function')
+        tdBootFill(_ov,{logo:S.logoData||S.logoUrl||'',name:S.bname||'',brand:S.brandColor||'',powered:S.poweredBy!==false});
+    }catch(_e){}
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
     // Mileage heal AFTER EVERY completed cloud merge, not only at boot (owner

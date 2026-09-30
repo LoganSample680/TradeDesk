@@ -2179,6 +2179,26 @@ function timLetterSteps(sentences){
     return timPolish(v);
   }).filter(v=>v.replace(/[^a-z]/gi,'').length>=3);
 }
+// WHERE IN THE HOUSE (owner 2026-09-30, Jack approved the room layout): the
+// scope reads by room on the customer's copy, "Laundry room", "Outside",
+// "Crawlspace". First match wins, and a fixture outranks a direction: "run
+// the dryer vent outside" is laundry work that happens to end outdoors.
+const _TIMK_ROOMS=[
+  ['Laundry room',/\b(?:washer|dryer|laundry|washing\s+machine)\b/i],
+  ['Bathroom',/\b(?:tub|shower|toilet|vanity|bath(?:room)?|lav(?:atory)?)\b/i],
+  ['Kitchen',/\b(?:kitchen|dishwasher|disposal|range\s+hood|fridge|refrigerator|ice\s*maker)\b/i],
+  ['Crawlspace',/\bcrawl\s*space\b|\bcrawlspace\b/i],
+  ['Basement',/\bbasement\b/i],
+  ['Attic',/\battic\b/i],
+  ['Garage',/\bgarage\b/i],
+  ['Utility room',/\b(?:water\s+heater|tankless|furnace|boiler|water\s+softener|softener)\b/i],
+  ['Outside',/\b(?:outside|outdoors?|exterior|out\s+front|hose\s+bibs?|spigots?|yard|gas\s+light|sewer\s+line|curb)\b/i],
+];
+function timRoomOf(text){
+  const t=String(text||'');
+  for(const [room,re] of _TIMK_ROOMS)if(re.test(t))return room;
+  return null;
+}
 function timScopeBuild(text,opts){
   const _letter=timLetter(text);
   const said=_letter.text;
@@ -2207,8 +2227,14 @@ function timScopeBuild(text,opts){
   const mine=steps.map((t,i)=>{
     const r=byText[t]||{};
     // price: what he said the line costs, 0 when he did not say.
-    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0,written:_written};
+    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0,written:_written,room:timRoomOf(t)};
   });
+  // Rooms only when the job actually spans them: two or more, and most of
+  // the steps placed. One room, or a list Tim cannot place, stays one list.
+  const _rooms=new Set(mine.map(m=>m.room).filter(Boolean));
+  const _placed=mine.filter(m=>m.room).length;
+  const byRoom=_rooms.size>=2&&_placed*2>=mine.length;
+  if(!byRoom)mine.forEach(m=>{m.room=null;});
   let implied=[];
   try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
   return {
@@ -2226,6 +2252,8 @@ function timScopeBuild(text,opts){
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
     outOfOrder:staged.some((r,i)=>r.text!==steps[i]),
+    // Steps carry their room when the job spans rooms (null otherwise).
+    byRoom,
   };
 }
 

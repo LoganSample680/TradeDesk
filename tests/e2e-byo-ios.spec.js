@@ -300,6 +300,106 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.field).toBe(true);
   });
 
+  // ── ROOMS (owner 2026-09-30, Jack picked the room layout) ─────────────────
+  const EMAIL = "Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Electrical for the washer receptacle and a dryer receptacle\n- Drill through and run the dryer vent to the outside\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nThis estimate is good for 14 days. If you approve, I can start as soon as possible.\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+  const rooms = () => page.evaluate(() => {
+    const out = {};
+    _byoItems.filter(x => !x._supply && x.label !== 'Materials').forEach(x => { (out[x.section] = out[x.section] || []).push(x.label); });
+    return out;
+  });
+
+  test('rooms: a job that spans rooms lands one section per room, in his order', async () => {
+    await open();
+    await page.evaluate((t) => { S.bname = 'Plumbing Solutions by JS'; document.getElementById('byo-say').value = t; _byoSayBuild(); }, EMAIL);
+    const r = await rooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    expect(r['Laundry room']).toEqual([
+      'Rough in a surface-mounted washer box: drain, water lines and vent',
+      'Rough in electrical outlets for the washer and dryer',
+      'Drill an exterior hole and run the dryer vent outside',
+      'Cap the existing washer lines',
+    ]);
+    expect(r['Outside']).toEqual(['Install 3 hose bibs with piping', 'Cap the gas line to the gas light out front']);
+    const titles = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .byo-sec-name')].map(b => b.textContent.trim()));
+    expect(titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    const d = await doc();
+    const at = k => d.indexOf(k);
+    expect(at('Laundry room')).toBeGreaterThan(-1);
+    expect(at('Laundry room')).toBeLessThan(at('Outside'));
+    expect(at('Outside')).toBeLessThan(at('Crawlspace'));
+    expect(at('Crawlspace')).toBeLessThan(at('Bathroom'));
+  });
+
+  test('rooms: one room, or a painting job, stays one plain list', async () => {
+    await open();
+    await say('Replace the toilet, reset the vanity and caulk the tub');
+    const one = await rooms();
+    expect(Object.keys(one)).toEqual(['Work']);
+    const t = await page.evaluate(() => ({ a: timRoomOf('run the dryer vent outside'), b: timRoomOf('install 3 hose bibs'), c: timRoomOf('patch drywall'), d: timScopeBuild('patch the hallway and paint the trim').byRoom }));
+    expect(t).toEqual({ a: 'Laundry room', b: 'Outside', c: null, d: false });
+  });
+
+  test('rooms: tap a title to rename it, and its lines go with it', async () => {
+    await open();
+    await page.evaluate((t) => { document.getElementById('byo-say').value = t; _byoSayBuild(); }, EMAIL);
+    await page.locator('#byo-sections .byo-sec-name', { hasText: 'Crawlspace' }).click();
+    await page.fill('#zprompt-inp', 'Basement');
+    await page.click('#zprompt-ok');
+    const r = await rooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Basement', 'Bathroom']);
+    expect(r['Basement']).toEqual(['Seal the ductwork, leaving enough open to keep the crawlspace from freezing']);
+    // Renaming onto a room that already exists merges the two.
+    const merged = await page.evaluate(() => { _byoApplyRename('Bathroom', 'laundry room'); return _byoCustomSections.slice(); });
+    expect(merged).not.toContain('Bathroom');
+    const blank = await page.evaluate(() => _byoApplyRename('Outside', '   '));
+    expect(blank).toBe(false);
+  });
+
+  test('rooms: hold a line and drag it into another room', async () => {
+    await open();
+    await page.evaluate((t) => { document.getElementById('byo-say').value = t; _byoSayBuild(); }, EMAIL);
+    const row = page.locator('#byo-sections .byo-line', { hasText: 'Secure the tub spout' });
+    const target = page.locator('#byo-sections .byo-line', { hasText: 'Seal the ductwork' });
+    // Both mid-screen, clear of the edges where a held line scrolls the page.
+    await target.evaluate(e => e.scrollIntoView({ block: 'center' }));
+    const a = await row.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(500);
+    const lifted = await page.evaluate(() => !!document.getElementById('byo-drag-ghost'));
+    const b = await target.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
+    await page.mouse.up();
+    const r = await rooms();
+    expect(lifted).toBe(true);
+    expect(r['Crawlspace'][0]).toBe('Secure the tub spout');
+    expect(r['Bathroom']).toBeUndefined();
+    // A quick tap is still a tap: it opens the line, it does not move it.
+    const ghost = await page.evaluate(() => !!document.getElementById('byo-drag-ghost'));
+    expect(ghost).toBe(false);
+    const moved = await page.evaluate(() => {
+      const i = _byoItems.findIndex(x => x.label === 'Cap the existing washer lines');
+      _byoMoveLine(i, 'Crawlspace', null);
+      return _byoItems.filter(x => x.section === 'Crawlspace').map(x => x.label).pop();
+    });
+    expect(moved).toBe('Cap the existing washer lines');
+  });
+
+  test('the keyboard closing is "done": pasted text becomes lines without a button', async () => {
+    await open();
+    const box = page.locator('#byo-say');
+    await box.fill('Replace the water heater and haul the old one away');
+    await page.evaluate(() => document.getElementById('byo-say').blur());
+    await page.waitForFunction(() => _byoItems.length > 0, null, { timeout: 3000 });
+    const r = await page.evaluate(() => _byoItems.map(x => x.label));
+    expect(r.length).toBeGreaterThan(0);
+    // An empty box closing does nothing, and never nags.
+    await open();
+    await page.evaluate(() => { const el = document.getElementById('byo-say'); el.focus(); el.blur(); });
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => _byoItems.length)).toBe(0);
+  });
+
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
