@@ -55,6 +55,7 @@ async function boot(page, w) {
     // Sending opens an sms: link, which can navigate the page out from under
     // a test that keeps working after Send (midnight clock run, 2026-09-29).
     // These tests are about what gets billed, not the text itself.
+    window.__realSend = window.__realSend || window._sendPaidInvoice;   // the start-to-finish test puts it back
     window._sendPaidInvoice = () => {};
     window._fetchCrewLabor = async () => window._rtbLab;
     _tb = { at: Date.now(), lab: window._rtbLab };
@@ -1195,4 +1196,54 @@ test.describe('Ready to bill: drafts', () => {
     expect(r.age).toContain('2 houses · 1 draft');
     expect(r.draftRow).toBe(true);
   });
+});
+
+// START TO FINISH, AS A PERSON DOES IT: Home, Ready to bill, the invoice, sent.
+// Every tap is a real click on the real control, every word typed key by key.
+test.describe('Invoice start to finish', () => {
+// Owner 2026-09-29: "honestly run a playwright test on invoice from start to
+// finish from bill section to completion, how long are we looking at?"
+test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the work in his own sentence case', async ({ page }) => {
+  test.setTimeout(120000);
+  await boot(page, 390);
+  await page.evaluate(() => { window._sendPaidInvoice = window.__realSend; S.bname = 'Sample Plumbing'; window._uploadClientHub = async () => {}; getClientById(701).clientToken = 'tok701'; });
+  const log = []; let taps = 0, keys = 0, scrolls = 0;
+  const t0 = Date.now();
+  const tap = async (label, loc) => {
+    const l = page.locator(loc).first();
+    const before = await page.evaluate(() => { const s = document.scrollingElement; const q = document.getElementById('qi-page'); return (s ? s.scrollTop : 0) + (q ? q.scrollTop : 0); });
+    await l.scrollIntoViewIfNeeded();
+    const after = await page.evaluate(() => { const s = document.scrollingElement; const q = document.getElementById('qi-page'); return (s ? s.scrollTop : 0) + (q ? q.scrollTop : 0); });
+    if (Math.abs(after - before) > 40) { scrolls++; log.push('  (scroll)'); }
+    const s = Date.now(); await l.click(); taps++;
+    await page.waitForTimeout(50);
+    log.push('tap  ' + label + '  ' + (Date.now() - s) + 'ms');
+  };
+  const type = async (label, loc, text) => {
+    const l = page.locator(loc).first();
+    await l.scrollIntoViewIfNeeded(); await l.click(); taps++;
+    await l.pressSequentially(text); keys += text.length;
+    log.push('type ' + label + '  (' + text.length + ' keys)');
+  };
+  await page.evaluate(() => { goPg('pg-dash'); _renderToBill(); });
+  await tap('Ready to bill card', '#dash-to-bill .tb-sum');
+  await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen Miller")');
+  await page.waitForSelector('#qi-page #qi-say');
+  await type('what we did', '#qi-say', 'Replaced the water heater and the shutoff valve.');
+  await tap('Add to work done', '#qi-page button:has-text("Add to work done")');
+  const bar1 = await page.locator('#qi-go').textContent();
+  await tap('bar: ' + bar1.trim(), '#qi-go button');
+  await tap('On receipt', '#qi-due button[data-due="receipt"]');
+  const bar2 = await page.locator('#qi-go').textContent();
+  await tap('bar: ' + bar2.trim(), '#qi-go button');
+  await page.waitForSelector('.td-send');
+  await tap('Text it to them', '[data-send="text"]');
+  const ms = Date.now() - t0;
+  const out = await page.evaluate(() => { const b = bids.find(x => x.kind === 'quick_invoice'); return { sent: !!(b && b.sentAt), total: b && b.amount, days: b && b.qiDays.length, work: b && b.qiWork }; });
+  expect(out).toEqual({ sent: true, total: 1048.5, days: 3, work: ['Replaced the water heater and the shutoff valve'] });
+  expect(taps, log.join('\n')).toBeLessThanOrEqual(8);
+  expect(keys).toBe(48);
+  expect(ms, 'the app itself is never the slow part').toBeLessThan(15000);
+  assertNoErrors(page, 'invoice start to finish');
+});
 });
