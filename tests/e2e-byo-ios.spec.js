@@ -15,7 +15,7 @@
  *  - Lines are rows: check, title, price; description full width under them.
  *  - The price group: their price, his cost and profit (never on the
  *    proposal), the deposit against the state limit.
- *  - The bar: Price it out, Price every line, then Sign here / Send it.
+ *  - The bar: Price it out, Set the price, then Sign here / Send it.
  *  - The proposal: YOUR PRICE, fixed, moved only by a change order.
  *  - Earl, 58, on an iPhone SE, cannot break it.
  */
@@ -150,11 +150,60 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     // T&M (e2e-tm-guided.spec.js). Tim's leftovers are answered here.
     expect((await bar())[0]).toMatch(/^Tim caught \d+ things? you left out$/);
     await page.evaluate(() => { _byoMissed.length = 0; _byoRenderSteps(); });
-    expect(await bar()).toEqual(['Price every line']);
+    expect(await bar()).toEqual(['Set the price']);
     await priceAll(900);
     expect(await bar()).toEqual(['Check the price']);
     await page.evaluate(() => _geiNumsMark());
     expect(await bar()).toEqual(['Sign here', 'Send it']);
+  });
+
+  test('one price for the whole job: fill the scope, type Their price, no line needs a price (owner 2026-09-30)', async () => {
+    await open();
+    await say('pull the old water heater, run new pex, set a tankless');
+    await page.evaluate(() => { _byoMissed.length = 0; _byoRenderSteps(); });
+    expect(await bar()).toEqual(['Set the price']);
+    await page.locator('#byo-dock-go').click({ delay: 20 });
+    await page.waitForTimeout(800);            // _tmDockReady ignores a tap right after the label changes
+    await page.locator('#byo-dock-go').click();
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('byo-price-in');
+    await page.locator('#byo-price-in').pressSequentially('2800');
+    await page.locator('#byo-price-in').blur();
+    await page.evaluate(() => _byoRenderSteps());
+    const r = await page.evaluate(() => ({
+      total: calcGeiTotal().sub, lines: _byoItems.map(it => it.price), job: _byoJobPrice,
+    }));
+    expect(r.total).toBe(2800);
+    expect(r.lines).toEqual([0, 0, 0]);         // his lines stay plain scope
+    expect(r.job).toBe(2800);
+    // Typing his own price is checking it, the same as the deposit box.
+    expect(await bar()).toEqual(['Sign here', 'Send it']);
+    const d = await doc();
+    expect(d).toContain('2,800');
+    // Cleared, the lines add up as before and the bar asks for a price again.
+    await page.locator('#byo-price-in').fill('');
+    await page.locator('#byo-price-in').dispatchEvent('input');
+    await page.evaluate(() => _byoRenderSteps());
+    expect(await page.evaluate(() => calcGeiTotal().sub)).toBe(0);
+    expect(await bar()).toEqual(['Set the price']);
+  });
+
+  test('the job price is never learned as one line\'s price, and it saves with the draft', async () => {
+    await open();
+    await say('pull the old water heater, set a tankless');
+    const r = await page.evaluate(() => {
+      _byoJobPrice = 2800; _byoUpdateRail();
+      const learned = [];
+      const orig = window._pbLearn; window._pbLearn = (d, rate) => learned.push(Number(rate) || 0);
+      try { _pbLearnAll(); } finally { window._pbLearn = orig; }
+      const b = bids.find(x => x.id === _geiEditBidId);
+      if (b) _byoAutosave();
+      return { carrier: _geiLines.filter(l => l._lump).length, sub: _geiLines.reduce((s, l) => s + l.total, 0), learned, saved: b ? b.byoJobPrice : 'none' };
+    });
+    expect(r.carrier).toBe(1);
+    expect(r.sub).toBe(2800);
+    expect(r.learned.some(x => x >= 2800)).toBe(false);
+    if (r.saved !== 'none') expect(r.saved).toBe(2800);
+    await page.evaluate(() => { _byoJobPrice = 0; _byoUpdateRail(); });
   });
 
   test('a line swiped away by a fat thumb comes back with Undo', async () => {

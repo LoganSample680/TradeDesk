@@ -674,7 +674,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   const _facts=_geiFacts(c);
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
+  _geiLines=[];_byoItems=[];_byoJobPrice=0;_byoCustomSections=[];_byoCustomTerms='';_geiEmergency=false;_panelSched=null;_geiStep=1;_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];_estCrewRates={};_geiExclusions=[];_attachSkipped=[];
   // Resolved, not blanked. An emergency is the one thing nobody can know in
   // advance, so that one still starts off.
   _geiIsCommercial=_facts.commercial;
@@ -1771,6 +1771,11 @@ function _tmHidePage(){_geiHidePage('gei-tm-page');}
 
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
+// THE JOB PRICE (owner 2026-09-30: "just want to fill scope of work and hit
+// the total to price"). One number for the whole job, typed on Their price.
+// The lines stay plain scope at $0; the customer never sees line prices on a
+// Build Your Own anyway. 0 means no job price: the lines add up as before.
+let _byoJobPrice=0;
 // Interior and Exterior are PAINTING words. An HVAC man swapping a condenser,
 // a plumber setting a water heater and an electrician pulling a panel all have
 // exactly one honest answer to "is this interior or exterior", which is "who
@@ -1817,6 +1822,7 @@ function _byoShowPage(){
   else{_byoItems=[];}
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
+  _byoJobPrice=Number(b&&b.byoJobPrice)>0?Number(b.byoJobPrice):0;
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
   _injectRrpItems();
@@ -3078,7 +3084,9 @@ function _byoDelLine(idx){
 // ── THE STEPS, THE PRICE, THE BAR ──────────────────────────────────────────
 function _byoState(){
   const on=_byoItems.filter(it=>it.on);
-  const unpriced=on.filter(it=>!(Number(it.price)>0)&&!it._rrp);
+  // A price for the whole job covers everything on it, parts included, so
+  // nothing is left to price line by line.
+  const unpriced=_byoJobPrice>0?[]:on.filter(it=>!(Number(it.price)>0)&&!it._rrp);
   const {total}=(typeof calcGeiTotal==='function')?calcGeiTotal():{total:0};
   return {n:_byoItems.length,on,unpriced,total};
 }
@@ -3114,7 +3122,7 @@ function _byoRenderPrice(st){
   const tax=(()=>{const r=document.getElementById('byo-rail-tax-row');return r&&r.style.display!=='none'?[(document.getElementById('byo-rail-tax-lbl')||{}).textContent,(document.getElementById('byo-rail-tax-amt')||{}).textContent]:null;})();
   const costEl=document.getElementById('byo-expected-cost');
   const cost=parseFloat(costEl&&costEl.value)||0;
-  const sub=st.on.reduce((a,it)=>a+(Number(it.price)||0),0);
+  const sub=(_geiLines||[]).reduce((a,l)=>a+(Number(l.total)||0),0);
   const profit=sub>0&&cost>0?Math.round((sub-cost)/sub*100):null;
   const pcol=profit==null?'':profit<0?'#DC2626':profit<_MARGIN_BANDS.low?'#EF4444':profit<_MARGIN_BANDS.target?'#B45309':profit<_MARGIN_BANDS.high?(document.body.classList.contains('dark')?'var(--green)':'var(--c-green,#117841)'):'#B45309';
   const D=_byoDepositState(st.total);
@@ -3126,7 +3134,8 @@ function _byoRenderPrice(st){
   const termsOpen=(document.getElementById('byo-terms-wrap')||{}).style&&document.getElementById('byo-terms-wrap').style.display!=='none';
   const focusedCost=document.activeElement&&document.activeElement.id==='byo-cost-in';
   const focusedDep=document.activeElement&&document.activeElement.id==='byo-dep-in';
-  if(focusedCost||focusedDep){
+  const focusedPrice=document.activeElement&&document.activeElement.id==='byo-price-in';
+  if(focusedCost||focusedDep||focusedPrice){
     // Mid-typing: update the words around the box, never the box itself.
     const pr=document.getElementById('byo-profit-val');
     if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost));pr.style.color=pcol;}
@@ -3135,8 +3144,10 @@ function _byoRenderPrice(st){
     return;
   }
   g.innerHTML=
-    '<div class="ios-row byo-total"><span class="ios-lbl">Their price<small>Fixed. Only added or changed work, on a change order they sign, moves it.</small></span><span class="ios-fact" id="byo-total-val">'+_byoMoney(st.total)+'</span></div>'+
-    (tax?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">'+escHtml(tax[0]||'')+'</small></span><span class="ios-fact" style="font-weight:400">'+escHtml(tax[1]||'')+'</span></div>':'')+
+    '<label class="ios-row byo-total"><span class="ios-lbl">Their price<small>The whole job. Fixed: only added or changed work, on a change order they sign, moves it.</small></span>'+
+      '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-price-in" placeholder="0" value="'+(sub>0?Number(sub).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoPriceInput(this)"></span></label>'+
+    (tax?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">'+escHtml(tax[0]||'')+'</small></span><span class="ios-fact" style="font-weight:400">'+escHtml(tax[1]||'')+'</span></div>'+
+      '<div class="ios-row"><span class="ios-lbl">With tax</span><span class="ios-fact" id="byo-total-val">'+_byoMoney(st.total)+'</span></div>':'')+
     // PROFIT IS HIS, NEVER THEIRS (owner: "still want them to show profit
     // percentage"). One number he types, what the job costs him, and the
     // margin next to it. No materials list to fill out.
@@ -3182,7 +3193,9 @@ function _byoDockNext(st){
   // (found 2026-09-29 driving Build Your Own start to finish: the bar opened
   // the line editor on "Materials" and asked him to make up a total).
   const lines=st.unpriced.filter(it=>!it._supply);
-  if(lines.length){const i=_byoItems.indexOf(lines[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
+  // One price for the whole job, not a price on every line (owner
+  // 2026-09-30). He can still price a line by tapping it.
+  if(lines.length)return {label:'Set the price',fn:'_byoGoPrice()'};
   if(st.unpriced.length)return {label:'Price the materials',fn:"_geiGuideTo(document.getElementById('sup-card'))"};
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
@@ -3233,6 +3246,7 @@ function _byoAutosave(){
   b.geiDesc=_descVal;
   b.descUserSet=!!_geiDescUserSet;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
+  b.byoJobPrice=_byoJobPrice||0;
   b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
@@ -4111,18 +4125,45 @@ function _geiTaxLineType(l){
   if(sec==='work'||sec==='interior'||sec==='exterior')return 'labor';
   return null;
 }
+// The job price rides on the first work line as whatever the priced lines
+// (the supply house list, anything he did price) leave over, so the total is
+// his number and the tax still sees which part is parts. The carrier is
+// flagged _lump so the price book never learns a whole job as one line's
+// price (that is how "John Schonfeldt Plumbing Solutions by JS" got $2,800).
+function _byoApplyJobPrice(lines){
+  if(!(_byoJobPrice>0)||!lines.length)return;
+  const priced=lines.reduce((s,l)=>s+(Number(l.total)||0),0);
+  const rest=Math.round((_byoJobPrice-priced)*100)/100;
+  if(!(rest>0))return;
+  const work=lines.filter(l=>!l._supply&&!l._rrp);
+  const c=work.find(l=>!(Number(l.total)>0))||work[0];
+  if(!c)return;
+  c.rate=c.total=Math.round(((Number(c.total)||0)+rest)*100)/100;c._lump=true;
+}
+function _byoPriceInput(el){
+  _geiNumsTouched();
+  const v=(typeof _moneyVal==='function')?_moneyVal('byo-price-in'):parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
+  _byoJobPrice=v>0?Math.round(v*100)/100:0;
+  _byoUpdateRail();_byoAutosave();
+}
+function _byoGoPrice(){
+  const e=document.getElementById('byo-price-in');if(!e)return;
+  try{e.scrollIntoView({block:'center'});}catch(_e){}
+  try{e.focus();}catch(_e){}
+}
 function _byoUpdateRail(){
   // The name follows the work: adding or turning off a line renames the
   // proposal live, unless he has named it himself (_geiDescUserSet).
   _geiRefreshAutoTitle('byo');
   const selected=_byoItems.filter(it=>it.on);
-  const sub=selected.reduce((s,it)=>s+it.price,0);
   _geiLines=selected.map(it=>{
     const l={desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false};
     // Supply house materials already taxed at the counter are not taxed again.
     if(it._supply){l._supply=true;if(it._taxPaid)l._taxPaid=true;}
     return l;
   });
+  _byoApplyJobPrice(_geiLines);
+  const sub=_geiLines.reduce((s,l)=>s+(Number(l.total)||0),0);
 
   // Sales tax
   let salesTax=0;
@@ -7065,7 +7106,7 @@ function _pbLearnAll(){
     // erase a stored description with a blank.
     (_byoItems||[]).forEach(i=>_pbLearn(i.label,(Number(i.rate)>0?i.rate:i.price),i.unit,i.notes));
     // Labor lines are the crew rate, not a thing he sells, so they stay out.
-    (_geiLines||[]).forEach(l=>{if(!l._tmLabor)_pbLearn(l.desc,l.rate,l.unit,l.notes);});
+    (_geiLines||[]).forEach(l=>{if(!l._tmLabor&&!l._lump)_pbLearn(l.desc,l.rate,l.unit,l.notes);});
   }catch(_e){}
 }
 
