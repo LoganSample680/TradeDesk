@@ -32,6 +32,23 @@ test.describe('Tim reads materials by shape', () => {
   test.afterAll(async () => { await page.context().close(); });
   const read = (list) => page.evaluate((l) => l.map(t => timSaidMaterials(t).map(m => m.qty + ' ' + m.unit + ' ' + m.item.toLowerCase())), list);
 
+  // Owner 2026-09-29, the sentence as he said it (td_tim_asks): "no way we can
+  // have copper pipe with pex a pipe, pex a is what we used, copper was replaced".
+  test('replaced X with Y lists Y, what went in; PEX a pipe is PEX-A', async () => {
+    const r = await page.evaluate(() => {
+      const t = 'I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe';
+      return { mats: timSaidMaterials(t).map(m => m.qty + ' ' + m.unit + ' ' + m.item), steps: timSaySteps(t),
+        swap: timSaidMaterials('Swapped the 40 gallon tank for a 50 gallon tank.').map(m => m.item.toLowerCase()),
+        plain: timSaidMaterials('Used 2 sticks of pex a pipe and 4 bags of thinset.').map(m => m.qty + ' ' + m.item),
+        article: timSaySteps('Ran PEX a few feet past the joist.') };
+    });
+    expect(r.mats).toEqual(['10 foot PEX-A pipe']);
+    expect(r.steps).toContain('Replaced 10 feet of copper pipe with PEX-A pipe');
+    expect(r.swap.join()).not.toContain('40 gallon');
+    expect(r.plain[0]).toBe('2 PEX-A pipe');
+    expect(r.article.join(' '), '"PEX a few feet" is not a grade').not.toContain('PEX-A');
+  });
+
   test('a count, the unit it is sold in, and the thing, across trades', async () => {
     const r = await read([
       '40 bags of quikrete, 6 sticks of rebar and 2 rolls of wire mesh',

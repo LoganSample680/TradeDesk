@@ -1435,6 +1435,10 @@ function _timkHeard1(seg){
   v=v.replace(/\bin\s+DS\b/g,'NDS');
   v=v.replace(/\b(?:(?:okay|ok|so|alright)[,\s]+)*honey[\s-]+do\s+list(?:\s+here)?[,.]?\s*/gi,'');
   _TIMK_HEARD.forEach(([re,to])=>{v=v.replace(re,to);});
+  // "PEX a pipe" is PEX-A (owner 2026-09-29), after "pecks" became PEX above.
+  // The letter is the grade only in front of what PEX is sold as, so "run
+  // PEX a few feet" is left alone.
+  v=v.replace(/\bpex[\s-]?([abc])(?=\s+(?:pipe|piping|tubing|tube|line|lines|fittings?|coil|stick|sticks)\b)/gi,(m,g)=>'PEX-'+g.toUpperCase());
   v=v.split(/(\n)/).map(x=>x==='\n'?x:_timkSoundBrands(x)).join('');
   // ", will scrape and repaint the porch floor": "we'll" lost its subject.
   v=v.replace(/,(\s+)(will|well)(\s+)([a-z]+)\b/gi,(m,sp,w,sp2,vb)=>_TIMK_VERBS.has(vb.toLowerCase())?','+sp+"we'll"+sp2+vb:m);
@@ -3400,8 +3404,15 @@ function _timkQtyVal(q){
   if(/few/.test(s))return 3;
   return 1;
 }
+// Set while a sentence that swaps one thing for another is read.
+let _timkMatSwap=false;
 function _timkMatItem(t){
   let v=String(t||'').trim();
+  // "copper pipe with PEX-A pipe", said after replaced or swapped: what he
+  // bought is what went in, never what came out (owner 2026-09-29: "no way
+  // we can have copper pipe with pex a pipe, pex a is what we used, copper
+  // was replaced"). The count said before it counts the new one.
+  if(_timkMatSwap){const sw=v.match(/^(.+?)\s+(?:with|for)\s+(?:new\s+|some\s+)?(.+)$/i);if(sw)v=sw[2];}
   // What comes after the thing is not the thing: a price, "each", "for the
   // pad", "to match", a trailing "too".
   v=v.replace(/[,\s]+(?:at|for|@)\s+\$?\d[\d,.]*(?:\s+(?:a|an|per|each)\s+[a-z]+)?.*$/i,'')
@@ -3679,6 +3690,10 @@ function _timkPartsInWork(clause){
   return out;
 }
 function timSaidMaterials(text){
+  // The swap flag lives only while this reads a sentence (_timkMatItem).
+  try{return _timSaidMaterials(text);}finally{_timkMatSwap=false;}
+}
+function _timSaidMaterials(text){
   // Heard and numbers, not the scope's corrections: a correction in a list is
   // about a count, and _timkMatFix reads it against the item it corrects.
   const src=String(text||'').split(/\r?\n+/).map(seg=>_timkNumbers(_timkUnfill(_timkHeard(seg)))).join('. ').replace(/\b(?:no[,]?\s+)?scratch\s+that\b[,.]?/gi,', scratch that,')
@@ -3713,6 +3728,7 @@ function timSaidMaterials(text){
     clauses.forEach((cl0,ci)=>{
       let cl=String(cl0||'').trim();
       if(!cl)return;
+      _timkMatSwap=/\b(?:replac\w*|swap\w*|switch\w*|chang\w*\s+out|upgrad\w*|convert\w*|repip\w*)\b/i.test(sent);
       try{
       // "no, 10 of them", "three boxes actually", "make it a full box": the
       // count on the thing just said, corrected.
