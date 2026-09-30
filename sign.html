@@ -566,7 +566,8 @@ const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 function _signLogoSrc(p){
   if(!p)return '';
   if(p.logoData&&/^data:image\//.test(p.logoData))return p.logoData;
-  const u=String(p.logoUrl||'');
+  // A logo saved through the /api proxy is the same stored file.
+  const u=String(p.logoUrl||'').replace(/^https:\/\/[^/]+\/api\/storage\/v1\/object\/public\/gallery\//,'https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/');
   if(/^https:\/\/mwtsmctajhrrybblgorf\.supabase\.co\/storage\/v1\/object\/public\/gallery\/[^"'<>\s]+$/.test(u))return u;
   return '';
 }
