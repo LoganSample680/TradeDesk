@@ -3177,7 +3177,13 @@ function _byoDockNext(st){
   // pricing first would send him back to pricing (2026-09-26, shared walk).
   const tim=_geiTimStep(_byoMissed);
   if(tim)return tim;
-  if(st.unpriced.length){const i=_byoItems.indexOf(st.unpriced[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
+  // The supply house list is priced on its own card (their quote, or his
+  // prices on each part), never by typing one number over the whole list
+  // (found 2026-09-29 driving Build Your Own start to finish: the bar opened
+  // the line editor on "Materials" and asked him to make up a total).
+  const lines=st.unpriced.filter(it=>!it._supply);
+  if(lines.length){const i=_byoItems.indexOf(lines[0]);return {label:'Price every line',fn:'_byoEditItem('+i+')'};}
+  if(st.unpriced.length)return {label:'Price the materials',fn:"_geiGuideTo(document.getElementById('sup-card'))"};
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
   return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
@@ -6136,6 +6142,13 @@ function _geiGuideTo(el){
 }
 function _geiGoTimAsks(){
   const card=document.querySelector((_geiIsTM?'#gei-tm-page':'#gei-byo-page')+' .ios-tim');
+  // The bar sends him to what Tim caught, so it opens it (found 2026-09-29
+  // driving a T&M start to finish): the list folds to one line, and a bar that
+  // scrolls to a folded line and stops there is a bar he taps ten times.
+  if(card&&!card.classList.contains('open')){
+    _timMissOpen=true;card.classList.add('open');
+    const r=card.querySelector('.tim-rev');if(r)r.textContent='Hide';
+  }
   _geiGuideTo(card);
   // A question with a box (the unit) gets the cursor, so he can just type.
   // Look the box up when the timer fires: the card can re-render in between,
