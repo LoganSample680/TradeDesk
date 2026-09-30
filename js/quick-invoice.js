@@ -1186,7 +1186,7 @@ function _qiDocHtml(num){
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
       label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
       project:escHtml(_qiMoney(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
-    _propSection('Work performed','',_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
+    _propSection('Work performed',escHtml(_qiWorkTitle()),_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     _propSignoff(bname,'Thank you for choosing'));
 }
 // What he said he did, as a plain list above the charges. Hourly only.
@@ -1255,11 +1255,21 @@ function _qiCustomerItems(){
   });
   return out.filter(l=>l.amount>0||out.length===1);
 }
+// What he did, printed the way a proposal prints its scope (_propStepsHtml,
+// js/generic-estimate.js): his steps as bullets, in stages when there are
+// enough of them, above the charges.
 function _qiWorkListHtml(){
-  // One day: what he said is that day's heading. More: a list above the days.
-  const w=(_qi&&_qi.mode==='hourly'&&Array.isArray(_qi.work)&&_qiCustomerDays().length!==1)?_qi.work:[];
+  const w=_qiWork();
   if(!w.length)return '';
-  return '<ul style="margin:0 0 16px;padding:0 0 0 20px;font-size:15px;line-height:1.55;color:#0b1220">'+w.map(x=>'<li>'+escHtml(x)+'</li>').join('')+'</ul>';
+  return '<div style="margin:0 0 20px">'+_propStepsHtml(w)+'</div>';
+}
+function _qiWork(){return (_qi&&_qi.mode==='hourly'&&Array.isArray(_qi.work))?_qi.work.filter(x=>String(x||'').trim()):[];}
+// The heading over it, named from his own steps the way a proposal names its
+// project ("Water heater replacement"); otherwise plainly what it is.
+function _qiWorkTitle(){
+  const w=_qiWork();if(!w.length)return '';
+  const t=(typeof _propProjectTitle==='function')?_propProjectTitle(w,(typeof getActiveTrade==='function'&&getActiveTrade())||''):null;
+  return t||'What we did';
 }
 // What the customer will get, before anything is saved or sent: the same
 // full-screen preview a proposal opens in.
@@ -1467,7 +1477,9 @@ function _qiCustomerDays(){
     const labor=Math.round(time.reduce((s2,l)=>s2+l.amount,0)*100)/100;
     const parts=Math.round(L.filter(l=>l.kind==='receipt').reduce((s2,l)=>s2+l.amount,0)*100)/100;
     const rates=time.map(l=>Number(l.rate)||0).filter((r,i,a)=>r>0&&a.indexOf(r)===i).sort((a,b)=>a-b);
-    const note=String(_qi.dayNote[day]||'').trim()||(days.length===1&&_qi.work.length?_qi.work.join('; '):'');
+    // What he did is its own list above the days now, the way a proposal
+    // prints its scope; a day carries only what he wrote for that day.
+    const note=String(_qi.dayNote[day]||'').trim();
     return {day,note,mins:lead,techs:Object.keys(per).length,labor,parts,rates,total:Math.round((labor+parts)*100)/100};
   });
 }

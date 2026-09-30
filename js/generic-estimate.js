@@ -7897,6 +7897,18 @@ function _propLi(inner){
   return `<li style="display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:#1e293b;line-height:1.5;padding:4px 0;overflow-wrap:anywhere"><span style="flex:0 0 6px;width:6px;height:6px;border-radius:50%;background:${_PT.a};margin-top:9px;opacity:.85"></span><span style="min-width:0">${inner}</span></li>`;
 }
 function _propUl(lis){return `<ul style="list-style:none;margin:0;padding:0">${lis}</ul>`;}
+// ONE WAY TO PRINT THE WORK (owner 2026-09-29: the invoice's work performed
+// should "title and bullet itself out on the invoice like proposals do").
+// His steps in sentence case, four or more in stages down the rail, fewer as
+// a list. The proposal's scope and the invoice's work performed both print
+// from here; li is how one step reads (the proposal adds a chip's note).
+function _propStepsHtml(texts,li){
+  const t=(texts||[]).map(x=>String(x==null?'':x).trim()).filter(Boolean);
+  if(!t.length)return '';
+  li=li||(x=>_propLi(escHtml(_propSentence(x))));
+  const grp=_propStageGroups(t);
+  return grp?_propTimeline(grp.map(g=>({name:g.name,lis:g.idx.map(i=>li(t[i]))}))):_propUl(t.map(li).join(''));
+}
 // The plan: numbered stages down a rail, the steps under each.
 function _propTimeline(groups){
   return groups.map((g,i)=>{
@@ -8303,10 +8315,7 @@ async function sendGenericProposal(previewOnly,opts){
     // In work order, under the customer's words for each stage, so a long job
     // reads as a plan they can follow instead of a wall of steps. Numbering
     // runs on across the headings: step 7 is still step 7.
-    const _grp=_propStageGroups(_chipsToPrint);
-    _scopeBlocks.push(_grp
-      ?_propTimeline(_grp.map(g=>({name:g.name,lis:g.idx.map(i=>_chipLi(_chipsToPrint[i]))})))
-      :_propUl(_chipsToPrint.map(_chipLi).join('')));
+    _scopeBlocks.push(_propStepsHtml(_chipsToPrint,_chipLi));
   }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
