@@ -371,6 +371,91 @@ test.describe('the deriver on the server', () => {
       }
     });
 
+    // ── THE FIRST STOP OF THE DAY REACHES THE TIMESHEET (owner 2026-09-29) ──
+    // Jack, 29 September: home office to the shop, arrived 7:35, clocked in
+    // 7:38, still there. The commute from a home office is not a mileage leg
+    // and no stop had closed, so the open shop row was the ONLY row, and the
+    // "nothing to add" guard counted closed arrays alone and skipped the
+    // writer. The shop never showed on his day until he left it.
+    const firstStopTables = () => {
+      const HOMEOFF = { lat: 39.0123292, lon: -95.7464936 };
+      const fences = [
+        FENCES[0],
+        { id: 'place-home', kind: 'home_office', name: 'Home', lat: HOMEOFF.lat, lng: HOMEOFF.lon, addr: '1 Home Rd',
+          job_id: null, place_id: 'home', client_id: null, radius_ft: null, scheduled: null },
+      ];
+      return {
+        ...TABLES, __fences: fences,
+        geo_events: [
+          ...sit(HOMEOFF, at(6, 0), at(7, 21), 6),
+          { ts: at(7, 21), type: 'motion', kind: 'automotive', lat: null, lon: null },
+          ...line(HOMEOFF, SHOP, at(7, 21), at(7, 35), 20),
+          { ts: at(7, 43), type: 'motion', kind: 'walking', lat: null, lon: null },
+          ...sit(SHOP, at(7, 36), at(8, 5), 12),
+        ].sort((a, b) => a.ts - b.ts).map((e) => ({ ...e, ts: iso(e.ts) })),
+      };
+    };
+
+    test('arrived and still there: the open stop is written on the ingest path', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 6), null);
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(r.reason, 'not "nothing to add"').toBeUndefined();
+      expect(write, 'the writer is reached with the open stop').toBeTruthy();
+      expect(write.args.p_miles, 'a home office commute is not mileage').toEqual([]);
+      expect(write.args.p_time).toEqual([]);
+      expect(write.args.p_shop.length).toBe(1);
+      expect(write.args.p_shop[0].arrived_at, 'at the shop since the arrival').toBe(iso(at(7, 35)));
+      expect(write.args.p_shop[0].departed_at, 'still there: no departure yet').toBeNull();
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(r.wrote).toBe(true);
+    });
+
+    test('the open stop is written exactly once per derive, never beside itself', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 6), null);
+      await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 20), null);
+      const writes = rpc.filter((c) => c.name === 'geo_replace_day');
+      expect(writes.length).toBe(2);
+      expect(writes.map((w) => w.args.p_shop.length)).toEqual([1, 1]);
+      expect(writes[0].args.p_shop[0].client_key, 'the same row each time, so the writer replaces it')
+        .toBe(writes[1].args.p_shop[0].client_key);
+    });
+
+    // ── AND THE DRIVE THAT LEAVES IT (owner 2026-09-29) ──────────────────
+    // "If a drive starts it ends the shop time and starts the drive time
+    // right away with no end." Same morning, and at 9:00 he pulls out. The
+    // derive a few minutes later must close the shop row at the flip and send
+    // the drive as a row with no end, in the same write.
+    const leavingTables = () => {
+      const t = firstStopTables();
+      const MID = { lat: (SHOP.lat + 39.0123292) / 2, lon: (SHOP.lon + -95.7464936) / 2 };
+      const more = [
+        { ts: at(9, 0), type: 'motion', kind: 'automotive', lat: null, lon: null },
+        ...line(SHOP, MID, at(9, 1), at(9, 3), 6),
+      ].map((e) => ({ ...e, ts: iso(e.ts) }));
+      return { ...t, geo_events: t.geo_events.filter((e) => Date.parse(e.ts) < at(9, 0)).concat(more)
+        .sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts)) };
+    };
+
+    test('a drive under way: the shop row closes at the flip and the drive goes up with no end', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(leavingTables(), rpc), 'cid-1', 'uid-1', DAY, at(9, 4), null);
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'written on the ingest path, mid-drive').toBeTruthy();
+      expect(write.args.p_shop.length).toBe(1);
+      expect(write.args.p_shop[0].departed_at, 'the shop ends when the drive starts').toBe(iso(at(9, 0)));
+      const live = write.args.p_time.filter((x) => x.departed_at === null);
+      expect(live.length, 'exactly one row with no end').toBe(1);
+      expect(live[0].source).toBe('drive');
+      expect(live[0].arrived_at).toBe(iso(at(9, 0)));
+      expect(write.args.p_miles, 'no mileage until the drive has two ends').toEqual([]);
+      expect(r.wrote).toBe(true);
+    });
+
     test('an empty day with no tape covering it is still refused', async () => {
       // "No evidence" outranks everything: a day nobody uploaded is not an
       // empty day, and asking for a sweep cannot turn it into one.

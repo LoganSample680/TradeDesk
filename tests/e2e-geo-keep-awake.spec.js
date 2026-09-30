@@ -110,6 +110,63 @@ test.describe('the mix', () => {
     });
   });
 
+  test.describe('the motion history is re-read every 15s only while held awake', () => {
+    // Owner 2026-09-28: "make sure this doesn't kill egress or battery". The
+    // poll rides the keep-awake exactly: on in the shift, off at home and off
+    // the clock, and an older build without the method is left alone.
+    const poll = (script, withPoll = true) => page.evaluate(`(() => {
+      const saved = { td: _geoTdPlugin, home: _placeIsLikelyHome, aw: _geoKeepAwakeMs };
+      const calls = { poll: [], start: 0 };
+      _geoTdPlugin = () => Object.assign({
+        startHeartbeat: () => { calls.start++; return Promise.resolve({ on: true }); },
+        stopHeartbeat: () => Promise.resolve({ on: false }),
+      }, ${withPoll} ? { setMotionPoll: (o) => { calls.poll.push(o); return Promise.resolve(o); } } : {});
+      _placeIsLikelyHome = (c) => !!(c && c.lat === 39.9);
+      _geoHbArmedAtMs = 0; _geoHbKeepAwake = null;
+      try { ${script}; return calls; }
+      finally { _geoTdPlugin = saved.td; _placeIsLikelyHome = saved.home; _geoKeepAwakeMs = saved.aw; _geoHbArmedAtMs = 0; _geoHbKeepAwake = null; }
+    })()`);
+
+    test('in the shift: every 15 seconds', async () => {
+      const c = await poll('_geoKeepAwakeMs = () => 4 * 3600000; _geoHeartbeatSync(null)');
+      expect(c.poll).toEqual([{ intervalMs: 15000, reason: 'shift keep-awake' }]);
+    });
+    test('off the clock: off', async () => {
+      const c = await poll('_geoKeepAwakeMs = () => 0; _geoHeartbeatSync(null)');
+      expect(c.poll).toEqual([{ intervalMs: 0, reason: 'off the clock' }]);
+    });
+    test('home: off, whatever the hour', async () => {
+      const c = await poll('_geoKeepAwakeMs = () => 3600000; _geoHeartbeatSync(null); _geoHeartbeatSync({ lat: 39.9, lng: -94.9 })');
+      expect(c.poll.map(o => o.intervalMs)).toEqual([15000, 0]);
+    });
+    test('the same answer inside a minute does not re-assert it', async () => {
+      const c = await poll('_geoKeepAwakeMs = () => 3600000; _geoHeartbeatSync(null); _geoHeartbeatSync(null); _geoHeartbeatSync(null)');
+      expect(c.poll.length).toBe(1);
+    });
+    test('a build without setMotionPoll: the beat still arms and nothing throws', async () => {
+      const c = await poll('_geoKeepAwakeMs = () => 3600000; _geoHeartbeatSync(null)', false);
+      expect(c.start).toBe(1);
+      expect(c.poll).toEqual([]);
+    });
+    test('a rejected call is swallowed, never an unhandled rejection', async () => {
+      const r = await page.evaluate(async () => {
+        let unhandled = 0;
+        const h = () => { unhandled++; };
+        window.addEventListener('unhandledrejection', h);
+        _geoMotionPollSet({ setMotionPoll: () => Promise.reject(new Error('unimplemented')) }, 15000, 'x');
+        _geoMotionPollSet(null, 15000, 'x');
+        _geoMotionPollSet({}, 15000, 'x');
+        await new Promise(res => setTimeout(res, 30));
+        window.removeEventListener('unhandledrejection', h);
+        return unhandled;
+      });
+      expect(r).toBe(0);
+    });
+    test('the interval is one named number, not a literal at the call', async () => {
+      expect(await page.evaluate(() => _GEO_MOTION_POLL_MS)).toBe(15000);
+    });
+  });
+
   test.describe('parking lets go of the GPS in the same moment', () => {
     // The answer from iOS NEVER arrives here, which is exactly the phone in the
     // pocket: everything that matters must already have happened.

@@ -150,7 +150,9 @@ test.describe('the T&M screen, as an iPhone app', () => {
   test('the switch knob sits dead centre in its track, off and on', async () => {
     await open('Pull the old water heater');
     const r = await page.evaluate(async () => {
-      _tmMoreOpen = true; _tmApplyLayers();
+      // More options lives in Getting paid, folded to one line until tapped
+      // (owner 2026-09-29), and a knob in a folded card has no box to measure.
+      _tmMoreOpen = true; _tmPayOpen = true; _tmApplyLayers();
       // "Not included" starts off, so the first reading really is the off knob.
       const sw = document.querySelector('#tm-more-row input.ios-switch[data-layer="excl"]');
       const gaps = () => {
@@ -306,7 +308,10 @@ test.describe('the T&M screen, as an iPhone app', () => {
     });
     const r = await page.evaluate(() => ({
       rule: _tmStateRule().rule,
-      tags: [...document.querySelectorAll('#tm-sec-bill .ios-tag')].map(t => t.textContent),
+      // The limit moved to Getting paid (owner 2026-09-29), which opens on its
+      // own when the state requires it.
+      tags: [...document.querySelectorAll('#tm-sec-pay .ios-tag')].map(t => t.textContent),
+      open: document.getElementById('tm-pay-group').classList.contains('open'),
       bar: [...document.querySelectorAll('#tm-dock .ios-btn')].map(b => b.textContent.trim()),
     }));
     expect(r.rule, 'Illinois requires the total cost').toBe('cap');

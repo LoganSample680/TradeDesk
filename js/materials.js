@@ -171,7 +171,10 @@ function timAddMaterials(mats){
       _matPut(_MAT_SEC,{label,qty,unit:own.unit||unit,rate,notes:''});
       haveRows.add(k);rows++;
     }else{
-      toList.push({qty,unit,desc:label,cost:0,on:true});
+      // What he last paid for it, off his receipts (materials book), so the
+      // list is priced before the supply house quotes it.
+      const paid=(typeof partCostFor==='function')?partCostFor(label):null;
+      toList.push({qty,unit,desc:label,cost:paid?Number(paid.cost)||0:0,on:true});
       haveList.add(k);listed++;
     }
   });

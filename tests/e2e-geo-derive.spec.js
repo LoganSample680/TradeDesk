@@ -4910,6 +4910,113 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── THE DRIVE IS A FACT THE MOMENT IT STARTS (owner 2026-09-29) ─────────
+  //
+  // "If Jack arrives at dad's shop, it shows the arrival time with no end. If
+  // a drive starts it ends the shop time and starts the drive time right away
+  // with no end."
+  //
+  // The arrival half is the block above. Before this, a journey still on the
+  // road wrote nothing until it ended, so the timesheet had a hole for the
+  // whole drive: his 29 September drives reached the server 12 to 36 minutes
+  // after they began.
+  test.describe('the drive under way is a row with no end', () => {
+    const YARD = { id: 'place-jsyard', kind: 'shop', name: 'Plumbing Solutions By JS shop', lat: 39.0456577, lng: -95.7151106 };
+    const ROAD = { lat: 39.0400, lng: -95.7250 };
+    const F = FENCES.concat([YARD]);
+    const CLOCK = [{ start: T(7, 30), end: T(17, 0) }];
+    const AT_YARD = {
+      fences: F, clocks: CLOCK,
+      tape: [mo(T(7, 20), 'automotive'), mo(T(7, 35), 'onFoot'), mo(T(10, 3), 'automotive')],
+      fixes: [fix(T(7, 19), HOME), fix(T(7, 35, 10), YARD), fix(T(8, 30), YARD), fix(T(9, 30), YARD),
+        fix(T(10, 2), YARD), fix(T(10, 4, 30), ROAD)],
+    };
+    const derive = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e', clocks: i.clocks });
+      return JSON.parse(JSON.stringify({ rows, driving: r.driving || null, open: r.open || null }));
+    }, base(inp));
+
+    test('a minute into the drive: the shop row has an end and the drive row has none', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const shop = r.rows.shop_time_entries.find(x => x.arrived_at === new Date(T(7, 35)).toISOString() ||
+        Date.parse(x.arrived_at) <= T(7, 36));
+      expect(shop, 'the morning at the shop is a closed row').toBeTruthy();
+      expect(shop.departed_at).toBe(new Date(T(10, 3)).toISOString());
+      expect(r.rows.open.length, 'exactly one live row').toBe(1);
+      const d = r.rows.open[0];
+      expect(d._table).toBe('job_time_entries');
+      expect(d.source).toBe('drive');
+      expect(d.arrived_at).toBe(new Date(T(10, 3)).toISOString());
+      expect(d.departed_at).toBeNull();
+      expect(d.minutes).toBeNull();
+      expect(d.origin_place).toBe('Plumbing Solutions By JS shop');
+      expect(d.dest_place).toBeNull();
+    });
+
+    test('no mileage is written for a drive that has not ended', async () => {
+      // The morning run from the house is a finished leg and stays; the one
+      // still on the road has no second end, so it has no mileage (rule 6).
+      const r = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const key = r.rows.open[0].client_key;
+      expect(r.rows.td_mileage.filter(m => String(m.id) === key).length).toBe(0);
+      expect(r.rows.td_mileage.filter(m => Date.parse(m.startedIso || m.data && m.data.startedIso || 0) >= T(10, 3)).length).toBe(0);
+    });
+
+    test('when he gets there the finished drive lands on the same row, and the stop is the live one', async () => {
+      const live = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const key = live.rows.open[0].client_key;
+      const r = await derive(Object.assign({}, AT_YARD, {
+        tape: AT_YARD.tape.concat([mo(T(10, 22), 'onFoot')]),
+        fixes: AT_YARD.fixes.concat([fix(T(10, 22, 10), DOE), fix(T(10, 40), DOE)]),
+        nowMs: T(10, 45),
+      }));
+      const drive = r.rows.job_time_entries.find(x => x.client_key === key);
+      expect(drive, 'the closed drive must carry the live drive key').toBeTruthy();
+      expect(drive.source).toBe('drive');
+      expect(drive.departed_at).toBe(new Date(T(10, 22)).toISOString());
+      expect(r.rows.open.length).toBe(1);
+      expect(r.rows.open[0].source).toBe('open');
+      expect(r.rows.open[0].client_key).not.toBe(key);
+    });
+
+    test('a flip that went nowhere is not a drive, and the shop stays the live row', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, {
+        fixes: AT_YARD.fixes.slice(0, 5).concat([fix(T(10, 5), YARD), fix(T(10, 10), YARD), fix(T(10, 14), YARD)]),
+        nowMs: T(10, 15),
+      }));
+      expect(r.driving).toBeNull();
+      expect(r.rows.open.filter(x => x.source === 'drive').length).toBe(0);
+      expect(r.rows.open.length).toBe(1);
+      expect(r.rows.open[0]._table).toBe('shop_time_entries');
+    });
+
+    test('the drive out of his own driveway waits to be judged whole (rule 20)', async () => {
+      const r = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD)], nowMs: T(7, 23) });
+      expect(r.rows.open.length).toBe(0);
+    });
+
+    test('a Time off day with no clock running writes no live drive', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, { clocks: [], timeOff: [{ start: DAY, end: DAY }], nowMs: T(10, 5) }));
+      expect(r.rows.open.filter(x => x.source === 'drive').length).toBe(0);
+    });
+
+    test('never two live rows: a derive at every minute of the morning has one at most', async () => {
+      const counts = [];
+      for (let m = 0; m <= 40; m += 5) {
+        const r = await derive(Object.assign({}, AT_YARD, {
+          tape: AT_YARD.tape.concat([mo(T(10, 22), 'onFoot')]),
+          fixes: AT_YARD.fixes.concat([fix(T(10, 22, 10), DOE), fix(T(10, 40), DOE)]),
+          nowMs: T(10, 5 + m),
+        }));
+        counts.push(r.rows.open.length);
+      }
+      expect(Math.max.apply(null, counts)).toBeLessThanOrEqual(1);
+    });
+  });
+
   // ── THE SAME DAY, TOLD IN INSTALMENTS (owner 2026-09-18) ────────────────
   //
   // "I want to know that we won't eat rows or miss mileage or miss how
