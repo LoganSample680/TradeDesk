@@ -487,6 +487,9 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.trade).toBe('plumbing');
     expect(r.sub).toBe(2800);
     expect(r.tax).toBe(0);            // Kansas plumbing repair, rooms, no parts
+    // Your cost starts at 0: nothing he did not type (the drive, crew pay).
+    const cost = await page.evaluate(() => { _byoUpdateRail(); _byoRenderPrice(); return { rail: (document.getElementById('byo-expected-cost') || {}).value || '', card: (document.getElementById('byo-cost-in') || {}).value || '' }; });
+    expect(cost).toEqual({ rail: '', card: '' });
     expect(r.draftTrade).toBe('plumbing');
     expect(r.name).not.toMatch(/^Materials/);
     expect(r.gone).toBe('undefined'); // the word-reading guess is deleted (§7.1)

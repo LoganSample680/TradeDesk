@@ -4292,18 +4292,12 @@ function _byoUpdateRail(){
   setT('byo-rail-total',fmt(total));
   setT('byo-rail-deposit',fmt(deposit));
   setT('byo-rail-balance',fmt(total-deposit));
-  // Expected cost = Materials line items + (when the contractor has employees) crew labor cost.
-  // Solo operators have no employees, so labor is 0 and cost stays materials-only.
-  const _matTotal=_byoItems.filter(it=>it.on&&!it._rrp&&(it.section||'').toLowerCase()==='materials').reduce((s,it)=>s+it.price,0);
-  const _laborCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
   const _byoDrive=(typeof _geiDriveCost==='function')?_geiDriveCost():null;
-  const _autoCost=_matTotal+_laborCost+((_byoDrive&&_byoDrive.cost)||0);
   _geiRenderDriveLine('byo',_byoDrive);
-  const _railCostEl=document.getElementById('byo-expected-cost');
-  if(_railCostEl&&!_railCostEl.dataset.userSet){
-    if(_autoCost>0){_railCostEl.value=_autoCost;_railCostEl.dataset.autoFilled='true';}
-    else if(_railCostEl.dataset.autoFilled){_railCostEl.value='';delete _railCostEl.dataset.autoFilled;}
-  }
+  // YOUR COST STARTS AT 0 (owner 2026-09-30: "where is your cost at 147 coming
+  // in, your cost should always default to 0"). It used to fill itself with
+  // materials, crew pay and the drive to the job (time at his hourly cost plus
+  // IRS miles); a number he did not type read as his. It is his to type now.
   if(typeof _renderLaborPicker==='function')_renderLaborPicker('byo');
   // Margin is calculated on pre-tax revenue (sub): sales tax is pass-through to the
   // government and not the contractor's earnings, so including it inflates the margin.
