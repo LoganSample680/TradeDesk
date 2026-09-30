@@ -252,7 +252,9 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('a pasted email with bullets and line breaks: every bullet is a step (owner 2026-09-30, "I can\'t find a line in that")', async () => {
     await open();
     const r = await page.evaluate(() => {
-      S.bname = 'Plumbing Solutions by JS'; S.ownerName = 'Logan Sample';
+      // Pasted on a DIFFERENT business's account (the owner's own): the
+      // signature block is still a name, never a step.
+      S.bname = 'Sample Painting'; S.ownerName = 'Logan Sample';
       document.getElementById('byo-say').value = "Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Electrical for the washer receptacle and a dryer receptacle\n- Drill through and run the dryer vent to the outside\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nThis estimate is good for 14 days. If you approve, I can start as soon as possible.\n\nI appreciate your faith and trust in our plumbing services and look forward to working with you on this project, as well as any future projects or service and maintenance needs.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
       _byoSayBuild();
       // "3 hose bibs with piping" also names what he buys; that lands in its
