@@ -226,6 +226,15 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.total).toBe(2800);
     expect(r.labels.length).toBeGreaterThanOrEqual(4);
     r.labels.forEach(l => expect(l).not.toMatch(/estimate|\$|good for|approve|appreciate|look forward|Schonfeldt|Plumbing Solutions|start asap/i));
+    // His sentences whole, in his order, and printed that way: no fragments
+    // like "Drill hole" on their own, no stage headings reshuffling them.
+    expect(r.labels[0]).toMatch(/^Rough surface mounted washer box/);
+    expect(r.labels).toContain('Drill hole and run dryer vent to outside');
+    const d = await doc();
+    const i1 = d.indexOf('Rough surface mounted'), i2 = d.indexOf('Secure the tub spout');
+    expect(i1).toBeGreaterThan(-1);
+    expect(i2).toBeGreaterThan(i1);
+    expect(d).not.toContain('The new work');
   });
 
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {

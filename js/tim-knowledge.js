@@ -2115,7 +2115,7 @@ function timScopeBuild(text,opts){
   const mine=steps.map((t,i)=>{
     const r=byText[t]||{};
     // price: what he said the line costs, 0 when he did not say.
-    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0};
+    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0,written:_written};
   });
   let implied=[];
   try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
