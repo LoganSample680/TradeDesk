@@ -440,7 +440,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.top).toBeGreaterThanOrEqual(r.under - 1);
   });
 
-  test('trade: a painting + plumbing shop whose signup said landscaping never lands on landscaping, and Tim reads plumbing from the words (owner 2026-09-30, 9.15% tax on a plumbing job)', async () => {
+  test('trade: the trade he picks carries, through a reload and a draft, and the words never overrule it (owner 2026-09-30)', async () => {
     const r = await page.evaluate((t) => {
       const was = { cfg: _config, act: _activeTrade };
       const key = _tradeKey();
@@ -449,35 +449,47 @@ test.describe('Build Your Own, as an iPhone editor', () => {
         _config = Object.assign({}, _config || {}, { business_type: 'landscaping', trade_lines: 'painting,plumbing' });
         try { localStorage.removeItem(key); } catch (_e) {}
         _activeTrade = null;
-        const start = getActiveTrade();                    // not landscaping: his first line
-        _rememberTrade('plumbing');
-        const picked = _tradeStart(_config);               // the one he picked, across a reload
+        const start = getActiveTrade();                    // never the signup trade he does not run
+        setActiveTrade('plumbing');                        // the pick
+        _activeTrade = null;                               // a reload wipes memory...
+        const afterReload = getActiveTrade();              // ...and the pick comes back
         _rememberTrade('roofing');
         const notHis = _tradeStart(_config);               // a trade he does not run is ignored
-        // A new BYO on his first line, then John's plumbing letter pasted in.
-        try { localStorage.removeItem(key); } catch (_e) {}
-        _activeTrade = 'painting';
+        // Picked PAINTING, pasted a plumbing letter: the pick stands.
+        setActiveTrade('painting');
         clients.push({ id: 96101, name: 'Logan Sample', addr: '2015 SW Randolph Ave, Topeka, KS 66604' });
         openGenericEstimate(getClientById(96101), null, null, { mode: 'byo' });
         _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
-        const before = _geiTrade;
+        document.getElementById('byo-say').value = t; _byoSayBuild();
+        const kept = _geiTrade;
+        // Picked PLUMBING: a room-grouped repair with no parts is not taxed.
+        setActiveTrade('plumbing');
+        openGenericEstimate(getClientById(96101), null, null, { mode: 'byo' });
+        _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
         _geiClientTaxRate = { rate: 9.15, source: 'test' };
+        _byoItems.length = 0; _byoJobPrice = 0; _byoRenderSections();
         document.getElementById('byo-say').value = t; _byoSayBuild();
         const tot = calcGeiTotal();
-        return { start, picked, notHis, before, after: _geiTrade, tax: tot.salesTax, sub: tot.sub };
+        // A draft reopens on its own trade, whatever the app is on now.
+        bids.push({ id: 96102, client_id: 96101, trade_type: 'plumbing', status: 'Draft' });
+        const draftTrade = _geiBidTrade(96102);
+        return { start, afterReload, notHis, kept, trade: _geiTrade, tax: tot.salesTax, sub: tot.sub, draftTrade,
+          name: _geiAutoName(), gone: typeof timTradeOf };
       } finally {
         _config = was.cfg; _activeTrade = was.act; _geiClientTaxRate = null;
         try { if (saved == null) localStorage.removeItem(key); else localStorage.setItem(key, saved); } catch (_e) {}
       }
     }, EMAIL_BULLETS);
     expect(r.start).toBe('painting');
-    expect(r.picked).toBe('plumbing');
+    expect(r.afterReload).toBe('plumbing');
     expect(r.notHis).toBe('painting');
-    expect(r.before).toBe('painting');
-    expect(r.after).toBe('plumbing');
-    // A Kansas plumbing repair with no materials: nothing to tax.
+    expect(r.kept).toBe('painting');
+    expect(r.trade).toBe('plumbing');
     expect(r.sub).toBe(2800);
-    expect(r.tax).toBe(0);
+    expect(r.tax).toBe(0);            // Kansas plumbing repair, rooms, no parts
+    expect(r.draftTrade).toBe('plumbing');
+    expect(r.name).not.toMatch(/^Materials/);
+    expect(r.gone).toBe('undefined'); // the word-reading guess is deleted (§7.1)
   });
 
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {

@@ -2112,7 +2112,6 @@ function _geiScopeBuild(containerId){
   }
   if(typeof timScopeBuild!=='function')return;
   const rejected=(typeof timDropped==='function')?[]:[];
-  if(_geiIsTM)_scopeTradeCheck('tm',said);
   const built=timScopeBuild(said,{rejected,trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   // Every job walk and what Tim made of it, so a bad split is visible to the
   // owner instead of only to the homeowner (js/tim-log.js timLogScope).
@@ -3043,7 +3042,6 @@ function _byoSayBuild(){
   const said=timSaid('byo-say','Type or say the job in the box first');
   if(!said)return;
   if(typeof timScopeBuild!=='function')return;
-  _scopeTradeCheck('byo',said);
   const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   if(typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
   const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
@@ -4974,18 +4972,6 @@ function _scopePlaceAt(arr,rec,stage,last){
 // Tim's steps onto the list open now. One set of rules for both screens:
 // the rooms he reads, a step already there is not added twice, and what he
 // left out comes back as the offer.
-// WHICH TRADE, READ FROM THE WORDS: on a multi-trade account, the first scope
-// typed into a new estimate settles its trade when Tim can tell (timTradeOf):
-// John's washer box, hose bibs and tub spout make it a plumbing bid, so its
-// tax, its suggestions and its title are plumbing's.
-function _scopeTradeCheck(key,said){
-  if(typeof timTradeOf!=='function')return;
-  if(_scopeWork(_scopeArr(key)).length)return;
-  const lines=_getTradeLines();
-  if(lines.length<2)return;
-  const t=timTradeOf(said,lines);
-  if(t&&t!==_geiTrade){_geiTrade=t;_activeTrade=t;_rememberTrade(t);if(typeof _renderNavTradeSwitcher==='function')try{_renderNavTradeSwitcher();}catch(_e){}}
-}
 function _scopeTakeBuilt(key,built){
   const arr=_scopeArr(key);
   const tr=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
@@ -7304,7 +7290,9 @@ function _geiRenderJobLine(){
 //   nothing yet -> the trade's own proposal label
 function _geiAutoName(){
   const labels=[];
-  if(_geiIsFreeForm)(_byoItems||[]).forEach(it=>{if(it&&it.on&&!it._rrp&&it.label)labels.push(it.label);});
+  // The work names the proposal, never the Materials card ("Materials +8 more"
+  // on the owner's list, 2026-09-30).
+  if(_geiIsFreeForm)(_byoItems||[]).forEach(it=>{if(it&&it.on&&!it._rrp&&!it._supply&&it.label)labels.push(it.label);});
   (_geiScopeChips||[]).forEach(l=>{if(l&&labels.indexOf(l)<0)labels.push(l);});
   if(!_geiIsFreeForm)(_geiLines||[]).forEach(l=>{if(l&&!l._tmLabor&&l.desc&&labels.indexOf(l.desc)<0)labels.push(l.desc);});
   if(!labels.length)return _tradeProposalLabel(_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general'));
