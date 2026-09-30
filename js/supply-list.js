@@ -246,7 +246,10 @@ function _supEditItem(i){
     const t=String(v==null?'':v).trim();
     if(!t){_supDel(i);return;}
     const p=_supParseLine(t);if(!p)return;
+    const was=it.tim;
     it.qty=p.qty;it.unit=p.unit;it.desc=p.desc;it.flag='';
+    // A line Tim put on the list and he retyped: what Tim heard, what it was.
+    if(was&&typeof timLogFix==='function')timLogFix('supply',was,it.qty+' '+it.unit+' '+it.desc,_supMode()||'',null);
     _supSync();
   };
   if(typeof zPrompt==='function')zPrompt('Count, unit and what it is',apply,{title:'Edit this line',placeholder:'10 ft PEX-A pipe',value:it.qty+' '+(it.unit||'ea')+' '+it.desc});

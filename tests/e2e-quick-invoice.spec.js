@@ -362,6 +362,24 @@ test.describe('Quick invoice', () => {
     expect(r.loading).toBe(false);
   });
 
+  // Owner 2026-09-29: "Tim is only going to get smarter the more he's used".
+  // A line Tim wrote and he retyped goes up as a fix; a line he typed does not.
+  test('retyping a line Tim wrote queues a fix row for the nightly retrain; his own lines are not fixes', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      localStorage.removeItem('td_tim_send');
+      openQuickInvoice(901); _qiSetMode('hourly');
+      document.getElementById('qi-say').value = 'I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe';
+      _qiSayBuild();
+      const els = document.querySelectorAll('#qi-page .qi-work-in');
+      els[0].value = 'Walked the job with the homeowner'; _qiWorkEdit(0, els[0]); _qiWorkDone(0, els[0]);
+      const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+      return { fix: q.filter(x => x.kind === 'fix').map(x => x.made), scope: q.filter(x => x.kind === 'scope').map(x => !!x.ref) };
+    });
+    expect(r.fix).toEqual([{ field: 'work', tim: 'Did a walk-through here', kept: 'Walked the job with the homeowner' }]);
+    expect(r.scope, 'the scope row carries the invoice id so what went out can be lined up with it').toEqual([true]);
+  });
+
   // Owner 2026-09-29: "work performed doesn't title and bullet itself out on
   // the invoice like proposals do today, can we share that code?"
   test('work performed prints with the proposal code: a heading, then his steps as the same bullets', async ({ page }) => {
