@@ -2337,7 +2337,74 @@ test.describe('tim', () => {
       .map(s => { const p = timParse(s, { clients: [], photos }); return { kind: p.kind, q: p.q, n: (p.places || []).length }; }));
     expect(r[0]).toEqual({ kind: 'photos', q: '412 oak', n: 1 });
     expect(r[1].kind).toBe('photos');          // "job photos" is not the Jobs page
-    expect(r[2]).toEqual({ kind: 'photos', q: '', n: 0 });
+    // Changed 2026-09-30 (owner): a bare "photos" used to open the search box
+    // empty. With no subject it is the Photos page now, which is what Jack
+    // asked for three times on 09-22 ("Open photos").
+    expect(r[2]).toEqual({ kind: 'nav', q: undefined, n: 0 });
+  });
+
+  test('Jack\'s words: where are my photos, open photos, photos I\'ve taken, all land on the Photos page', async () => {
+    const r = await page.evaluate(() => ['Where Can I See Photos Ive Taken For jobs', 'Open photos', 'hey tim where are my photos']
+      .map(s => { const p = timParse(s, { clients: [], photos: [] }); return [p.kind, p.pg, timSay(p)]; }));
+    r.forEach(x => expect(x).toEqual(['nav', 'pg-photos', 'Open Photos']));
+  });
+
+  test('on a phone Tim walks it: More opens, Photos lights up, then Photos opens', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => goPg('pg-dash'));
+    const r = await page.evaluate(async () => {
+      const how = _timWalkTo('pg-photos', 'mmi-photos');
+      const more = getComputedStyle(document.getElementById('mtb-more-popup')).display;
+      const lit = document.getElementById('mmi-photos').classList.contains('tim-point');
+      await new Promise(res => setTimeout(res, 900));
+      return { how, more, lit, on: document.getElementById('pg-photos').classList.contains('active'),
+        closed: getComputedStyle(document.getElementById('mtb-more-popup')).display, still: document.getElementById('mmi-photos').classList.contains('tim-point') };
+    });
+    expect(r).toEqual({ how: 'walk', more: 'block', lit: true, on: true, closed: 'none', still: false });
+  });
+
+  // ── His rate (Jack 2026-09-29: "I need to change my hourly rate") ─────────
+  test('change my hourly rate: Tim asks what to, 125 is saved everywhere', async () => {
+    const r = await page.evaluate(() => {
+      S.laborRate = 95; S.ownerBillRate = 95;
+      let saves = 0; const o = window._settingsChanged; window._settingsChanged = () => { saves++; };
+      try {
+        const p = timParse('I Need To Change My Hourly rate', { clients: [] });
+        timRun('I Need To Change My Hourly rate');
+        const ov = document.querySelector('.zmodal-overlay');
+        const out = { kind: p.kind, say: timSay(p), title: ov && ov.querySelector('.zmodal-title').textContent,
+          msg: ov && ov.querySelector('.zmodal-msg').textContent, mode: document.getElementById('zprompt-inp').getAttribute('inputmode') };
+        document.getElementById('zprompt-inp').value = '125';
+        document.getElementById('zprompt-ok').click();
+        return Object.assign(out, { labor: S.laborRate, own: S.ownerBillRate, saves, gone: !document.querySelector('.zmodal-overlay') });
+      } finally { window._settingsChanged = o; }
+    });
+    expect(r).toEqual({ kind: 'rate', say: 'Change your hourly rate', title: 'What would you like to change it to?',
+      msg: 'Right now it is $95 an hour.', mode: 'decimal', labor: 125, own: 125, saves: 1, gone: true });
+  });
+
+  test('said with the number, it just saves; a job question and a price-book question are left alone', async () => {
+    const r = await page.evaluate(() => {
+      const o = window._settingsChanged; window._settingsChanged = () => {};
+      try {
+        S.laborRate = 95; S.ownerBillRate = 95;
+        timRun('change my rate to 125 an hour');
+        const saved = [S.laborRate, S.ownerBillRate, !!document.querySelector('.zmodal-overlay')];
+        const kinds = ['What Are You charged', 'whats my rate', 'bill smith hourly for the repipe', 'what do i charge for a water heater', 'change the rate on the Smith job']
+          .map(s => timParse(s, { clients: [] }).kind);
+        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+        // Cancel or nonsense changes nothing.
+        timRun('change my hourly rate'); document.getElementById('zprompt-inp').value = 'abc'; document.getElementById('zprompt-ok').click();
+        return { saved, kinds, after: S.laborRate };
+      } finally { window._settingsChanged = o; }
+    });
+    expect(r.saved).toEqual([125, 125, false]);
+    expect(r.kinds[0]).toBe('rate');
+    expect(r.kinds[1]).toBe('rate');
+    expect(r.kinds[2]).not.toBe('rate');
+    expect(r.kinds[3]).not.toBe('rate');
+    expect(r.kinds[4]).not.toBe('rate');
+    expect(r.after).toBe(125);
   });
 
   test('one address is not a question: it opens the photos', async () => {
