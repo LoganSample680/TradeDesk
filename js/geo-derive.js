@@ -1721,7 +1721,9 @@ function geoDeriveDay(input) {
   // Rule 13: a visit the day cannot vouch for is a question, not a row.
   const asked = _gdHeldVisits(ended, inp, dayStart);
   // Rule 15: and the drives between them, using rule 13's own answer.
-  const askedLegs = _gdHeldLegs(legs, asked, inp, dayStart, fences, opts);
+  // Rule 27: a drive's ends follow the stop rule 22 re-seated.
+  const seatedLegs = _gdLegsFollowSeats(legs, seated);
+  const askedLegs = _gdHeldLegs(seatedLegs, asked, inp, dayStart, fences, opts);
   // Rule 17: the workday window, computed ONCE from the two signals the owner
   // named. Rules 15 and 16 both read it rather than each guessing again.
   const win = _gdDayWindow(askedLegs, asked, inp, opts, dayEnd, fences);
@@ -1739,8 +1741,8 @@ function geoDeriveDay(input) {
   // the map, the route and every structural rule above still need it; what it
   // must never do is bill. geoDeriveRows writes no mileage row and no drive
   // time row for it, which is where "no hours, no miles" actually lives.
-  const realLegs = _gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true,
-    _gdClockSpans(inp));
+  const realLegs = _gdPersonalLegs(_gdCommuteMark(laddered, fences, opts.radiusFt, inp.crew === true,
+    _gdClockSpans(inp)), _gdClockSpans(inp));
   // ── AN UNSAVED STOP IS JUDGED BY THE DRIVES EITHER SIDE OF IT ──────────
   // Before a work-length stop closed the chain (the chain arm above), a stop
   // at an address nobody saved was never a dwell here: geoDeriveRows wrote it
@@ -2905,6 +2907,9 @@ function _gdCommuteMark(legs, fences, radiusFt, crew, clockSpans) {
   // The first hop of the day that LEAVES the house.
   for (const l of order) {
     if (!house(l.from)) continue;
+    // A run to the gym is not the drive to work (rule 27): skip it, and the
+    // first drive out that heads anywhere else is still the commute.
+    if (_gdPersonalEnd(l.to)) continue;
     // A house loop is rule 7's round trip, not a commute.
     if (house(l.to) && (!Array.isArray(l.drives) || l.drives.length <= 1)) break;
     put(l, 'first'); break;
@@ -2913,6 +2918,7 @@ function _gdCommuteMark(legs, fences, radiusFt, crew, clockSpans) {
   for (let i = order.length - 1; i >= 0; i--) {
     const l = order[i];
     if (!house(l.to)) continue;
+    if (_gdPersonalEnd(l.from)) continue;
     if (house(l.from) && (!Array.isArray(l.drives) || l.drives.length <= 1)) break;
     put(l, 'last'); break;
   }
@@ -2965,6 +2971,61 @@ function _gdCommuteMark(legs, fences, radiusFt, crew, clockSpans) {
     if (m.first) segs.push(0);
     if (m.last) segs.push(n - 1);
     return Object.assign({}, l, { commute: true, commuteSegs: segs });
+  });
+}
+
+// ── RULE 27: A DRIVE TO YOUR OWN PLACE IS YOUR OWN (owner 2026-09-30) ──────
+// "Still got a problem with drive time now showing as Don, and Jack going from
+// his house to the shop, that's supposed to be unpaid ... since a work stop
+// for Don is close to a personal stop."
+//
+// Three things were true of his 29 September and all three were wrong:
+//
+//   1. The gym stop was renamed Colaw gym (rule 26), but the drive home from
+//      it still said Don. A leg reads its ends off the fence ranking at the
+//      moment it left or arrived, and a customer outranks a personal place,
+//      so the drive never heard what rule 22 decided about the stop itself.
+//      Now a leg's end follows the stop it touches: if rule 22 moved the stop,
+//      the drive's end moves with it.
+//   2. The gym run billed. A drive to or from a place he marked Personal is
+//      his own time, the same as the commute: no drive time, no mileage. It
+//      rides rule 20's commuteSegs, so a customer stop in the middle of the
+//      same leg keeps its hop exactly as a commute's does. A real clock over
+//      the drive still outranks it, as it outranks the commute.
+//   3. The drive to the shop billed, because "Personal time (unpaid)" (his
+//      answer to the gap before it) was read as a clock, and a clock outranks
+//      the commute. An answer that says "that was not work" can never be the
+//      thing that makes a drive work, so it never reaches this file as a
+//      clock: _geoDeriveClocks (js/geo-track.js) and derive-day.mjs drop it.
+function _gdPersonalEnd(e) {
+  return !!e && e.unsaved !== true && String(e.kind || '') === 'personal';
+}
+function _gdLegsFollowSeats(legs, dwells) {
+  const moved = (dwells || []).filter(d => d && d.reseated === true && d.fence);
+  if (!moved.length || !Array.isArray(legs)) return legs;
+  return legs.map((l) => {
+    if (!l) return l;
+    const into = moved.find(d => Number(d.startTs) === Number(l.endTs));
+    const outOf = moved.find(d => Number(d.endTs) === Number(l.startTs));
+    if (!into && !outOf) return l;
+    const next = Object.assign({}, l);
+    if (into && l.to && l.to.unsaved !== true) next.to = into.fence;
+    if (outOf && l.from && l.from.unsaved !== true) next.from = outOf.fence;
+    return next;
+  });
+}
+function _gdPersonalLegs(legs, clockSpans) {
+  if (!Array.isArray(legs)) return legs;
+  return legs.map((l) => {
+    if (!l) return l;
+    const a = _gdPersonalEnd(l.from), b = _gdPersonalEnd(l.to);
+    if (!a && !b) return l;
+    if (_gdUnderClock(clockSpans, l.startTs, l.endTs)) return l;
+    const n = (Array.isArray(l.drives) && l.drives.length) ? l.drives.length : 1;
+    const segs = (l.commute === true && Array.isArray(l.commuteSegs)) ? l.commuteSegs.slice() : [];
+    if (a && segs.indexOf(0) < 0) segs.push(0);
+    if (b && segs.indexOf(n - 1) < 0) segs.push(n - 1);
+    return Object.assign({}, l, { commute: true, commuteSegs: segs, personalTrip: true });
   });
 }
 

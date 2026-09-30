@@ -7830,7 +7830,9 @@ function _geoDeriveClocks(dayStart,dayEnd){
     // backwards. An open clock runs to now, bounded by the day the caller
     // asked for, so it can never reach past the day it belongs to.
     const nowMs=Date.now();
-    return timeEntries.filter(e=>e&&e.start_time&&(e.end_time||e.open)&&mine(e))
+    // "Personal time" (a gap answered as not work, js/timelog.js) is the
+    // opposite of a clock: it must never make a drive under it bill (rule 27).
+    return timeEntries.filter(e=>e&&e.start_time&&(e.end_time||e.open)&&mine(e)&&e.personal!==true)
       .map(e=>({start:Date.parse(e.start_time),
                 end:e.end_time?Date.parse(e.end_time):Math.min(nowMs,dayEnd)}))
       .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);
