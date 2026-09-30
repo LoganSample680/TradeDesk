@@ -1205,37 +1205,21 @@ async function _sendPaidInvoice(bidId,opts){
     :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+': '+url:'Hi '+first+', here is your updated invoice: '+url)+
       // Venmo last: a link at the end of a text is the one a phone makes tappable.
       (()=>{const v=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));return v?'\n\nOr pay with Venmo: '+v:'';})();
-  // THE SEND SCREEN (owner 2026-09-29: "this is also ugly"; texting gets
-  // the faster answer, some customers need it by email). Who and how much,
-  // Text it as the big button, Email it under it, Copy link as a plain link.
-  // The web address itself is never on screen: nobody reads it.
-  const biz=(typeof S!=='undefined'&&(S.bname||S.businessName))||'';
-  const subject=(paid?'Paid invoice':'Invoice')+(biz?' from '+biz:'');
-  const ov=document.createElement('div');ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal inv-send';
-  box.innerHTML=
-    '<div class="inv-send-who">'+escHtml(c.name||'')+'</div>'+
-    '<div class="inv-send-amt">'+fmt(paid?bid.amount:getBidBalance(bid))+'</div>'+
-    '<div class="inv-send-sub">'+(paid?'Paid in full. This sends their receipt.':'How do you want to send it?')+'</div>'+
-    // Wired below with listeners, not inline: the message and the link both
-    // carry quotes, and JSON inside onclick="..." closed the attribute early,
-    // so both buttons were dead on tap (found 2026-09-26).
-    (c.phone?'<button type="button" class="inv-send-btn fill" data-inv-text>Text it to them</button>':'')+
-    '<button type="button" class="inv-send-btn '+(c.phone?'tint':'fill')+'" data-inv-email>Email it'+(c.email?'':' <span class="inv-send-note">(no email on file)</span>')+'</button>'+
-    '<div class="inv-send-links"><button type="button" data-inv-copy>Copy link</button><button type="button" data-inv-close>Not now</button></div>';
-  // It counts as sent the moment it leaves by any of the three.
+  // The one send screen (tdSendSheet, js/proposals.js), the same as proposals
+  // and change orders. It counts as sent when it leaves by text, email, another
+  // app or a copied link; closed with nothing sent, opts.onUnsent runs.
   const sent=()=>{if(!bid.sentAt){bid.sentAt=new Date().toISOString();saveAll();}};
-  const close=()=>{ov.remove();if(!bid.sentAt)unsent();};
-  const tb=box.querySelector('[data-inv-text]');
-  if(tb){tb.dataset.body=body;tb.addEventListener('click',()=>{sent();ov.remove();window.location.href='sms:'+String(c.phone).replace(/\D/g,'')+'?body='+encodeURIComponent(body);});}
-  const eb=box.querySelector('[data-inv-email]');
-  if(eb){eb.dataset.href='mailto:'+encodeURIComponent(c.email||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-    eb.addEventListener('click',()=>{sent();ov.remove();window.location.href=eb.dataset.href;});}
-  const cb=box.querySelector('[data-inv-copy]');
-  if(cb)cb.addEventListener('click',()=>{sent();try{navigator.clipboard.writeText(url).then(()=>showToast('Copied!','📋')).catch(()=>{});}catch(_e){}cb.textContent='Copied';});
-  box.querySelector('[data-inv-close]').addEventListener('click',close);
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)close();});
+  const d={url,cname:c.name||'Client',bname:(typeof S!=='undefined'&&S.bname)||'',cphone:String(c.phone||'').replace(/\D/g,''),cemail:c.email||''};
+  tdSendSheet({id:'_inv-send-ov',url,who:c.name||'',amount:fmt(paid?bid.amount:getBidBalance(bid)),
+    sub:paid?'Paid in full. This sends their receipt.':'How do you want to send it?',
+    phone:d.cphone,email:d.cemail,textBody:body,
+    onText:()=>{sent();window.location.href='sms:'+d.cphone+'?body='+encodeURIComponent(body);},
+    onEmail:()=>_showEmailComposeModal(d,{title:svgIcon('✉')+(paid?' Email receipt':' Email invoice'),kind:'invoice',
+      subject:(paid?'Paid invoice':'Invoice')+(d.bname?' from '+d.bname:''),body,clientId:c.id,
+      onSent:()=>{sent();showToast((paid?'Receipt':'Invoice')+' emailed to '+d.cname,'✉️');},onCancel:unsent}),
+    onOther:()=>{sent();pwaShare({title:(d.bname||'Invoice'),text:body,url});},
+    onCopy:()=>{sent();tdCopyLink(url);},
+    onClose:unsent});
 }
 function closePayPanel(){if(document.querySelector('.pay-modal-overlay')&&typeof _armPayTapGuard==='function')_armPayTapGuard();document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){

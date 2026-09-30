@@ -546,23 +546,62 @@ function shareProposalLink(){
     url:d.url
   });
 }
-function _showGeiSendOverlay(){
-  document.getElementById('_gei-send-overlay')?.remove();
-  const ov=document.createElement('div');
-  ov.id='_gei-send-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  ov.innerHTML=
-    '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' Link ready, send to client</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
-        '<button onclick="_doGeiSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
-        '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
-      '</div>'+
-      '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Nothing goes out until you pick one. Once it is sent, you\'ll get a follow-up reminder in 3 days if no response.</div>'+
+// ── ONE SEND SCREEN (owner 2026-09-29: "Send it to them needs to be shared
+// code with proposals too, everything needs the same shared code for that
+// part"). Proposals, change orders and invoices all go out through this one
+// sheet. Each caller brings the words and what "sent" means for it; how it
+// looks and behaves is decided here, once.
+//
+//   o.who, o.amount, o.sub   who it is for, how much, one line under
+//   o.phone, o.email         a Text button only with a phone to text
+//   o.textBody               the message Text sends (kept on the button)
+//   o.onText/onEmail/onOther/onCopy   the ways out; each is the send
+//   o.onClose                closed with nothing sent (Not now, or a tap outside)
+// Text is the big button (it gets the faster answer), Email under it, the
+// rest are plain links. The web address itself is never on screen.
+function tdSendSheet(o){
+  o=o||{};
+  const id=o.id||'_td-send-ov';
+  document.getElementById(id)?.remove();
+  const ov=document.createElement('div');ov.id=id;ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal td-send';
+  const phone=!!o.phone;
+  box.innerHTML=
+    (o.who?'<div class="td-send-who">'+escHtml(o.who)+'</div>':'')+
+    (o.amount?'<div class="td-send-amt">'+escHtml(o.amount)+'</div>':'')+
+    '<div class="td-send-sub">'+escHtml(o.sub||'How do you want to send it?')+'</div>'+
+    (phone&&o.onText?'<button type="button" class="td-send-btn fill" data-send="text">Text it to them</button>':'')+
+    (o.onEmail?'<button type="button" class="td-send-btn '+(phone&&o.onText?'tint':'fill')+'" data-send="email">Email it'+(o.email?'':' <span class="td-send-note">(no email on file)</span>')+'</button>':'')+
+    '<div class="td-send-links">'+
+      (o.onOther?'<button type="button" data-send="other">Other app</button>':'')+
+      (o.onCopy?'<button type="button" data-send="copy">Copy link</button>':'')+
+      '<button type="button" data-send="close">Not now</button>'+
     '</div>';
-  document.body.appendChild(ov);
+  const tb=box.querySelector('[data-send="text"]');
+  if(tb&&o.textBody)tb.dataset.body=o.textBody;
+  if(o.url)box.dataset.url=o.url;                // what goes out, for Copy link and for a test to read
+  const go=k=>{
+    ov.remove();
+    if(k==='close'){if(o.onClose)o.onClose();return;}
+    const fn={text:o.onText,email:o.onEmail,other:o.onOther,copy:o.onCopy}[k];
+    if(fn)fn();
+  };
+  box.querySelectorAll('[data-send]').forEach(b=>b.addEventListener('click',()=>go(b.getAttribute('data-send'))));
+  ov.addEventListener('click',e=>{if(e.target===ov)go('close');});
+  ov.appendChild(box);document.body.appendChild(ov);
+  return ov;
+}
+function tdCopyLink(url){
+  try{navigator.clipboard.writeText(url).then(()=>showToast('Link copied','📋')).catch(()=>{});}catch(_e){}
+}
+function _showGeiSendOverlay(){
+  const d=_proposalShareData();
+  const b=_pendingSignToken&&(typeof bids!=='undefined')?bids.find(x=>x.id===_pendingSignToken.bidId):null;
+  tdSendSheet({id:'_gei-send-overlay',url:d.url,who:d.cname,amount:b&&Number(b.amount)>0?fmt(b.amount):'',
+    sub:'Nothing goes out until you pick one. If they do not answer, you get a reminder in 3 days.',
+    phone:d.cphone,email:d.cemail,
+    onText:()=>_doGeiSend('sms'),onEmail:()=>_doGeiSend('email'),onOther:()=>_doGeiSend('other'),
+    onCopy:()=>{tdCopyLink(d.url);_commitProposalSent();}});
 }
 function _doGeiSend(type){
   document.getElementById('_gei-send-overlay')?.remove();
@@ -666,12 +705,12 @@ function _showEmailComposeModal(d,opts){
   const ov=document.createElement('div');
   ov.id='_email-compose-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.addEventListener('click',e=>{if(e.target===ov)_ecCancel();});
   ov.innerHTML=
     '<div style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r);padding:20px 16px 28px;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
         '<div style="font-size:17px;font-weight:800">'+((opts&&opts.title)||svgIcon('✉')+' Email proposal')+'</div>'+
-        '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">'+svgIcon('✕',{size:18})+'</button>'+
+        '<button onclick="_ecCancel()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">'+svgIcon('✕',{size:18})+'</button>'+
       '</div>'+
       '<div style="margin-bottom:10px">'+
         '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">To</label>'+
@@ -687,11 +726,18 @@ function _showEmailComposeModal(d,opts){
       '</div>'+
       '<div id="_ec-status" style="display:none;font-size:13px;color:var(--blue);margin-bottom:10px;text-align:center"></div>'+
       '<button id="_ec-send-btn" onclick="_sendEmailFromCompose()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">Send Email →</button>'+
-      '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_ecCancel()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
     '</div>';
   document.body.appendChild(ov);
   // Focus email field if empty
   if(!d.cemail){setTimeout(()=>document.getElementById('_ec-to')?.focus(),100);}
+}
+// Closed without sending: a sender that needs to know (the invoice goes back
+// to a draft) passes opts.onCancel.
+function _ecCancel(){
+  const ctx=_ecContext;_ecContext=null;
+  document.getElementById('_email-compose-overlay')?.remove();
+  if(ctx&&ctx.opts&&typeof ctx.opts.onCancel==='function')ctx.opts.onCancel();
 }
 async function _sendEmailFromCompose(){
   const toEl=document.getElementById('_ec-to');
@@ -726,7 +772,7 @@ async function _sendEmailFromCompose(){
         fetch(SUPA_URL+'/functions/v1/send-proposal-email',{
           method:'POST',
           headers:{'Content-Type':'application/json','Authorization':'Bearer '+_propToken},
-          body:JSON.stringify({to:toVal,clientName:d.cname,businessName:d.bname,proposalUrl:d.url,replyTo:_supaUser.email||'',customSubject:subject,customBody:bodyText})
+          body:JSON.stringify({to:toVal,clientName:d.cname,businessName:d.bname,proposalUrl:d.url,replyTo:_supaUser.email||'',customSubject:subject,customBody:bodyText,kind:(_ctx&&_ctx.opts.kind)||'proposal'})
         }),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
       ]);
@@ -1794,22 +1840,11 @@ function _showCONotifyModal(clientId,coNum){
   }
   const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   _coShareData={url,cname:c.name||'Client',bname:S.bname||'TradeDesk',cphone:(c.phone||'').replace(/\D/g,''),cemail:c.email||'',coNum,clientId};
-  document.getElementById('_co-send-overlay')?.remove();
-  const ov=document.createElement('div');
-  ov.id='_co-send-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  ov.innerHTML=
-    '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' CO #'+coNum+' ready: send to client</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
-        '<button onclick="_doCOSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
-        '<button onclick="_doCOSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
-      '</div>'+
-      '<button onclick="_doCOSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">'+escHtml(c.name||'The client')+' signs the change order in their project hub.</div>'+
-    '</div>';
-  document.body.appendChild(ov);
+  // The one send screen (tdSendSheet above), the same as proposals and invoices.
+  tdSendSheet({id:'_co-send-overlay',url,who:c.name||'',amount:'CO #'+coNum,
+    sub:'They sign it in their project hub.',phone:_coShareData.cphone,email:_coShareData.cemail,
+    onText:()=>_doCOSend('sms'),onEmail:()=>_doCOSend('email'),onOther:()=>_doCOSend('other'),
+    onCopy:()=>{tdCopyLink(url);autoLogContact(clientId,'change_order_sent');}});
 }
 function _doCOSend(type){
   document.getElementById('_co-send-overlay')?.remove();
@@ -1833,7 +1868,7 @@ function _sendCOViaEmail(){
     title:svgIcon('✉')+' Email change order',
     subject:'Change Order #'+d.coNum+' from '+d.bname+', signature needed',
     body:'Hey '+firstName+',\n\nQuick update on your project, Change Order #'+d.coNum+' is ready for your review. It lays out the change in scope and the updated contract total, and you can sign it right from your project hub:\n\n'+d.url+'\n\nDon\'t hesitate to reach out with any questions!\n\n'+d.bname,
-    clientId:d.clientId,
+    clientId:d.clientId,kind:'change_order',
     onSent:()=>{autoLogContact(d.clientId,'change_order_sent');showToast('Change order emailed to '+d.cname+'!','✉️');}
   });
 }

@@ -68,7 +68,7 @@ test.describe('Venmo', () => {
   test('the invoice text ends in the Venmo link for what is still owed; no link without a username', async ({ page }) => {
     await boot(page);
     const read = () => page.evaluate(async () => {
-      const btn = document.querySelector('[data-inv-text]');
+      const btn = document.querySelector('[data-send="text"]');
       const body = btn ? btn.dataset.body : '';
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
       return body;
@@ -82,7 +82,7 @@ test.describe('Venmo', () => {
     expect(withIt.split('\n').pop()).toBe('Or pay with Venmo: https://venmo.com/John-Doe?txn=pay&amount=1250.50&note=Invoice%20from%20Sample%20Plumbing%20%231234');
   });
 
-  test('the Invoice ready sheet: Text it opens Messages with the whole body, Copy link copies (both were dead on tap)', async ({ page }) => {
+  test('the send sheet: Text it opens Messages with the whole body, Copy link copies (both were dead on tap)', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
       S.venmoUser = 'John-Doe';
@@ -90,16 +90,17 @@ test.describe('Venmo', () => {
       Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { copied = t; } }, configurable: true });
       window.__errs = []; window.addEventListener('error', e => window.__errs.push(e.message));
       await _sendPaidInvoice(7001234);
-      document.querySelector('[data-inv-copy]').click();
+      const copyTxt = document.querySelector('[data-send="copy"]').textContent;
+      document.querySelector('[data-send="copy"]').click();
       await new Promise(r => setTimeout(r, 30));
-      const copyTxt = document.querySelector('[data-inv-copy]').textContent;
-      const tb = document.querySelector('[data-inv-text]');
+      await _sendPaidInvoice(7001234);
+      const tb = document.querySelector('[data-send="text"]');
       tb.dispatchEvent(new MouseEvent('click', { bubbles: false }));
-      return { copied, copyTxt, errs: window.__errs, sheetGone: !document.querySelector('[data-inv-text]') };
+      return { copied, copyTxt, errs: window.__errs, sheetGone: !document.querySelector('[data-send="text"]') };
     });
     expect(r.errs).toEqual([]);
     expect(r.copied).toMatch(/client\.html\?t=tok901.*#invoice-7001234$/);
-    expect(r.copyTxt).toContain('Copied');
+    expect(r.copyTxt).toBe('Copy link');
     expect(r.sheetGone).toBe(true);
   });
 
