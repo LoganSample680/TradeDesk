@@ -2038,14 +2038,65 @@ function timScopeFrom(text){
 // A man dictating his day says it in the order he will work it. So the sort
 // stays an offer (_geiPutScopeInOrder, one tap, already on the card) rather
 // than something that happens to his words while he watches.
+// ── A pasted estimate letter (Jack 2026-09-30) ─────────────────────────────
+// Contractors paste the text they already sent: "Here's my estimate $2800 to
+// rough in the washer box ... My estimate is good for 14 days. If you approve
+// I can start asap. I appreciate your faith ... John Schonfeldt Plumbing
+// Solutions by JS". The price, the days it holds and the courtesy are not
+// steps. Tim takes the price and the days as answers and leaves the rest out.
+const _TIMK_COURTESY=/^(?:if\s+you\s+(?:approve|accept|agree|want\s+to\s+move\s+forward|have\s+(?:any\s+)?questions)|i\s+(?:appreciate|look\s+forward|thank)|we\s+(?:appreciate|look\s+forward|thank)|thank(?:s|\s+you)|looking\s+forward|look\s+forward|please\s+(?:let|call|text|reach)|let\s+me\s+know|feel\s+free|call\s+(?:me|us)|text\s+(?:me|us)|hope\b|sincerely|regards|best\b|god\s+bless)/i;
+function timLetter(text){
+  let t=String(text||'');
+  let validDays=null,jobPrice=null;
+  const v=t.match(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?(\d{1,3})\s+days?\b/i);
+  if(v){const n=parseInt(v[1],10);if(n>0&&n<=365)validDays=n;}
+  // "Here's my estimate $2800 to rough in ...": the price, then the work.
+  const p=t.match(/(?:\b(?:here['’]?s|here\s+is|this\s+is)\s+)?\b(?:my|our|the)\s+(?:estimate|quote|price|bid)\s+(?:is\s+|of\s+|for\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s*(?:to\s+|for\s+)?/i);
+  if(p){const n=parseFloat(p[1].replace(/,/g,''));if(n>0){jobPrice=n;t=t.replace(p[0],'');}}
+  let letter=!!(validDays||jobPrice);
+  const bizNames=[];
+  try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());}}catch(_e){}
+  const sents=t.split(/(?<=[.!?])\s+/);
+  if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
+  const keep=sents.filter((x,i)=>{
+    const q=x.trim();if(!q)return false;
+    if(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?\d{1,3}\s+days?\b/i.test(q)&&/\b(?:estimate|quote|price|bid|offer|this)\b/i.test(q))return false;
+    if(_TIMK_COURTESY.test(q)){letter=true;return false;}
+    if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q))return false;
+    const low=q.toLowerCase().replace(/[.!?]+$/,'');
+    if(bizNames.some(b=>b&&low.includes(b)))return false;
+    // The signature: in a letter only, the last sentence, two words or more,
+    // every word capitalised. "Interconnect." on a spoken walk is a step.
+    if(letter&&i===sents.length-1&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
+    return true;
+  });
+  return {text:keep.join(' ').trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean)};
+}
+// A WRITTEN estimate keeps his sentences (Jack 2026-09-30: when Tim chopped
+// his letter into "Drill hole" and "Existing washer lines" it "didn't make
+// much sense"). He already wrote it in order, one thing per sentence; Tim only
+// takes the "I will" and "I have included" off the front so each reads as a
+// step. Spoken walks still go through the step splitter.
+function timLetterSteps(sentences){
+  return (sentences||[]).map(x=>{
+    let v=String(x).trim().replace(/[.!?]+$/,'');
+    v=v.replace(/^(?:and\s+)?(?:i|we)(?:'ll|\s+will|\s+would|\s+can|\s+am\s+going\s+to|'m\s+going\s+to|\s+are\s+going\s+to)\s+/i,'');
+    v=v.replace(/^(?:i|we)(?:'ve|\s+have)\s+(?:also\s+)?(?:included|added|figured|priced(?:\s+in)?)\s+/i,'');
+    v=v.replace(/^(?:this\s+)?(?:includes|price\s+includes|estimate\s+includes)\s+/i,'');
+    v=v.replace(/\s+as\s+well$/i,'').replace(/\s{2,}/g,' ').trim();
+    return v?v.charAt(0).toUpperCase()+v.slice(1):'';
+  }).filter(v=>v.replace(/[^a-z]/gi,'').length>=3);
+}
 function timScopeBuild(text,opts){
-  const said=String(text||'');
+  const _letter=timLetter(text);
+  const said=_letter.text;
   // What he is buying goes to Materials, and a line that is nothing but a
   // shopping list is not a step on the contract ("figure 40 bags of Quikrete
   // and 6 sticks of rebar"). Work that uses a material stays a step.
   let materials=[];
   try{materials=timSaidMaterials(said);}catch(_e){materials=[];}
-  const priced=_timkFoldPrices(timScopeFrom(said).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
+  const _written=_letter.letter&&_letter.sentences.length>=2;
+  const priced=_timkFoldPrices((_written?timLetterSteps(_letter.sentences):timScopeFrom(said)).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
     // "Pour the pad, figure 40 bags of Quikrete and 6 sticks of rebar": the
     // shopping list after the comma comes off the step.
     const bits=String(p.text).split(/,\s+/);
@@ -2073,6 +2124,10 @@ function timScopeBuild(text,opts){
     steps:mine,
     materials,
     implied,
+    // From a pasted estimate letter: the days the price holds and the one
+    // price for the whole job, null when he did not say.
+    validDays:_letter.validDays,
+    jobPrice:_letter.jobPrice,
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
     outOfOrder:staged.some((r,i)=>r.text!==steps[i]),
