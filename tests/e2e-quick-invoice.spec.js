@@ -362,6 +362,32 @@ test.describe('Quick invoice', () => {
     expect(r.loading).toBe(false);
   });
 
+  // Owner 2026-09-29: "I want the ability to click into these steps and edit
+  // them, right now they are hard locked if I talk to Tim". Tim heard "PEX-A"
+  // as "PEX a pipe"; he taps the words and fixes them.
+  test('what Tim made is his to edit: tap a line, type, it is on the invoice; empty it and it goes', async ({ page }) => {
+    await boot(page, 390);
+    await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX a pipe']; renderQuickInvoice();
+    });
+    const second = page.locator('#qi-page .qi-work-in').nth(1);
+    await second.click();
+    await second.press('End');
+    for (let i = 0; i < 'PEX a pipe'.length; i++) await second.press('Backspace');
+    await second.pressSequentially('PEX-A pipe');
+    const first = page.locator('#qi-page .qi-work-in').first();
+    await first.click();
+    await first.fill('');
+    await page.locator('#qi-say').click();                  // leaves the emptied line
+    const r = await page.evaluate(() => ({ work: _qi.work.slice(), doc: _qiDocHtml(), boxes: document.querySelectorAll('#qi-page .qi-work-in').length,
+      tall: (() => { const e = document.querySelector('#qi-page .qi-work-in'); return e && e.scrollHeight <= e.clientHeight + 2; })() }));
+    expect(r.work).toEqual(['Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.doc).toContain('Replaced 10 feet of copper pipe with PEX-A pipe');
+    expect(r.boxes).toBe(1);
+    expect(r.tall, 'the box grows to show every word').toBe(true);
+  });
+
   // "Do we add in talk to Tim like we do for proposals to speak to what we
   // did?" (owner 2026-09-27). Same box and splitter as Build Your Own.
   test('Talk to Tim, hourly: what he did is listed as work done, on the preview and the saved invoice, never a price', async ({ page }) => {
