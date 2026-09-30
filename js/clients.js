@@ -749,7 +749,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     const lines=_getTradeLines();
     if(lines.length>1){
       _showTradePicker('Which trade is this job for?',t=>{
-        _activeTrade=t;_renderNavTradeSwitcher();
+        _activeTrade=t;if(typeof _rememberTrade==='function')_rememberTrade(t);_renderNavTradeSwitcher();
         _showEstimateStylePicker(c,_overrideAddr);
       });
       return;

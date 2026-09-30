@@ -440,6 +440,46 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(r.top).toBeGreaterThanOrEqual(r.under - 1);
   });
 
+  test('trade: a painting + plumbing shop whose signup said landscaping never lands on landscaping, and Tim reads plumbing from the words (owner 2026-09-30, 9.15% tax on a plumbing job)', async () => {
+    const r = await page.evaluate((t) => {
+      const was = { cfg: _config, act: _activeTrade };
+      const key = _tradeKey();
+      let saved = null; try { saved = localStorage.getItem(key); } catch (_e) {}
+      try {
+        _config = Object.assign({}, _config || {}, { business_type: 'landscaping', trade_lines: 'painting,plumbing' });
+        try { localStorage.removeItem(key); } catch (_e) {}
+        _activeTrade = null;
+        const start = getActiveTrade();                    // not landscaping: his first line
+        _rememberTrade('plumbing');
+        const picked = _tradeStart(_config);               // the one he picked, across a reload
+        _rememberTrade('roofing');
+        const notHis = _tradeStart(_config);               // a trade he does not run is ignored
+        // A new BYO on his first line, then John's plumbing letter pasted in.
+        try { localStorage.removeItem(key); } catch (_e) {}
+        _activeTrade = 'painting';
+        clients.push({ id: 96101, name: 'Logan Sample', addr: '2015 SW Randolph Ave, Topeka, KS 66604' });
+        openGenericEstimate(getClientById(96101), null, null, { mode: 'byo' });
+        _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+        const before = _geiTrade;
+        _geiClientTaxRate = { rate: 9.15, source: 'test' };
+        document.getElementById('byo-say').value = t; _byoSayBuild();
+        const tot = calcGeiTotal();
+        return { start, picked, notHis, before, after: _geiTrade, tax: tot.salesTax, sub: tot.sub };
+      } finally {
+        _config = was.cfg; _activeTrade = was.act; _geiClientTaxRate = null;
+        try { if (saved == null) localStorage.removeItem(key); else localStorage.setItem(key, saved); } catch (_e) {}
+      }
+    }, EMAIL_BULLETS);
+    expect(r.start).toBe('painting');
+    expect(r.picked).toBe('plumbing');
+    expect(r.notHis).toBe('painting');
+    expect(r.before).toBe('painting');
+    expect(r.after).toBe('plumbing');
+    // A Kansas plumbing repair with no materials: nothing to tax.
+    expect(r.sub).toBe(2800);
+    expect(r.tax).toBe(0);
+  });
+
   test('Good for: the picker sets the days the price holds, and it is saved on the draft', async () => {
     await open();
     await say('pull the old water heater, set a tankless');
