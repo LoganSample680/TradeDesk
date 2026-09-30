@@ -87,9 +87,9 @@ async function proposal(page, kind, o) {
     else if (/Add your rate/.test(bar) && await page.evaluate(() => /rate/i.test(document.activeElement && document.activeElement.id))) {
       await page.keyboard.type('95'); d.keys += 2; d.log.push('type rate'); await page.keyboard.press('Tab');
     } else if (/Pick when you bill/.test(bar)) await d.tap('Weekly', root + ' .tm-cad-seg button >> nth=0');
-    else if (/Price every line/.test(bar)) {
-      const p = page.locator('#_bya-price'); await p.click(); d.taps++; await p.pressSequentially('450'); d.keys += 3; d.log.push('type price');
-      await d.tap('Save', '#_byo-add-modal button.btn-p');
+    else if (/Set the price/.test(bar)) {
+      // One price for the whole job, typed where the bar put the cursor.
+      await page.keyboard.type('450'); d.keys += 3; d.log.push('type price'); await page.keyboard.press('Tab');
     } else if (/Price the materials/.test(bar)) {
       await d.tap('+ price', '#sup-card .sup-cost');
       await page.locator('#zprompt-inp').pressSequentially('380'); d.keys += 3;
@@ -127,15 +127,16 @@ test.describe('Proposals start to finish', () => {
     assertNoErrors(page, 'T&M first time');
   });
 
-  test('Build Your Own: each line priced once, the supply house list priced on its own card, never as one made-up number', async ({ page }) => {
+  test('Build Your Own: the scope, then one price for the whole job, parts included (owner 2026-09-30)', async ({ page }) => {
     test.setTimeout(90000);
     const r = await proposal(page, 'byo', {});
     console.log('[start-to-finish] BYO: ' + r.d.taps + ' taps, ' + r.d.keys + ' keys, ' + r.ms + 'ms\n  ' + r.d.log.join('\n  '));
     expect(r.out.sent).toBe(true);
-    expect(r.bars).toContain('Price the materials');
-    const sup = await page.evaluate(() => { const h = _byoItems.find(it => it._supply); return h ? { price: h.price, items: h._supply.items.map(i => i.cost) } : null; });
-    expect(sup.items.every(c => c > 0)).toBe(true);
-    expect(r.d.taps, r.d.log.join('\n')).toBeLessThanOrEqual(34);
+    expect(r.out.amount).toBeGreaterThanOrEqual(450);
+    // His one number covers the parts too: no line and no supply list to price.
+    expect(r.bars).toContain('Set the price');
+    expect(r.bars).not.toContain('Price the materials');
+    expect(r.d.taps, r.d.log.join('\n')).toBeLessThanOrEqual(13);   // 32 before one price for the whole job (2026-09-30)
     assertNoErrors(page, 'BYO start to finish');
   });
 });

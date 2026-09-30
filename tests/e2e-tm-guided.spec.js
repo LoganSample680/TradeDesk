@@ -152,7 +152,7 @@ test.describe('the bar walks him to Send', () => {
     await page.fill('#gei-byo-page #tim-ask-detail-model', 'Navien NPE-240A');
     await page.locator('#gei-byo-page .ios-tim .ios-ask-row .ios-pill').click();
     await page.waitForTimeout(300);
-    expect(await byoBar()).toEqual(['Price every line']);
+    expect(await byoBar()).toEqual(['Set the price']);
     await page.evaluate(() => { _byoItems.forEach(it => { if (!(Number(it.price) > 0)) { it.price = 350; it.rate = 350; } }); _byoRenderSections(); _byoUpdateRail(); });
     expect(await byoBar()).toEqual(['Check the price']);
     expect(await page.evaluate(() => document.getElementById('byo-step-3').getAttribute('data-state')), 'not ticked while unchecked').toBe('now');
