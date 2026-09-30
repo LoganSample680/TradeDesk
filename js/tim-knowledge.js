@@ -2062,10 +2062,21 @@ function timLetter(text){
   // Tagen,") and the lead-in ("the following work:") are not work.
   let sents=t.split(/(?<=[.!?])\s+|\s*\n+\s*/).map(x=>x.replace(/^\s*(?:[-*\u2022\u00b7\u2013]+|\d{1,2}[.)])\s+/,'').trim()).filter(Boolean);
   sents=sents.filter(x=>!(/^(?:hi|hey|hello|dear|good\s+(?:morning|afternoon|evening))\b/i.test(x)&&x.split(/\s+/).length<=4&&!/[.!?]$/.test(x))&&!(/:$/.test(x)&&x.split(/\s+/).length<=8));
-  // A signature over two lines ("John Schonfeldt" then the business): the
-  // name line joins the business line so it reads as one signature.
-  if(sents.length>=2){const a=sents[sents.length-2],b=sents[sents.length-1];
-    if(bizNames.some(n=>n&&b.toLowerCase().includes(n))&&!/[.!?,:]$/.test(a)&&a.split(/\s+/).length<=4&&a.split(/\s+/).every(w=>/^[A-Z<][\w'.>-]*$/.test(w)))sents.splice(sents.length-2,2,a+' '+b);}
+  // The signature block at the bottom of a pasted letter ("John Schonfeldt"
+  // then "Plumbing Solutions by JS"): short lines, no end punctuation, every
+  // word capitalised, and not a job ("Install GFCI"). Whoever's business it
+  // is, it is a name, not work. The person on it signs the note.
+  const sigBy=[];
+  if(/\n/.test(t)&&(letter||sents.some(x=>_TIMK_COURTESY.test(x)))){
+    while(sents.length>1){
+      const q=sents[sents.length-1],w=q.split(/\s+/);
+      if(/[.!?,:;]$/.test(q)||w.length>6||!w.every(x=>/^[A-Z&<]/.test(x)||/^(?:by|and|of|the|llc|inc)$/i.test(x)))break;
+      sigBy.unshift(sents.pop());
+    }
+    // Only when a finished sentence sits above it: a bulleted list that ends
+    // on "Install GFCI" is still work.
+    if(sigBy.length&&!/[.!?]$/.test(sents[sents.length-1]||'')){sents.push(...sigBy);sigBy.length=0;}
+  }
   if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
   // The courtesy is not scope, but it is his to say: it goes on the proposal
   // as his note, word for word (owner 2026-09-30: the faith and trust line "is
@@ -2084,6 +2095,7 @@ function timLetter(text){
     return true;
   });
   const tidy=x=>x.replace(/\basap\b/gi,'ASAP').replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').replace(/,\s*or\s+/g,', or ').trim();
+  if(!noteBy)sigBy.some(x=>(noteBy=_timkSigner(x,bizNames.slice(0,1)))&&!bizNames.some(b=>b&&x.toLowerCase().includes(b)));
   return {text:keep.join(' ').trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
     note:note.map(x=>{x=tidy(x);return /[.!?]$/.test(x)?x:x+'.';}).join(' '),noteBy};
 }
