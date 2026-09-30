@@ -317,6 +317,32 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(src).not.toMatch(/painting proposal/);
   });
 
+  test('your profit: a bar and the words for where it sits, live as the cost is typed (owner 2026-09-30)', async () => {
+    await open();
+    await say('pull the old water heater, set a tankless');
+    await page.evaluate(() => { _byoJobPrice = 2800; _byoUpdateRail(); _byoRenderPrice(); });
+    const read = () => page.evaluate(() => ({
+      val: document.getElementById('byo-profit-val').textContent,
+      bar: getComputedStyle(document.getElementById('byo-profit-bar')).display !== 'none',
+      msg: document.getElementById('byo-profit-msg').textContent,
+      dot: document.getElementById('byo-profit-dot').style.left,
+    }));
+    const none = await read();
+    expect(none).toMatchObject({ val: 'Add your cost', bar: false, msg: '' });
+    await page.locator('#byo-cost-in').click();
+    await page.locator('#byo-cost-in').pressSequentially('1680');
+    const good = await read();
+    expect(good).toMatchObject({ val: '40% · $1,120', bar: true, msg: 'Priced right, solid margin for this job', dot: '40%' });
+    await page.locator('#byo-cost-in').fill('');
+    await page.locator('#byo-cost-in').pressSequentially('2500');
+    const thin = await read();
+    expect(thin.msg).toBe('Underpriced: consider raising your rate');
+    // The boxes look like boxes.
+    const border = await page.evaluate(() => ['byo-price-in', 'byo-cost-in', 'byo-dep-in'].map(id => getComputedStyle(document.getElementById(id)).borderTopWidth));
+    border.forEach(w => expect(w).toBe('1px'));
+    await page.evaluate(() => { _byoJobPrice = 0; });
+  });
+
   test('a scope line is words and a price: no how many, no each (owner 2026-09-30)', async () => {
     await open();
     await say('pull the old water heater, set a tankless');

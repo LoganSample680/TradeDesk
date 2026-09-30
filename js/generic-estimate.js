@@ -3161,7 +3161,10 @@ function _byoRenderPrice(st){
   const cost=parseFloat(costEl&&costEl.value)||0;
   const sub=(_geiLines||[]).reduce((a,l)=>a+(Number(l.total)||0),0);
   const profit=sub>0&&cost>0?Math.round((sub-cost)/sub*100):null;
-  const pcol=profit==null?'':profit<0?'#DC2626':profit<_MARGIN_BANDS.low?'#EF4444':profit<_MARGIN_BANDS.target?'#B45309':profit<_MARGIN_BANDS.high?(document.body.classList.contains('dark')?'var(--green)':'var(--c-green,#117841)'):'#B45309';
+  // Owner 2026-09-30: "your profit should show its bar and colour coded words".
+  const band=profit==null?null:_marginBand(profit);
+  const pcol=band?band.color:'';
+  const ppos=profit==null?50:Math.min(Math.max(profit,2),98);
   const D=_byoDepositState(st.total);
   const sname=_tmStateName(D.st)||D.st;
   const depNote=D.over?('<small style="color:var(--ios-law)">'+escHtml(sname)+' allows up to '+_byoMoney(Math.floor(D.max))+' here.</small>')
@@ -3176,6 +3179,10 @@ function _byoRenderPrice(st){
     // Mid-typing: update the words around the box, never the box itself.
     const pr=document.getElementById('byo-profit-val');
     if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost));pr.style.color=pcol;}
+    const bar=document.getElementById('byo-profit-bar'),dot=document.getElementById('byo-profit-dot'),msg=document.getElementById('byo-profit-msg');
+    if(bar)bar.style.display=band?'':'none';
+    if(dot){dot.style.left=ppos+'%';dot.style.boxShadow='0 0 0 3px '+(pcol||'#94a3b8')+',0 2px 6px rgba(0,0,0,.2)';}
+    if(msg){msg.textContent=band?band.msg:'';msg.style.color=pcol;}
     const tv=document.getElementById('byo-total-val');if(tv)tv.textContent=_byoMoney(st.total);
     const dn=document.getElementById('byo-dep-note');if(dn)dn.outerHTML=depNote.replace('<small','<small id="byo-dep-note"');
     return;
@@ -3190,7 +3197,10 @@ function _byoRenderPrice(st){
     // margin next to it. No materials list to fill out.
     '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
       '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Number(cost).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
-    '<div class="ios-row"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+'">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+    '<div class="ios-row byo-profit-row" style="display:block"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+';font-weight:700">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+      '<div id="byo-profit-bar" style="position:relative;height:7px;border-radius:5px;background:'+_MARGIN_TRACK+';margin:14px 9px 8px;'+(band?'':'display:none')+'">'+
+        '<div id="byo-profit-dot" style="position:absolute;top:50%;left:'+ppos+'%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px '+(pcol||'#94a3b8')+',0 2px 6px rgba(0,0,0,.2);transition:left .45s cubic-bezier(.22,1,.36,1),box-shadow .3s ease"></div></div>'+
+      '<div id="byo-profit-msg" style="font-size:13px;font-weight:600;color:'+pcol+';min-height:0">'+(band?escHtml(band.msg):'')+'</div></div>'+
     '<label class="ios-row"><span class="ios-lbl">Good for<small>Price holds until '+escHtml(_fmtValidUntil(addDays(todayKey(),_geiValidDaysNow())))+'</small></span>'+
       '<span class="ios-val"><select id="byo-valid-days" aria-label="Price good for" onchange="_geiSetValidDays(this.value)">'+
       [...new Set(_GEI_VALID_CHOICES.concat([_geiValidDaysNow()]))].sort((a,b)=>a-b).map(n=>'<option value="'+n+'"'+(n===_geiValidDaysNow()?' selected':'')+'>'+n+' days</option>').join('')+
@@ -4074,6 +4084,17 @@ function _geiRenderDriveLine(type,d){
 // ends up calling the same job "below target" and "above your target" in the
 // same rail (rule 18: one definition, many mouths).
 const _MARGIN_BANDS={low:22,target:35,high:55};
+// What a margin means, in one place: the rail gauge and the price rows both
+// read it, so the colour and the words can never disagree.
+function _marginBand(margin){
+  if(margin<0)return {color:'#DC2626',msg:'Below cost, you’re losing money on this job'};
+  if(margin<_MARGIN_BANDS.low)return {color:'#EF4444',msg:'Underpriced: consider raising your rate'};
+  if(margin<_MARGIN_BANDS.target)return {color:'#F59E0B',msg:'Below target, a bit of room to grow'};
+  if(margin<_MARGIN_BANDS.high)return {color:'#22C55E',msg:'Priced right, solid margin for this job'};
+  if(margin<75)return {color:'#F59E0B',msg:'High margin, double-check your cost numbers'};
+  return {color:'#F59E0B',msg:'Very high margin, double-check your numbers'};
+}
+const _MARGIN_TRACK='linear-gradient(to right,#991B1B 0%,#EF4444 2%,#EF4444 22%,#F59E0B 22%,#F59E0B 35%,#22C55E 35%,#22C55E 55%,#F59E0B 55%,#F59E0B 100%)';
 function _updateMarginGauge(type,total){
   const gWrap=document.getElementById(type+'-profit-gauge');
   if(!gWrap)return;
@@ -4098,15 +4119,9 @@ function _updateMarginGauge(type,total){
   // Dot sits at its own margin % along the bar so its position matches the gradient
   // colour beneath it (red=low margin on the left → green band → amber when very high).
   const pos=Math.min(Math.max(margin,2),98);
-  let color,msg;
-  if(margin<0){color='#DC2626';msg='Below cost, you’re losing money on this job';}
-  else if(margin<_MARGIN_BANDS.low){color='#EF4444';msg='Underpriced: consider raising your rate';}
-  else if(margin<_MARGIN_BANDS.target){color='#F59E0B';msg='Below target, a bit of room to grow';}
-  else if(margin<_MARGIN_BANDS.high){color='#22C55E';msg='Priced right, solid margin for this job';}
   // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
   // margins that usually mean a cost got missed, green now tops out at 55%.
-  else if(margin<75){color='#F59E0B';msg='High margin, double-check your cost numbers';}
-  else{color='#F59E0B';msg='Very high margin, double-check your numbers';}
+  let {color,msg}=_marginBand(margin);
   // The same honest caveat one level down. A line built straight from the price
   // book carries no measured hours until a job containing it has been finished
   // (see _pbLearnHours), so its labor is not in the cost at all and the margin
