@@ -85,14 +85,39 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('he can name it, and clearing the name gives the customer back', async () => {
     await open();
     await page.locator('#byo-edit-title-btn').tap();
-    await page.locator('#byo-tbar-title input').fill('Basement water heater');
-    await page.locator('#byo-tbar-title input').press('Enter');
-    expect(await page.evaluate(() => document.getElementById('byo-tbar-title').textContent)).toBe('Basement water heater');
+    await page.locator('#byo-pname input').fill('Basement water heater');
+    await page.locator('#byo-pname input').press('Enter');
+    expect(await page.evaluate(() => ({ t: document.getElementById('byo-tbar-title').textContent, n: document.getElementById('byo-pname').textContent })))
+      .toEqual({ t: 'Ray Whitcomb', n: 'Basement water heater' });
     await page.locator('#byo-edit-title-btn').tap();
-    await page.locator('#byo-tbar-title input').fill('');
-    await page.locator('#byo-tbar-title input').press('Enter');
-    expect(await page.evaluate(() => ({ t: document.getElementById('byo-tbar-title').textContent, set: _geiDescUserSet })))
-      .toEqual({ t: 'Ray Whitcomb', set: false });
+    await page.locator('#byo-pname input').fill('');
+    await page.locator('#byo-pname input').press('Enter');
+    expect(await page.evaluate(() => ({ t: document.getElementById('byo-tbar-title').textContent, n: document.getElementById('byo-pname').textContent, set: _geiDescUserSet })))
+      .toEqual({ t: 'Ray Whitcomb', n: '412 Bell St · Plumbing Proposal', set: false });
+  });
+
+  // Owner 2026-09-30: "do we add a step where you name the proposal?" No: the
+  // name writes itself and shows under the customer, one tap to change it.
+  test('the automatic name shows under the customer, and tapping in and out leaves it automatic', async () => {
+    await open();
+    const r = await page.evaluate(() => ({
+      title: document.getElementById('byo-tbar-title').textContent,
+      name: document.getElementById('byo-pname').textContent,
+      desc: document.getElementById('gei-desc').value,
+    }));
+    expect(r).toEqual({ title: 'Ray Whitcomb', name: '412 Bell St · Plumbing Proposal', desc: '412 Bell St · Plumbing Proposal' });
+    await page.locator('#byo-edit-title-btn').tap();
+    await page.locator('#byo-pname input').press('Enter');
+    expect(await page.evaluate(() => ({ n: document.getElementById('byo-pname').textContent, set: _geiDescUserSet })))
+      .toEqual({ n: '412 Bell St · Plumbing Proposal', set: false });
+    // Title, name line and sub line never overlap and nothing spills sideways.
+    const L = await page.evaluate(() => {
+      const b = id => document.getElementById(id).getBoundingClientRect();
+      const t = b('byo-tbar-title'), n = b('byo-edit-title-btn'), s = b('byo-page-sub');
+      return { stacked: t.bottom <= n.top + 1 && n.bottom <= s.top + 1, fits: n.right <= innerWidth, bleed: document.documentElement.scrollWidth <= innerWidth + 1 };
+    });
+    expect(L).toEqual({ stacked: true, fits: true, bleed: true });
+    await assertNoErrors(page);
   });
 
   test('T&M has the same pencil', async () => {
