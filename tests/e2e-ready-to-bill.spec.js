@@ -1067,7 +1067,7 @@ test.describe('Invoice: add time from the day', () => {
     const rows = await page.locator('#dash-to-bill .tb-row').count();
     log.push('card rows ' + rows);
     await tap('Ready to bill', '#dash-to-bill .tb-sum');
-    if (!(await page.locator('#qi-page #qi-say').count())) await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen")');
+    if (!(await page.locator('#qi-page #qi-say').count())) { await page.waitForTimeout(400); await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen")'); }
     await page.waitForSelector('#qi-page #qi-say', { timeout: 4000 });
     await page.waitForTimeout(400);
     await type('what we did', '#qi-say', 'Replaced the water heater.');
@@ -1269,7 +1269,11 @@ test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the w
   };
   await page.evaluate(() => { goPg('pg-dash'); _renderToBill(); });
   await tap('Ready to bill card', '#dash-to-bill .tb-sum');
-  await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen Miller")');
+  // The list redraws as it opens; wait for the open one, or WebKit hands the
+  // tap to the row it is about to throw away (CI shard 3, 2026-09-29).
+  await page.waitForSelector('#dash-to-bill .tb-list.open .tb-row');
+  await page.waitForTimeout(250);
+  await tap('Tagen Miller', '#dash-to-bill .tb-list.open .tb-row:has-text("Tagen Miller")');
   await page.waitForSelector('#qi-page #qi-say');
   await type('what we did', '#qi-say', 'Replaced the water heater and the shutoff valve.');
   await tap('Add to work done', '#qi-page button:has-text("Add to work done")');
