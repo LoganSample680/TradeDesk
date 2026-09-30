@@ -1725,6 +1725,12 @@ div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #gei-byo-page .ios-fact.ask{color:var(--ios-tint);font-weight:600}
 #gei-byo-page .byo-total .ios-fact{font-size:24px;font-weight:700;letter-spacing:-.4px}
 #gei-byo-page .ios-val input#byo-dep-in{width:44px}
+/* The price boxes look like boxes (owner 2026-09-30: "should all look like I
+   can click into them and edit"): Their price, Your cost, Deposit, Good for. */
+#gei-byo-page #byo-price-group .ios-val input,#gei-byo-page #byo-price-group .ios-val select{border:1px solid var(--border2)!important;background:var(--bg)!important;border-radius:10px!important;padding:8px 10px!important;margin:0 0 0 4px!important;min-height:40px!important;box-sizing:border-box;font-size:17px;color:var(--text)}
+#gei-byo-page #byo-price-group .ios-val input{width:112px;text-align:right}
+#gei-byo-page #byo-price-group .ios-val input#byo-dep-in{width:62px}
+#gei-byo-page #byo-price-group .ios-val input:focus,#gei-byo-page #byo-price-group .ios-val select:focus{border-color:var(--denim,#2d5da8)!important;box-shadow:0 0 0 3px rgba(45,93,168,.16)!important;outline:none}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px 0 -8px -6px;color:var(--ios-tint);flex-shrink:0}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename svg{width:20px;height:20px}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub{font-size:15px;color:var(--ios-2);margin-top:5px;line-height:1.4}
