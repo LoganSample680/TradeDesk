@@ -54,7 +54,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // Swift so JS can never leave the radio on all night.
         CAPPluginMethod(name: "setSampling", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "samplingState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setWakeOnMove", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "setWakeOnMove", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMotionPoll", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -69,6 +70,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // with zero heartbeat events), because heartbeatOn only lived in memory
     // and load() restored everything EXCEPT the beat.
     private let hbKey = "td_geo_hb"
+    private let motionPollKey = "td_geo_motion_poll"
+    private let motionPollTickKey = "td_geo_motion_poll_tick"
     // ── Real-time flush (owner 2026-08-27) ──────────────────────────────────
     // Config JS hands over via configureFlush: {url, userId, deviceId, key}.
     // The key is the per-device geo_flush_keys secret, NOT a Supabase token:
@@ -182,6 +185,19 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private var heartbeatOn = false
     private var heartbeatStartedAt: Date?
     private var heartbeatTtlMs: Double = 0
+    // ── RE-READ THE MOTION HISTORY WHILE AWAKE (owner 2026-09-28) ───────────
+    // Jack, 28 September: 54 of his 72 late flips were ones the live stream
+    // never reported and the coprocessor's history did, and on 38 of them the
+    // app was demonstrably awake (live flips from the same stretch reached the
+    // server in seconds). Nothing asked for the history until the next region
+    // or ping wake, 2 to 15 minutes later. This timer asks every intervalMs
+    // while the process runs; a suspended process runs no timer, so it costs
+    // nothing asleep. JS names the interval (3.2) and turns it off.
+    private var motionPollTimer: Timer?
+    private var motionPollMs: Double = 0
+    // When this process started. A sleep that began before it is a relaunch:
+    // iOS ended the app, not only paused it.
+    private let bornMs = Date().timeIntervalSince1970 * 1000
     // ── THE KEEPALIVE IS NOW OPT-IN, AND OFF BY DEFAULT (owner 2026-09-01) ───
     // "right now when tradedesk backgrounds I see the blue navigation arrow,
     // that's old continuous engine." That arrow is not the drive engine and
@@ -441,6 +457,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                         self?.heartbeatTick()
                     }
                 }
+            }
+            // The history poll comes back with the heartbeat it rides with.
+            // hbStop removes the key, so a shift that ended stays ended.
+            if d.dictionary(forKey: self.hbKey) == nil {
+                d.removeObject(forKey: self.motionPollKey)
+            } else if let pollMs = d.object(forKey: self.motionPollKey) as? Double {
+                self.applyMotionPoll(TdGeoPlugin.motionPollInterval(pollMs), persist: false)
             }
             // ── A DRIVE THAT OUTLIVED THE PROCESS ────────────────────────────
             // A region wake mid-leg relaunches this app with no memory, and the
@@ -1571,6 +1594,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // wake does. Named ForTest so it is obvious this is not a shipping entry
     // point; TdNativeTests is a DEBUG-configuration target (§3.3).
     func backfillMotionHistoryForTest() { backfillMotionHistory() }
+    func backfillMotionPollForTest() { backfillMotionHistory(poll: true) }
+    func setMotionPollForTest(_ ms: Double?) { applyMotionPoll(TdGeoPlugin.motionPollInterval(ms), persist: true) }
+    var motionPollMsForTest: Double { motionPollMs }
+    var motionPollTimerForTest: Timer? { motionPollTimer }
+    var motionPollKeyForTest: String { motionPollKey }
+    func hbStopForTest() { hbStop(reason: "test", trigger: "test") }
+    func motionPollTickForTest(nowMs: Double) { motionPollTick(nowMs: nowMs) }
+    var motionPollTickKeyForTest: String { motionPollTickKey }
     var motionMarkKeyForTest: String { motionMarkKey }
     var motionReadKeyForTest: String { motionReadKey }
     var flushCoveredKeyForTest: String { flushCoveredKey }
@@ -2080,10 +2111,81 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         heartbeatKeepalive = false
         heartbeatStartedAt = nil
         UserDefaults.standard.removeObject(forKey: hbKey)
+        // The poll lives inside the shift: when the shift's beat ends (JS,
+        // the ttl at close of business, stopAll), so does the poll.
+        applyMotionPoll(0, persist: true)
         // Only release the radio if nothing else still owns it. A drive window
         // is the case this used to get wrong: ending a shift mid-leg would
         // have cut the route short.
         if burstStartedAt == nil && !driveSamplingOn() { mgr().stopUpdatingLocation() }
+    }
+
+    // setMotionPoll({intervalMs}) : re-read the coprocessor's history every
+    // intervalMs while this process is running. 0, missing or junk is off.
+    // Clamped to 10s..5min so a bad number can never become a busy loop.
+    @objc func setMotionPoll(_ call: CAPPluginCall) {
+        let ms = TdGeoPlugin.motionPollInterval(self.num(call.getValue("intervalMs")))
+        DispatchQueue.main.async {
+            self.applyMotionPoll(ms, persist: true)
+            call.resolve(["intervalMs": ms])
+        }
+    }
+
+    static func motionPollInterval(_ raw: Double?) -> Double {
+        guard let v = raw, v.isFinite, v > 0 else { return 0 }
+        return min(max(v, 10_000), 300_000)
+    }
+
+    private func applyMotionPoll(_ ms: Double, persist: Bool) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.applyMotionPoll(ms, persist: persist) }
+            return
+        }
+        motionPollTimer?.invalidate()
+        motionPollTimer = nil
+        motionPollMs = ms
+        if persist {
+            if ms > 0 { UserDefaults.standard.set(ms, forKey: motionPollKey) }
+            else { UserDefaults.standard.removeObject(forKey: motionPollKey) }
+        }
+        // Off means the next day's first tick has nothing to measure against,
+        // so an evening at home is never reported as the phone asleep.
+        guard ms > 0 else { UserDefaults.standard.removeObject(forKey: motionPollTickKey); return }
+        let t = Timer.scheduledTimer(withTimeInterval: ms / 1000, repeats: true) { [weak self] _ in
+            self?.motionPollTick()
+        }
+        // A fifth of the interval of slack lets iOS fold these wakes into ones
+        // it was making anyway, which is where a timer's battery goes.
+        t.tolerance = ms / 1000 * 0.2
+        motionPollTimer = t
+    }
+
+    // ── THE SLEEP DETECTOR (owner 2026-09-28, "add it") ──────────────────────
+    // A timer does not run in a suspended process, so a tick that arrives far
+    // later than it was due is iOS saying the app was asleep, and for how
+    // long. One row per sleep, written on the tick that notices it, so the
+    // server can tell a phone iOS put to sleep from one that was awake while
+    // the motion chip said nothing. Nothing is written while the ticks keep
+    // time, so a normal day adds no rows.
+    static func sleepGapMs(lastMs: Double, nowMs: Double, intervalMs: Double) -> Double? {
+        guard lastMs.isFinite, nowMs.isFinite, intervalMs.isFinite, lastMs > 0, intervalMs > 0 else { return nil }
+        let gap = nowMs - lastMs
+        // Four missed ticks and never under a minute: a busy main thread or
+        // iOS folding timers is not sleep. Over a day is a stale mark, not a
+        // measurement.
+        guard gap > max(4 * intervalMs, 60_000), gap < 24 * 3600_000 else { return nil }
+        return gap
+    }
+
+    private func motionPollTick(nowMs: Double = Date().timeIntervalSince1970 * 1000) {
+        let d = UserDefaults.standard
+        let last = d.double(forKey: motionPollTickKey)
+        if let gap = TdGeoPlugin.sleepGapMs(lastMs: last, nowMs: nowMs, intervalMs: motionPollMs) {
+            record(["type": "asleep", "ts": nowMs, "fromMs": last,
+                    "gapSec": (gap / 1000).rounded(), "relaunched": last < bornMs])
+        }
+        d.set(nowMs, forKey: motionPollTickKey)
+        backfillMotionHistory(poll: true)
     }
 
     private func heartbeatTick() {
@@ -2707,7 +2809,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // a lie that reads exactly like a fact. The one exception is a transition
     // inside `freshMs` of the wake, where the fix genuinely does describe it.
     private static let backfillFreshMs: Double = 90_000
-    private func backfillMotionHistory() {
+    // poll: the timer above, not a wake. A poll that finds nothing sends
+    // nothing (no upload, no coverage row), so polling every 15 seconds costs
+    // the server nothing until there is a flip to deliver, and that flip
+    // would have gone up on the next wake anyway. Coverage still rides the
+    // next real wake, from the read mark this poll advanced.
+    private func backfillMotionHistory(poll: Bool = false) {
         guard CMMotionActivityManager.isActivityAvailable() else { return }
         guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else { return }
         let d = UserDefaults.standard
@@ -2738,12 +2845,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         bg = UIApplication.shared.beginBackgroundTask(withName: "td.geo.backfill") { endBg() }
         motionMgr.queryActivityStarting(from: from, to: readThrough, to: .main) { [weak self] acts, err in
             guard let self = self else { endBg(); return }
+            var recorded = 0
             // Whatever happens below, the recovered rows go now and the
             // assertion is handed back: flushUrgently takes its own for the
             // upload, so this one only had to last until the reply.
             defer {
-                self.countWake(err != nil ? "pull-err" : ((acts ?? []).isEmpty ? "pull-empty" : "pull-ok"))
-                self.flushUrgently()
+                let tag = poll ? "poll" : "pull"
+                self.countWake(tag + (err != nil ? "-err" : ((acts ?? []).isEmpty ? "-empty" : "-ok")))
+                if !poll || recorded > 0 { self.flushUrgently() }
                 endBg()
             }
             var last = ""
@@ -2772,6 +2881,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                     ev["acc"] = l.horizontalAccuracy
                 }
                 self.record(ev)
+                recorded += 1
             }
             if newest > mark { d.set(newest, forKey: self.motionMarkKey) }
             // A failed query answered nothing, so it covered nothing. Leaving

@@ -4791,6 +4791,17 @@ function _geoKeepAwakeMs(nowMs){
     return Math.round((b-cur)*60000);
   }catch(_e){return 0;}
 }
+// Re-read the motion chip's history this often while the app is awake in
+// working hours (owner 2026-09-28, "go but make sure this doesn't kill egress
+// or battery"). A flip the live stream skipped used to wait for the next region
+// or ping wake, 2 to 15 minutes. The read is local to the phone and a poll that
+// finds nothing uploads nothing (TdGeoPlugin.backfillMotionHistory), so the
+// server sees no extra traffic; a sleeping phone runs no timer at all.
+const _GEO_MOTION_POLL_MS=15000;
+function _geoMotionPollSet(Td,ms,why){
+  if(!Td||typeof Td.setMotionPoll!=='function')return;
+  Promise.resolve(Td.setMotionPoll({intervalMs:ms,reason:why})).catch(()=>{});
+}
 function _geoHeartbeatSync(spot){
   try{
     const Td=_geoTdPlugin();
@@ -4799,6 +4810,7 @@ function _geoHeartbeatSync(spot){
     if(atHome){
       _geoHbArmedAtMs=0;_geoHbKeepAwake=null;
       if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat({reason:'parked at home'})).catch(()=>{});
+      _geoMotionPollSet(Td,0,'parked at home');
       _geoParkNote('hb-off','home park');
       return;
     }
@@ -4825,6 +4837,9 @@ function _geoHeartbeatSync(spot){
     _geoHbArmedAtMs=Date.now();_geoHbKeepAwake=keepalive;
     const ttlMs=keepalive?awakeMs:12*3600000;
     Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs,keepalive,reason:keepalive?'shift keep-awake':'shift start'})).catch(()=>{});
+    // The poll rides the keep-awake: on while the app is held awake for the
+    // shift, off otherwise. The beat's own end (ttl, stopAll) stops it natively.
+    _geoMotionPollSet(Td,keepalive?_GEO_MOTION_POLL_MS:0,keepalive?'shift keep-awake':'off the clock');
     _geoParkNote('hb-on',keepalive?('awake '+Math.round(awakeMs/60000)+'m'):'30m tick armed');
   }catch(_e){}
 }
