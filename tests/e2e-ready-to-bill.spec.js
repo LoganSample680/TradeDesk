@@ -23,6 +23,11 @@ async function boot(page, w) {
   await mockAllExternal(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForAppBoot(page);
+  // The cloud load lands later on a slow WebKit runner and replaces what this
+  // test seeds: the invoice lost its two receipts ($186) and the customer
+  // page redrew under a tap (CI shard 3, 2026-09-30). Seed after it, the way
+  // e2e-attach-suggestions and e2e-supply-list already do.
+  await page.waitForFunction(() => window._supaCloudLoaded === true, null, { timeout: 15000 }).catch(() => {});
   await page.evaluate(({ D1, D2, D3 }) => {
     const mk = (id, name, addr) => ({ id, name, addr, phone: '5555550101', status: 'Client' });
     clients.splice(0, clients.length,
