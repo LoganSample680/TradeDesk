@@ -455,7 +455,8 @@ test.describe('layout integrity, mobile', () => {
         namedOccurrences: (namedHtml.match(/Bedroom/g) || []).length
       };
     });
-    expect(r.autoName, 'the proposal still names itself for his own list').toBe('Bedroom');
+    // The name on his list is the street and the trade (owner 2026-09-30).
+    expect(r.autoName, 'the proposal still names itself for his own list').toBe('2 Auto Name Rd · Painting Proposal');
     expect(r.autoOccurrences, 'the auto name must not repeat the item in the Project header').toBe(1);
     expect(r.namedShows, 'a name he typed himself is his document title').toBe(true);
     expect(r.namedOccurrences).toBe(1);

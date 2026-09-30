@@ -7283,15 +7283,15 @@ function _geiRenderJobLine(){
 //   several     -> "Water heater replacement +2 more"
 //   nothing yet -> the trade's own proposal label
 function _geiAutoName(){
-  const labels=[];
-  // The work names the proposal, never the Materials card ("Materials +8 more"
-  // on the owner's list, 2026-09-30).
-  if(_geiIsFreeForm)(_byoItems||[]).forEach(it=>{if(it&&it.on&&!it._rrp&&!it._supply&&it.label)labels.push(it.label);});
-  (_geiScopeChips||[]).forEach(l=>{if(l&&labels.indexOf(l)<0)labels.push(l);});
-  if(!_geiIsFreeForm)(_geiLines||[]).forEach(l=>{if(l&&!l._tmLabor&&l.desc&&labels.indexOf(l.desc)<0)labels.push(l.desc);});
-  if(!labels.length)return _tradeProposalLabel(_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general'));
-  const first=String(labels[0]).trim();
-  return labels.length>1?first+' +'+(labels.length-1)+' more':first;
+  // WHERE, AND WHAT KIND (owner 2026-09-30: "it says shut the water off +13
+  // more, why rather than something like address and plumbing proposal?").
+  // The first line of scope named the bid, and the first line is often the
+  // step Tim put first (shut the water off). The street and the trade say
+  // which job it is at a glance on every list.
+  const label=_tradeProposalLabel(_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'general'));
+  let street='';
+  try{street=String((typeof _geiSiteAddr==='function'&&_geiSiteAddr())||'').split(',')[0].trim();}catch(_e){street='';}
+  return street?street+' · '+label:label;
 }
 // The stored name, auto when he has not renamed it. #gei-desc is the carrier
 // every save/send path already reads, so writing it here keeps all of them
