@@ -18,15 +18,31 @@
 const _MAT_SEC='Materials';
 
 // ── The store: the only T&M / BYO split ────────────────────────────────────
-function _matIsTM(){return !!(typeof _geiIsTM!=='undefined'&&_geiIsTM);}
+// The invoice is the third store (owner 2026-09-29: "use the same one that's
+// in proposal for T&M and BYO, should carry over to bill and invoices"). Its
+// parts are the part lines in _qi.typed. It wins while the invoice page is the
+// one on screen, because the estimate flags stay set after an estimate closes.
+function _matIsQI(){
+  if(typeof _qi==='undefined'||!_qi)return false;
+  const pg=document.getElementById('pg-qi');
+  return !!(pg&&pg.classList.contains('active'));
+}
+function _matIsTM(){return !_matIsQI()&&!!(typeof _geiIsTM!=='undefined'&&_geiIsTM);}
 // Index into the backing array for every row the section draws. The supply
 // house line is not a row: it is drawn by its own card (js/supply-list.js).
 function _matIdx(){
+  if(_matIsQI())return (_qi.typed||[]).map((l,i)=>(l&&l.part&&!l._supply)?i:-1).filter(i=>i>=0);
   if(_matIsTM())return (_geiLines||[]).map((l,i)=>(l&&!l._tmLabor&&!l._supply)?i:-1).filter(i=>i>=0);
   return (_byoItems||[]).map((it,i)=>(it&&it.section===_MAT_SEC&&!it._supply)?i:-1).filter(i=>i>=0);
 }
 // One shape for both stores, the shape the BYO item already uses.
 function _matView(i){
+  if(_matIsQI()){
+    const l=(_qi.typed||[])[i];if(!l||!l.part)return null;
+    const qty=Number(l.qty)>0?Number(l.qty):1;
+    const rate=Number(l.amount)||0;
+    return {label:l.desc||'',notes:l.notes||'',qty,unit:l.unit||'ea',rate,price:Math.round(qty*rate*100)/100,on:true};
+  }
   if(_matIsTM()){
     const l=(_geiLines||[])[i];if(!l||l._tmLabor)return null;
     const qty=Number(l.qty)>0?Number(l.qty):1;
@@ -40,6 +56,12 @@ function _matView(i){
 // A new line. sec is the BYO section the sheet was opened for; a T&M estimate
 // has one list, so it is ignored there.
 function _matPut(sec,v){
+  if(_matIsQI()){
+    // A blank line he never typed in is not a line; the new part takes its place.
+    _qi.typed=_qi.typed.filter(l=>l._supply||String(l.desc||'').trim()||Number(l.amount)>0);
+    _qi.typed.push({part:true,desc:v.label,notes:v.notes||'',qty:v.qty,unit:v.unit,amount:v.rate});
+    return;
+  }
   if(_matIsTM()){
     _geiLines.push({desc:v.label,notes:v.notes||'',qty:v.qty,unit:v.unit,rate:v.rate,total:_geiCents(v.qty*v.rate)});
     return;
@@ -48,6 +70,11 @@ function _matPut(sec,v){
   _byoItems.push(_byoNormItem({id:nextId,section:sec,label:v.label,qty:v.qty,unit:v.unit,rate:v.rate,price:v.qty*v.rate,notes:v.notes||'',on:true}));
 }
 function _matWrite(i,v){
+  if(_matIsQI()){
+    const l=_qi.typed[i];if(!l||!l.part)return;
+    l.desc=v.label;l.notes=v.notes||'';l.qty=v.qty;l.unit=v.unit;l.amount=v.rate;
+    return;
+  }
   if(_matIsTM()){
     const l=_geiLines[i];if(!l||l._tmLabor)return;
     l.desc=v.label;l.notes=v.notes||'';l.qty=v.qty;l.unit=v.unit;l.rate=v.rate;l.total=_geiCents(v.qty*v.rate);
@@ -59,6 +86,7 @@ function _matWrite(i,v){
 }
 // Redraw and recount, the way each estimate already does after any edit.
 function _matRefresh(){
+  if(_matIsQI()){renderQuickInvoice();return;}
   if(_matIsTM()){_tmRenderMatList();_tmInputChange();return;}
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
@@ -67,7 +95,10 @@ function _matRefresh(){
 function _matAdd(){_byoAddItem(_MAT_SEC);}
 function _matEdit(i){_byoEditItem(i);}
 function _matDel(i){
-  if(_matIsTM()){
+  if(_matIsQI()){
+    const l=_qi.typed[i];if(!l||!l.part||l._supply)return;
+    _qi.typed.splice(i,1);
+  }else if(_matIsTM()){
     const l=_geiLines[i];if(!l||l._tmLabor||l._supply)return;
     _geiLines.splice(i,1);
   }else{
@@ -83,7 +114,11 @@ function _matDup(i){
   const taken=new Set(_matIdx().map(j=>String((_matView(j)||{}).label||'').trim()));
   let n=2,name=base+' ('+n+')';
   while(taken.has(name)){n++;name=base+' ('+n+')';}
-  if(_matIsTM()){
+  if(_matIsQI()){
+    const copy=JSON.parse(JSON.stringify(_qi.typed[i]));
+    copy.desc=name;
+    _qi.typed.splice(i+1,0,copy);
+  }else if(_matIsTM()){
     const copy=JSON.parse(JSON.stringify(_geiLines[i]));
     copy.desc=name;
     _geiLines.splice(i+1,0,copy);
@@ -98,7 +133,7 @@ function _matDup(i){
 // such switch). Its row keeps the tick box so it can be put back, and every
 // other row has none.
 function _matToggle(i){
-  if(_matIsTM())return;
+  if(_matIsTM()||_matIsQI())return;
   const it=_byoItems[i];if(!it||it.required)return;
   it.on=!it.on;
   _matRefresh();

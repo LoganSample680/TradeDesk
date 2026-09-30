@@ -642,7 +642,8 @@ function openQuickInvoice(cid,addr){
 function _qiSetMode(m){if(!_qi)return;_qi.mode=m;_qi.modeSet=true;renderQuickInvoice();}
 function _qiLines(){
   if(!_qi)return [];
-  const typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0).map(l=>{
+  // The supply house list is on the bill once it has a price, never as $0.
+  const typed=_qi.typed.filter(l=>l._supply?Number(l.amount)>0:(String(l.desc||'').trim()||Number(l.amount)>0)).map(l=>{
     const qty=_qiQty(l);
     return {kind:'line',part:!!l.part,qty,unit:l.unit||'',desc:l.part?_qiPartLabel(l):String(l.desc||'').trim(),amount:Math.round(qty*(Number(l.amount)||0)*100)/100};
   });
@@ -840,10 +841,9 @@ function renderQuickInvoice(){
   // A part has a count (Jack 2026-09-29: "a quantity selector for materials
   // would be nice"): minus, the count, plus, and the price of one. A charge
   // (a trip fee, extra labor) is one line and one price.
-  const typed=_qi.typed.map((l,i)=>l.part
-    ?'<div class="ios-row qi-part"><input class="qi-desc" type="text" placeholder="Part" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
-      '<span class="qi-qty"><button type="button" aria-label="One fewer" onclick="_qiQtyStep('+i+',-1)">−</button><b id="qi-qty-'+i+'">'+_qiQty(l)+'</b><button type="button" aria-label="One more" onclick="_qiQtyStep('+i+',1)">+</button></span>'+
-      '<span class="ios-val">$<input type="text" inputmode="decimal" aria-label="Price of one" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>'
+  // Parts are drawn by the Materials card every proposal uses (js/materials.js,
+  // owner 2026-09-29: "use the same one that's in proposal"). Here: charges.
+  const typed=_qi.typed.map((l,i)=>l.part?''
     :'<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Other charge, like a trip fee':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
     '<span class="ios-val">$<input type="text" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
   const pb=_qiPriceBook();
@@ -888,8 +888,8 @@ function renderQuickInvoice(){
         _qiDriveHtml()+
       '</div>':'')+
       _qiStep(hourly?3:2,hourly?DOC_STEP.materials:'What you did')+
-      '<div class="ios-sec"><div class="ios-group">'+typed+
-        '<button type="button" class="ios-row ios-link" id="qi-add-part" onclick="_qiAddPart()">Add a part</button>'+
+      '<div class="ios-sec"><div id="qi-mat">'+(typeof _matCardHTML==='function'?_matCardHTML():'')+'</div>'+
+      '<div class="ios-group">'+typed+
         '<button type="button" class="ios-row ios-link" onclick="_qiAddLine()">Add a charge</button>'+
         (pb.length?'<button type="button" class="ios-row ios-link" onclick="_qi.pbOpen=!_qi.pbOpen;renderQuickInvoice()">'+(_qi.pbOpen?'Hide price book':'Add from price book')+'</button>':'')+
       '</div>'+pbHtml+(hourly?'<div class="ios-foot">Store receipts for this house are already counted. Add anything else here.</div>':'')+'</div>'+
@@ -913,6 +913,7 @@ function renderQuickInvoice(){
         '<span id="qi-go">'+_qiGoHtml(total)+'</span>'+
       '</div>'+
     '</div>';
+  if(typeof _matClaim==='function')_matClaim(document.getElementById('qi-mat'));
   if(typeof _tmWireSwipe==='function')_tmWireSwipe(host);
 }
 // A person's rate is one number on the whole invoice: change Jack's on
@@ -1009,17 +1010,11 @@ function _qiSeeHtml(hourly){
   '</div></div>';
 }
 function _qiAddLine(){if(!_qi)return;_qi.typed.push({desc:'',amount:''});renderQuickInvoice();}
-function _qiAddPart(){if(!_qi)return;_qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);_qi.typed.push({desc:'',amount:'',qty:1,part:true});renderQuickInvoice();}
 function _qiQty(l){const q=Number(l&&l.qty);return q>0?Math.round(q*100)/100:1;}
-function _qiQtyStep(i,d){
-  const l=_qi&&_qi.typed[i];if(!l)return;
-  l.qty=Math.max(1,_qiQty(l)+d);
-  const e=document.getElementById('qi-qty-'+i);if(e)e.textContent=l.qty;
-  _qiTotalsPaint();
-}
 // "2 supply lines", "12 bags Quikrete": the count, the unit, the part.
 function _qiPartLabel(l){
   const item=String(l&&l.desc||'').trim();
+  if(l&&l._supply)return item;                  // the supply house list: one line, its own name
   const q=_qiQty(l),u=l&&l.unit&&l.unit!=='ea'?l.unit:'';
   if(q===1&&!u)return item;
   // "2 supply lines": no unit, so the part itself takes the plural.
@@ -1114,30 +1109,13 @@ function _qiSayBuild(){
       _qi.typed.push({desc:st,amount:l.price>0?l.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
     });
   }
-  if(mats.length){
-    const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
-    _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
-    const have=new Set(_qi.typed.map(l=>String(l.desc).toLowerCase()));
-    mats.forEach(m=>{
-      const desc=_qiMatItem(m);
-      if(have.has(desc.toLowerCase()))return;have.add(desc.toLowerCase());
-      const own=(typeof _pbFind==='function')?_pbFind(m.item,trade):null;
-      const rate=own&&Number(own.rate)>0?Number(own.rate):0;
-      // A part, with its count on the stepper and the price of one.
-      _qi.typed.push({desc,qty:Number(m.qty)>0?Number(m.qty):1,unit:m.unit&&m.unit!=='ea'?m.unit:'',amount:rate>0?rate:'',part:true});
-    });
-  }
+  // Parts he said land the way they land on a proposal (timAddMaterials,
+  // js/materials.js): priced from his book as a Materials row, unpriced on the
+  // supply house list waiting on a quote. One rule, one place.
+  if(mats.length&&typeof timAddMaterials==='function')timAddMaterials(mats);
   if(_qi.mode!=='hourly'&&!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   renderQuickInvoice();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
-}
-// "2 supply lines", "40 bags Quikrete", "1 Fluidmaster fill valve": the count,
-// the unit it is sold in when it is not each, and the thing.
-function _qiMatItem(m){
-  let item=String(m&&m.item||'').trim();
-  const w0=item.split(/\s+/)[0]||'';
-  const name=/^[A-Z]{2}/.test(w0)||(typeof _TIMK_BRAND_KEYS!=='undefined'&&typeof _timkSoundKey==='function'&&_TIMK_BRAND_KEYS.get(_timkSoundKey(w0)));
-  return name?item:item.charAt(0).toUpperCase()+item.slice(1);
 }
 function _qiMatDesc(m){
   const n=Math.round((Number(m&&m.qty)||1)*100)/100;

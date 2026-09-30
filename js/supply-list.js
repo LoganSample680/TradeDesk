@@ -90,12 +90,23 @@ function _supParseLine(raw){
 
 // ── The host line ───────────────────────────────────────────────────────────
 function _supMode(){
+  if(typeof _matIsQI==='function'&&_matIsQI())return 'qi';
   if(typeof _geiIsTM!=='undefined'&&_geiIsTM)return 'tm';
   if(typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm)return 'byo';
   return null;
 }
 function _supHost(create){
   const mode=_supMode();
+  if(mode==='qi'){
+    // On the invoice the list rides on one part line, the same way it rides on
+    // one proposal line: saved with the draft, printed as one Materials line.
+    let l=(_qi.typed||[]).find(x=>x&&x._supply);
+    if(!l&&create){
+      l={part:true,desc:'Materials',notes:'',qty:1,unit:'lot',amount:0,_supply:_supBlank()};
+      _qi.typed.push(l);
+    }
+    return l||null;
+  }
   if(mode==='byo'){
     let it=(_byoItems||[]).find(x=>x&&x._supply);
     if(!it&&create){
@@ -129,6 +140,11 @@ function _supSync(){
   // What the CLIENT reads under the line: what is in it, never what it cost.
   const notes=n?(n+' item'+(n===1?'':'s')+' per supply house quote'+(d.quote&&d.quote.number?' '+d.quote.number:'')):'';
   h._taxPaid=!!(d.quote&&d.quote.taxCharged);
+  if(_supMode()==='qi'){
+    h.desc=label;h.qty=1;h.unit='lot';h.amount=price;h.notes=notes;
+    if(typeof renderQuickInvoice==='function')renderQuickInvoice();
+    return;
+  }
   if(_supMode()==='byo'){
     h.label=label;h.qty=1;h.unit='lot';h.rate=price;h.price=price;h.notes=notes;
     if(typeof _byoRenderSections==='function')_byoRenderSections();

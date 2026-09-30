@@ -749,7 +749,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
           return document.getElementById('lc-funnel-mine').innerHTML;
         } finally { window._supa = real; }
       });
-      expect(html).toContain("Can't load your numbers");
+      expect(html).toContain('Your numbers did not load');
     });
 
     test('a missing mount element is a no-op, not a throw', async () => {

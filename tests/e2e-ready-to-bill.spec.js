@@ -675,10 +675,8 @@ test.describe('Invoice: the customer copy', () => {
     await ks(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
-      _qiAddPart();
-      const i = _qi.typed.length - 1;
-      _qi.typed[i].desc = 'Supply line'; _qi.typed[i].amount = '18';
-      _qiQtyStep(i, 1);
+      _matPut('Materials', { label: 'Supply line', qty: 2, unit: 'ea', rate: 18, notes: '' });
+      const i = _qi.typed.findIndex(l => l.part);
       const seen = {};
       ['total', 'items', 'priced'].forEach(m => {
         _qiSetPartsMode(m);
@@ -696,23 +694,82 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.seen.priced).toEqual({ list: true, price: true, receipts: true, total: 1084.5, sum: 1084.5 });
   });
 
-  test('a part has a count: minus and plus change it, never below one, and the line is count times the price of one', async ({ page }) => {
+  // Owner 2026-09-29: "use the same one that's in proposal for T&M and BYO,
+  // should carry over to bill and invoices". The invoice's Materials step is
+  // the proposals' Materials card (js/materials.js): the same add sheet, the
+  // same rows, the same supply house list with Load a quote.
+  test('Materials on the invoice is the proposal card: + Add item opens the same sheet, the row is count times price', async ({ page }) => {
     await boot(page);
-    await ks(page);
     await open(page, 701);
     const r = await page.evaluate(() => {
-      document.getElementById('qi-add-part').click();
-      const row = [...document.querySelectorAll('#qi-page .qi-part')].pop();
-      row.querySelector('.qi-desc').value = 'Fill valve'; row.querySelector('.qi-desc').dispatchEvent(new Event('input'));
-      const price = row.querySelector('.ios-val input'); price.value = '22'; price.dispatchEvent(new Event('input'));
-      const [minus, plus] = row.querySelectorAll('.qi-qty button');
-      plus.click(); plus.click(); const three = { n: row.querySelector('.qi-qty b').textContent, total: document.getElementById('qi-total').textContent };
-      minus.click(); minus.click(); minus.click(); minus.click();
-      return { three, floor: row.querySelector('.qi-qty b').textContent, line: _qiLines().find(l => l.part) };
+      const card = document.querySelector('#qi-mat #mat-card');
+      card.querySelector('.card-hd button').click();
+      const sheet = !!document.getElementById('_byo-add-modal');
+      document.getElementById('_bya-label').value = 'Fill valve';
+      document.getElementById('_bya-qty').value = '3';
+      document.getElementById('_bya-price').value = '22';
+      document.querySelector('#_byo-add-modal button.btn-p').click();
+      const rows = [...document.querySelectorAll('#qi-mat .mat-rows')].map(e => e.textContent).join(' ');
+      return { sheet, rows, line: _qiLines().find(l => l.part), total: document.getElementById('qi-total').textContent,
+        sup: !!document.querySelector('#qi-mat #sup-card'),
+        load: [...document.querySelectorAll('#qi-mat .sup-actions button')].map(b => b.textContent),
+        cards: document.querySelectorAll('#mat-card').length };
     });
-    expect(r.three).toEqual({ n: '3', total: '$1,114.50' });
-    expect(r.floor).toBe('1');
-    expect(r.line.amount).toBe(22);
+    expect(r.sheet).toBe(true);
+    expect(r.rows).toContain('Fill valve');
+    expect(r.line).toMatchObject({ qty: 3, amount: 66, desc: '3 fill valves' });
+    expect(r.total).toBe('$1,114.50');
+    expect(r.sup).toBe(true);
+    expect(r.load).toEqual(['Send to supply house', 'Load a quote']);
+    expect(r.cards).toBe(1);
+  });
+
+  test('the supply house list rides on the bill as one Materials line at the marked-up price, never at $0', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const h = _supHost(true);
+      const empty = _qiLines().some(l => l.desc === 'Materials' && l.kind === 'line');
+      h._supply.items = [{ qty: 2, unit: 'ea', desc: 'Ball valve', cost: 40, on: true }, { qty: 1, unit: 'ea', desc: 'Nipple', cost: 10, on: true }];
+      h._supply.vendor = 'Ferguson';
+      _supSetMarkup(20); _supSync();              // the box waits for the pause; the sync is what the pause runs
+      const line = _qiLines().find(l => l.part);
+      return { empty, line, total: _qiTotal(), card: document.querySelector('#qi-mat #sup-card').textContent };
+    });
+    expect(r.empty).toBe(false);
+    expect(r.line).toMatchObject({ desc: 'Materials (Ferguson)', amount: 60 });
+    expect(r.total).toBe(1108.5);
+    expect(r.card).toContain('Ball valve');
+  });
+
+  test('edit and delete go through the same card; the old part rows and their stepper are gone', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      _matPut('Materials', { label: 'Wax ring', qty: 1, unit: 'ea', rate: 9, notes: '' }); _matRefresh();
+      const i = _qi.typed.findIndex(l => l.part);
+      _matWrite(i, { label: 'Wax ring kit', qty: 2, unit: 'ea', rate: 12, notes: '' }); _matRefresh();
+      const edited = _qiLines().find(l => l.part);
+      _matDel(i);
+      return { edited, left: _qi.typed.filter(l => l.part).length,
+        gone: [typeof _qiAddPart, typeof _qiQtyStep, typeof _qiMatItem],
+        dom: document.querySelectorAll('#qi-add-part, #qi-page .qi-qty, #qi-page .qi-part').length };
+    });
+    expect(r.edited).toMatchObject({ qty: 2, amount: 24 });
+    expect(r.left).toBe(0);
+    expect(r.gone).toEqual(['undefined', 'undefined', 'undefined']);
+    expect(r.dom).toBe(0);
+  });
+
+  test('back on a proposal, the card is the proposal\'s again, not the invoice\'s', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const onInvoice = _matIsQI();
+      openFreeFormEstimate(getClientById(701));
+      return { onInvoice, onByo: _matIsQI(), mode: _supMode() };
+    });
+    expect(r).toEqual({ onInvoice: true, onByo: false, mode: 'byo' });
   });
 
   test('where the state requires the rate on a time and materials bill, the switch is on and locked', async ({ page }) => {
