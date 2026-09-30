@@ -1055,6 +1055,48 @@ test.describe('Invoice: add time from the day', () => {
 
   // Owner 2026-09-29, a screenshot: Logan 9.7h, Blake "same hours as Logan"
   // 8.5h. "it's not, why?" Blake rode along for the runs too.
+  // Owner 2026-09-29: "same test ... adding in more time". Somebody with no
+  // app, a shop stop from Other time that day, and his hours typed over.
+  test('start to finish with more time: a person with no app, the shop stop, hours typed over, sent. 15 taps', async ({ page }) => {
+    test.setTimeout(90000);
+    await boot(page, 390); await day(page);
+    await page.evaluate(() => { window._sendPaidInvoice = window.__realSend; S.bname = 'Sample Plumbing'; window._uploadClientHub = async () => {}; getClientById(701).clientToken = 'tok701'; _tb = { at: Date.now(), lab: window._rtbLab }; goPg('pg-dash'); _renderToBill(); });
+    const log = []; let taps = 0, keys = 0;
+    const tap = async (label, sel) => { const l = page.locator(sel).first(); try { await l.scrollIntoViewIfNeeded({ timeout: 3000 }); await l.click({ timeout: 3000 }); taps++; await page.waitForTimeout(500); log.push('tap  ' + label); } catch (e) { log.push('FAILED ' + label + ' ' + sel); } };
+    const type = async (label, sel, text) => { const l = page.locator(sel).first(); await l.scrollIntoViewIfNeeded(); await l.click(); taps++; await l.pressSequentially(text); keys += text.length; log.push('type ' + label + ' (' + text.length + ')'); };
+    const rows = await page.locator('#dash-to-bill .tb-row').count();
+    log.push('card rows ' + rows);
+    await tap('Ready to bill', '#dash-to-bill .tb-sum');
+    if (!(await page.locator('#qi-page #qi-say').count())) await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen")');
+    await page.waitForSelector('#qi-page #qi-say', { timeout: 4000 });
+    await page.waitForTimeout(400);
+    await type('what we did', '#qi-say', 'Replaced the water heater.');
+    await tap('Add to work done', '#qi-page button:has-text("Add to work done")');
+    await tap('Who was on it', '#qi-add-person');
+    await type('new person', '#qi-new-name', 'Blake Sample');
+    await type('their rate', '#qi-new-rate', '45');
+    await tap('Add', '#qi-page .qi-new .ios-pill');
+    await tap('day card open', '#qi-page .qi-day[data-day="2026-09-25"] .qi-day-open-btn');
+    log.push('open? ' + await page.evaluate(() => _qi.open.has('2026-09-25')));
+    await tap('Other time that day', '#qi-addtime-2026-09-25');
+    await tap('At the shop', '#qi-page .qi-x-row:has-text("At the shop")');
+    const hrs = page.locator('#qi-page .qi-time:has-text("Blake") .qi-hrs input');
+    await hrs.scrollIntoViewIfNeeded(); await hrs.click(); taps++; await hrs.fill(''); await hrs.pressSequentially('6'); keys += 1; await hrs.press('Enter'); await hrs.blur(); log.push('type Blake hours 6');
+    await page.waitForTimeout(400);
+    await tap('bar', '#qi-go button');
+    await tap('On receipt', '#qi-due button[data-due="receipt"]');
+    await tap('bar Send', '#qi-go button');
+    await page.waitForSelector('.td-send', { timeout: 5000 }).catch(() => {});
+    await tap('Text it', '[data-send="text"]');
+    const out = await page.evaluate(() => { const b = bids.find(x => x.kind === 'quick_invoice'); return b ? { sent: !!b.sentAt, total: b.amount, lines: (b.lineItems || []).map(l => l.desc + ' ' + l.amount) } : null; });
+    console.log('[start-to-finish] invoice with more time: ' + taps + ' taps, ' + keys + ' keys\n  ' + log.join('\n  '));
+    expect(log.filter(l => /FAILED/.test(l))).toEqual([]);
+    // Jack 4h 20m + the 30m shop stop at $75, Blake typed to 6h at $45.
+    expect(out).toMatchObject({ sent: true, total: 695 });
+    expect(taps, log.join('\n')).toBeLessThanOrEqual(15);
+    assertNoErrors(page, 'invoice with more time');
+  });
+
   test('someone added with no app gets the same hours as the lead, runs included; typed hours are the whole day', async ({ page }) => {
     await boot(page, 390);
     await day(page);
