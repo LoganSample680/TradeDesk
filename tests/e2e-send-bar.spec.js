@@ -428,7 +428,25 @@ test.describe('sendProposalViaSms: phone guard and sms: URL', () => {
     if (captured) {
       expect(captured, 'sms: URL must start with sms:').toMatch(/^sms:/i);
       expect(captured, 'sms: URL must contain client phone digits').toContain(MOCK_CLIENT_PHONE);
+      // The link ENDS the text (owner 2026-09-30): iMessage draws the logo
+      // card only when nothing follows the link. And it is never signed by
+      // the app: the customer hired him, not TradeDesk.
+      const body = decodeURIComponent(captured.split('body=')[1] || '');
+      expect(body.trim()).toMatch(/https?:\/\/\S+$/);
+      expect(body).not.toMatch(/- TradeDesk/);
     }
+    // The sign-off: the signer's first name and the business.
+    const sig = await page.evaluate(() => {
+      const was = { bn: S.bname, sa: S.signAs };
+      try {
+        S.bname = 'Plumbing Solutions By JS'; S.signAs = 'John Schonfeldt';
+        const both = _smsSignOff({ bname: 'Plumbing Solutions By JS' });
+        const onlyApp = _smsSignOff({ bname: 'TradeDesk' });
+        return { both, onlyApp };
+      } finally { S.bname = was.bn; S.signAs = was.sa; }
+    });
+    expect(sig.both).toBe('- John, Plumbing Solutions By JS');
+    expect(sig.onlyApp).not.toMatch(/TradeDesk/);
     assertNoErrors(page, 'sendProposalViaSms sms: URL');
   });
 });
