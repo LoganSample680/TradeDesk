@@ -187,6 +187,28 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     expect(await bar()).toEqual(['Set the price']);
   });
 
+  test('deposit: none unless he sets one, and a 0 he sets sticks, here and in Settings (owner 2026-09-30)', async () => {
+    const r = await page.evaluate(() => {
+      const o = window._settingsChanged; window._settingsChanged = () => {};
+      try {
+        delete S.depositPct;
+        const never = _geiDepositDefault();
+        S.depositPct = 25;
+        _geiIsTM = false;
+        const el = document.getElementById('byo-deposit-pct');
+        el.value = '0'; _geiRememberDeposit();
+        const learned = S.depositPct;
+        el.value = ''; const next = _geiDepositPct();
+        // Settings: typing 0 used to save as 25.
+        loadSettingsForm();
+        const box = document.getElementById('set-deposit-pct');
+        const shown = box ? box.value : null;
+        return { never, learned, next, shown };
+      } finally { window._settingsChanged = o; S.depositPct = 25; }
+    });
+    expect(r).toEqual({ never: 0, learned: 0, next: 0, shown: '0' });
+  });
+
   test('a scope line is words and a price: no how many, no each (owner 2026-09-30)', async () => {
     await open();
     await say('pull the old water heater, set a tankless');

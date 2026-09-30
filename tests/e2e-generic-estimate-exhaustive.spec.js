@@ -2249,13 +2249,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.pct).toBe(10);
     });
 
-    test('_geiDepositPct: defaults to 25 when the field is missing from the DOM', async () => {
+    test('_geiDepositPct: falls back to his standard when the field is missing from the DOM', async () => {
       const r = await page.evaluate(() => {
         // Clear the whole wrap (not just the input), _geiRenderDepositField is
         // idempotent on wrap.children.length, so a partial removal would leave it
         // permanently unable to rebuild the field for later tests.
         const wrap = document.getElementById('tm-deposit-wrap');
         if (wrap) wrap.innerHTML = '';
+        S.depositPct = 25;         // his standard
         _geiIsTM = true;
         const pct = _geiDepositPct();
         _geiIsTM = false;
@@ -4567,9 +4568,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       if (!r.skip) expect(r.shown).toBe('33');
     });
 
-    test('a contractor who never set one still gets 25', async () => {
-      const r = await openFor({ ptype: 'Single family home' }, { depositPct: 0 });
-      expect(r.deposit).toBe(25);
+    test('a contractor who never set one gets no deposit; one who set 0 keeps 0', async () => {
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      const zero = await openFor({ ptype: 'Single family home' }, { depositPct: 0 });
+      expect(zero.deposit).toBe(0);
+      const never = await openFor({ ptype: 'Single family home' }, { depositPct: undefined });
+      expect(never.deposit).toBe(0);
+      await page.evaluate(() => { S.depositPct = 25; });
     });
 
     test('a junk stored deposit is ignored rather than trusted', async () => {
@@ -4579,7 +4585,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         S.depositPct = 25;
         return out;
       });
-      expect(r).toEqual([25, 25, 25, 25, 25]);
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      expect(r).toEqual([0, 0, 0, 0, 0]);
     });
 
     test('changing the deposit teaches it, so the next estimate opens there', async () => {
@@ -5404,7 +5412,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.blank, 'a blank field still takes his own standard').toBe(40);
       expect(r.typed).toBe(33);
       expect(r.junk).toBe(40);
-      expect(r.noDefault).toBe(25);
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      expect(r.noDefault).toBe(0);
     });
 
     // The client he signs at the kitchen table is usually BRAND NEW, and the
