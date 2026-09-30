@@ -98,7 +98,10 @@ export async function rebuildClientLink(svc: Svc, uid: string, raw: unknown, dep
     // An onboarding link is sent before the hub file exists; it only opens
     // the business's own intake form, so owning the uid is the proof.
     if (!onboard && !(await objectExists(svc, hk.key))) return null;
-    return `${origin}/client.html?${onboard ? 'mode=onboard&' : ''}t=${encodeURIComponent(hk.token)}&u=${hk.uid}&c=${encodeURIComponent(hk.client)}`;
+    // An invoice link opens its own invoice in the hub (#invoice-<id>); that
+    // one exact shape is kept, anything else after the # is dropped.
+    const inv = /^#invoice-\d{1,20}$/.test(u.hash) ? u.hash : '';
+    return `${origin}/client.html?${onboard ? 'mode=onboard&' : ''}t=${encodeURIComponent(hk.token)}&u=${hk.uid}&c=${encodeURIComponent(hk.client)}${inv}`;
   }
   return null;
 }

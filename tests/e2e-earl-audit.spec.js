@@ -303,7 +303,7 @@ test.describe('Earl in the app: lead to proposal', () => {
     const before = await page.evaluate(() => {
       const b = bids.find(x => x.id === _geiEditBidId);
       return {
-        confirm: document.querySelectorAll('.zmodal-overlay').length,
+        confirm: document.querySelectorAll('.zmodal-overlay:not(#_gei-send-overlay)').length,   // the send sheet is a zmodal too now (tdSendSheet)
         sheet: document.getElementById('_gei-send-overlay')?.textContent || '',
         status: b && b.status, sent: b && b.proposalSentDate, token: !!(b && b.signingToken),
         draftToast: [...document.querySelectorAll('.toast')].some(t => /Draft saved/.test(t.textContent)),

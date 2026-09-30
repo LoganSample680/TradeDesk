@@ -76,9 +76,7 @@ test.describe('Paid invoice: contractor side', () => {
       // 2026-09-29); it rides in the message the buttons send.
       const box = document.querySelector('.zmodal-overlay .zmodal');
       const txt = box ? box.textContent : '';
-      const btn = box && (box.querySelector('[data-inv-text]') || box.querySelector('[data-inv-email]'));
-      const msg = btn ? (btn.dataset.body || decodeURIComponent(btn.dataset.href || '')) : '';
-      const url = (msg.match(/https?:\/\/\S+/) || [''])[0];
+      const url = (box && box.dataset.url) || '';
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       return { url, hasHash: /#invoice-950100$/.test(url), title: txt.slice(0, 40) };
     });

@@ -2263,19 +2263,19 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .zmodal-overlay>*{margin:auto}
 .zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
-/* The invoice send screen (js/bids.js _sendPaidInvoice): the estimate's and invoice's own buttons, one look everywhere. */
-.inv-send{text-align:center}
-.inv-send-who{font-size:15px;font-weight:600;color:var(--text2)}
-.inv-send-amt{font-size:34px;font-weight:800;letter-spacing:-.5px;color:var(--text);margin:2px 0 4px;font-variant-numeric:tabular-nums}
-.inv-send-sub{font-size:14px;color:var(--text3);margin-bottom:18px}
-.inv-send-btn{display:flex;align-items:center;justify-content:center;width:100%;height:52px;border-radius:14px;border:0;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.inv-send-btn+.inv-send-btn{margin-top:10px}
-.inv-send-btn.fill{background:var(--blue);color:#fff}
-.inv-send-btn.tint{background:var(--blue-lt);color:var(--blue)}
-.inv-send-note{font-weight:400;font-size:14px;opacity:.75;margin-left:4px}
-.inv-send-links{display:flex;justify-content:center;gap:28px;margin-top:14px}
-.inv-send-links button{border:0;background:none;padding:8px 4px;font-family:inherit;font-size:15px;font-weight:600;color:var(--blue);cursor:pointer}
-.inv-send-links button[data-inv-close]{color:var(--text3);font-weight:500}
+/* The one send screen (js/proposals.js tdSendSheet): proposals, change orders, invoices. */
+.td-send{text-align:center}
+.td-send-who{font-size:15px;font-weight:600;color:var(--text2)}
+.td-send-amt{font-size:34px;font-weight:800;letter-spacing:-.5px;color:var(--text);margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.td-send-sub{font-size:14px;color:var(--text3);margin-bottom:18px}
+.td-send-btn{display:flex;align-items:center;justify-content:center;width:100%;height:52px;border-radius:14px;border:0;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.td-send-btn+.td-send-btn{margin-top:10px}
+.td-send-btn.fill{background:var(--blue);color:#fff}
+.td-send-btn.tint{background:var(--blue-lt);color:var(--blue)}
+.td-send-note{font-weight:400;font-size:14px;opacity:.75;margin-left:4px}
+.td-send-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 20px;margin-top:14px}
+.td-send-links button{border:0;background:none;padding:8px 4px;font-family:inherit;font-size:15px;font-weight:600;color:var(--blue);cursor:pointer}
+.td-send-links button[data-send="close"]{color:var(--text3);font-weight:500}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 /* Shared-to-TradeDesk sheet. One list, one visual language: the two big solid
    slabs it used to stack read as two competing primary buttons and pushed the
