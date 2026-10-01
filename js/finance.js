@@ -3352,6 +3352,78 @@ function _crewOnlyOr(only){
   if(pl.length){parts.push('dest_place.in.('+pl.join(',')+')');parts.push('origin_place.in.('+pl.join(',')+')');}
   return parts.join(',');
 }
+// ── Crew rows kept in memory, topped up with only what changed (egress,
+// 2026-10-01). The Time Log revalidates its crew payload on every open and
+// every live update, and each time this used to download every job and shop
+// row since six months ago. Now the first read is kept per account, and the
+// next asks only for rows whose updated_at moved (migration 20261059 keeps
+// that column current on every insert, edit and soft delete). A soft-deleted
+// row comes back in the top-up and is dropped. Filters (since, until, one
+// customer, no shop) are applied here exactly as the server applied them, so
+// every caller gets the rows it always did.
+//
+// Anything unusual returns null and the caller runs the old queries: no
+// copy, a different account, a window older than what is kept, a stale copy
+// (6h), an error (the column not deployed yet included), or a top-up that
+// fills its page. Memory only on purpose: a reload starts from a whole read.
+const _CREW_JOB_COLS='id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key';
+const _CREW_SHOP_COLS='id,client_key,employee_user_id,minutes,arrived_at,departed_at';
+const _CREW_FULL_MS=6*3600000, _CREW_OVERLAP_MS=2*60000, _CREW_PAGE=1000;
+let _crewKept=null;
+function _crewPick(r,cols){const o={};cols.split(',').forEach(c=>{o[c]=r[c]===undefined?null:r[c];});return o;}
+function _crewMaxAt(rows,cur){let m=cur||0;for(const r of rows){const t=Date.parse(r&&r.updated_at);if(t>m)m=t;}return m;}
+function _crewMatches(r,sinceMs,untilMs,only){
+  const t=Date.parse(r.arrived_at);
+  if(sinceMs!=null&&!(t>=sinceMs))return false;
+  if(untilMs!=null&&!(t<untilMs))return false;
+  if(only){
+    const ids=new Set((only.jobIds||[]).filter(x=>x!=null&&x!=='').map(x=>String(x).replace(/[^0-9a-zA-Z_-]/g,'')).filter(Boolean));
+    const pl=new Set([...(only.places||[])].filter(Boolean).map(String));
+    if(!((r.job_id!=null&&ids.has(String(r.job_id)))||(r.dest_place!=null&&pl.has(r.dest_place))||(r.origin_place!=null&&pl.has(r.origin_place))))return false;
+  }
+  return true;
+}
+async function _crewKeptRows(cid,sinceISO,opts){
+  const sinceMs=sinceISO?Date.parse(sinceISO):null;
+  const untilMs=opts&&opts.untilISO?Date.parse(opts.untilISO):null;
+  const only=opts&&opts.only, noShop=!!(opts&&opts.noShop);
+  const k=_crewKept;
+  const covers=k&&k.cid===cid&&Date.now()-k.fullAt<_CREW_FULL_MS&&(k.floor==null||(sinceMs!=null&&sinceMs>=k.floor));
+  if(covers){
+    const since=new Date(Math.max(0,k.maxAt-_CREW_OVERLAP_MS)).toISOString();
+    const [jr,sr]=await Promise.all([
+      _supa.from('job_time_entries').select(_CREW_JOB_COLS+',updated_at,deleted_at').eq('contractor_user_id',cid).gte('updated_at',since).range(0,_CREW_PAGE-1),
+      _supa.from('shop_time_entries').select(_CREW_SHOP_COLS+',updated_at,deleted_at').eq('contractor_user_id',cid).gte('updated_at',since).range(0,_CREW_PAGE-1),
+    ]);
+    const ok=x=>x&&!x.error&&Array.isArray(x.data)&&x.data.length<_CREW_PAGE&&x.data.every(r=>r&&r.id!=null);
+    if(_crewKept!==k)return null;
+    if(!ok(jr)||!ok(sr)){_crewKept=null;return null;}
+    for(const r of jr.data){if(r.deleted_at)k.job.delete(String(r.id));else k.job.set(String(r.id),_crewPick(r,_CREW_JOB_COLS));}
+    for(const r of sr.data){if(r.deleted_at)k.shop.delete(String(r.id));else k.shop.set(String(r.id),_crewPick(r,_CREW_SHOP_COLS));}
+    k.maxAt=_crewMaxAt(jr.data,_crewMaxAt(sr.data,k.maxAt));
+  }else{
+    // Only a plain read (every row since a date) can seed the copy: a one
+    // customer or one stretch read is not the whole account.
+    if(only||(opts&&opts.untilISO)||noShop)return null;
+    let jq=_supa.from('job_time_entries').select(_CREW_JOB_COLS+',updated_at').is('deleted_at',null).eq('contractor_user_id',cid);
+    let sq=_supa.from('shop_time_entries').select(_CREW_SHOP_COLS+',updated_at').is('deleted_at',null).eq('contractor_user_id',cid);
+    if(sinceISO){jq=jq.gte('arrived_at',sinceISO);sq=sq.gte('arrived_at',sinceISO);}
+    const [jr,sr]=await Promise.all([jq,sq]);
+    const ok=x=>x&&!x.error&&Array.isArray(x.data)&&x.data.every(r=>r&&r.id!=null&&r.updated_at);
+    // A whole read at the server's row cap is itself cut short; a copy built
+    // from it would grow rows the plain read never returns.
+    if(!ok(jr)||!ok(sr)||jr.data.length>=_CREW_PAGE||sr.data.length>=_CREW_PAGE)return null;
+    const job=new Map(),shop=new Map();
+    jr.data.forEach(r=>job.set(String(r.id),_crewPick(r,_CREW_JOB_COLS)));
+    sr.data.forEach(r=>shop.set(String(r.id),_crewPick(r,_CREW_SHOP_COLS)));
+    _crewKept={cid,floor:sinceMs,job,shop,fullAt:Date.now(),maxAt:_crewMaxAt(jr.data,_crewMaxAt(sr.data,0))};
+  }
+  const kk=_crewKept;
+  return {
+    entries:[...kk.job.values()].filter(r=>_crewMatches(r,sinceMs,untilMs,only)).map(r=>({...r})),
+    shopEntries:noShop?[]:[...kk.shop.values()].filter(r=>_crewMatches(r,sinceMs,untilMs,null)).map(r=>({...r})),
+  };
+}
 async function _fetchCrewLabor(sinceISO,opts){
   // comp: the raw team_members pay row per uid, so Crew Cost can hand it to
   // the one pay function (_payPersonPeriod) instead of an hourly figure.
@@ -3363,24 +3435,32 @@ async function _fetchCrewLabor(sinceISO,opts){
   const onlyOr=_crewOnlyOr(only);
   // A customer with no jobs and no places has no rows to find.
   if(only&&!onlyOr)return out;
+  // Pay rates are read alongside the rows, never after them.
+  let tmP;
+  try{tmP=Promise.resolve(_supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid));}catch(_e){tmP=Promise.resolve({data:[]});}
+  tmP.catch(()=>{});
+  let kept=null;
+  try{kept=await _crewKeptRows(cid,sinceISO,opts);}catch(_e){_crewKept=null;kept=null;}
   try{
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
+    let q=null,sq=null;
+    if(!kept){
+    q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     // until: one stretch of days only (the invoice's "Add time" reads the
     // days on the bill, not everything since then).
     const until=opts&&opts.untilISO;
     if(until)q=q.lt('arrived_at',until);
     if(onlyOr)q=q.or(onlyOr);
-    let sq=null;
     if(!(opts&&opts.noShop)){
       sq=_supa.from('shop_time_entries').select('id,client_key,employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
       if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
       if(until)sq=sq.lt('arrived_at',until);
     }
+    }
     const [tmR,teR,seR]=await Promise.all([
-      _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid),
-      q,
-      sq||Promise.resolve({data:[]}),
+      tmP,
+      kept?{data:kept.entries}:q,
+      kept?{data:kept.shopEntries}:(sq||Promise.resolve({data:[]})),
     ]);
     const tm=tmR&&tmR.data;
     (tm||[]).forEach(r=>{
