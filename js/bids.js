@@ -217,9 +217,9 @@ function showJobScorecard(jobId,collectBidId){
 // _sendPaidInvoice). Shared by Mark done, the job scorecard and the invoice
 // screen's proposal banner, so all three say the same numbers.
 function _settleNums(bid){
-  const total=Math.round((Number(bid&&bid.amount)||0)*100)/100;
-  const paid=Math.round(getBidPaid(bid.id)*100)/100;
-  return {total,paid,balance:Math.max(0,Math.round((total-paid)*100)/100)};
+  const total=_cents(Number(bid&&bid.amount)||0);
+  const paid=_cents(getBidPaid(bid.id));
+  return {total,paid,balance:Math.max(0,_cents(total-paid))};
 }
 // Payments booked away from this phone (a card payment on the customer's page,
 // another device) reach it on the next sync. Settling up asks for this bid's
