@@ -231,6 +231,15 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-supersede.sql
 
+      # One drive described twice under two journey ids (the server's and the
+      # phone's) left two legs, because a purpose the deriver writes itself
+      # was read as a person's answer (Logan, 2026-10-01: 3.3 mi twice).
+      # 20261062 tells the two apart by purposeAt; this replays his noon.
+      - name: A derived purpose does not keep a re-described leg alive
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-derived-purpose.sql
+
       # 20261049 closed doors a stranger could walk through: moving a login
       # onto another business, writing where payouts land, reading every
       # signed proposal, approving your own timesheet. Creating a guard proves
