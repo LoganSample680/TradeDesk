@@ -49,7 +49,7 @@ function _qiReadyPicks(){
   const rows=(_tb&&_tb.lab)?_tbRows(_tb.lab):[];
   return rows.map(r=>{
     const c=getClientById(r.cid)||{};
-    return {label:r.name,sub:'Ready to bill · '+_qiMoney(r.total).replace(/\.00$/,'')+' · '+_tbSub(r),subTail:'',clientId:r.cid,addr:r.pick||'',
+    return {label:r.name,sub:'Ready to bill · '+fmt(r.total).replace(/\.00$/,'')+' · '+_tbSub(r),subTail:'',clientId:r.cid,addr:r.pick||'',
       // They are the list before he types. Typing is a customer search, so a
       // ready row never matches it (a zero-width space is text no search holds)
       // and the customer's own row, with its houses, answers instead.
@@ -155,7 +155,6 @@ function _qiRiderLine(day,rider,lead,mins){
 }
 function _qiMins(m){const h=Math.floor(m/60),mm=Math.round(m%60);return ((h?h+'h ':'')+(mm||!h?mm+'m':'')).trim();}
 function _qiDay(d){const t=Date.parse(String(d||'')+'T12:00:00');return isNaN(t)?'':new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
-function _qiMoney(n){return '$'+(Math.round((Number(n)||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
 // A job with a real proposal behind it (T&M, BYO, a painting bid) is billed
 // from that job, where its deposit and payments are already counted. Its time
@@ -612,7 +611,7 @@ function _qiUnbilled(cid,visits,addr){
     if(r){
       const amt=Math.round(r.reduce((s,e)=>s+Number(e.amount),0)*100)/100;
       lines.push({kind:'receipt',day,expId:r[0].id,expIds:r.map(e=>e.id),desc:'Materials',
-        vendors:r.map(e=>(e.vendor||'Receipt')+' '+_qiMoney(e.amount)).join(', '),date:_qiDay(day),amount:amt});
+        vendors:r.map(e=>(e.vendor||'Receipt')+' '+fmt(e.amount)).join(', '),date:_qiDay(day),amount:amt});
     }
   });
   return {lines,through:last>through?new Date(last).toISOString():null};
@@ -851,7 +850,7 @@ function renderQuickInvoice(){
     // they came from under that, all the full width of the row (owner
     // 2026-09-29, a screenshot of the old narrow column: "god ugly").
     return '<div class="ios-row qi-line qi-time"><div class="qi-p-top"><span class="qi-p-name">'+escHtml(l.who)+'</span>'+
-        '<span class="ios-fact qi-amt qi-pamt" data-day="'+l.day+'" data-who="'+escHtml(l.who)+'" id="qi-amt-'+i+'">'+_qiMoney(amount)+'</span>'+
+        '<span class="ios-fact qi-amt qi-pamt" data-day="'+l.day+'" data-who="'+escHtml(l.who)+'" id="qi-amt-'+i+'">'+fmt(amount)+'</span>'+
         '<button type="button" class="qi-x" aria-label="Take '+escHtml(l.who)+' off this day" onclick="_qiDropPerson(\''+l.day+'\',\''+qk+'\')">×</button></div>'+
       '<span class="qi-math">'+hrsBox+' at '+rateBox+'</span>'+
       '<small class="qi-from">'+from+'</small></div>';
@@ -859,7 +858,7 @@ function renderQuickInvoice(){
   // A receipt line: what was bought that day.
   const row=(l,i)=>'<div class="ios-row qi-line"><span class="ios-lbl">'+escHtml(l.desc)+
       '<small class="qi-from">'+escHtml(l.vendors||('Receipt'+(l.date?' · '+l.date:'')))+'</small></span>'+
-    '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+_qiMoney(l.amount)+'</span>'+
+    '<span class="ios-fact qi-amt" id="qi-amt-'+i+'">'+fmt(l.amount)+'</span>'+
     '<button type="button" class="qi-x" aria-label="Leave off" onclick="_qiDropTracked('+i+')">×</button></div>';
   const dayRows=(mine)=>{
     const people=[...new Set(mine.filter(x=>x.l.kind==='time').map(x=>x.l.who))];
@@ -892,7 +891,7 @@ function renderQuickInvoice(){
           '<span class="ios-lbl"><b>'+escHtml(_qiDayLabel(day))+'</b><small>'+escHtml((_qi.dayNote[day]?_qi.dayNote[day]+' · ':'')+hrs+(mins>0?' · '+_qiMins(mins):''))+
             // Folded, a missing rate would only read as a low total.
             (noRate.length?' · <span class="qi-need-lbl">'+escHtml(noRate[0].split(' ')[0])+' needs a rate</span>':'')+'</small></span>'+
-          '<span class="ios-fact qi-dt" id="qi-dt-'+day+'">'+_qiMoney(_qiDayTotal(day))+'</span>'+
+          '<span class="ios-fact qi-dt" id="qi-dt-'+day+'">'+fmt(_qiDayTotal(day))+'</span>'+
           '<span class="ios-chev qi-day-chev" aria-hidden="true">›</span></button></div>'+
         '<button type="button" class="ios-del qi-billed" tabindex="-1" onclick="qiBilledElsewhere(\''+day+'\')">Already billed</button></div>'+
       (open?'<div class="ios-row qi-note-row"><input class="qi-desc" type="text" aria-label="What was done '+escHtml(_qiDayLabel(day))+'" placeholder="What was done this day" value="'+escHtml(_qi.dayNote[day]||'')+'" oninput="_qiDayNoteTyped(\''+day+'\',this.value)"></div>'+
@@ -908,9 +907,9 @@ function renderQuickInvoice(){
   const typed=_qi.typed.map((l,i)=>l.part?''
     :'<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Other charge, like a trip fee':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
     '<span class="ios-val">$<input type="text" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
-  const pb=_qiPriceBook();
+  const pb=_qiPb();
   const pbHtml=_qi.pbOpen&&pb.length?'<div class="qi-pb">'+pb.slice(0,12).map((p,i)=>
-    '<button type="button" onclick="_qiAddPb('+i+')">'+escHtml(p.desc)+(Number(p.rate)>0?' · '+_qiMoney(p.rate).replace('.00',''):'')+'</button>').join('')+'</div>':'';
+    '<button type="button" onclick="_qiAddPb('+i+')">'+escHtml(p.desc)+(Number(p.rate)>0?' · '+fmt(p.rate).replace('.00',''):'')+'</button>').join('')+'</div>':'';
   const total=_qiTotal();
   host.innerHTML=
     // Save top right, the way the proposals do it; Preview sits by Send.
@@ -929,8 +928,8 @@ function renderQuickInvoice(){
         '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">By the hour</button>'+
         '<button type="button" role="tab" class="'+(hourly?'':'on')+'" onclick="_qiSetMode(\'set\')">Flat price</button></div>'+
       _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
-        escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.amount>0?': '+_qiMoney(p.amount).replace('.00',''):'')+
-        (p.paid>0&&p.amount>0?', '+_qiMoney(p.paid).replace('.00','')+' paid, '+_qiMoney(p.owed).replace('.00','')+' left':p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
+        escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.amount>0?': '+fmt(p.amount).replace('.00',''):'')+
+        (p.paid>0&&p.amount>0?', '+fmt(p.paid).replace('.00','')+' paid, '+fmt(p.owed).replace('.00','')+' left':p.paid>0?' with '+fmt(p.paid).replace('.00','')+' paid':'')+
         '. <b>Settle it up</b></button>').join('')+
       // FOUR STEPS (owner 2026-09-29: "stupid simple for a complex thing").
       // Each thing sits in the step it is about (owner: "why is drive time
@@ -990,13 +989,13 @@ function _qiRate(i,v){
   _qi.tracked.forEach((x,j)=>{
     if(x.kind!=='time'||x.who!==l.who)return;
     x.rate=rate;x.rateSet=true;x.amount=Math.round(x.mins/60*rate*100)/100;
-    const a=document.getElementById('qi-amt-'+j);if(a)a.textContent=_qiMoney(x.amount);
+    const a=document.getElementById('qi-amt-'+j);if(a)a.textContent=fmt(x.amount);
     const pill=a&&a.parentElement&&a.parentElement.querySelector('.qi-rate');
     if(pill){pill.classList.toggle('need',!(rate>0));pill.classList.remove('guess');}
     if(j!==i){const inp=pill&&pill.querySelector('input');if(inp)inp.value=rate||'';}
   });
   _qi.rates[l.who]=rate;
-  _qiDays(_qi.tracked).forEach(d=>{const e=document.getElementById('qi-dt-'+d);if(e)e.textContent=_qiMoney(_qiDayTotal(d));});
+  _qiDays(_qi.tracked).forEach(d=>{const e=document.getElementById('qi-dt-'+d);if(e)e.textContent=fmt(_qiDayTotal(d));});
   _qiTotalsPaint();
 }
 // Leaving the box is his answer: whatever is in it is now that person's rate
@@ -1018,16 +1017,16 @@ function _qiTyped(i,k,v){
   _qiTotalsPaint();
 }
 function _qiTotalsPaint(){
-  const m=_qiMoney(_qiTotal());
+  const m=fmt(_qiTotal());
   ['qi-total','qi-send-total'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=m;});
   _qiGoPaint();
   document.querySelectorAll('#qi-page .qi-pamt').forEach(e=>{
     const d=e.getAttribute('data-day'),w=e.getAttribute('data-who');
-    e.textContent=_qiMoney(_qi.tracked.filter(l=>l.kind==='time'&&l.day===d&&l.who===w).reduce((s2,l)=>s2+(Number(l.amount)||0),0));
+    e.textContent=fmt(_qi.tracked.filter(l=>l.kind==='time'&&l.day===d&&l.who===w).reduce((s2,l)=>s2+(Number(l.amount)||0),0));
   });
   const M=_qiMath();
   const T=_qiTax();
-  [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra],['qi-m-tax',T.tax]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
+  [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra],['qi-m-tax',T.tax]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=fmt(v);});
   const tr=document.getElementById('qi-m-tax-row'),tl=document.getElementById('qi-m-tax-lbl');
   if(tr)tr.style.display=T.label?'':'none';
   if(tl)tl.textContent=T.label;
@@ -1047,7 +1046,7 @@ function _qiMath(){
 }
 function _qiMathHtml(total){
   const M=_qiMath();
-  const r=(id,lbl,sub,v,cls)=>'<div class="ios-row'+(cls?' '+cls:'')+'"><span class="ios-lbl">'+lbl+(sub?'<small>'+escHtml(sub)+'</small>':'')+'</span><span class="ios-fact"'+(id?' id="'+id+'"':'')+'>'+_qiMoney(v)+'</span></div>';
+  const r=(id,lbl,sub,v,cls)=>'<div class="ios-row'+(cls?' '+cls:'')+'"><span class="ios-lbl">'+lbl+(sub?'<small>'+escHtml(sub)+'</small>':'')+'</span><span class="ios-fact"'+(id?' id="'+id+'"':'')+'>'+fmt(v)+'</span></div>';
   return '<div class="ios-sec"><div class="ios-group qi-math-box">'+
     (M.fixed!=null?r('','Your price','The hours stay on your records',M.fixed):
       (M.mins>0?r('qi-m-labor','Labor',_qiMins(M.mins)+(M.people>1?' across '+M.people+' people':''),M.labor):''))+
@@ -1055,8 +1054,8 @@ function _qiMathHtml(total){
     (M.extra>0?r('qi-m-extra','Parts and charges','',M.extra):'')+
     // Always drawn, shown only with something to say, so typing a price can
     // bring it in without redrawing the screen (_qiTotalsPaint).
-    (()=>{const t=_qiTax();return '<div class="ios-row" id="qi-m-tax-row"'+(t.label?'':' style="display:none"')+'><span class="ios-lbl" id="qi-m-tax-lbl">'+escHtml(t.label)+'</span><span class="ios-fact" id="qi-m-tax">'+_qiMoney(t.tax)+'</span></div>';})()+
-    '<div class="ios-row qi-total-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div>'+
+    (()=>{const t=_qiTax();return '<div class="ios-row" id="qi-m-tax-row"'+(t.label?'':' style="display:none"')+'><span class="ios-lbl" id="qi-m-tax-lbl">'+escHtml(t.label)+'</span><span class="ios-fact" id="qi-m-tax">'+fmt(t.tax)+'</span></div>';})()+
+    '<div class="ios-row qi-total-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+fmt(total)+'</span></div>'+
   '</div></div>';
 }
 function _qiStep(n,t){return docStepHtml(n,t,'todo');}   // the shared steps (js/doc-steps.js)
@@ -1115,23 +1114,11 @@ function _qiDropTracked(i){
   _qi.tracked.splice(i,1);
   renderQuickInvoice();
 }
-// Every price book item he has used, most used first, across his trades.
-function _qiPriceBook(){
-  const pb=(typeof S!=='undefined'&&S.priceBook)||{};
-  const all=[];
-  Object.keys(pb).forEach(t=>(Array.isArray(pb[t])?pb[t]:[]).forEach(p=>{if(p&&p.desc)all.push(p);}));
-  all.sort((a,b)=>(Number(b.n)||0)-(Number(a.n)||0));
-  // Then the parts off his receipts (the materials book, js/data.js), at
-  // what he last paid, for anything the price book has no price for.
-  const have=new Set(all.map(p=>_partCostKey(p.desc)));
-  if(typeof materialsBook==='function')materialsBook().forEach(m=>{
-    const k=_partCostKey(m.desc);if(have.has(k))return;have.add(k);
-    all.push({desc:m.desc,rate:m.cost,paid:true});
-  });
-  return all;
-}
+// The proposal's price book list (_pbList, js/generic-estimate.js), every
+// trade, with his receipt parts after it.
+const _qiPb=()=>(typeof _pbList==='function')?_pbList(null,{everyTrade:true,parts:true}):[];
 function _qiAddPb(i){
-  const p=_qiPriceBook()[i];if(!p||!_qi)return;
+  const p=_qiPb()[i];if(!p||!_qi)return;
   const blank=_qi.typed.find(l=>!String(l.desc||'').trim()&&!(Number(l.amount)>0));
   const line={desc:p.desc,amount:Number(p.rate)>0?String(p.rate):''};
   if(blank)Object.assign(blank,line);else _qi.typed.push(line);
@@ -1173,13 +1160,16 @@ function _qiSayBuild(){
   // Build Your Own and T&M do: one step per thing, rooms, a pasted letter read
   // as a letter, and what he left out offered back.
   const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
-  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[],trade}):{steps:timSayLines(said).map(l=>({text:l.text,price:l.price}))};
-  const steps=(built.steps||[]).map(st=>st.text);
-  if(typeof timLogScope==='function')timLogScope(said,steps,'qi',_qi.id);
-  if(_qi.mode==='hourly'){
+  const hourly=_qi.mode==='hourly';
+  // The shared build (_scopeSayBuild, js/generic-estimate.js), the same one
+  // Build Your Own and T&M run. Hourly, the steps go on the work-done list;
+  // a flat price takes them as priced lines below. No letter fields here.
+  const before=new Set(hourly?_qiWorkArr():[]);
+  const r=(typeof _scopeSayBuild==='function')?_scopeSayBuild(hourly?'qi':null,said,{trade,logKey:'qi',logId:_qi.id,letter:false}):null;
+  const built=r?r.built:{steps:timSayLines(said).map(l=>({text:l.text,price:l.price}))};
+  if(hourly){
     // What he did, listed above the hours, never a price.
-    const before=new Set(_qiWorkArr());
-    _qi.missed=_scopeTakeBuilt('qi',built);
+    if(r)_qi.missed=r.missed;
     // What Tim wrote beside each new line, so a line he retypes later is
     // logged as a fix (timLogFix). A line he typed himself has none.
     _qiWorkArr().forEach(r=>{if(!before.has(r))r._tim=r.label;});
@@ -1195,11 +1185,6 @@ function _qiSayBuild(){
       _qi.typed.push({desc:st.text,amount:st.price>0?st.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
     });
   }
-  // Parts he said land the way they land on a proposal (timAddMaterials,
-  // js/materials.js): priced from his book as a Materials row, unpriced on the
-  // supply house list waiting on a quote. One rule, one place.
-  const mats=built.materials||((typeof timSaidMaterials==='function')?timSaidMaterials(said):[]);
-  if(mats&&mats.length&&typeof timAddMaterials==='function')timAddMaterials(mats);
   if(_qi.mode!=='hourly'&&!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   renderQuickInvoice();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
@@ -1285,13 +1270,13 @@ function _qiDocHtml(num){
   const table=`<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef">`+
     `<table style="width:100%;border-collapse:collapse"><tbody>${rows}</tbody>`+
     `<tfoot><tr><td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:17px;font-weight:800">Total due</td>`+
-    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${_qiMoney(total)}</td></tr>`+
+    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${fmt(total)}</td></tr>`+
     (_qi.due?`<tr><td colspan="2" style="padding:0 18px 16px;font-size:14px;font-weight:600;color:#475569">${escHtml(_qiDueWords(_qi.due))}</td></tr>`:'')+
     `</tfoot></table></div>`;
   return _propDoc(
     _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
       label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
-      project:escHtml(_qiMoney(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
+      project:escHtml(fmt(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
     _propSection('Work performed',escHtml(_qiWorkTitle()),_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
     // His note, printed the way a proposal prints it, signed (_propNoteHtml).
     (typeof _propNoteHtml==='function'?_propNoteHtml(_qi.note,''):'')+
@@ -1326,8 +1311,8 @@ function _qiGoHtml(total){
   const nx=_qiNext();
   return nx
     ?'<button type="button" class="ios-btn ios-btn-fill" id="qi-next" onclick="'+nx.fn+'">'+escHtml(nx.label)+'</button>'+
-      '<span id="qi-send-total" hidden>'+_qiMoney(total)+'</span>'
-    :'<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Send it<span class="qi-send-amt"> · <span id="qi-send-total">'+_qiMoney(total)+'</span></span></button>';
+      '<span id="qi-send-total" hidden>'+fmt(total)+'</span>'
+    :'<button type="button" class="ios-btn ios-btn-fill" id="qi-send" onclick="qiSend()">Send it<span class="qi-send-amt"> · <span id="qi-send-total">'+fmt(total)+'</span></span></button>';
 }
 function _qiGoPaint(){const g=document.getElementById('qi-go');if(g&&_qi)g.innerHTML=_qiGoHtml(_qiTotal());}
 function _qiAskDue(){
@@ -1382,6 +1367,28 @@ function _qiWorkTitle(){
 }
 // What the customer will get, before anything is saved or sent: the same
 // full-screen preview a proposal opens in.
+// Saves the invoice document for the client hub. Sending waits for it
+// (_sendPaidInvoice) so the link never opens before the copy is there; with no
+// signal it simply is not saved and the hub draws the invoice itself.
+const _qiDocUploads={};
+function _qiDocUpload(bid,html){
+  if(!bid||!html)return Promise.resolve(false);
+  if(!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return Promise.resolve(false);
+  const uid=typeof _effectiveUid==='function'?_effectiveUid():_supaUser.id;
+  // The bucket serves files to anyone with the link, so the name carries a
+  // token nobody can guess, the way a proposal link does.
+  const tok=Math.random().toString(36).slice(2,12)+Date.now().toString(36);
+  const key='invoice-doc/'+uid+'/'+bid.id+'_'+tok+'.json';
+  const p=_supa.storage.from('proposals').upload(key,JSON.stringify({v:1,bidId:bid.id,invoiceHtml:html}),{contentType:'application/json',upsert:true,cacheControl:'0'})
+    .then(r=>{
+      if(r&&r.error)return false;
+      const live=(bids||[]).find(b=>String(b.id)===String(bid.id));
+      if(live){live.invoiceDocKey=key;if(typeof saveAll==='function')saveAll();}
+      return true;
+    }).catch(()=>false);
+  _qiDocUploads[bid.id]=p;
+  return p;
+}
 function qiSeeIt(){
   if(!_qi)return;
   if(typeof _showProposalPreviewOverlay==='function')_showProposalPreviewOverlay(_qiDocHtml());
@@ -1418,6 +1425,10 @@ function _qiSave(){
     qiPulled:hourly?_qi.tracked.filter(l=>l.extra&&!_qi.off.has(l.day)).map(l=>l.extra):[],
     qiExpenseIds:hourly?_qiOnExpIds():[]};
   bids.unshift(bid);
+  // The customer's copy IS this document (audit 2026-10-01): the page "See
+  // what they get" showed him, saved where the proposals save theirs, so the
+  // client hub shows it instead of drawing its own.
+  try{_qiDocUpload(bid,_qiDocHtml('INV-'+String(bid.id).slice(-6)));}catch(_e){}
   // Billing it is finishing it (owner 2026-10-01): this customer's job that
   // is due and has no proposal of its own is done the moment its bill goes
   // out, so nobody has to remember to Mark done as well. A job a proposal
@@ -1668,8 +1679,8 @@ function _qiCustomerHtml(){
   const td='padding:12px 18px;border-top:1px solid #eef1f5;font-size:15px;line-height:1.4;color:#0b1220';
   const sub='font-size:13px;color:#5b6475';
   return _qiCustomerRows().map(r=>r.sub
-    ?`<tr><td style="${td};border-top:0;padding-top:0"><span style="${sub}">${escHtml(r.text)}</span></td><td style="${td};border-top:0;padding-top:0;text-align:right;${sub}">${r.amount!=null?_qiMoney(r.amount):''}</td></tr>`
-    :`<tr><td style="${td}">${r.head?'<b>'+escHtml(r.text.split(' · ')[0])+'</b>'+(r.text.includes(' · ')?' · '+escHtml(r.text.split(' · ').slice(1).join(' · ')):''):escHtml(r.text)}</td><td style="${td};text-align:right;white-space:nowrap">${r.amount!=null?(r.head?'<b>'+_qiMoney(r.amount)+'</b>':_qiMoney(r.amount)):''}</td></tr>`
+    ?`<tr><td style="${td};border-top:0;padding-top:0"><span style="${sub}">${escHtml(r.text)}</span></td><td style="${td};border-top:0;padding-top:0;text-align:right;${sub}">${r.amount!=null?fmt(r.amount):''}</td></tr>`
+    :`<tr><td style="${td}">${r.head?'<b>'+escHtml(r.text.split(' · ')[0])+'</b>'+(r.text.includes(' · ')?' · '+escHtml(r.text.split(' · ').slice(1).join(' · ')):''):escHtml(r.text)}</td><td style="${td};text-align:right;white-space:nowrap">${r.amount!=null?(r.head?'<b>'+fmt(r.amount)+'</b>':fmt(r.amount)):''}</td></tr>`
   ).join('');
 }
 // What the customer's copy shows, as switches on this bill. A switch set
@@ -1931,7 +1942,7 @@ function _renderToBill(){
       '<button type="button" class="ios-row tb-row'+(r.draft?' tb-draft':'')+'" onclick="_tbOpen('+i+')">'+
         '<span class="tb-dot'+(r.oldest<old?' old':'')+'" aria-hidden="true"></span>'+
         '<span class="ios-lbl"><b class="tb-name">'+escHtml(r.name)+'</b><small class="tb-sub">'+escHtml(_tbSub(r))+'</small></span>'+
-        '<span class="ios-fact tb-amt">'+escHtml(_qiMoney(r.total).replace(/\.00$/,''))+'</span><span class="ios-chev" aria-hidden="true">›</span></button>').join('')+
+        '<span class="ios-fact tb-amt">'+escHtml(fmt(r.total).replace(/\.00$/,''))+'</span><span class="ios-chev" aria-hidden="true">›</span></button>').join('')+
     '</div></div></div>';
   // Every dashboard repaint calls this. Rebuilding the same card swaps each
   // row out from under a thumb that is already on its way down, so the tap

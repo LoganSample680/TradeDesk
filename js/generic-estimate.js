@@ -2143,14 +2143,11 @@ function _geiScopeBuild(containerId){
     if(typeof showToast==='function')showToast('Say what the job is first','🔧',2200);
     return;
   }
-  if(typeof timScopeBuild!=='function')return;
-  const rejected=(typeof timDropped==='function')?[]:[];
-  const built=timScopeBuild(said,{rejected,trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
-  // Every job walk and what Tim made of it, so a bad split is visible to the
-  // owner instead of only to the homeowner (js/tim-log.js timLogScope).
-  if(typeof timLogScope==='function')timLogScope(said,built.steps,_geiIsTM?'tm':'est',_geiEditBidId);
-  // What he said he is buying goes to Materials (js/materials.js).
-  const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
+  // The shared build (_scopeSayBuild): the T&M list takes the steps there; the
+  // older chip list (not T&M) takes them below.
+  const r=_scopeSayBuild(_geiIsTM?'tm':null,said,{logKey:_geiIsTM?'tm':'est',logId:_geiEditBidId});
+  if(!r)return;
+  const built=r.built,matsIn=r.matsIn;
   if(!built.steps.length){
     if(matsIn.rows+matsIn.listed){if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return;}
     if(typeof showToast==='function')showToast('I could not find a step in that','🔧',2600);
@@ -2165,8 +2162,8 @@ function _geiScopeBuild(containerId){
   if(_geiIsTM){
     // The same build Build Your Own runs (_scopeTakeBuilt): steps, rooms, and
     // what he left out, onto the T&M list.
-    _geiScopeMissed=_scopeTakeBuilt('tm',built).filter(im=>im.step||im.ask);
-    const _filled=_scopeTakeLetter(built);
+    _geiScopeMissed=r.missed.filter(im=>im.step||im.ask);
+    const _filled=r.filled;
     if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   }else{
     built.steps.forEach(st=>{
@@ -3119,22 +3116,20 @@ function _byoSayBuild(){
 // Words into lines, the one way: typed in Tim's box, or a package of his own
 // past lines (_pkgApply). Returns false when Tim found nothing to make.
 function _byoTakeSaid(said,heard){
-  if(typeof timScopeBuild!=='function')return false;
-  const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
   // Only what he typed or said is logged: a copied package is not his words today.
-  if(heard&&typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
-  const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
+  const r=_scopeSayBuild('byo',said,{log:!!heard,logKey:'byo',logId:_geiEditBidId});
+  if(!r)return false;
+  const built=r.built,matsIn=r.matsIn;
   if(!built.steps.length){
     if(matsIn.rows+matsIn.listed){_byoSayOpen=false;_byoRenderSections();_byoUpdateRail();_byoAutosave();if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return true;}
     if(heard&&typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return false;
   }
-  // The same build T&M runs (_scopeTakeBuilt): steps, rooms, what he left out.
-  _byoMissed=_scopeTakeBuilt('byo',built);
+  _byoMissed=r.missed;
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
   // filled in where they go instead of printed as steps.
   const _filled=[];
   if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
-  _filled.push(..._scopeTakeLetter(built));
+  _filled.push(...r.filled);
   if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
@@ -3148,7 +3143,6 @@ function _byoMissedHtml(){
   if(!_byoMissed.length)return '';
   return _timMissCardHtml(_byoMissed,'_byoTakeMissed','_byoDropMissed','_byoTakeAllMissed',false);
 }
-function _byoMoney(n){return '$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 function _byoRenderSections(){
   _injectRrpItems();
   _byoNormAll();
@@ -3175,7 +3169,7 @@ function _byoRenderSections(){
       // i is the line's place in _byoItems (drag and edit use it); num is the
       // number he reads, counting work lines only.
       return _scopeStepRowHtml('byo',it.label,idx,{kind:'line',idx,num:(n<0?idx:n)+1,off:!it.on,tap:'_byoEditItem('+idx+')',
-        fact:!it.on?'<span class="ios-fact">Off</span>':priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>',
+        fact:!it.on?'<span class="ios-fact">Off</span>':priced?'<span class="ios-fact">'+fmt(it.price,{whole:true})+'</span>':'<span class="ios-fact ask">Add price</span>',
         note:(it.notes&&!it._rrp)?it.notes:'',del:it.required?'':'_byoDelLine('+idx+')'});
     }).join('');
     return {room:sec,
@@ -3223,13 +3217,20 @@ function _byoState(){
   const {total}=(typeof calcGeiTotal==='function')?calcGeiTotal():{total:0};
   return {n:_byoItems.length,on,unpriced,total};
 }
-function _byoDepositState(total){
-  const pct=_geiDepositPct();
-  const amt=Math.round(total*pct/100);
+// WHICH DEPOSIT LAW THIS JOB IS UNDER, once (audit 2026-10-01: Build Your
+// Own and T&M each looked it up). The state is the job's address, else the
+// business's own; deposit limits are home-improvement law, so a business job
+// is under none.
+function _geiDepositLaw(){
   const addr=(document.getElementById('gei-addr')||{}).value||'';
   const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
   const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
-  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  return {st,law,applies:!!(!_geiIsCommercial&&law.rule&&law.rule!=='none')};
+}
+function _byoDepositState(total){
+  const pct=_geiDepositPct();
+  const amt=Math.round(total*pct/100);
+  const {st,law,applies}=_geiDepositLaw();
   const max=applies&&typeof _maxDeposit==='function'?_maxDeposit(st,total):Infinity;
   return {pct,amt,st,law,applies,max,over:isFinite(max)&&amt>max+0.5};
 }
@@ -3242,7 +3243,7 @@ function _byoRenderSteps(){
   // 2 Materials: optional on a fixed price, so never "now".
   const mats=(typeof _matIdx==='function')?_matIdx().length:0;
   head('byo-step-2',2,DOC_STEP.materials,mats?'done':'todo',mats?(mats+' item'+(mats>1?'s':'')):'Optional');
-  head('byo-step-3',3,DOC_STEP.review,two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?_byoMoney(st.total):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
+  head('byo-step-3',3,DOC_STEP.review,two&&_geiNumsChecked()?'done':(one?'now':'todo'),two?fmt(st.total,{whole:true}):(one&&st.unpriced.length?st.unpriced.length+' to price':''));
   _byoRenderPrice(st);
   _byoRenderDock(st);
 }
@@ -3263,8 +3264,8 @@ function _byoRenderPrice(st){
   const ppos=profit==null?50:Math.min(Math.max(profit,2),98);
   const D=_byoDepositState(st.total);
   const sname=_tmStateName(D.st)||D.st;
-  const depNote=D.over?('<small style="color:var(--ios-law)">'+escHtml(sname)+' allows up to '+_byoMoney(Math.floor(D.max))+' here.</small>')
-    :(D.amt>0?'<small>'+_byoMoney(D.amt)+' before work starts</small>':'<small>Nothing up front</small>');
+  const depNote=D.over?('<small style="color:var(--ios-law)">'+escHtml(sname)+' allows up to '+fmt(Math.floor(D.max),{whole:true})+' here.</small>')
+    :(D.amt>0?'<small>'+fmt(D.amt,{whole:true})+' before work starts</small>':'<small>Nothing up front</small>');
   const exclN=(_geiExclusions||[]).length;
   const exclOpen=(document.getElementById('byo-excl-wrap')||{}).style&&document.getElementById('byo-excl-wrap').style.display!=='none'&&document.getElementById('byo-excl-wrap').dataset.open==='1';
   const termsOpen=(document.getElementById('byo-terms-wrap')||{}).style&&document.getElementById('byo-terms-wrap').style.display!=='none';
@@ -3274,12 +3275,12 @@ function _byoRenderPrice(st){
   if(focusedCost||focusedDep||focusedPrice){
     // Mid-typing: update the words around the box, never the box itself.
     const pr=document.getElementById('byo-profit-val');
-    if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost));pr.style.color=pcol;}
+    if(pr){pr.textContent=profit==null?'Add your cost':(profit+'% · '+fmt(sub-cost,{whole:true}));pr.style.color=pcol;}
     const bar=document.getElementById('byo-profit-bar'),dot=document.getElementById('byo-profit-dot'),msg=document.getElementById('byo-profit-msg');
     if(bar)bar.style.display=band?'':'none';
     if(dot){dot.style.left=ppos+'%';dot.style.boxShadow='0 0 0 3px '+(pcol||'#94a3b8')+',0 2px 6px rgba(0,0,0,.2)';}
     if(msg){msg.textContent=band?band.msg:'';msg.style.color=pcol;}
-    const tv=document.getElementById('byo-total-val');if(tv)tv.textContent=_byoMoney(st.total);
+    const tv=document.getElementById('byo-total-val');if(tv)tv.textContent=fmt(st.total,{whole:true});
     const dn=document.getElementById('byo-dep-note');if(dn)dn.outerHTML=depNote.replace('<small','<small id="byo-dep-note"');
     return;
   }
@@ -3287,13 +3288,13 @@ function _byoRenderPrice(st){
     '<label class="ios-row byo-total"><span class="ios-lbl">Their price<small>The whole job. Fixed: only added or changed work, on a change order they sign, moves it.</small></span>'+
       '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-price-in" placeholder="0" value="'+(sub>0?Number(sub).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoPriceInput(this)"></span></label>'+
     (tax?'<div class="ios-row"><span class="ios-lbl"><small style="margin:0">'+escHtml(tax[0]||'')+'</small></span><span class="ios-fact" style="font-weight:400">'+escHtml(tax[1]||'')+'</span></div>'+
-      '<div class="ios-row"><span class="ios-lbl">With tax</span><span class="ios-fact" id="byo-total-val">'+_byoMoney(st.total)+'</span></div>':'')+
+      '<div class="ios-row"><span class="ios-lbl">With tax</span><span class="ios-fact" id="byo-total-val">'+fmt(st.total,{whole:true})+'</span></div>':'')+
     // PROFIT IS HIS, NEVER THEIRS (owner: "still want them to show profit
     // percentage"). One number he types, what the job costs him, and the
     // margin next to it. No materials list to fill out.
     '<label class="ios-row"><span class="ios-lbl">Your cost<small>Materials and labor, all in. Only you see this.</small></span>'+
       '<span class="ios-val">$<input type="text" inputmode="decimal" id="byo-cost-in" placeholder="0" value="'+(cost>0?Number(cost).toLocaleString('en-US',{maximumFractionDigits:2}):'')+'" oninput="_fmtMoneyInput(this);_byoCostInput(this)"></span></label>'+
-    '<div class="ios-row byo-profit-row" style="display:block"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+';font-weight:700">'+(profit==null?'Add your cost':(profit+'% · '+_byoMoney(sub-cost)))+'</span></div>'+
+    '<div class="ios-row byo-profit-row" style="display:block"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="ios-lbl">Your profit</span><span class="ios-fact" id="byo-profit-val" style="color:'+pcol+';font-weight:700">'+(profit==null?'Add your cost':(profit+'% · '+fmt(sub-cost,{whole:true})))+'</span></div>'+
       '<div id="byo-profit-bar" style="position:relative;height:7px;border-radius:5px;background:'+_MARGIN_TRACK+';margin:14px 9px 8px;'+(band?'':'display:none')+'">'+
         '<div id="byo-profit-dot" style="position:absolute;top:50%;left:'+ppos+'%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px '+(pcol||'#94a3b8')+',0 2px 6px rgba(0,0,0,.2);transition:left .45s cubic-bezier(.22,1,.36,1),box-shadow .3s ease"></div></div>'+
       '<div id="byo-profit-msg" style="font-size:13px;font-weight:600;color:'+pcol+';min-height:0">'+(band?escHtml(band.msg):'')+'</div></div>'+
@@ -3348,7 +3349,7 @@ function _byoDockNext(st){
   const D=_byoDepositState(st.total);
   if(D.over)return {label:'Lower the deposit',fn:"(function(){var e=document.getElementById('byo-dep-in');if(e){e.scrollIntoView({block:'center'});e.focus();}})()"};
   return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
-    yes:'Yes: '+_byoMoney(st.total)+', '+(D.pct>0?D.pct+'% deposit':'no deposit')});
+    yes:'Yes: '+fmt(st.total,{whole:true})+', '+(D.pct>0?D.pct+'% deposit':'no deposit')});
 }
 function _byoDockBuild(){
   const el=document.getElementById('byo-say');
@@ -3357,18 +3358,23 @@ function _byoDockBuild(){
   if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
 }
 function _byoRenderDock(st){
-  const d=document.getElementById('byo-dock');if(!d)return;
   st=st||_byoState();
-  const nx=_byoDockNext(st);
+  _docDockPaint('byo',_byoDockNext(st));
+}
+// THE ONE DOCK BAR (audit 2026-10-01: BYO and T&M each drew a copy). Tim,
+// then the next thing to do, or Sign here and Send it once there is nothing
+// left. `pre` is the screen's id prefix (byo / tm); `nx` is {label, fn} or null.
+function _docDockPaint(pre,nx){
+  const d=document.getElementById(pre+'-dock');if(!d)return;
   const label=nx?nx.label:'send';
   if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
   d.setAttribute('data-state',nx?'todo':'now');
   const tim=(typeof openTim==='function')
     ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
   d.innerHTML=tim+(nx
-    ?'<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
-    :'<button type="button" class="ios-btn ios-btn-tint" id="byo-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
-     '<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
+    ?'<button type="button" class="ios-btn ios-btn-fill" id="'+pre+'-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
+    :'<button type="button" class="ios-btn ios-btn-tint" id="'+pre+'-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
+     '<button type="button" class="ios-btn ios-btn-fill" id="'+pre+'-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
 function _byoAutosave(){
   if(!_geiEditBidId)return;
@@ -5090,6 +5096,27 @@ function _scopeTakeBuilt(key,built){
 // From a pasted letter, on both screens: the days the price holds and his
 // closing words, signed. (The one job price is Build Your Own's alone: T&M
 // has no single price to fill.)
+// SAY IT AND TIM BUILDS IT, once (audit 2026-10-01: three copies, BYO, T&M
+// and the invoice, ran this same sequence). Tim splits what he said, the walk
+// is logged, the parts he named go to Materials, and the steps land on the
+// list `key` names with what he left out offered back. A pasted letter's
+// "good for N days" and closing note land where a proposal keeps them;
+// the invoice has no such places and passes letter:false.
+// Returns {built, matsIn, missed, filled}, or null with no Tim loaded.
+function _scopeSayBuild(key,said,o){
+  o=o||{};
+  if(typeof timScopeBuild!=='function')return null;
+  const built=timScopeBuild(said,{rejected:[],trade:o.trade||_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
+  if(o.log!==false&&typeof timLogScope==='function')timLogScope(said,built.steps,o.logKey||key,o.logId);
+  const mats=built.materials||((typeof timSaidMaterials==='function')?timSaidMaterials(said):[]);
+  const matsIn=(typeof timAddMaterials==='function'&&mats&&mats.length)?(timAddMaterials(mats)||{rows:0,listed:0}):{rows:0,listed:0};
+  const out={built,matsIn,missed:[],filled:[]};
+  if(key&&built.steps&&built.steps.length){
+    out.missed=_scopeTakeBuilt(key,built);
+    if(o.letter!==false)out.filled=_scopeTakeLetter(built);
+  }
+  return out;
+}
 function _scopeTakeLetter(built){
   const filled=[];
   if(built.validDays>0){_geiValidDays=built.validDays;filled.push('good for '+built.validDays+' days');}
@@ -6035,12 +6062,8 @@ function _tmLegalStop(L){
 function _tmDepositState(){
   const on=_tmLayers.has('dep');
   const amt=on?Math.max(0,Math.round((typeof _moneyVal==='function'?_moneyVal('tm-i-dep-flat'):0)||0)):0;
-  const addr=(document.getElementById('gei-addr')||{}).value||'';
-  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
   const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
-  const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
-  // Deposit limits are home-improvement law. A business job is not one.
-  const applies=!_geiIsCommercial&&law.rule&&law.rule!=='none';
+  const {st,law,applies}=_geiDepositLaw();
   let max=Infinity, needCap=false;
   if(applies){
     if(cap>0)max=(typeof _maxDeposit==='function')?_maxDeposit(st,cap):Infinity;
@@ -6792,18 +6815,9 @@ function _tmDockReady(){
   return true;
 }
 function _tmRenderDock(st,rule,all){
-  const d=document.getElementById('tm-dock');if(!d)return;
+  if(!document.getElementById('tm-dock'))return;
   st=st||_tmStepsState(all);rule=rule||_tmStateRule();
-  const nx=_tmDockNext(st,rule,all);
-  const label=nx?nx.label:'send';
-  if(label!==_tmDockLabel){if(_tmDockLabel&&Date.now()-_tmDockTapAt<1500)_tmDockSince=Date.now();_tmDockLabel=label;}
-  d.setAttribute('data-state',nx?'todo':'now');
-  const tim=(typeof openTim==='function')
-    ?'<button type="button" class="tm-dock-tim" onclick="openTim()" aria-label="Ask Tim">'+(typeof timMark==='function'?timMark(30):'Tim')+'</button>':'';
-  d.innerHTML=tim+(nx
-    ?'<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
-    :'<button type="button" class="ios-btn ios-btn-tint" id="tm-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
-     '<button type="button" class="ios-btn ios-btn-fill" id="tm-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
+  _docDockPaint('tm',_tmDockNext(st,rule,all));
 }
 // For Tim: "step 2" is one place on the page. Scrolls there and says whether
 // that step is done, so a nudge or a spoken answer can point at it.
@@ -7586,7 +7600,24 @@ function _pbBook(trade){
   const raw=S.priceBook&&S.priceBook[trade||_pbTrade()];
   return Array.isArray(raw)?raw:[];
 }
-function _pbList(trade){
+// THE ONE PRICE BOOK LIST (audit 2026-10-01): the proposal's add sheet and
+// the invoice read it, so the two can no longer disagree about what he sells.
+// o.everyTrade reads every trade's book (an invoice is not tied to one);
+// o.parts adds the parts off his receipts at what he last paid, for anything
+// the book has no price for.
+function _pbList(trade,o){
+  o=o||{};
+  if(o.everyTrade||o.parts){
+    const pb=(S.priceBook&&typeof S.priceBook==='object')?S.priceBook:{};
+    const all=o.everyTrade?[].concat(...Object.keys(pb).map(t=>Array.isArray(pb[t])?pb[t]:[])):_pbBook(trade).slice();
+    const out=all.filter(x=>x&&x.desc&&(x.n||1)>=2)
+      .sort((a,b)=>((b.n||1)-(a.n||1))||String(b.last||'').localeCompare(String(a.last||'')));
+    if(o.parts&&typeof materialsBook==='function'){
+      const have=new Set(out.map(p=>_partCostKey(p.desc)));
+      materialsBook().forEach(m=>{const k=_partCostKey(m.desc);if(have.has(k))return;have.add(k);out.push({desc:m.desc,rate:m.cost,paid:true});});
+    }
+    return out;
+  }
   // n===1 means seen once and NOT yet offered. This is the rule that keeps the
   // book clean without anybody maintaining it: "Bedroom 3, walls only" is typed
   // once and never comes back, so it never becomes a suggestion, while

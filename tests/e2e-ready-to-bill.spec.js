@@ -728,6 +728,32 @@ test.describe('Invoice: the customer copy', () => {
     await assertNoErrors(page);
   });
 
+  // Audit 2026-10-01: the customer's invoice was drawn twice, once for his
+  // preview and once on the hub. Saving now stores the preview's document,
+  // the way a proposal stores its own, and the hub snapshot points at it.
+  test('saving stores the document he previewed, and the hub is pointed at it', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(async () => {
+      const put = [];
+      const saved = { supa: _supa, user: _supaUser, en: window.supaEnabled };
+      try {
+        window.supaEnabled = () => true; _supaUser = { id: '11111111-2222-3333-4444-555555555555' };
+        _supa = Object.assign({}, _supa || {}, { storage: { from: (b) => ({ upload: async (key, body) => { put.push({ b, key, body: JSON.parse(body) }); return { error: null }; } }) } });
+        _qi.due = '15';
+        const preview = _qiDocHtml();
+        const bid = _qiSave();
+        await _qiDocUploads[bid.id];
+        const hb = _buildClientHubSnapshot(701).bids.find(b => b.id === bid.id) || {};
+        const doc = put[0] ? put[0].body.invoiceHtml : '';
+        return { n: put.length, bucket: put[0] && put[0].b, path: /^invoice-doc\/11111111-2222-3333-4444-555555555555\/\d+_[a-z0-9]{8,}\.json$/.test(put[0] && put[0].key),
+          same: doc.replace(/INV-\w+|Draft/g, '') === preview.replace(/INV-\w+|Draft/g, ''), key: bid.invoiceDocKey === put[0].key, hub: hb.invoiceDocKey === put[0].key };
+      } finally { _supa = saved.supa; _supaUser = saved.user; window.supaEnabled = saved.en; }
+    });
+    expect(r).toEqual({ n: 1, bucket: 'proposals', path: true, same: true, key: true, hub: true });
+    await assertNoErrors(page);
+  });
+
   // Owner 2026-09-29: "use the same one that's in proposal for T&M and BYO,
   // should carry over to bill and invoices". The invoice's Materials step is
   // the proposals' Materials card (js/materials.js): the same add sheet, the

@@ -83,6 +83,8 @@ function _buildClientHubSnapshot(clientId){
       // A quick invoice's own rows (text and amount, head or sub), drawn on
       // their copy the way the preview draws them, and what he said he did.
       rows:b.kind==='quick_invoice'&&Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows:null,
+      // The saved invoice document, the one he previewed (_qiDocUpload).
+      invoiceDocKey:b.kind==='quick_invoice'&&b.invoiceDocKey?b.invoiceDocKey:null,
       work:b.kind==='quick_invoice'&&Array.isArray(b.qiWork)?b.qiWork.filter(w=>String(w||'').trim()):[],
       salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',

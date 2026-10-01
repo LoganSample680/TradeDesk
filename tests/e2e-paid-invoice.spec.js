@@ -159,6 +159,36 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(r.txt).toMatch(/Labor · 3 hrs on site\s*\$450\.00/);
   });
 
+  // Audit 2026-10-01: the hub shows the invoice he previewed, saved on send,
+  // and adds only what is live: payments, the balance, the stamp.
+  test('a saved invoice document is what they see, with the live balance under it', async () => {
+    const r = await page.evaluate(async () => {
+      const orig = window._fetchStorageJson;
+      window._fetchStorageJson = async () => ({ data: { invoiceHtml: '<div class="his-doc"><h2>Invoice INV-123456</h2><p>Replaced the water heater</p></div>' }, error: null });
+      try {
+        _hub.salesTaxRate = 0;
+        _hub.bids = [{ id: 7050, amount: 500, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14', invoiceDocKey: 'invoice-doc/u/7050_abcdefgh.json',
+          rows: [{ text: 'Should not show', amount: 500 }] }];
+        _hub.payments = [{ bid_id: 7050, amount: 200, date: '2026-08-15', type: 'payment', method: 'Card' }];
+        openInvoice(7050);
+        await new Promise(r => setTimeout(r, 50));
+        const el = document.getElementById('inv-content');
+        return { doc: !!el.querySelector('.inv-doc .his-doc'), redrawn: el.textContent.includes('Should not show'), bal: /Balance due\s*\$300\.00/.test(el.textContent), paid: /\(\$200\.00\)/.test(el.textContent) };
+      } finally { window._fetchStorageJson = orig; }
+    });
+    expect(r).toEqual({ doc: true, redrawn: false, bal: true, paid: true });
+  });
+
+  test('no saved document (an older invoice): drawn here, as before', async () => {
+    const t = await page.evaluate(() => {
+      _hub.bids = [{ id: 7051, amount: 90, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14', rows: [{ text: 'Trip fee', amount: 90 }] }];
+      _hub.payments = [];
+      openInvoice(7051);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(t).toMatch(/Trip fee\s*\$90\.00/);
+  });
+
   test('an unpaid invoice within terms carries no stamp at all', async () => {
     const txt = await page.evaluate(() => {
       _hub.bids = [{ id: 7020, amount: 2375, type: 'Repaint', completion_date: '2026-08-14', daysOverdue: 0 }];
