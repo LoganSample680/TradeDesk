@@ -861,3 +861,315 @@ test.describe('egress round 2, client hub poll cadence (live channel gates the i
     assertNoErrors(page, 'hub nudge peers');
   });
 });
+
+// ── PROPOSAL VIEWS AND AUDIT, KEPT AND TOPPED UP (egress 2026-10-01) ───────
+// Sep 30 on the usage page: the full 500 view rows and 1,500 audit rows were
+// pulled 966 and 972 times, on every fresh load and every tick after any view
+// changed. Now both are kept (memory + zp3_acct_pv_<uid>) and a tick asks only
+// for what changed. These prove the badges come out exactly as a full read
+// would make them.
+test.describe('egress round 3, proposal views and audit kept and topped up', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    // A two-table fake that honours the filters the fetch uses.
+    await page.evaluate(() => {
+      window.__pvDb = { proposal_views: [], proposal_audit_events: [] };
+      window.__pvLog = [];
+      const mk = (tbl) => {
+        const q = { f: [], ord: null, lim: null, sel: '*' };
+        q.select = (c) => { q.sel = c || '*'; return q; };
+        q.eq = (c, v) => { q.f.push((r) => String(r[c]) === String(v)); return q; };
+        q.not = (c) => { q.f.push((r) => r[c] != null); return q; };
+        q.gt = (c, v) => { q.gt_ = [c, v]; q.f.push((r) => (c === 'id' ? Number(r[c]) > Number(v) : String(r[c] || '') > String(v))); return q; };
+        q.order = (c, o) => { q.ord = [c, !(o && o.ascending === false)]; return q; };
+        q.limit = (n) => { q.lim = n; return q; };
+        q.then = (res) => {
+          window.__pvLog.push({ tbl, sel: q.sel, gt: q.gt_ || null });
+          let rows = window.__pvDb[tbl].filter((r) => q.f.every((fn) => fn(r)));
+          if (q.ord) {
+            const [c, asc] = q.ord;
+            rows = rows.slice().sort((a, b) => {
+              const x = c === 'id' ? Number(a[c]) - Number(b[c]) : String(a[c] || '').localeCompare(String(b[c] || ''));
+              return asc ? x : -x;
+            });
+          }
+          if (q.lim) rows = rows.slice(0, q.lim);
+          res({ data: rows.map((r) => (q.sel === 'updated_at' ? { updated_at: r.updated_at } : { ...r })), error: null });
+        };
+        return q;
+      };
+      window.__pvRealSupa = _supa;
+      _supa = { ..._supa, from: (t) => (t === 'proposal_views' || t === 'proposal_audit_events') ? mk(t) : window.__pvRealSupa.from(t) };
+    });
+  });
+  test.afterAll(async () => {
+    await page.evaluate(() => { if (window.__pvRealSupa) _supa = window.__pvRealSupa; });
+    await page.context().close();
+  });
+
+  // Reset everything this session holds, as a fresh page load would.
+  const freshLoad = () => page.evaluate(() => { _pvUid = null; _pvKept = null; _pvPollWatermark = null; window._pvKeptPainted = null; });
+  const forget = () => page.evaluate(() => { try { localStorage.removeItem('zp3_acct_pv_' + _supaUser.id); } catch (_e) {} });
+  const maps = () => page.evaluate(() => JSON.stringify([_proposalViewsByBid, _proposalViewsByBidHubClient, _proposalViewsByBidClient,
+    _proposalViewsByBidContractor, _proposalViewsByBidHubCount, _proposalViewsByBidClientCount, _proposalViewsByBidStep,
+    _proposalViewsByBidStepAt, _proposalViewsByBidClientIp, _proposalViewsByBidHubIp, _proposalAuditEventsByBid]));
+  const seed = (nViews, nAudit) => page.evaluate(([nv, na]) => {
+    const uid = _supaUser.id;
+    const t = (i) => new Date(Date.UTC(2026, 8, 1) + i * 60000).toISOString();
+    window.__pvDb.proposal_views = Array.from({ length: nv }, (_, i) => ({
+      id: 'v' + i, contractor_user_id: uid, bid_id: 'b' + (i % 37), opened_at: t(i), updated_at: t(i),
+      hub_opened_at: i % 3 ? t(i + 1) : null, client_opened_at: i % 5 ? t(i + 2) : null, contractor_opened_at: null,
+      hub_view_count: i % 4, client_view_count: i % 7, furthest_step: i % 9 === 0 ? 'approved' : null,
+      furthest_step_at: i % 9 === 0 ? t(i + 3) : null, client_ip: '10.0.0.' + (i % 250), client_ua: 'ua', hub_ip: null, hub_ua: null,
+    }));
+    window.__pvDb.proposal_audit_events = Array.from({ length: na }, (_, i) => ({
+      id: i + 1, contractor_user_id: uid, bid_id: 'b' + (i % 37), event: i % 2 ? 'open' : 'sign_step', ip_address: '1.1.1.1', user_agent: 'x', ts: t(i),
+    }));
+  }, [nViews, nAudit]);
+
+  test('a change fetches only what changed, and the badges equal a full read', async () => {
+    await seed(620, 1700);
+    await freshLoad(); await forget();
+    await page.evaluate(() => _fetchProposalViews());          // full read, kept
+    // Edits: a view gets re-opened (moves to the top), counts change, a new
+    // view and two new audit events arrive.
+    await page.evaluate(() => {
+      const later = (m) => new Date(Date.UTC(2026, 9, 1) + m * 60000).toISOString();
+      const v = window.__pvDb.proposal_views;
+      v[10].opened_at = later(1); v[10].updated_at = later(1); v[10].client_view_count = 99;
+      v[600].hub_view_count = 42; v[600].updated_at = later(2);
+      v.push({ ...v[0], id: 'vNEW', bid_id: 'bNEW', opened_at: later(3), updated_at: later(3), client_view_count: 5 });
+      const a = window.__pvDb.proposal_audit_events;
+      a.push({ ...a[0], id: 5001, bid_id: 'bNEW', ts: later(4) }, { ...a[1], id: 5002, bid_id: 'b3', ts: later(5) });
+    });
+    const n0 = await page.evaluate(() => window.__pvLog.length);
+    await page.evaluate(() => _fetchProposalViews());
+    const topped = await maps();
+    const log = await page.evaluate((n) => window.__pvLog.slice(n), n0);
+    expect(log.some((c) => c.tbl === 'proposal_views' && c.sel === '*' && !c.gt), 'no whole re-read of views').toBe(false);
+    expect(log.some((c) => c.tbl === 'proposal_views' && c.gt && c.gt[0] === 'updated_at' && c.sel === '*')).toBe(true);
+    expect(log.some((c) => c.tbl === 'proposal_audit_events' && c.gt && c.gt[0] === 'id')).toBe(true);
+
+    // The same database read whole, from nothing.
+    await freshLoad(); await forget();
+    await page.evaluate(() => _fetchProposalViews());
+    const whole = await maps();
+    expect(topped).toBe(whole);
+    expect(JSON.parse(topped)[5].bNEW).toBe(5);
+  });
+
+  test('a fresh page load paints from the kept copy and asks only the probe', async () => {
+    await seed(50, 40);
+    await freshLoad(); await forget();
+    await page.evaluate(() => _fetchProposalViews());
+    const before = await maps();
+    await freshLoad();                                           // reload: memory gone, storage kept
+    await page.evaluate(() => { _proposalViewsByBid = {}; _proposalAuditEventsByBid = {}; });
+    const n0 = await page.evaluate(() => window.__pvLog.length);
+    await page.evaluate(() => _fetchProposalViews());
+    const log = await page.evaluate((n) => window.__pvLog.slice(n), n0);
+    expect(log.map((c) => c.sel), 'probe only, no 500-row read').toEqual(['updated_at']);
+    expect(await maps()).toBe(before);
+  });
+
+  test('a delta that fills its page, a stale copy and a failed probe all read whole', async () => {
+    await seed(60, 10);
+    await freshLoad(); await forget();
+    await page.evaluate(() => _fetchProposalViews());
+    // 500 changed rows at once.
+    await page.evaluate(() => {
+      const later = (m) => new Date(Date.UTC(2026, 9, 2) + m * 1000).toISOString();
+      for (let i = 0; i < 500; i++) window.__pvDb.proposal_views.push({ ...window.__pvDb.proposal_views[0], id: 'w' + i, opened_at: later(i), updated_at: later(i) });
+    });
+    let n0 = await page.evaluate(() => window.__pvLog.length);
+    await page.evaluate(() => _fetchProposalViews());
+    let log = await page.evaluate((n) => window.__pvLog.slice(n), n0);
+    expect(log.some((c) => c.tbl === 'proposal_views' && c.sel === '*' && !c.gt), 'cut-short delta falls back to a whole read').toBe(true);
+
+    // Older than six hours: whole read.
+    await page.evaluate(() => { _pvKept.fullAt = Date.now() - 7 * 3600000; });
+    n0 = await page.evaluate(() => window.__pvLog.length);
+    await page.evaluate(() => _fetchProposalViews());
+    log = await page.evaluate((n) => window.__pvLog.slice(n), n0);
+    expect(log.some((c) => c.tbl === 'proposal_views' && c.sel === '*' && !c.gt)).toBe(true);
+  });
+
+  test('the kept copy is per account, cleared on sign-out, and survives corruption', async () => {
+    const r = await page.evaluate(() => {
+      const uid = _supaUser.id;
+      const had = !!localStorage.getItem('zp3_acct_pv_' + uid);
+      localStorage.setItem('zp3_acct_pv_someone-else', JSON.stringify({ uid: 'someone-else', views: [], audit: [] }));
+      _tdClearAccountStorage();
+      const gone = !localStorage.getItem('zp3_acct_pv_' + uid) && !localStorage.getItem('zp3_acct_pv_someone-else');
+      localStorage.setItem('zp3_acct_pv_' + uid, '{bad json{{');
+      _pvUid = null; _pvKept = null;
+      let threw = false;
+      try { _pvLoadKept(uid); } catch (_e) { threw = true; }
+      // Another account's copy is never read into this one.
+      localStorage.setItem('zp3_acct_pv_' + uid, JSON.stringify({ uid: 'not-me', views: [{ id: 'x', bid_id: 'bX' }], audit: [] }));
+      _pvUid = null; _pvKept = null;
+      const foreign = _pvLoadKept(uid);
+      return { had, gone, threw, keptAfterBad: _pvKept, foreign };
+    });
+    expect(r.had).toBe(true);
+    expect(r.gone, 'sign-out takes every account copy').toBe(true);
+    expect(r.threw).toBe(false);
+    expect(r.keptAfterBad).toBe(null);
+    expect(r.foreign).toBe(null);
+  });
+
+  test('no console errors from the kept-views suite', async () => {
+    assertNoErrors(page, 'kept proposal views');
+  });
+});
+
+// ── Round 4: Crew rows kept and topped up (2026-10-01) ──────────────────────
+// The Time Log revalidates its crew payload on every open and live update,
+// and each time _fetchCrewLabor downloaded every job and shop row for six
+// months. Now the first plain read is kept in memory and the next asks only
+// for rows whose updated_at moved (migration 20261059). These prove every
+// caller still gets exactly the rows the old queries returned.
+test.describe('egress round 4, crew rows kept and topped up', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      window.__cDb = { job_time_entries: [], shop_time_entries: [], team_members: [] };
+      window.__cLog = [];
+      window.__cFail = false;
+      const mk = (tbl) => {
+        const q = { f: [], sel: '*', lo: 0, hi: Infinity, delta: false };
+        q.select = (c) => { q.sel = c || '*'; return q; };
+        q.eq = (c, v) => { q.f.push((r) => String(r[c]) === String(v)); return q; };
+        q.is = (c, v) => { q.f.push((r) => (r[c] ?? null) === v); return q; };
+        q.gte = (c, v) => { if (c === 'updated_at') q.delta = true; q.f.push((r) => r[c] != null && Date.parse(r[c]) >= Date.parse(v)); return q; };
+        q.lt = (c, v) => { q.f.push((r) => r[c] != null && Date.parse(r[c]) < Date.parse(v)); return q; };
+        q.or = (expr) => {
+          const parts = [...expr.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)].map((m) => [m[1], m[2].split(',').map((x) => x.replace(/^"|"$/g, ''))]);
+          q.f.push((r) => parts.some(([c, vals]) => r[c] != null && vals.includes(String(r[c]))));
+          q.only = true; return q;
+        };
+        const run = () => {
+          window.__cLog.push({ tbl, delta: q.delta, only: !!q.only });
+          if (window.__cFail && q.delta) return { data: null, error: { message: 'column updated_at does not exist' } };
+          const rows = window.__cDb[tbl].filter((r) => q.f.every((fn) => fn(r))).slice(q.lo, q.hi + 1);
+          const cols = q.sel.split(',');
+          return { data: rows.map((r) => (q.sel === '*' ? { ...r } : Object.fromEntries(cols.map((c) => [c, r[c] ?? null])))), error: null };
+        };
+        q.range = async (a, b) => { q.lo = a; q.hi = b; return run(); };
+        q.then = (res, rej) => Promise.resolve(run()).then(res, rej);
+        return q;
+      };
+      window.__cRealSupa = _supa;
+      _supa = { ..._supa, from: (t) => (window.__cDb[t] ? mk(t) : window.__cRealSupa.from(t)) };
+    });
+  });
+  test.afterAll(async () => {
+    await page.evaluate(() => { if (window.__cRealSupa) _supa = window.__cRealSupa; });
+    await page.context().close();
+  });
+
+  const seed = () => page.evaluate(() => {
+    const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || _supaUser.id;
+    const at = (d, h) => new Date(Date.UTC(2026, 8, d, h)).toISOString();
+    const old = new Date(Date.UTC(2026, 8, 30)).toISOString();
+    window.__cDb.job_time_entries = Array.from({ length: 120 }, (_, i) => ({
+      id: 'j' + i, contractor_user_id: cid, employee_user_id: 'e' + (i % 3), job_id: i % 4 ? String(100 + (i % 7)) : null,
+      minutes: 30 + i, arrived_at: at(1 + (i % 28), 8 + (i % 8)), departed_at: at(1 + (i % 28), 9 + (i % 8)),
+      source: i % 5 ? 'geo' : 'drive', dest_place: i % 4 ? null : 'Place ' + (i % 6), origin_place: i % 9 ? null : 'Place 2',
+      client_key: 'k' + i, deleted_at: i === 7 ? old : null, updated_at: old,
+    }));
+    window.__cDb.shop_time_entries = Array.from({ length: 20 }, (_, i) => ({
+      id: 's' + i, contractor_user_id: cid, client_key: 'sk' + i, employee_user_id: 'e' + (i % 3), minutes: 40,
+      arrived_at: at(1 + i, 6), departed_at: at(1 + i, 7), deleted_at: null, updated_at: old,
+    }));
+    _crewKept = null;
+  });
+  const norm = (r) => JSON.stringify({ e: r.entries.slice().sort((a, b) => a.id.localeCompare(b.id)), s: r.shopEntries.slice().sort((a, b) => a.id.localeCompare(b.id)) });
+  const SINCE = '2026-09-01T00:00:00.000Z';
+
+  test('edits, adds and deletes come over as a top-up, and match the old queries row for row', async () => {
+    await seed();
+    await page.evaluate((s) => _fetchCrewLabor(s), SINCE);                // seeds the copy
+    await page.evaluate(() => {
+      const now = new Date(Date.UTC(2026, 9, 1, 12)).toISOString();
+      const j = window.__cDb.job_time_entries;
+      j[3].minutes = 999; j[3].updated_at = now;                            // edited
+      j[4].deleted_at = now; j[4].updated_at = now;                         // soft deleted
+      j.push({ ...j[5], id: 'jNEW', minutes: 7, updated_at: now });         // added
+      const sh = window.__cDb.shop_time_entries;
+      sh[2].deleted_at = now; sh[2].updated_at = now;
+    });
+    const n0 = await page.evaluate(() => window.__cLog.length);
+    const kept = await page.evaluate((s) => _fetchCrewLabor(s), SINCE);
+    const log = await page.evaluate((n) => window.__cLog.slice(n), n0);
+    expect(log.filter((c) => c.tbl !== 'team_members').every((c) => c.delta), 'only top-ups, no whole re-read').toBe(true);
+
+    await page.evaluate(() => { _crewKept = null; window.__cFail = true; });
+    const fresh = await page.evaluate((s) => _fetchCrewLabor(s), SINCE);    // old queries, column refused
+    await page.evaluate(() => { window.__cFail = false; });
+    expect(norm(kept)).toBe(norm(fresh));
+    expect(kept.entries.find((r) => r.id === 'j3').minutes).toBe(999);
+    expect(kept.entries.some((r) => r.id === 'j4' || r.id === 'j7')).toBe(false);
+    expect(kept.entries.some((r) => r.id === 'jNEW')).toBe(true);
+    expect(Object.keys(kept.entries[0]).sort()).toEqual('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,origin_place,client_key'.split(',').sort());
+  });
+
+  test('one customer, one stretch and no shop off the copy equal the server filters', async () => {
+    await seed();
+    await page.evaluate((s) => _fetchCrewLabor(s), SINCE);
+    const variants = [
+      { untilISO: '2026-09-15T00:00:00.000Z' },
+      { noShop: true, only: { jobIds: ['101', '103'], places: ['Place 2'] } },
+      { noShop: true, only: { jobIds: [], places: ['Place 0'] } },
+    ];
+    for (const v of variants) {
+      const n0 = await page.evaluate(() => window.__cLog.length);
+      const kept = await page.evaluate(([s, o]) => _fetchCrewLabor(s, o), ['2026-09-05T00:00:00.000Z', v]);
+      const log = await page.evaluate((n) => window.__cLog.slice(n), n0);
+      expect(log.some((c) => c.only), 'answered off the copy').toBe(false);
+      const saved = await page.evaluate(() => { const k = _crewKept; _crewKept = null; return !!k; });
+      expect(saved).toBe(true);
+      const fresh = await page.evaluate(([s, o]) => _fetchCrewLabor(s, o), ['2026-09-05T00:00:00.000Z', v]);
+      expect(norm(kept), JSON.stringify(v)).toBe(norm(fresh));
+      expect(kept.entries.length).toBeGreaterThan(0);
+      await page.evaluate((s) => _fetchCrewLabor(s), SINCE);                // re-seed for the next variant
+    }
+  });
+
+  test('an older window, another account, a stale copy or a failed top-up read whole', async () => {
+    await seed();
+    await page.evaluate((s) => _fetchCrewLabor(s), SINCE);
+    const whole = async (fn) => {
+      const n0 = await page.evaluate(() => window.__cLog.length);
+      await page.evaluate(fn);
+      const log = await page.evaluate((n) => window.__cLog.slice(n), n0);
+      return log.some((c) => c.tbl === 'job_time_entries' && !c.delta);
+    };
+    expect(await whole(() => _fetchCrewLabor('2026-08-01T00:00:00.000Z')), 'older than the copy').toBe(true);
+    expect(await whole(() => { _crewKept.cid = 'someone-else'; return _fetchCrewLabor('2026-09-01T00:00:00.000Z'); }), 'other account').toBe(true);
+    expect(await whole(() => { _crewKept.fullAt -= 7 * 3600000; return _fetchCrewLabor('2026-09-01T00:00:00.000Z'); }), 'stale').toBe(true);
+    expect(await whole(() => { window.__cFail = true; return _fetchCrewLabor('2026-09-01T00:00:00.000Z').finally(() => { window.__cFail = false; }); }), 'failed top-up').toBe(true);
+    // A top-up that fills its page is not trusted.
+    await page.evaluate((s) => _fetchCrewLabor(s), SINCE);
+    await page.evaluate(() => {
+      const now = new Date(Date.UTC(2026, 9, 1, 12)).toISOString();
+      window.__cDb.job_time_entries.forEach((r) => { r.updated_at = now; });
+      for (let i = 0; i < 1000; i++) window.__cDb.job_time_entries.push({ ...window.__cDb.job_time_entries[0], id: 'f' + i, updated_at: now });
+    });
+    expect(await whole(() => _fetchCrewLabor('2026-09-01T00:00:00.000Z')), 'full page').toBe(true);
+  });
+
+  test('no console errors from the kept-crew suite', async () => {
+    assertNoErrors(page, 'kept crew rows');
+  });
+});

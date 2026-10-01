@@ -270,10 +270,12 @@ async function pageAll(build) {
 //
 // If the RPC is not deployed yet the paged read still runs.
 const DAY_CACHE = new Map();
+const PING_CACHE = new Map();
+const CLOCK_CACHE = new Map();
 const DAY_CACHE_TTL_MS = 10 * 60000;
 const DAY_OVERLAP_MS = 2 * 60000;
 const DAY_CACHE_MAX = 64;
-export function _dayCacheClear() { DAY_CACHE.clear(); }
+export function _dayCacheClear() { DAY_CACHE.clear(); PING_CACHE.clear(); CLOCK_CACHE.clear(); }
 
 function decodeEvidence(data) {
   const out = [];
@@ -344,6 +346,125 @@ function sliceDay(byId, cap) {
     .sort((x, y) => (x.ms - y.ms) || (x.id - y.id))
     .slice(0, cap)
     .map((e) => e.row);
+}
+
+// The day's location_pings and the account's clocks, kept the same way as
+// the evidence above (egress, 2026-10-01).
+//
+// After dayEvents stopped re-reading the day, these two were most of what was
+// left: every trigger upload pulled the person's whole day of pings and every
+// non-deleted clock the account has ever written. Both are kept here while
+// the worker stays warm and topped up with only what changed since the last
+// read, using location_pings.created_at and td_time_entries.updated_at
+// (migration 20261059 adds the first; the second has always existed). A clock
+// edited or deleted since the last read comes back in the top-up and replaces
+// or drops the kept row, so the set handed to the deriver is the set a whole
+// read would return.
+//
+// The same escape hatches as dayEvents: no copy, an old one, an error (the
+// column not deployed yet included), a top-up that fills its page, a whole
+// read that hit its cap, or a fresh read asked for. Each falls back to the
+// exact read this used to make.
+const CLOCK_CAP = 1000;
+
+function keepIn(map, key, val) {
+  if (map.size >= DAY_CACHE_MAX) map.delete(map.keys().next().value);
+  map.set(key, val);
+}
+
+function pingsWhole(svc, uid, fromIso, toIso, sel) {
+  return pageAll((f, t) => svc.from("location_pings")
+    .select(sel)
+    .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+    .order("ts", { ascending: true }).range(f, t));
+}
+
+function pingOut(r) { return { ts: r.ts, lat: r.lat, lon: r.lon, accuracy: r.accuracy }; }
+
+function pingSlice(byId, cap) {
+  return [...byId.values()]
+    .sort((x, y) => (Date.parse(x.ts) - Date.parse(y.ts)) || String(x.id).localeCompare(String(y.id)))
+    .slice(0, cap)
+    .map(pingOut);
+}
+
+export async function dayPings(svc, uid, fromIso, toIso, opts = null) {
+  const cap = PAGE * MAX_PAGES;
+  const key = uid + "|" + fromIso + "|" + toIso;
+  const now = Date.now();
+  try {
+    const hit = (opts && opts.fresh) ? null : PING_CACHE.get(key);
+    if (hit && now - hit.readAt < DAY_CACHE_TTL_MS) {
+      const { data, error } = await svc.from("location_pings")
+        .select("id,ts,lat,lon,accuracy")
+        .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+        .gte("created_at", new Date(hit.readAt - DAY_OVERLAP_MS).toISOString())
+        .order("ts", { ascending: true }).range(0, PAGE - 1);
+      if (!error && Array.isArray(data) && data.length < PAGE && data.every((r) => r && r.id)) {
+        for (const r of data) hit.byId.set(String(r.id), r);
+        hit.readAt = now;
+        return pingSlice(hit.byId, cap);
+      }
+      PING_CACHE.delete(key);
+    }
+    const rows = await pingsWhole(svc, uid, fromIso, toIso, "id,ts,lat,lon,accuracy");
+    if (rows.length && rows.every((r) => r && r.id)) {
+      if (rows.length < cap) {
+        const byId = new Map();
+        for (const r of rows) byId.set(String(r.id), r);
+        keepIn(PING_CACHE, key, { byId, readAt: now });
+      }
+      return rows.map(pingOut);
+    }
+    if (!rows.length) {
+      // An empty day is worth keeping too: the next read is then a top-up.
+      keepIn(PING_CACHE, key, { byId: new Map(), readAt: now });
+      return rows;
+    }
+  } catch { PING_CACHE.delete(key); }
+  return pingsWhole(svc, uid, fromIso, toIso, "ts,lat,lon,accuracy");
+}
+
+function clocksWhole(svc, cid) {
+  return svc.from("td_time_entries").select("data").eq("user_id", cid).is("deleted_at", null);
+}
+
+export async function accountClocks(svc, cid, opts = null) {
+  const now = Date.now();
+  try {
+    const hit = (opts && opts.fresh) ? null : CLOCK_CACHE.get(cid);
+    if (hit && now - hit.readAt < DAY_CACHE_TTL_MS) {
+      const { data, error } = await svc.from("td_time_entries")
+        .select("id,data,deleted_at")
+        .eq("user_id", cid)
+        .gte("updated_at", new Date(hit.readAt - DAY_OVERLAP_MS).toISOString())
+        .range(0, CLOCK_CAP - 1);
+      if (!error && Array.isArray(data) && data.length < CLOCK_CAP && data.every((r) => r && r.id != null)) {
+        for (const r of data) {
+          if (r.deleted_at) hit.byId.delete(String(r.id));
+          else hit.byId.set(String(r.id), { data: r.data });
+        }
+        if (hit.byId.size < CLOCK_CAP) {
+          hit.readAt = now;
+          return { data: [...hit.byId.values()] };
+        }
+      }
+      CLOCK_CACHE.delete(cid);
+    }
+    const { data, error } = await svc.from("td_time_entries")
+      .select("id,data").eq("user_id", cid).is("deleted_at", null);
+    if (!error && Array.isArray(data) && data.every((r) => r && r.id != null)) {
+      // At the cap a whole read is itself truncated, so a merged copy could
+      // hold rows it would not. Not kept; used as read.
+      if (data.length < CLOCK_CAP) {
+        const byId = new Map();
+        for (const r of data) byId.set(String(r.id), { data: r.data });
+        keepIn(CLOCK_CACHE, cid, { byId, readAt: now });
+      }
+      return { data: data.map((r) => ({ data: r.data })) };
+    }
+  } catch { CLOCK_CACHE.delete(cid); }
+  return clocksWhole(svc, cid);
 }
 
 // The two settings the deriver uses, workHours and timeOff, and nothing else.
@@ -458,12 +579,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // rebuild-day is the only caller that passes opts: a person asked for
     // this day again, so it is read whole, never from the kept copy.
     dayEvents(svc, uid, fromIso, toIso, { fresh: !!opts }),
-    pageAll((f, t) => svc.from("location_pings")
-      .select("ts,lat,lon,accuracy")
-      .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
-      .order("ts", { ascending: true }).range(f, t)),
+    dayPings(svc, uid, fromIso, toIso, { fresh: !!opts }),
     svc.rpc("geo_fences_for", { p_contractor: cid, p_day: day }),
-    svc.from("td_time_entries").select("data").eq("user_id", cid).is("deleted_at", null),
+    accountClocks(svc, cid, { fresh: !!opts }),
     workSettings(svc, cid),
   ]);
 
