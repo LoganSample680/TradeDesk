@@ -1331,9 +1331,7 @@ function _invoiceDocForBid(b,opt){
     cos.forEach(co=>rows.push({text:'Change order #'+(co.coNum||'')+(co.desc?' · '+co.desc:''),amount:Math.round((Number(co.delta)||Number(co.amount)||0)*100)/100}));
     adj.forEach(a=>rows.push({text:'Price adjustment'+(a.reason?' · '+a.reason:''),amount:-Math.round(Number(a.amount)*100)/100}));
     if(tax>0)rows.push({text:'Sales tax',amount:tax});
-    work=Array.isArray(b.scopeItems)&&b.scopeItems.length?b.scopeItems
-      :Array.isArray(b.byoItems)&&b.byoItems.length?b.byoItems.filter(it=>it&&it.on!==false&&!it._supply&&!it._rrp).map(it=>({label:it.label,section:it.section||'',on:true}))
-      :(typeof _bidScopeLines==='function'?_bidScopeLines(b):[]).map(l=>({label:l,section:'',on:true}));
+    work=_bidWorkItems(b).map(x=>({label:x.label,section:x.section||'Work',on:true}));
   }
   let live=null;
   if(opt.live){

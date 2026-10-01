@@ -18,35 +18,41 @@ function _imgFallback(el){
 }
 
 // ── Client Hub ──────────────────────────────────────────────────────────────
-// A bid's scope as plain description lines, the estimate's own words with no
-// numbers: paint estimates group surfaces by room, generic/BYO carry scope
-// chips and free text, a diagnostic carries desc. Used by the hub invoice's
-// "Work performed" and the property card's Past work rows.
-function _bidScopeLines(b){
-  const out=[];
-  const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
-  if(_surf.length){
+// THE WORK ON A BID, one reader for every screen that lists it: the hub's
+// "Work performed" and Past work rows, the invoice's work list and the job
+// clock's scopes all used to pick their own lines and disagreed. Order: T&M
+// steps, then BYO items he left on (no materials, no lead-safe insert), then
+// priced lines when neither exists, then paint rooms, scope chips and the
+// free-text scope. One row per price-book key. {priced:true} stops after the
+// chips: the job clock wants sold work, not the paragraph about it.
+function _bidWorkItems(b,o){
+  const out=[],seen=new Set();
+  if(!b||typeof b!=='object')return out;
+  const key=d=>(typeof _pbKey==='function')?_pbKey(d):String(d||'').trim().toLowerCase();
+  const add=(label,section,chip)=>{
+    const l=String(label||'').trim();
+    const k=l&&key(l);
+    if(!k||seen.has(k))return;
+    seen.add(k);
+    out.push({label:l,section:String(section||''),chip:!!chip});
+  };
+  (Array.isArray(b.scopeItems)?b.scopeItems:[]).forEach(x=>{if(x&&x.on!==false)add(x.label,x.section);});
+  (Array.isArray(b.byoItems)?b.byoItems:[]).forEach(x=>{if(x&&x.on!==false&&!x._supply&&!x._rrp)add(x.label,x.section);});
+  if(!out.length)(Array.isArray(b.geiLines)?b.geiLines:[]).forEach(l=>{if(l&&!l._tmLabor&&!l._supply)add(l.desc);});
+  if(!(o&&o.priced)){
     const byRoom={};
-    _surf.forEach(sf=>{
-      const _r=String(sf&&sf.room||'').trim()||'Work area';
-      const _t=String(sf&&sf.type||'').trim();
-      (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
+    (Array.isArray(b.surfaces)?b.surfaces:[]).forEach(sf=>{
+      const r=String(sf&&sf.room||'').trim()||'Work area';
+      (byRoom[r]=byRoom[r]||[]).push(String(sf&&sf.type||'').trim()||'surface');
     });
-    Object.keys(byRoom).forEach(r=>{
-      const kinds=[...new Set(byRoom[r])];
-      out.push(kinds.length?r+': '+kinds.join(', '):r);
-    });
+    Object.keys(byRoom).forEach(r=>add(r+': '+[...new Set(byRoom[r])].join(', ')));
   }
-  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
-    const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
-    if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
-  });
-  String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
-    const _l=l.trim().replace(/^[-•*]\s*/,'');
-    if(_l&&out.indexOf(_l)===-1)out.push(_l);
-  });
+  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>add(typeof c==='string'?c:(c&&(c.label||c.name)),'',true));
+  if(!(o&&o.priced))String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>add(l.trim().replace(/^[-•*]\s*/,'')));
   return out.slice(0,40);
 }
+// The same work as plain lines, for the places that print a list.
+function _bidScopeLines(b){return _bidWorkItems(b).map(x=>x.label);}
 function _buildClientHubSnapshot(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
   const cbids=bids.filter(b=>b.client_id===clientId);

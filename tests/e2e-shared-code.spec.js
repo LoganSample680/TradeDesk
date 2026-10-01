@@ -188,4 +188,25 @@ test.describe('Shared code, one copy of each', () => {
     });
     expect(r).toEqual({ steps: true, missed: [], filled: [], junk: 'ok' });
   });
+
+  // Audit run 3: four readers each picked a bid's work lines their own way, so
+  // the hub, the invoice and the job clock listed different work.
+  test('one reader for the work on a bid: hub, invoice and job clock agree', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const b = { id: 88001, client_id: 1, amount: 900, type: 'Build Your Own Estimate',
+        byoItems: [{ label: 'Replace water heater', section: 'Work', on: true }, { label: 'Never picked', on: false },
+          { label: 'Fittings', on: true, _supply: true }, { label: 'Lead-safe setup', on: true, _rrp: true }],
+        scopeChips: ['Replace water heater', 'Haul-off'], geiDesc: 'Old unit hauled away' };
+      const hub = _bidScopeLines(b);
+      const inv = _bidWorkItems(b).map(x => x.label);
+      const clock = _jobScopesFromBid(b).map(x => x.label);
+      const junk = [null, undefined, 'x', 0, {}].map(v => { try { return _bidWorkItems(v).length; } catch (e) { return 'threw'; } });
+      return { hub, inv, clock, junk, docHas: _invoiceDocForBid(b).includes('Haul-off') };
+    });
+    expect(r.hub).toEqual(['Replace water heater', 'Haul-off', 'Old unit hauled away']);
+    expect(r.inv).toEqual(r.hub);
+    expect(r.clock).toEqual(['Replace water heater', 'Haul-off']);
+    expect(r.junk).toEqual([0, 0, 0, 0, 0]);
+    expect(r.docHas).toBe(true);
+  });
 });

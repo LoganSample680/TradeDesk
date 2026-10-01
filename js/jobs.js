@@ -1,25 +1,10 @@
 // ── Active time tracking ─────────────────────────────────────────────────────
 
-// The work a bid actually sold, as clockable scopes. Priced line items first
-// (they are the job), then any scope chips that say something the lines do not.
-// Deduplicated on the price-book key so a chip repeating a line is one row, the
-// same rule the proposal and the hours math already use.
+// The work a bid actually sold, as clockable scopes: the shared work reader
+// (_bidWorkItems, js/proposals.js) without the free text, keyed line:<pbKey>.
 function _jobScopesFromBid(bid){
-  if(!bid)return [];
   const key=d=>(typeof _pbKey==='function')?_pbKey(d):String(d||'').trim().toLowerCase();
-  const out=[],seen=new Set();
-  const add=(label,icon)=>{
-    const l=String(label||'').trim();
-    if(!l)return;
-    const k=key(l);
-    if(!k||seen.has(k))return;
-    seen.add(k);
-    out.push({id:'line:'+k,label:l,icon:icon||'🔧'});
-  };
-  if(Array.isArray(bid.byoItems))bid.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp)add(it.label);});
-  if(!out.length&&Array.isArray(bid.geiLines))bid.geiLines.forEach(l=>{if(l&&!l._tmLabor)add(l.desc);});
-  if(Array.isArray(bid.scopeChips))bid.scopeChips.forEach(l=>add(l,'📋'));
-  return out;
+  return _bidWorkItems(bid,{priced:true}).map(x=>({id:'line:'+key(x.label),label:x.label,icon:x.chip?'📋':'🔧'}));
 }
 function getJobScopes(jobId){
   const j=jobs.find(x=>x.id===jobId);
