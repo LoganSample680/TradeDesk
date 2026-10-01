@@ -6070,6 +6070,11 @@ async function _geoBgUpdateCheck(){
     // exists to avoid, and the foreground path will catch it a moment later.
     if(!document.hidden)return;
     _geoParkNote('bg-update',APP_VERSION+' -> '+d.version);
+    // Pull the new build into the cache FIRST, exactly as the foreground path
+    // does (_checkVersionOnResume in js/cloud.js). Without it the service
+    // worker's cache-first branch hands the reload the copy it already had,
+    // and a phone in a pocket reloads straight back into the old version.
+    if(typeof _stageUpdate==='function'){try{await _stageUpdate(d.version);}catch(_e){}}
     if(typeof _autoSaveAndReload==='function')await _autoSaveAndReload();
   }catch(_e){}
 }

@@ -758,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.5';
+const APP_VERSION='10.01.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -9681,7 +9681,13 @@ async function supaLoadFromCloud({silent=false}={}){
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
 
-    if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);}
+    if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);
+      // BORN IN A POCKET (owner 2026-10-01). iOS killed Jack's app at 10:01
+      // and relaunched it in the background 23 seconds later: the screen never
+      // came on, so no 'hidden' transition ever fired and the socket stayed
+      // open all morning. A boot that opens its channels while hidden arms the
+      // same pocket countdown the screen turning off would have.
+      _rtArmPocket();}
   }catch(e){
     // Fired now, awaited later: classification needs a real network round trip
     // (up to 4s, see _classifyCloudError), and an offline boot must still paint
@@ -9928,10 +9934,13 @@ function _rtUnpocket(){
   _rtPocketNote(true,'screen on');
   return true;
 }
+function _rtArmPocket(){
+  if(document.visibilityState==='hidden'&&!_rtPocketT&&!_rtPocketed&&_rtNativeShell())
+    _rtPocketT=setTimeout(_rtPocket,_RT_POCKET_GRACE_MS);
+}
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='hidden'){
-    if(!_rtPocketT&&!_rtPocketed&&_rtNativeShell())_rtPocketT=setTimeout(_rtPocket,_RT_POCKET_GRACE_MS);
-  }else _rtUnpocket();
+  if(document.visibilityState==='hidden')_rtArmPocket();
+  else _rtUnpocket();
 });
 function _applyRealtimeRecord(tbl,payload,fromRealtime){
   const desc=_TD_TABLES.find(d=>d.t===tbl);
