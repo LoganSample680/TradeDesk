@@ -6599,14 +6599,20 @@ function _tmStepsState(all){
 }
 // His note on T&M, the same row and box Build Your Own has (owner 2026-09-30:
 // the two should read the same at the customer).
+// "YOUR NOTE TO THEM", one row for T&M and the invoice (owner 2026-10-01: on
+// the invoice "a good way to thank them"). o: {open, value, toggle, input, id,
+// on: what it prints on, placeholder}.
+function _noteRowHtml(o){
+  const has=!!String(o.value||'').trim();
+  return '<div class="ios-group">'+
+    '<button type="button" class="ios-row" onclick="'+o.toggle+'"><span class="ios-lbl">Your note to them<small>'+(has?'On the '+o.on:'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(o.open?'90':'0')+'deg)">›</span></button>'+
+    (o.open?'<textarea id="'+o.id+'" class="ios-say" rows="4" placeholder="'+escHtml(o.placeholder||'')+'" oninput="'+o.input+'">'+escHtml(o.value||'')+'</textarea>':'')+
+  '</div><div class="ios-foot">Printed on the '+o.on+', word for word, with your name.</div>';
+}
 function _tmRenderNote(){
   const host=document.getElementById('tm-sec-note');if(!host)return;
-  const has=!!String(_geiNote||'').trim();
-  const open=host.dataset.open==='1';
-  host.innerHTML='<div class="ios-group">'+
-    '<button type="button" class="ios-row" onclick="_tmNoteToggle()"><span class="ios-lbl">Your note to them<small>'+(has?'On the proposal':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(open?'90':'0')+'deg)">›</span></button>'+
-    (open?'<textarea id="tm-note" class="ios-say" rows="4" placeholder="e.g. I appreciate your trust in us and look forward to the work." oninput="_geiNote=this.value;_byoAutosave()">'+escHtml(_geiNote||'')+'</textarea>':'')+
-  '</div><div class="ios-foot">Printed under the scope, word for word, with your name.</div>';
+  host.innerHTML=_noteRowHtml({open:host.dataset.open==='1',value:_geiNote,toggle:'_tmNoteToggle()',input:'_geiNote=this.value;_byoAutosave()',
+    id:'tm-note',on:'proposal',placeholder:'e.g. I appreciate your trust in us and look forward to the work.'});
 }
 function _tmNoteToggle(){
   const host=document.getElementById('tm-sec-note');if(!host)return;
