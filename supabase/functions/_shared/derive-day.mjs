@@ -563,6 +563,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // halves of the one deriver cannot disagree about what a clock is.
     if (!d.start_time) continue;
     if (!d.end_time && !d.open) continue;
+    // "Personal time" is a gap answered as NOT work, never a clock (rule 27).
+    // Same line as _geoDeriveClocks.
+    if (d.personal === true) continue;
     const owner = d.logged_by_uid ? String(d.logged_by_uid) === uid : uid === cid;
     if (!owner) continue;
     const s = Date.parse(d.start_time);

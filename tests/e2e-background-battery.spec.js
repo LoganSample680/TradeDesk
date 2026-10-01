@@ -124,5 +124,50 @@ test.describe('a backgrounded page does no screen work', () => {
     expect(ok2).toBe(true);
   });
 
+  // ── ON SCREEN IS NOT MOVING (owner 2026-09-30) ─────────────────────────
+  // Jack opened the app 65 times one morning, standing at the yard or at home,
+  // and every open switched full-accuracy GPS on: 33 starts. An open lights the
+  // GPS now only when the motion tape says the truck is moving.
+  test('opening the app while standing still does not light the GPS', async () => {
+    const r = await page.evaluate(async () => {
+      const was = { k: _geoLastMotionKind, win: _geoDriveWinAt, drv: _geoDriveStartedAt };
+      const out = {};
+      try {
+        _geoDriveWinAt = 0; _geoDriveStartedAt = null;
+        for (const k of ['still', 'walking', 'automotive', 'cycling', '']) {
+          _geoLastMotionKind = k;
+          out[k || 'unknown'] = _geoLooksMoving();
+        }
+      } finally { _geoLastMotionKind = was.k; _geoDriveWinAt = was.win; _geoDriveStartedAt = was.drv; }
+      // The three places an open used to light the GPS, all asking now. The
+      // foreground handler is only bound once tracking starts, so it is read
+      // off the source rather than fired here.
+      const src = await (await fetch('/js/geo-track.js')).text();
+      return { out,
+        onOpen: src.includes('if(_geoParkModeOn&&_geoLooksMoving())_geoExitParkMode();'),
+        onBoot: src.includes('if(_geoAppOnScreen()&&_geoLooksMoving()){_geoExitParkMode();return;}'),
+        onPark: src.includes("if(_geoAppOnScreen()&&_geoLooksMoving()){\n    _geoParkNote('park-defer','app on screen');"),
+        bare: (src.match(/if\(_geoParkModeOn\)_geoExitParkMode\(\);/g) || []).length };
+    });
+    expect(r.out, 'still and walking are not moving; a drive is; unknown behaves as before')
+      .toEqual({ still: false, walking: false, automotive: true, cycling: true, unknown: true });
+    expect([r.onOpen, r.onBoot, r.onPark], 'the open, the boot and the park defer all ask').toEqual([true, true, true]);
+    expect(r.bare, 'no unconditional exit left behind').toBe(0);
+  });
+
+  test('a drive already running counts as moving, whatever the last reading', async () => {
+    const r = await page.evaluate(() => {
+      const was = { k: _geoLastMotionKind, win: _geoDriveWinAt, drv: _geoDriveStartedAt };
+      try {
+        _geoLastMotionKind = 'still'; _geoDriveWinAt = 0; _geoDriveStartedAt = Date.now() - 60000;
+        const a = _geoLooksMoving();
+        _geoDriveStartedAt = null; _geoDriveWinAt = Date.now();
+        const b = _geoLooksMoving();
+        return { a, b };
+      } finally { _geoLastMotionKind = was.k; _geoDriveWinAt = was.win; _geoDriveStartedAt = was.drv; }
+    });
+    expect(r).toEqual({ a: true, b: true });
+  });
+
   test('no console errors, background battery', async () => { assertNoErrors(page); });
 });
