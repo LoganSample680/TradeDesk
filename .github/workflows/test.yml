@@ -480,7 +480,10 @@ jobs:
     # 25, not 15 (2026-09-02): the heaviest shard runs 12 minutes of tests,
     # and on a slow Azure package mirror the browser dependency install alone
     # took 15. Two shards were cancelled before their first test that day.
-    timeout-minutes: 25
+    # 35, not 25 (2026-10-01): the heaviest shards now run 22 minutes of
+    # tests, and shard 3 on PR #139 was cancelled at 25 still passing, with
+    # no test failed.
+    timeout-minutes: 35
 
     strategy:
       fail-fast: false   # let all shards finish so we see ALL failures
