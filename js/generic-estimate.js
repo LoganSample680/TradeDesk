@@ -8631,6 +8631,11 @@ function _propDate(t){
 // cover: his mark, who it is for, the job as the headline. His logo sits on a
 // white plate, so a dark logo, a light one, or a logo on its own black square
 // all read the same on any brand colour.
+// The hero logo's own square fades into the cover at its edge (owner
+// 2026-10-01: "white outlines around it"). A logo's black is rarely the
+// page's exact black (a colour profile, a JPEG), and a hard edge shows that
+// as a box. Only the outer 6% fades, where a logo's own square has no art.
+const _PROP_LOGO_FEATHER='-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent),linear-gradient(180deg,transparent,#000 6%,#000 94%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent),linear-gradient(180deg,transparent,#000 6%,#000 94%,transparent);mask-composite:intersect';
 function _propCover(o){
   const logo=_propLogoSrc();
   const name=escHtml(o.bname||'');
@@ -8652,7 +8657,7 @@ function _propCover(o){
   // removed it from the client hub as filler (2026-09), and the proposal
   // follows the same rule.
   const mark=tile
-    ?`<div style="text-align:center"><img src="${escHtml(logo)}" alt="${name}" style="display:block;width:min(210px,62vw);height:auto;object-fit:contain;margin:0 auto">`+
+    ?`<div style="text-align:center"><img src="${escHtml(logo)}" alt="${name}" style="display:block;width:min(210px,62vw);height:auto;object-fit:contain;margin:0 auto;${_PROP_LOGO_FEATHER}">`+
       (contact?`<div style="font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;line-height:1.45">${contact}</div>`:'')+`</div>`
     :!logo
     ?`<div style="min-width:0">${name?`<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#fff">${name}</div>`:''}`+

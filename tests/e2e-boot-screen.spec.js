@@ -579,18 +579,22 @@ test.describe('a square dark logo is a badge with the name beside it', () => {
       const img = slot.querySelector('img');
       const out = { h: img.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(img).borderTopLeftRadius), name: slot.textContent.trim(),
         right: slot.getBoundingClientRect().right <= innerWidth + 1 };
-      // A transparent logo keeps the plain logo, no name beside it.
+      // A clear square logo (owner 2026-10-01: the corner is his) is a tile
+      // too, on white so dark artwork reads on the bar, with his name beside.
       S.logoData = __logo('clear-dark'); S.logoMeta = null; await _logoEnsureMeta(); applyBrandLogo();
-      out.clearName = slot.textContent.trim(); out.clearImg = !!slot.querySelector('img');
+      const ci = slot.querySelector('img');
+      out.clearName = slot.textContent.trim(); out.clearImg = !!ci; out.clearBg = ci && getComputedStyle(ci).backgroundColor;
       Object.assign(S, keep); applyBrandLogo();
       return out;
     });
-    expect(r.h).toBe(34);
+    // 40, not 34 (owner 2026-10-01: the logo read tiny in the corner).
+    expect(r.h).toBe(40);
     expect(r.radius).toBeGreaterThanOrEqual(8);
     expect(r.name).toBe('Plumbing Solutions By JS');
     expect(r.right).toBe(true);
     expect(r.clearImg).toBe(true);
-    expect(r.clearName).toBe('');
+    expect(r.clearName).toBe('Plumbing Solutions By JS');
+    expect(r.clearBg).toBe('rgb(255, 255, 255)');
   });
 
   test('app bar: the name is escaped, and the badge appears once the logo is measured', async () => {

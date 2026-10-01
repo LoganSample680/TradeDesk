@@ -1172,29 +1172,32 @@ function _renderLogoPreview(){
 // the name, like an app icon; a transparent or white-backed one as a
 // wordmark. Measured here because the proposal is built synchronously and
 // cannot wait on an image to decode.
+// What the logo is (square or wide, its own solid square or not), measured
+// ONCE per logo by the same tdLogoLook the client hub and the boot screen use
+// (js/brand-look.js), so the header, the proposal cover and the hub cannot
+// disagree about one logo. v:2 marks a measurement made this way: one saved
+// by the old four-corner check is measured again, which repairs an account
+// whose saved answer was wrong (2026-10-01).
+const _LOGO_META_V=2;
 function _logoEnsureMeta(){
-  const src=(typeof S!=='undefined'&&S&&S.logoData)||'';
+  const src=(typeof S!=='undefined'&&S&&(S.logoData||S.logoUrl))||'';
   if(!src){if(S&&S.logoMeta)S.logoMeta=null;return Promise.resolve(null);}
   const h=String(typeof _hubHash==='function'?_hubHash(src):src.length);
-  if(S.logoMeta&&S.logoMeta.hash===h)return Promise.resolve(S.logoMeta);
+  if(S.logoMeta&&S.logoMeta.hash===h&&S.logoMeta.v===_LOGO_META_V)return Promise.resolve(S.logoMeta);
   return new Promise(res=>{
     const img=new Image();
+    if(!/^data:/.test(src))img.crossOrigin='anonymous';   // a stored logo: read its pixels
     img.onload=()=>{
-      try{
-        const w=img.naturalWidth||img.width||1,hh=img.naturalHeight||img.height||1;
-        const N=48,c=document.createElement('canvas');c.width=N;c.height=N;
-        const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
-        const px=(a,b)=>x.getImageData(a,b,1,1).data;
-        const cs=[px(1,1),px(N-2,1),px(1,N-2),px(N-2,N-2)];
-        const avg=[0,1,2].map(i=>Math.round(cs.reduce((t,p)=>t+p[i],0)/4));
-        const solid=cs.every(p=>p[3]>235)&&cs.every(p=>[0,1,2].every(i=>Math.abs(p[i]-avg[i])<40));
-        const lum=(0.2126*avg[0]+0.7152*avg[1]+0.0722*avg[2])/255;
-        S.logoMeta={hash:h,ratio:Math.round(w/hh*100)/100,solid,light:lum>0.92,bg:'rgb('+avg.join(',')+')'};
-      }catch(_e){S.logoMeta={hash:h,ratio:1,solid:false,light:true,bg:''};}
+      const lk=typeof tdLogoLook==='function'?tdLogoLook(img):null;
+      // No reading (a blocked image): keep what was there rather than save a guess.
+      if(!lk){res(S.logoMeta||null);return;}
+      const hx=String(lk.bg||'#000000').replace('#','');
+      const rgb=[0,2,4].map(i=>parseInt(hx.slice(i,i+2),16)||0);
+      S.logoMeta={v:_LOGO_META_V,hash:h,ratio:lk.ratio,solid:!!lk.solid,light:!!lk.light,bg:'rgb('+rgb.join(',')+')'};
       try{if(typeof _settingsChanged==='function')_settingsChanged();}catch(_e){}
       res(S.logoMeta);
     };
-    img.onerror=()=>res(null);
+    img.onerror=()=>res(S.logoMeta||null);
     img.src=src;
   });
 }
@@ -1229,12 +1232,15 @@ function applyBrandLogo(){
   const nm='<span class="brand-name" style="min-width:0;font-weight:800;letter-spacing:-.02em;line-height:1.12;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+escHtml(b.name)+'</span>';
   const brand=(S.brandColor&&/^#[0-9a-f]{6}$/i.test(S.brandColor))?S.brandColor:'#2d5da8';
   let html='';
+  // A logo that is its own solid square fills the tile; any other (a clear
+  // background) sits on a white tile so dark artwork never vanishes on the bar.
+  const own=!!(S.logoMeta&&S.logoMeta.solid&&!S.logoMeta.light);
   if(b.kind==='square')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
-      '<img class="brand-tile" src="'+escHtml(b.logo)+'" style="height:40px;width:40px;object-fit:cover;border-radius:10px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.16)" alt="">'+
+      '<img class="brand-tile" src="'+escHtml(b.logo)+'" style="height:40px;width:40px;'+(own?'object-fit:cover':'object-fit:contain;background:#fff;padding:3px;box-sizing:border-box')+';border-radius:10px;flex-shrink:0;display:block" alt="">'+
       (b.name?nm:'')+'</span>';
   else if(b.kind==='wide')html='<img class="brand-wide" src="'+escHtml(b.logo)+'" style="height:40px;max-width:min(60vw,240px);object-fit:contain;object-position:left center;display:block" alt="'+escHtml(b.name||'Logo')+'">';
   else if(b.kind==='initials')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
-      '<span class="brand-tile brand-initials" style="height:40px;width:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:'+brand+';color:#fff;font-weight:900;font-size:15px;letter-spacing:-.3px;box-shadow:0 0 0 1px rgba(255,255,255,.16)">'+escHtml(_brandInitials(b.name))+'</span>'+
+      '<span class="brand-tile brand-initials" style="height:40px;width:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:'+brand+';color:#fff;font-weight:900;font-size:15px;letter-spacing:-.3px">'+escHtml(_brandInitials(b.name))+'</span>'+
       nm+'</span>';
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
     if(b.kind==='none')el.textContent='TradeDesk';else el.innerHTML=html;
