@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.30.26.7';
+const APP_VERSION='10.01.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -8282,96 +8282,187 @@ function _sigPollTick(){
   if(document.visibilityState==='hidden')return;
   checkNewSignatures();_fetchProposalViews();
 }
+// ── PROPOSAL VIEWS AND THE AUDIT TRAIL, KEPT AND TOPPED UP (egress 2026-10-01) ──
+// The probe below already skipped quiet ticks. What still cost 32 MB a day
+// (Sep 30, the usage page) was everything else: every fresh page load, which
+// the version watchdog makes frequent, and every tick after ANY view changed,
+// pulled the full 500 view rows and the full 1,500 audit rows again, 966 and
+// 972 times that day. Now both are kept, in memory and across reloads
+// (zp3_acct_pv_<uid>, cleared with every other account cache on sign-out), and
+// a tick asks only for view rows whose updated_at moved and audit rows past the
+// newest id it holds. The maps are rebuilt from the kept rows with the exact
+// same top-500 / top-1,500 cut and order, so every badge reads as before. A
+// whole re-read still happens at least every PV_FULL_MS, which also drops any
+// row the server deleted.
 let _pvPollWatermark=null;
+let _pvKept=null;   // {uid, views: Map id->row, audit: Map id->row, auditMax, fullAt}
+const _PV_FULL_MS=6*60*60*1000;
+function _pvKeyFor(uid){return 'zp3_acct_pv_'+uid;}
+let _pvUid=null;
+// Reads the stored copy once per account. It never clears a watermark this
+// session armed itself, or a session whose copy could not be kept (no audit
+// rows yet) would lose its probe and re-read 500 rows on every tick.
+function _pvLoadKept(uid){
+  if(_pvUid===uid)return _pvKept;
+  _pvUid=uid;_pvKept=null;_pvPollWatermark=null;
+  try{
+    const o=JSON.parse(localStorage.getItem(_pvKeyFor(uid))||'null');
+    if(o&&o.uid===uid&&Array.isArray(o.views)&&Array.isArray(o.audit)){
+      _pvKept={uid,views:new Map(o.views.map(r=>[r.id,r])),audit:new Map(o.audit.map(r=>[r.id,r])),
+        auditMax:Number(o.auditMax)||0,fullAt:Number(o.fullAt)||0};
+      _pvPollWatermark=o.wm||null;
+    }
+  }catch(_e){_pvKept=null;_pvPollWatermark=null;}
+  return _pvKept;
+}
+function _pvSaveKept(){
+  if(!_pvKept)return;
+  try{localStorage.setItem(_pvKeyFor(_pvKept.uid),JSON.stringify({uid:_pvKept.uid,wm:_pvPollWatermark,
+    auditMax:_pvKept.auditMax,fullAt:_pvKept.fullAt,views:[..._pvKept.views.values()],audit:[..._pvKept.audit.values()]}));}catch(_e){}
+}
+// The full read's answer from kept rows: newest first by the same column,
+// under the same cap.
+function _pvTopViews(){
+  return [..._pvKept.views.values()].filter(v=>v&&v.bid_id)
+    .sort((x,y)=>(String(y.opened_at||'')).localeCompare(String(x.opened_at||''))||String(x.id).localeCompare(String(y.id)))
+    .slice(0,500);
+}
+function _pvTopAudit(){
+  return [..._pvKept.audit.values()]
+    .sort((x,y)=>(String(y.ts||'')).localeCompare(String(x.ts||''))||(Number(y.id)-Number(x.id)))
+    .slice(0,1500);
+}
+function _pvApplyViews(data){
+  // Build into temporaries first, then swap atomically, prevents a renderDash()
+  // mid-flight from seeing an empty dict during the rebuild window (flicker race).
+  const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
+  data.forEach(v=>{
+    if(!v.bid_id)return;
+    if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
+    if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
+    if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
+    if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
+    if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
+    if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
+    if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
+    // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
+    if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
+    if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
+  });
+  // Render ONLY when the view data actually changed. This fetch runs after every
+  // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
+  // here rebuilt the whole dashboard for byte-identical data on every tick, and
+  // stacked 2-3 redundant render passes into every reconcile window (named live
+  // by the glitch-free budget's caller trace). The maps still swap every time.
+  const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt,_pvStep]);
+  const _pvChanged=_pvSig!==window._pvLastSig;
+  window._pvLastSig=_pvSig;
+  _proposalViewsByBid=_pvBid;
+  _proposalViewsByBidHubClient=_pvHub;
+  _proposalViewsByBidClient=_pvClient;
+  _proposalViewsByBidContractor=_pvCon;
+  _proposalViewsByBidHubCount=_pvHubCnt;
+  _proposalViewsByBidClientCount=_pvCliCnt;
+  _proposalViewsByBidStep=_pvStep;
+  _proposalViewsByBidStepAt=_pvStepAt;
+  _proposalViewsByBidClientIp=_pvCliIp;
+  _proposalViewsByBidHubIp=_pvHubIp;
+  if(_pvChanged)renderDash();
+}
+function _pvApplyAudit(rows){
+  const _byBid={};
+  rows.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
+  _proposalAuditEventsByBid=_byBid;
+}
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
+    const uid=_supaUser.id;
+    let kept=_pvLoadKept(uid);
+    // A kept copy paints the badges on the first tick after a reload, before
+    // anything is asked of the server.
+    if(kept&&window._pvKeptPainted!==uid){window._pvKeptPainted=uid;_pvApplyViews(_pvTopViews());_pvApplyAudit(_pvTopAudit());}
+    if(kept&&Date.now()-kept.fullAt>_PV_FULL_MS){_pvKept=kept=null;_pvPollWatermark=null;}
     // Watermark probe (egress): steady state asks "is anything newer than what
     // I've seen?", at most ONE tiny row, instead of re-downloading 500 full
-    // rows every 30s. Any change → the full rebuild below runs unchanged, so
-    // the dict semantics (newest-first, atomic swap) never differ from today.
-    // Drift-safe: no updated_at column (un-migrated env) → the probe errors →
-    // full poll, the exact pre-fix behavior; rows without updated_at never arm
-    // the watermark, so an un-migrated database stays on full polls forever.
+    // rows every 30s. Drift-safe: no updated_at column (un-migrated env) → the
+    // probe errors → full poll, the exact pre-fix behavior; rows without
+    // updated_at never arm the watermark, so an un-migrated database stays on
+    // full polls forever.
     if(_pvPollWatermark){
       const{data:_probe,error:_pErr}=await _supa.from('proposal_views')
         .select('updated_at')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',uid)
         .gt('updated_at',_pvPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(1);
       if(!_pErr&&_probe&&!_probe.length)return; // nothing changed, zero-row tick
-      // The probe row is the global max updated_at (desc, limit 1), advance from
-      // it so an old row's update (outside the top-500 by opened_at below) can't
-      // wedge the watermark into probing positive on every tick.
-      if(!_pErr&&_probe)_probe.forEach(v=>{if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
+      if(_pErr){_pvKept=kept=null;}
     }
-    // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
-    // Contractor reads back with their authenticated session, RLS allows SELECT on own rows.
-    // select('*') not an explicit list, furthest_step/_at may not exist yet in
-    // every environment (migration drift), and an explicit list would fail the
-    // whole query; same defensive pattern as checkNewSignatures above.
-    // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
-    // Any proposal a client is actively engaging with is in the newest 500 view
-    // rows; older rows only feed stale badges on long-closed bids.
-    const{data,error}=await _supa.from('proposal_views')
-      .select('*')
-      .eq('contractor_user_id',_supaUser.id)
-      .not('bid_id','is',null)
-      .order('opened_at',{ascending:false})
-      .limit(500);
-    if(data&&!error){
-      data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
-      // Build into temporaries first, then swap atomically, prevents a renderDash()
-      // mid-flight from seeing an empty dict during the rebuild window (flicker race).
-      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
-      data.forEach(v=>{
-        if(!v.bid_id)return;
-        if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
-        if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
-        if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
-        if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
-        if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
-        if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
-        if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
-        // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
-        if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
-        if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
-      });
-      // Render ONLY when the view data actually changed. This fetch runs after every
-      // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
-      // here rebuilt the whole dashboard for byte-identical data on every tick, and
-      // stacked 2-3 redundant render passes into every reconcile window (named live
-      // by the glitch-free budget's caller trace). The maps still swap every time.
-      const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt,_pvStep]);
-      const _pvChanged=_pvSig!==window._pvLastSig;
-      window._pvLastSig=_pvSig;
-      _proposalViewsByBid=_pvBid;
-      _proposalViewsByBidHubClient=_pvHub;
-      _proposalViewsByBidClient=_pvClient;
-      _proposalViewsByBidContractor=_pvCon;
-      _proposalViewsByBidHubCount=_pvHubCnt;
-      _proposalViewsByBidClientCount=_pvCliCnt;
-      _proposalViewsByBidStep=_pvStep;
-      _proposalViewsByBidStepAt=_pvStepAt;
-      _proposalViewsByBidClientIp=_pvCliIp;
-      _proposalViewsByBidHubIp=_pvHubIp;
-      if(_pvChanged)renderDash();
-    }
-    // Per-event audit log (every open + sign-flow step, each with its own timestamp
-    // + captured IP) for the client-record audit timeline and exportable report.
-    try{
-      const{data:_ae}=await _supa.from('proposal_audit_events')
-        .select('bid_id,event,ip_address,user_agent,ts')
-        .eq('contractor_user_id',_supaUser.id)
-        .order('ts',{ascending:false})
-        .limit(1500);
-      if(_ae){
-        const _byBid={};
-        _ae.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
-        _proposalAuditEventsByBid=_byBid;
+    if(kept&&_pvPollWatermark){
+      // Something changed: only the rows that did.
+      const since=_pvPollWatermark;
+      let vr=null,ar=null;
+      try{
+        [vr,ar]=await Promise.all([
+          _supa.from('proposal_views').select('*').eq('contractor_user_id',uid).not('bid_id','is',null)
+            .gt('updated_at',since).order('updated_at',{ascending:true}).limit(500),
+          _supa.from('proposal_audit_events').select('id,bid_id,event,ip_address,user_agent,ts')
+            .eq('contractor_user_id',uid).gt('id',kept.auditMax).order('id',{ascending:true}).limit(1500),
+        ]);
+      }catch(_e){vr=null;ar=null;}
+      // A failure, or a page that may have been cut short, gets the whole read.
+      if(!vr||!ar||vr.error||!vr.data||vr.data.length>=500||ar.error||!ar.data||ar.data.length>=1500){_pvKept=kept=null;_pvPollWatermark=null;}
+      else{
+        vr.data.forEach(v=>{kept.views.set(v.id,v);if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
+        ar.data.forEach(r=>{kept.audit.set(r.id,r);if(Number(r.id)>kept.auditMax)kept.auditMax=Number(r.id);});
+        _pvApplyViews(_pvTopViews());
+        _pvApplyAudit(_pvTopAudit());
+        _pvSaveKept();
       }
-    }catch(_e){}
+    }
+    if(!kept){
+      // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
+      // Contractor reads back with their authenticated session, RLS allows SELECT on own rows.
+      // select('*') not an explicit list, furthest_step/_at may not exist yet in
+      // every environment (migration drift), and an explicit list would fail the
+      // whole query; same defensive pattern as checkNewSignatures above.
+      // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
+      // Any proposal a client is actively engaging with is in the newest 500 view
+      // rows; older rows only feed stale badges on long-closed bids.
+      const{data,error}=await _supa.from('proposal_views')
+        .select('*')
+        .eq('contractor_user_id',uid)
+        .not('bid_id','is',null)
+        .order('opened_at',{ascending:false})
+        .limit(500);
+      if(data&&!error){
+        _pvPollWatermark=null;
+        data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
+        _pvApplyViews(data);
+      }
+      // Per-event audit log (every open + sign-flow step, each with its own timestamp
+      // + captured IP) for the client-record audit timeline and exportable report.
+      let audit=null;
+      try{
+        const{data:_ae}=await _supa.from('proposal_audit_events')
+          .select('id,bid_id,event,ip_address,user_agent,ts')
+          .eq('contractor_user_id',uid)
+          .order('ts',{ascending:false})
+          .limit(1500);
+        if(_ae){audit=_ae;_pvApplyAudit(_ae);}
+      }catch(_e){}
+      if(data&&!error){
+        // Kept only when the views carry updated_at (the watermark) and the
+        // audit rows came back: otherwise this stays a whole read every tick,
+        // exactly as before.
+        if(_pvPollWatermark&&audit){
+          _pvKept={uid,views:new Map(data.map(v=>[v.id,v])),audit:new Map(audit.map(r=>[r.id,r])),
+            auditMax:audit.reduce((m,r)=>Math.max(m,Number(r.id)||0),0),fullAt:Date.now()};
+          _pvSaveKept();
+        }
+      }
+    }
     // Verified on-site presence (arrival/departure) for the client Activity timeline.
     // Only geofence/manual entries carry a job_id; the place-linked rows (source:'place',
     // job_id:null, a supply-house stop) don't belong to any one client and are skipped.
