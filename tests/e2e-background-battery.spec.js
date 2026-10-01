@@ -74,11 +74,15 @@ test.describe('a backgrounded page does no screen work', () => {
   });
 
   test('the on-site figure does not tick while hidden', async () => {
+    // Hidden FIRST. The app's own once-a-second ticker is running, so a figure
+    // planted on a visible page can be written by it before the hide lands,
+    // and the test then reads the ticker's work as if it ran while hidden
+    // (webkit, shard 1, 2026-10-01).
+    await hide();
     await page.evaluate(() => {
       const n = document.createElement('span'); n.id = '__onsite'; n.setAttribute('data-onsite-since', String(Date.now() - 3 * 3600000 - 5 * 60000));
       n.textContent = 'untouched'; document.body.appendChild(n);
     });
-    await hide();
     const hidden = await page.evaluate(() => { _geoOnsiteTick(); return document.getElementById('__onsite').textContent; });
     await show();
     const shown = await page.evaluate(() => { _geoOnsiteTick(); const n = document.getElementById('__onsite'); const t = n.textContent; n.remove(); return t; });
