@@ -24,7 +24,7 @@ concurrency:
 jobs:
   wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,6 +43,14 @@ jobs:
                 -H "Content-Type: application/json" -d '{"reason":"deploy"}') || { echo "::warning::push-geo-ping unreachable"; exit 0; }
               echo "$OUT"
               echo "$OUT" | grep -q '"ok":true' || echo "::warning::push-geo-ping reported failure: $OUT"
+              # Two minutes later, once more for the phones still behind: each
+              # phone reports its version on boot, so the server can see who
+              # the first wake did not reach.
+              sleep 120
+              RETRY=$(curl -sS -m 30 -X POST \
+                "https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/push-geo-ping" \
+                -H "Content-Type: application/json" -d "{\"reason\":\"deploy-retry\",\"version\":\"$WANT\"}") || { echo "::warning::retry unreachable"; exit 0; }
+              echo "retry: $RETRY"
               exit 0
             fi
             echo "UAT still serving '${GOT}', waiting"
