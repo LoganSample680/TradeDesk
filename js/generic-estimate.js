@@ -4261,6 +4261,33 @@ function _geiTaxLineType(l){
   if(sec&&sec!=='add-ons'&&!/^rrp\b/.test(sec))return 'labor';
   return null;
 }
+// SALES TAX, ONE ANSWER FOR EVERY DOCUMENT (owner 2026-10-01: "tax logic from
+// proposal carry over"). Build Your Own, T&M and the invoice all ask this.
+// lines: [{desc,total,lineType}] with lineType from _geiTaxLineType (or
+// 'labor' / 'materials' / 'taxpaid' where the caller already knows). rateObj
+// is the customer's address lookup (lookupSalesTaxRate), or null to fall back
+// to his own rate in Settings. label is what the totals say, '' for no row.
+function _docSalesTax(o){
+  o=o||{};
+  const addr=String(o.addr||'');
+  const state=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)||(typeof S!=='undefined'&&S&&S.state)||'KS';
+  const rate=(o.rateObj!=null)?(Number(o.rateObj.rate)||0):(parseFloat(typeof S!=='undefined'&&S&&S.salesTaxRate)||0);
+  const scope=o.scope||'repair';
+  const out={tax:0,rate,scope,treatment:null,label:''};
+  if(!(rate>0)||typeof calcSalesTax!=='function')return out;
+  const r=calcSalesTax({state,tradeType:o.trade||'general',scope,propertyType:o.commercial?'commercial':'residential',taxRate:rate,lineItems:o.lines||[]});
+  out.tax=Math.round((Number(r.taxAmount)||0)*100)/100;
+  out.treatment=r.treatment||null;
+  const t=out.treatment;
+  if(out.tax>0){
+    const isGR=t&&t.type==='gross_receipts';
+    const isFull=t&&(t.type==='service'||t.laborTaxable);
+    out.label=(isGR?(t.label||'Tax'):(isFull?'Sales tax':'Materials tax'))+' ('+rate+'%)';
+  }else if(t&&!t.customerTax){
+    out.label=scope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
+  }
+  return out;
+}
 // The job price rides on the first work line as whatever the priced lines
 // (the supply house list, anything he did price) leave over, so the total is
 // his number and the tax still sees which part is parts. The carrier is
@@ -4301,36 +4328,19 @@ function _byoUpdateRail(){
   _byoApplyJobPrice(_geiLines);
   const sub=_geiLines.reduce((s,l)=>s+(Number(l.total)||0),0);
 
-  // Sales tax
-  let salesTax=0;
-  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
-  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
+  // Sales tax: the one shared answer (_docSalesTax).
   const taxRow=document.getElementById('byo-rail-tax-row');
   const taxAmt=document.getElementById('byo-rail-tax-amt');
   const taxLbl=document.getElementById('byo-rail-tax-lbl');
-  if(_stRate>0&&typeof calcSalesTax==='function'&&sub>0){
-    const _stScope=_geiJobScope||'repair';
-    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
-        return {desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)};
-      })});
-    salesTax=_stResult.taxAmount||0;
-    if(taxRow&&taxAmt&&taxLbl){
-      if(salesTax>0){
-        const isFull=_stResult.treatment?.type==='service'||_stResult.treatment?.laborTaxable;
-        taxLbl.textContent=isFull?'Sales tax ('+_stRate+'%)':'Materials tax ('+_stRate+'%)';
-        taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-        taxRow.style.display='';
-      } else if(_stResult.treatment&&!_stResult.treatment.customerTax){
-        taxLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
-        taxAmt.textContent='$0.00';
-        taxRow.style.display='';
-      } else {
-        if(taxRow)taxRow.style.display='none';
-      }
-    }
-  } else {
-    if(taxRow)taxRow.style.display='none';
+  const _st=sub>0?_docSalesTax({addr:document.getElementById('gei-addr')?.value||'',rateObj:_geiClientTaxRate,trade:_geiTrade||'general',
+    scope:_geiJobScope||'repair',commercial:_geiIsCommercial,lines:_geiLines.map(l=>({desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)}))}):{tax:0,label:''};
+  const salesTax=_st.tax;
+  if(taxRow&&taxAmt&&taxLbl){
+    if(_st.label){
+      taxLbl.textContent=_st.label;
+      taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      taxRow.style.display='';
+    }else taxRow.style.display='none';
   }
 
   const total=sub+salesTax;
@@ -4792,6 +4802,8 @@ function _roomWireDrag(root){
     w.addEventListener('pointerdown',e=>{
       if(e.button!==undefined&&e.button!==0)return;
       if(e.target.closest('.ios-check,.ios-del,.ios-minus'))return;
+      // Typing in a line (the invoice's work list) is not picking it up.
+      if(e.target===document.activeElement&&e.target.matches('textarea,input'))return;
       x0=e.clientX;y0=e.clientY;cancel();
       t=setTimeout(()=>{t=null;_roomDragStart(w,x0,y0);},380);
     });
@@ -4994,11 +5006,13 @@ _ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename};
 
 // The list open right now, in the one shape both screens answer to.
 function _scopeKey(){return (typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm':'byo';}
-function _scopeArr(key){return (key||_scopeKey())==='tm'?_tmItems():_byoItems;}
+// The invoice's work list is a third list of the same records (js/quick-invoice.js).
+function _scopeArr(key){key=key||_scopeKey();return key==='tm'?_tmItems():key==='qi'?_qiWorkArr():_byoItems;}
 function _scopeWork(arr){return (arr||[]).filter(x=>x&&!x._supply&&!x._rrp);}
-function _scopeNewRec(key,text,sec,price){return key==='tm'?_tmRec(text,sec):_byoLineRec(text,sec,price);}
+function _scopeNewRec(key,text,sec,price){return key==='byo'?_byoLineRec(text,sec,price):_tmRec(text,sec);}
 function _scopeCommit(key){
   if(key==='tm'){_tmCommit();return;}
+  if(key==='qi'){_qiWorkCommit();return;}
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 // Where a step he took from Tim lands: in the room it names when rooms are
@@ -5022,21 +5036,23 @@ function _scopeTakeBuilt(key,built){
   const inUse=new Set(_scopeWork(arr).map(x=>x.section));
   const have=new Set(arr.map(x=>String(x.label).toLowerCase()));
   (built.steps||[]).forEach(st=>{
-    // T&M has no line price: a price he said stays in the step's words.
-    const text=(key==='tm'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    // T&M and the invoice's work list have no line price: a price he said
+    // stays in the step's words.
+    const text=(key!=='byo'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
     if(have.has(text.toLowerCase()))return;
     have.add(text.toLowerCase());
     // Painting keeps its own two, Interior and Exterior.
     let sec=(st.room&&tr!=='painting')?st.room:undefined;
     if(!sec&&inUse.size>1&&typeof timRoomOf==='function'){const r=timRoomOf(text);if(r&&inUse.has(r))sec=r;}
     if(key==='byo'&&sec&&!_byoSections().includes(sec)&&!_byoCustomSections.includes(sec))_byoCustomSections.push(sec);
-    const rec=_scopeNewRec(key,key==='tm'?text:st.text,sec,st.price);
+    const rec=_scopeNewRec(key,key!=='byo'?text:st.text,sec,st.price);
     // His own written order stands on the customer's copy (no regrouping).
     if(st.written)rec._written=true;
     arr.push(rec);
   });
   _scopeGroupArr(arr);
   if(key==='tm')_tmWrote();
+  if(key==='qi')_qiWorkSync();
   return (built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
 }
 // From a pasted letter, on both screens: the days the price holds and his
@@ -5048,8 +5064,8 @@ function _scopeTakeLetter(built){
   if(built.note&&!String(_geiNote||'').trim()){_geiNote=built.note;_geiNoteBy=built.noteBy||'';filled.push('your note');}
   return filled;
 }
-function _scopeMissedOf(key){return key==='tm'?_geiScopeMissed:_byoMissed;}
-function _scopeSetMissed(key,v){if(key==='tm')_geiScopeMissed=v;else _byoMissed=v;}
+function _scopeMissedOf(key){return key==='tm'?_geiScopeMissed:key==='qi'?((typeof _qi!=='undefined'&&_qi&&_qi.missed)||[]):_byoMissed;}
+function _scopeSetMissed(key,v){if(key==='tm')_geiScopeMissed=v;else if(key==='qi'){if(_qi)_qi.missed=v;}else _byoMissed=v;}
 function _scopeTakeMissed(key,id){
   const list=_scopeMissedOf(key);
   const im=list.find(x=>String(x.id)===String(id));if(!im)return;
@@ -5074,7 +5090,7 @@ function _scopeDropMissed(key,id){
   const im=_scopeMissedOf(key).find(x=>String(x.id)===String(id));
   if(im)_timMissLearn(im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
   _scopeSetMissed(key,_scopeMissedOf(key).filter(x=>String(x.id)!==String(id)));
-  if(key==='tm')_renderScopeChips('tm-scope-wrap');else _byoRenderSections();
+  if(key==='tm')_renderScopeChips('tm-scope-wrap');else if(key==='qi')renderQuickInvoice();else _byoRenderSections();
 }
 function _byoDeleteSection(sec){
   if(_byoSections().includes(sec))return;
@@ -7937,22 +7953,12 @@ function calcGeiTotal(){
   // 2026-09-23).
   const markup=_geiIsTM?0:sub*pct/100;
 
-  // Sales tax, separate from markup, based on state rules and job scope
-  let salesTax=0,salesTaxTreatment=null;
-  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+  // Sales tax, separate from markup, based on state rules and job scope: the
+  // one shared answer (_docSalesTax).
   const _stScope=_geiJobScope||(_geiIsTM?'tm':'repair');
-  // Rate: always use client address ZIP/state lookup; fall back to contractor setting only when no address yet
-  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
-  if(typeof calcSalesTax==='function'&&_stRate>0){
-    const _liItems=_geiLines.map(l=>{
-      if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
-      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:_geiTaxLineType(l)};
-    });
-    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_liItems});
-    salesTax=_stResult.taxAmount||0;
-    salesTaxTreatment=_stResult.treatment;
-  }
+  const _st=_docSalesTax({addr:document.getElementById('gei-addr')?.value||'',rateObj:_geiClientTaxRate,trade:_geiTrade||'general',
+    scope:_stScope,commercial:_geiIsCommercial,lines:_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':_geiTaxLineType(l)}))});
+  const salesTax=_st.tax,_stRate=_st.rate;
 
   const total=sub+markup+salesTax;
   const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -7964,23 +7970,12 @@ function calcGeiTotal(){
   const stAmt=document.getElementById('gei-sales-tax-amt');
   const stLbl=document.getElementById('gei-sales-tax-lbl');
   if(stRow&&stAmt&&stLbl){
-    if(!_stRate){
-      stRow.style.display='none';
-    } else if(salesTaxTreatment&&!salesTaxTreatment.customerTax){
-      stRow.style.display='flex';
-      stAmt.textContent='$0.00';
-      stLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
-      stAmt.style.color='var(--text3)';
-    } else if(salesTax>0){
+    if(!_st.label)stRow.style.display='none';
+    else{
       stRow.style.display='flex';
       stAmt.textContent=fmt(salesTax);
-      stAmt.style.color='var(--text2)';
-      const isGR=salesTaxTreatment?.type==='gross_receipts';
-      const isFull=salesTaxTreatment?.type==='service'||salesTaxTreatment?.laborTaxable;
-      stLbl.textContent=(isGR?(salesTaxTreatment.label||'Tax'):(isFull?'Sales tax':'Materials tax'))
-        +' ('+_stRate+'%)';
-    } else {
-      stRow.style.display='none';
+      stAmt.style.color=salesTax>0?'var(--text2)':'var(--text3)';
+      stLbl.textContent=_st.label;
     }
   }
 

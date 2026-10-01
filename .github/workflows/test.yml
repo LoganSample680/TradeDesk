@@ -199,6 +199,13 @@ jobs:
         env:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-placeholder.sql
+      # Jack's gym morning (2026-09-30): answered "work" as Don's, re-derived as
+      # a Personal place, and the old answer kept it a job site. 20261058 lets a
+      # Personal place clear it; every other answer is still carried.
+      - name: A Personal place outranks an old answer
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-personal.sql
 
       # A late tape changes a drive's key, and ingest never sweeps, so the
       # fuller answer used to land BESIDE the old one and the day counted twice

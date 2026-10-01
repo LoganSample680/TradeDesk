@@ -1200,9 +1200,14 @@ async function _sendPaidInvoice(bidId,opts){
   const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id+'#invoice-'+bidId;
   const paid=getBidBalance(bid)<0.01;
   const first=(c.name||'').split(' ')[0]||'there';
+  // Signed the way a proposal's text is (_smsSignOff: "- John, Plumbing
+  // Solutions By JS", never TradeDesk), with the link after it so iMessage
+  // draws the logo card; Venmo, when he takes it, stays the very last line.
+  const _sig=(typeof _smsSignOff==='function')?_smsSignOff({bname:(typeof S!=='undefined'&&S.bname)||''}):'';
+  const _sigLn=_sig?'\n\n'+_sig+'\n\n':' ';
   const body=paid
-    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
-    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+': '+url:'Hi '+first+', here is your updated invoice: '+url)+
+    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+'.'+_sigLn+url
+    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+'.'+_sigLn+url:'Hi '+first+', here is your updated invoice.'+_sigLn+url)+
       // Venmo last: a link at the end of a text is the one a phone makes tappable.
       (()=>{const v=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));return v?'\n\nOr pay with Venmo: '+v:'';})();
   // The one send screen (tdSendSheet, js/proposals.js), the same as proposals

@@ -446,7 +446,7 @@ test.describe('Ready to bill', () => {
     await open(page, 701);
     const r = await page.evaluate(() => ({
       steps: [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent),
-      math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
+      math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].filter(x => x.style.display !== 'none').map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
       send: document.getElementById('qi-send-total').textContent,
       // Each setting sits in the step it is about, out in the open (owner
       // 2026-09-29: "why is drive time in options and not with time?").
@@ -1337,4 +1337,152 @@ test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the w
   console.log('[invoice start to finish] ' + taps + ' taps, ' + keys + ' keys, ' + ms + 'ms');
   assertNoErrors(page, 'invoice start to finish');
 });
+});
+
+// Owner 2026-10-01: "tax logic from proposal carry over". The invoice asks the
+// same _docSalesTax the proposals do: in Kansas a home repair taxes the parts
+// and not the hours, store receipts were taxed at the counter, and a new
+// build charges none.
+test.describe('Invoice sales tax, the proposal rule', () => {
+  const setup = (page, o) => page.evaluate(async (o) => {
+    const c = getClientById(701);
+    c.addr = '2210 Birch Ln, Topeka, KS 66603'; c.ptype = o.ptype || '';
+    _activeTrade = o.trade || 'plumbing';
+    S.salesTaxRate = 9.15;
+    window.lookupSalesTaxRate = async () => ({ rate: 9.15, source: 'hardcoded' });
+    openQuickInvoice(701);
+    await new Promise(r => setTimeout(r, 40));
+    if (o.part) { _qi.typed.push({ part: true, desc: 'Wax ring', qty: 1, amount: o.part }); renderQuickInvoice(); }
+    const t = _qiTax();
+    const rows = _qiCustomerRows();
+    return { tax: t.tax, label: t.label, sub: _qiSub(), total: _qiTotal(),
+      rowSum: Math.round(rows.filter(r => r.amount != null && !r.sub).reduce((s, r) => s + r.amount, 0) * 100) / 100,
+      taxRow: rows.find(r => /tax/i.test(r.text)) || null,
+      shown: getComputedStyle(document.getElementById('qi-m-tax-row')).display !== 'none' ? document.getElementById('qi-m-tax-lbl').textContent : null };
+  }, o || {});
+
+  test('a Kansas home repair: parts are taxed, hours and store receipts are not', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, { part: 100 });
+    expect(r.tax, '9.15% of the $100 part only').toBe(9.15);
+    expect(r.label).toBe('Materials tax (9.15%)');
+    expect(r.total).toBe(Math.round((r.sub + 9.15) * 100) / 100);
+    expect(r.taxRow, 'the customer sees the tax as its own line').toEqual({ text: 'Materials tax (9.15%)', amount: 9.15 });
+    expect(r.rowSum, 'what they see adds up to what they pay').toBe(r.total);
+    expect(r.shown).toBe('Materials tax (9.15%)');
+    const saved = await page.evaluate(() => { const b = _qiSave(); return { amount: b.amount, tax: b.salesTax, rate: b.salesTaxRate }; });
+    expect(saved).toEqual({ amount: r.total, tax: 9.15, rate: 9.15 });
+    await assertNoErrors(page);
+  });
+
+  test('hours and receipts alone: no tax, no tax line on their copy', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, {});
+    expect(r.tax).toBe(0);
+    expect(r.taxRow).toBe(null);
+    expect(r.total).toBe(r.sub);
+  });
+
+  test('a new build is a capital improvement: nothing charged, and he is told why', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, { part: 100, ptype: 'new construction' });
+    expect(r.tax).toBe(0);
+    expect(r.shown).toBe('Sales tax, capital improvement');
+    expect(r.taxRow).toBe(null);
+  });
+
+  test('Build Your Own and the invoice give the same tax on the same part', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const lines = [{ desc: 'Wax ring', total: 100, lineType: 'materials' }, { desc: 'Labor', total: 300, lineType: 'labor' }];
+      S.salesTaxRate = 9.15;
+      return _docSalesTax({ addr: '1 A St, Topeka, KS 66603', rateObj: null, trade: 'plumbing', scope: 'repair', commercial: false, lines }).tax;
+    });
+    expect(r).toBe(9.15);
+  });
+});
+
+// Owner 2026-10-01: "almost all of it should carry the same code except for
+// the timesheet". The invoice's work list is the proposal's: Tim's build,
+// rooms, rename, drag, what he left out, and the scope section they print.
+test.describe('Invoice work done, the proposal list', () => {
+  const say = (page, t) => page.evaluate((t) => { document.getElementById('qi-say').value = t; _qiSayBuild(); }, t);
+
+  test('a lumped line comes out as steps by room, the same as Build Your Own', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const recs = _qiWorkArr();
+      // The same sentence through Build Your Own's build, for comparison.
+      const built = timScopeBuild('Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.', { rejected: [], trade: getActiveTrade() });
+      return {
+        labels: recs.map(x => x.label), rooms: [...new Set(recs.map(x => x.section))],
+        byo: built.steps.map(s => s.text),
+        work: _qi.work.slice(),
+        titles: [...document.querySelectorAll('#qi-page [data-room-list="qi"] .room-name')].map(b => b.textContent),
+      };
+    });
+    // The same steps; the list keeps each room's lines together, as BYO's does.
+    expect([...r.labels].sort()).toEqual([...r.byo].sort());
+    expect(r.work, 'the words list follows the records').toEqual(r.labels);
+    expect(r.rooms.length).toBeGreaterThan(1);
+    expect(r.titles.length, 'room titles on screen').toBe(r.rooms.length);
+    await assertNoErrors(page);
+  });
+
+  test('rename a room, move a line, and their copy prints it by room', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const recs = _qiWorkArr();
+      const first = recs[0].section;
+      _ROOM_LISTS.qi.rename(first, 'Washer room');
+      const last = recs.length - 1;
+      _ROOM_LISTS.qi.move(last, 'Washer room', null);
+      const doc = _qiDocHtml();
+      return { sections: _qiWorkArr().map(x => x.section), moved: _qiWorkArr().filter(x => x.section === 'Washer room').length, doc };
+    });
+    expect(r.sections).toContain('Washer room');
+    expect(r.moved).toBeGreaterThanOrEqual(2);
+    expect(r.doc).toContain('Washer room');
+  });
+
+  test('the draft keeps the rooms, and the sent invoice saves them', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      _ROOM_LISTS.qi.rename(_qiWorkArr()[0].section, 'Washer room');
+      const snap = _qiDraftSnap();
+      const want = _qiWorkArr().map(x => x.label + '|' + x.section);
+      _qi.workRecs = []; _qi.work = [];
+      _qiDraftApply(snap);
+      const back = _qiWorkArr().map(x => x.label + '|' + x.section);
+      const bid = _qiSave();
+      return { want, back, saved: (bid.qiWorkItems || []).map(x => x.label + '|' + x.section), words: bid.qiWork };
+    });
+    expect(r.back).toEqual(r.want);
+    expect(r.saved).toEqual(r.want);
+    expect(r.words).toEqual(r.want.map(x => x.split('|')[0]));
+  });
+
+  test('a line he retypes is still logged as a fix to what Tim wrote', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const got = []; const o = window.timLogFix; window.timLogFix = (...a) => got.push(a.slice(0, 3));
+      const el = document.querySelector('#qi-page .qi-work-in');
+      el.value = 'Re-secured the tub spout'; _qiWorkEdit(0, el); _qiWorkDone(0, el);
+      window.timLogFix = o;
+      return got;
+    });
+    expect(r).toEqual([['work', 'Secure the tub spout', 'Re-secured the tub spout']]);
+  });
 });
