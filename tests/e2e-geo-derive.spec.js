@@ -1829,6 +1829,123 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 21 ON A DRIVE THE TAPE HAS NOT CLOSED (owner 2026-10-01) ─────────
+  // "I want to see on time shit within 10 seconds 100% of the time." Jack's
+  // 1 October, off his own phone: regionEnter at the yard 12:59:57, a fix
+  // inside at 13:00:39, the tape still at 13:01:20, another fix inside at
+  // 13:04:34. The shop row first reached the server at 13:08:47, because rule
+  // 21 only ever trimmed a drive the tape had already ended.
+  test.describe('rule 21: an arrival ends a drive that is still open', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const LOT = { lat: 39.0420, lng: -95.7511 };          // where he left from, saved nowhere
+    const ROAD = { lat: 39.0440, lng: -95.7230 };
+    const GATE = { lat: 39.04405070853869, lng: -95.71664236756777 };   // 725 ft out: the OS boundary
+    const IN1 = { lat: 39.04473446570101, lng: -95.7148052246708 };     // 348 ft
+    const IN2 = { lat: 39.04573864320676, lng: -95.71482328783864 };    // 87 ft
+    const PAST = { lat: 39.0444, lng: -95.7050 };          // out the far side
+    const tapeStill = [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(13, 1, 20), 'still')];
+    const fixesUpTo = (t, list) => list.filter(f => f.ts <= t);
+    const realFixes = [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 55), ROAD),
+      fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 4, 34), IN2)];
+    const regions = [{ ts: T(12, 59, 57), id: YARD.id, enter: true }];
+    const at = (nowMs, over) => run(page, base(Object.assign({
+      fences: [YARD], crew: false, tape: tapeStill, regions,
+      fixes: fixesUpTo(nowMs, realFixes), nowMs,
+    }, over)));
+    const lastJ = r => r.journeys[r.journeys.length - 1];
+
+    test('his 13:04:35 derive: the drive ends at the crossing and the yard opens there', async () => {
+      const r = await at(T(13, 4, 35));
+      expect(lastJ(r).endTs, 'no longer open').toBe(T(12, 59, 57));
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(hm(r.open.sinceTs), 'from the crossing, not the 13:01 flip').toBe(hm(T(12, 59, 57)));
+      expect(r.driving, 'and nothing is on the road').toBe(null);
+    });
+
+    test('his 13:01:22 derive is still a drive: 85 seconds is a red light, not a stop', async () => {
+      // The server writes a mileage leg once and never rewrites it, so a drive
+      // ended at a stoplight inside a fence would keep that end for good.
+      const r = await at(T(13, 1, 22));
+      expect(lastJ(r).endTs).toBe(null);
+      expect(r.open).toBe(null);
+    });
+
+    test('a drive-by with a lost exit, tape still automotive, does not end the drive', async () => {
+      // His 08:08 that morning: Menards and Lowe's entered mid-drive.
+      // Two readings inside, seconds apart, and the phone quiet after them.
+      const r = await at(T(13, 5), { tape: tapeStill.slice(0, 2),
+        fixes: fixesUpTo(T(13, 0, 39), realFixes).concat([fix(T(13, 0, 45), IN2)]) });
+      expect(lastJ(r).endTs, 'the tape never left automotive').toBe(null);
+      expect(r.open).toBe(null);
+    });
+
+    test('a pass out the far side, newest fix outside, does not end the drive', async () => {
+      const r = await at(T(13, 10), { fixes: realFixes.concat([fix(T(13, 8), PAST)]) });
+      expect(lastJ(r).endTs).toBe(null);
+      expect(r.open).toBe(null);
+    });
+
+    test('no proof fix inside the circle, no arrival', async () => {
+      const r = await at(T(13, 10), { fixes: fixesUpTo(T(12, 59, 57), realFixes) });
+      expect(lastJ(r).endTs).toBe(null);
+    });
+  });
+
+  // ── THE STOP IS A ROW BEFORE THE CHAIN IS A LEG (owner 2026-10-01) ────────
+  // "he was def on a job site because he took photos there." Jack's afternoon:
+  // out of the yard 14:38:23, out of the truck 15:01:38 at an address nobody
+  // saved, on the road again 15:25:10. While that drive was open the stop had
+  // no row and the Time Log called it Unaccounted.
+  test.describe('a pending chain writes its closed drives and stops now', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const BILL = { id: 'client-1789402572284', kind: 'client', name: 'Bill Lorson', clientId: 1789402572284, lat: 39.1071357709932, lng: -95.6648294064381 };
+    const STOP = { lat: 39.0700, lng: -95.6900 };
+    const tape = [mo(T(14, 34, 49), 'walking'), mo(T(14, 38, 23), 'automotive'), mo(T(15, 1, 38), 'cycling'),
+      mo(T(15, 25, 10), 'automotive'), mo(T(15, 45), 'onFoot')];
+    const fixes = [fix(T(14, 30), YARD), fix(T(14, 38, 20), YARD), fix(T(14, 50), { lat: 39.058, lng: -95.703 }),
+      fix(T(15, 2), STOP), fix(T(15, 10), STOP), fix(T(15, 20), STOP), fix(T(15, 25), STOP),
+      fix(T(15, 35), { lat: 39.090, lng: -95.677 }), fix(T(15, 45, 5), BILL), fix(T(16, 0), BILL)];
+    const rowsAt = (nowMs) => page.evaluate((inp) => {
+      const res = geoDeriveDay(inp);
+      const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return JSON.parse(JSON.stringify({ res: { pending: res.pending, legs: res.legs.map(l => l.id) }, rows }));
+    }, base({ fences: [YARD, BILL], crew: false, tape: tape.filter(t => t.ts <= nowMs),
+      fixes: fixes.filter(f => f.ts <= nowMs), regions: [], nowMs,
+      clocks: [{ start: T(13, 0), end: T(18, 0) }] }));
+    const keyed = (rows, k) => rows.job_time_entries.filter(t => t.client_key === k);
+
+    test('15:30, next drive still open: the 14:38 drive and the 15:01 stop are rows', async () => {
+      const { res, rows } = await rowsAt(T(15, 30));
+      expect(res.pending, 'the chain is still pending').toBeTruthy();
+      const id = res.pending.id;
+      const drive = keyed(rows, id);
+      expect(drive.length).toBe(1);
+      expect(hm(Date.parse(drive[0].arrived_at))).toBe(hm(T(14, 38, 23)));
+      expect(drive[0].source).toBe('drive');
+      const stop = keyed(rows, 'd-' + id);
+      expect(stop.length, 'the stop has its row before the chain resolves').toBe(1);
+      expect(hm(Date.parse(stop[0].arrived_at))).toBe(hm(T(15, 1, 38)));
+      expect(hm(Date.parse(stop[0].departed_at))).toBe(hm(T(15, 25, 10)));
+      expect(stop[0].source).toBe('unsaved');
+      expect(rows.td_mileage.find(m => m.id === id), 'mileage still waits for both ends').toBeFalsy();
+    });
+
+    test('16:30, resolved at Bill Lorson: one row per key, one leg, same keys as before', async () => {
+      const before = await rowsAt(T(15, 30));
+      const after = await rowsAt(T(16, 30));
+      const id = before.res.pending.id;
+      expect(after.res.pending).toBe(null);
+      expect(after.rows.td_mileage.filter(m => m.id === id).length, 'one leg').toBe(1);
+      expect(keyed(after.rows, 'd-' + id).length, 'one stop row, on the same key').toBe(1);
+      expect(keyed(after.rows, id).length, 'one row for the first drive').toBe(1);
+      const keys = after.rows.job_time_entries.map(t => t.client_key);
+      expect(new Set(keys).size, 'no key written twice').toBe(keys.length);
+      for (const t of before.rows.job_time_entries) {
+        expect(keys, 'the resolved leg lands on ' + t.client_key).toContain(t.client_key);
+      }
+    });
+  });
+
   test.describe('rule 20: the commute', () => {
     const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
     // No flag on it. The shop IS the place you report to (owner 2026-09-15:
