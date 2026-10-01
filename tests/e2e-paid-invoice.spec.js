@@ -138,6 +138,27 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(r).toMatch(/Contract price\s*\$1,148\.50/);
   });
 
+  // Owner 2026-10-01: the invoice's Materials switch. Their copy draws the
+  // rows the bill saved, amounts and all, so "Items and prices" shows prices
+  // and "Just the total" shows none.
+  test('a quick invoice prints its own rows: what he did, the day, labor and priced parts', async () => {
+    const r = await page.evaluate(() => {
+      _hub.salesTaxRate = 0;
+      _hub.bids = [{ id: 7040, amount: 486, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14',
+        work: ['Replaced the water heater supply lines'],
+        rows: [{ text: 'Thu, Aug 13', amount: 486, head: true }, { text: 'Labor · 3 hrs on site', amount: 450, sub: true },
+          { text: '2 × Supply line', amount: 36, sub: false }] }];
+      _hub.payments = [];
+      openInvoice(7040);
+      const el = document.getElementById('inv-content');
+      return { txt: el.textContent, cols: el.querySelectorAll('.inv-table th').length };
+    });
+    expect(r.cols).toBe(2);
+    expect(r.txt).toContain('Replaced the water heater supply lines');
+    expect(r.txt).toMatch(/2 × Supply line\s*\$36\.00/);
+    expect(r.txt).toMatch(/Labor · 3 hrs on site\s*\$450\.00/);
+  });
+
   test('an unpaid invoice within terms carries no stamp at all', async () => {
     const txt = await page.evaluate(() => {
       _hub.bids = [{ id: 7020, amount: 2375, type: 'Repaint', completion_date: '2026-08-14', daysOverdue: 0 }];

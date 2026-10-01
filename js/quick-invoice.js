@@ -1383,7 +1383,11 @@ function _qiSave(){
     type:'Invoice',kind:'quick_invoice',status:'Closed Won',draft:false,
     bid_date:todayKey(),completion_date:todayKey(),amount:total,deposit:0,
     salesTax:_qiTax().tax,salesTaxRate:_qiTax().rate,
-    desc:(hourly?_qi.work:[]).concat(_qiCustomerItems().map(l=>l.desc)).join('\n'),lineItems:_qiCustomerItems(),
+    desc:(hourly?_qi.work:[]).concat(_qiCustomerRows().filter(r=>!r.tax).map(r=>r.text)).join('\n'),lineItems:_qiCustomerItems(),
+    // Their copy prints these rows exactly as the preview does, so the
+    // Materials switch (total, items, items and prices) reaches the customer.
+    // The tax stays out: their copy prints it in the totals.
+    qiRows:_qiCustomerRows().filter(r=>!r.tax).map(r=>({text:r.text,amount:r.amount,head:!!r.head,sub:!!r.sub})),
     qiShowRate:hourly?_qiShowRate():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
     qiWork:hourly?_qi.work.slice():[],
@@ -1623,7 +1627,7 @@ function _qiCustomerRows(){
   charges.forEach(l=>rows.push({text:l.desc,amount:l.amount}));
   // The tax is its own line, so what they see adds up to what they pay.
   const tx=_qiTax();
-  if(tx.tax>0)rows.push({text:tx.label,amount:tx.tax});
+  if(tx.tax>0)rows.push({text:tx.label,amount:tx.tax,tax:true});
   return rows;
 }
 function _qiCustomerHtml(){

@@ -3079,6 +3079,19 @@ function openInvoice(bidId){
   const _scope=(bid.scope&&bid.scope.length)?bid.scope
     :(bid.lineItems&&bid.lineItems.length)?bid.lineItems.map(function(it){return it.desc||it.name||'Work';})
     :null;
+  // A quick invoice carries its own rows: the days, the labor, the parts
+  // the way he chose to show them (just the total, listed, or priced), the
+  // charges. Drawn as the preview draws them, so what he saw is what they get.
+  if(Array.isArray(bid.rows)&&bid.rows.length){
+    html+='<table class="inv-table"><thead><tr><th>Work performed</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+    (bid.work||[]).forEach(function(w){html+='<tr><td colspan="2">'+esc(w)+'</td></tr>';});
+    bid.rows.forEach(function(r){
+      const amt=r.amount!=null?fmt(r.amount):'';
+      if(r.sub)html+='<tr class="inv-sub"><td style="padding-left:22px;color:#555;border-bottom:0">'+esc(r.text)+'</td><td class="amt" style="color:#555;font-weight:500;border-bottom:0">'+amt+'</td></tr>';
+      else html+='<tr><td>'+(r.head?'<strong>'+esc(r.text)+'</strong>':esc(r.text))+'</td><td class="amt">'+amt+'</td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
   html+='<table class="inv-table"><thead><tr><th>Work performed</th></tr></thead><tbody>';
   if(_scope){
     _scope.forEach(function(line){
@@ -3088,6 +3101,7 @@ function openInvoice(bidId){
     html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td></tr>';
   }
   html+='</tbody></table>';
+  }
   // His note to them, signed, the way the proposal prints it.
   if(bid.note&&String(bid.note).trim()){
     html+='<div style="margin:16px 0;padding:16px 18px;border-radius:12px;background:#F6F7F9;border:1px solid #E6E8EC">'+
