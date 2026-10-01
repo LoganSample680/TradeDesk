@@ -1478,8 +1478,7 @@ test.describe('Invoice work done, the proposal list', () => {
     await say(page, 'Secure the tub spout.');
     const r = await page.evaluate(() => {
       const got = []; const o = window.timLogFix; window.timLogFix = (...a) => got.push(a.slice(0, 3));
-      const el = document.querySelector('#qi-page .qi-work-in');
-      el.value = 'Re-secured the tub spout'; _qiWorkEdit(0, el); _qiWorkDone(0, el);
+      _ROOM_LISTS.qi.edit(0, 'Re-secured the tub spout');
       window.timLogFix = o;
       return got;
     });

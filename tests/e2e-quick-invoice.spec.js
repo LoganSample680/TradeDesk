@@ -371,8 +371,7 @@ test.describe('Quick invoice', () => {
       openQuickInvoice(901); _qiSetMode('hourly');
       document.getElementById('qi-say').value = 'I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe';
       _qiSayBuild();
-      const els = document.querySelectorAll('#qi-page .qi-work-in');
-      els[0].value = 'Walked the job with the homeowner'; _qiWorkEdit(0, els[0]); _qiWorkDone(0, els[0]);
+      _ROOM_LISTS.qi.edit(0, 'Walked the job with the homeowner');
       const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
       return { fix: q.filter(x => x.kind === 'fix').map(x => x.made), scope: q.filter(x => x.kind === 'scope').map(x => !!x.ref) };
     });
@@ -402,28 +401,37 @@ test.describe('Quick invoice', () => {
 
   // Owner 2026-09-29: "I want the ability to click into these steps and edit
   // them, right now they are hard locked if I talk to Tim". Tim heard "PEX-A"
-  // as "PEX a pipe"; he taps the words and fixes them.
-  test('what Tim made is his to edit: tap a line, type, it is on the invoice; empty it and it goes', async ({ page }) => {
+  // as "PEX a pipe"; he taps the line and fixes the words. Owner 2026-10-01:
+  // the row is the T&M step row, so it looks and works the same in all three.
+  test('what Tim made is his to edit: tap a line, change it, it is on the invoice; swipe Delete takes one off', async ({ page }) => {
     await boot(page, 390);
     await page.evaluate(() => {
       openQuickInvoice(901); _qiSetMode('hourly');
-      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX a pipe']; renderQuickInvoice();
+      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX a pipe']; _qi.workRecs = []; renderQuickInvoice();
     });
-    const second = page.locator('#qi-page .qi-work-in').nth(1);
-    await second.click();
-    await second.press('End');
-    for (let i = 0; i < 'PEX a pipe'.length; i++) await second.press('Backspace');
-    await second.pressSequentially('PEX-A pipe');
-    const first = page.locator('#qi-page .qi-work-in').first();
-    await first.click();
-    await first.fill('');
-    await page.locator('#qi-say').click();                  // leaves the emptied line
-    const r = await page.evaluate(() => ({ work: _qi.work.slice(), doc: _qiDocHtml(), boxes: document.querySelectorAll('#qi-page .qi-work-in').length,
-      tall: (() => { const e = document.querySelector('#qi-page .qi-work-in'); return e && e.scrollHeight <= e.clientHeight + 2; })() }));
+    await page.locator('#qi-page .ios-swipe[data-kind="step"] .ios-row').nth(1).click();
+    await page.locator('#zprompt-inp').fill('Replaced 10 feet of copper pipe with PEX-A pipe');
+    await page.locator('#zprompt-ok').click();
+    await page.evaluate(() => document.querySelector('#qi-page .ios-swipe[data-kind="step"] .ios-del').click());
+    const r = await page.evaluate(() => ({ work: _qi.work.slice(), doc: _qiDocHtml(),
+      rows: [...document.querySelectorAll('#qi-page .ios-swipe[data-kind="step"]')].map(w => w.querySelector('.ios-num').textContent + ' ' + w.querySelector('.ios-lbl').textContent),
+      boxes: document.querySelectorAll('#qi-page textarea.qi-work-in').length }));
     expect(r.work).toEqual(['Replaced 10 feet of copper pipe with PEX-A pipe']);
     expect(r.doc).toContain('Replaced 10 feet of copper pipe with PEX-A pipe');
-    expect(r.boxes).toBe(1);
-    expect(r.tall, 'the box grows to show every word').toBe(true);
+    expect(r.rows).toEqual(['1 Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.boxes, 'no typing boxes: the step row').toBe(0);
+  });
+
+  test('the invoice draws the same step row as T&M, markup for markup', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Secure the tub spout']; _qi.workRecs = []; renderQuickInvoice();
+      const inv = document.querySelector('#qi-page .ios-swipe[data-kind="step"]').outerHTML;
+      const d = document.createElement('div'); d.innerHTML = _scopeStepRowHtml('qi', 'Secure the tub spout', 0, { del: '_qiDropWork(0)' });
+      return { inv, shared: d.firstElementChild.outerHTML };
+    });
+    expect(r.inv).toBe(r.shared);
   });
 
   // "Do we add in talk to Tim like we do for proposals to speak to what we
