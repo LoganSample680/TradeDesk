@@ -199,6 +199,15 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-miles.sql
 
+      # Raw GPS events are kept 30 days (20261062). Deleting them is only safe
+      # because geo_replace_day refuses to rebuild a day that old, so this
+      # proves the line falls on day 31 exactly, that no saved time or mileage
+      # row goes with it, and that the rebuild lock still covers the prune line.
+      - name: Raw GPS events expire on day 31 and nothing saved goes with them
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-events-retention.sql
+
       # A mid-trip derive wrote Jack's drive as ending at an unsaved stop, and
       # the rule above then refused every later derive that resolved it to
       # Bill Lorson (2026-09-29). 20261056 lets a resolved leg replace such a
