@@ -2092,8 +2092,6 @@ function timLetter(text){
   const keep=sents.filter((x,i)=>{
     const q=x.trim();if(!q)return false;
     if(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?\d{1,3}\s+days?\b/i.test(q)&&/\b(?:estimate|quote|price|bid|offer|this)\b/i.test(q))return false;
-    // A bare closing is how the letter ends, not something he said to them.
-    if(/^(?:thanks|thank\s+you|regards|best(?:\s+regards)?|sincerely|cheers|god\s+bless)[\s,.!]*$/i.test(q)){letter=true;return false;}
     if(_TIMK_COURTESY.test(q)){letter=true;note.push(q);return false;}
     if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q)){note.push(q);return false;}
     const low=q.toLowerCase().replace(/[.!?]+$/,'');
@@ -2112,7 +2110,10 @@ function timLetter(text){
   const _lines=/\n/.test(String(text||''));
   const _joined=_lines?keep.map(x=>{x=x.trim();return x&&!/[.!?:;,]$/.test(x)?x+'.':x;}).join(' '):keep.join(' ');
   return {text:_joined.trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
-    note:note.map(x=>{x=tidy(x);return /[.!?]$/.test(x)?x:x+'.';}).join(' '),noteBy};
+    // A closing he ended on ("Thanks,") keeps its comma: his name prints right
+    // under the note, so it reads "Thanks, / John" the way he wrote it (owner
+    // 2026-10-01: "Thanks, John should get included in the note").
+    note:note.map((x,i,a)=>{x=tidy(x);if(i===a.length-1&&/,$/.test(x))return x;return /[.!?]$/.test(x)?x:x.replace(/[,;:]+$/,'')+'.';}).join(' '),noteBy};
 }
 // "John Schonfeldt Plumbing Solutions by JS": the person, without the business.
 function _timkSigner(line,bizNames){

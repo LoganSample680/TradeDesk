@@ -259,16 +259,18 @@ test.describe('Build Your Own, as an iPhone editor', () => {
 
   // Owner 2026-10-01: an email signed "Thanks," then "John" put "John" in as
   // a step on all three screens. A closing line counts as the end of the
-  // letter, so the name under it is the signature; a bare "Thanks," is not a
-  // note. A list that ends on work still keeps its last line.
-  test('"Thanks," then a name is a signature, not a step; a bare closing is not the note', async () => {
+  // letter, so the name under it is the signature, and "Thanks," is his note,
+  // signed with that name. A list that ends on work still keeps its last line.
+  test('"Thanks," then a name is a signature, not a step; the closing is the note, signed John', async () => {
     const r = await page.evaluate(() => {
       const b = timScopeBuild("Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Secure the tub spout\n- Install 3 hose bibs with piping\n\nThanks,\nJohn", { rejected: [], trade: 'plumbing' });
       const g = timScopeBuild("Here's my estimate $900:\n- Replace the outlet\n- Install GFCI", { rejected: [], trade: 'electrical' });
       return { steps: b.steps.map(x => x.text), note: b.note, by: b.noteBy, guard: g.steps.map(x => x.text) };
     });
     expect(r.steps).toEqual(['Secure the tub spout', 'Install 3 hose bibs with piping']);
-    expect(r.note).toBe('');
+    // Owner 2026-10-01: "Thanks, John should get included in the note". The
+    // closing is the note, his name signs it under it.
+    expect(r.note).toBe('Thanks,');
     expect(r.by).toBe('John');
     expect(r.guard[r.guard.length - 1]).toMatch(/GFCI/);
   });
