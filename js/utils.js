@@ -47,7 +47,6 @@ function _fmtMoneyInput(el){
   const grouped=intPart?Number(intPart).toLocaleString('en-US'):'';
   el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
 }
-const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
 // The read side of every data-num field (see _tdNumFormat below). Takes an id
 // or the element itself, strips the display commas, and gives 0 for blank or
 // junk so a reader never has to guard NaN.
@@ -55,6 +54,8 @@ function _numVal(idOrEl){
   const el=typeof idOrEl==='string'?document.getElementById(idOrEl):idOrEl;
   return parseFloat(String((el&&el.value)||'').replace(/,/g,''))||0;
 }
+// The older name for the same read; money fields still call it by id.
+const _moneyVal=_numVal;
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});

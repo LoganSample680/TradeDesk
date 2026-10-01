@@ -3318,7 +3318,7 @@ function _byoToggleFold(id){
 }
 function _byoCostInput(el){
   const c=document.getElementById('byo-expected-cost');if(!c)return;
-  const v=(typeof _moneyVal==='function')?_moneyVal('byo-cost-in'):parseFloat(String(el.value).replace(/,/g,''))||0;
+  const v=_numVal(el);
   c.value=v>0?String(v):'';
   if(v>0)c.dataset.userSet='true';else delete c.dataset.userSet;
   _byoUpdateRail();_byoAutosave();
@@ -4334,7 +4334,7 @@ function _byoApplyJobPrice(lines){
 }
 function _byoPriceInput(el){
   _geiNumsTouched();
-  const v=(typeof _moneyVal==='function')?_moneyVal('byo-price-in'):parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
+  const v=_numVal(el);
   _byoJobPrice=v>0?Math.round(v*100)/100:0;
   _byoUpdateRail();_byoAutosave();
 }
@@ -5380,15 +5380,11 @@ async function _geiPresent(){
 // The lines on an option RIGHT NOW. For the one he has open that means the
 // editor, not the record: he may have changed it thirty seconds ago and the
 // client is about to read it.
+// A rounded dollar figure in Tim's voice when he is loaded, else plain.
+const _geiRoundMoney=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):fmt(Math.round(v),{short:true});
 function _presentLines(b,cur){
   if(cur&&b&&b.id===cur.id){
-    const live=[];
-    if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-      if(it&&it.on!==false&&!it._rrp&&it.label)live.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)||0,notes:it.notes||''});
-    });
-    if(!live.length&&typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-      if(l&&!l._tmLabor&&!l._rrp&&l.desc)live.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});
-    });
+    const live=_pkgBidLines({byoItems:typeof _byoItems!=='undefined'?_byoItems:null,geiLines:typeof _geiLines!=='undefined'?_geiLines:null});
     if(live.length)return live;
   }
   return _pkgBidLines(b);
@@ -5792,7 +5788,7 @@ function _tmRenderMoneyRows(n){
   // which belong on the proposal and the tax documents where precision is a
   // legal matter. This rail is neither, and ".00" three times is just noise on
   // three figures he is glancing at.
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):(fmt(Math.round(v),{short:true}));
+  const money=_geiRoundMoney;
   const target=_MARGIN_BANDS.target;
   const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
 
@@ -5833,7 +5829,7 @@ function _tmRenderMoneyRows(n){
 }
 // The rate-sheet version of the rows above: one hour, and the parts.
 function _tmMoneyPerHourHtml(n){
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):(fmt(Math.round(v),{short:true}));
+  const money=_geiRoundMoney;
   const perHour=Number(n.perHour)||0,hourCost=Number(n.hourCost)||0;
   const matBill=Number(n.matBill)||0,matCost=Number(n.materials)||0,markup=Math.round(matBill-matCost);
   const row=(label,sub,value,strong,colour)=>
@@ -6179,7 +6175,6 @@ function _tmFold(id,label,value){
 
 // What each one says when it is folded. Only ever what he actually put in it.
 function _tmFoldAll(){
-  const money=n=>fmt(Number(n||0),{whole:true});
   const rate=Number(_tmRatePerMan)||0;
   const crew=Math.max(1,Number(_tmCrewCount)||1);
   // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside

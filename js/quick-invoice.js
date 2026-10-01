@@ -1719,7 +1719,7 @@ function _qiCustomerRows(){
     rows.push({text:'Work performed',amount:Number(_qi.fixed)||0});
   }else{
     days.forEach(d=>{
-      const r=rate&&d.rates.length?' · '+d.rates.map(x=>'$'+x.toLocaleString('en-US')).join(' to ')+'/hr':'';
+      const r=rate&&d.rates.length?' · '+d.rates.map(x=>fmt(x,{short:true})).join(' to ')+'/hr':'';
       const crew=d.techs>1?' · '+d.techs+' techs':'';
       // Parts priced: labor and receipts each carry their amount. Otherwise
       // only the day's total carries money, so nothing separates the parts.
@@ -2001,7 +2001,7 @@ function _renderToBill(){
     '<button type="button" class="ios-row tb-sum'+(late?' late':'')+(open?'':' nosep')+'" onclick="_tbTap()" aria-expanded="'+open+'">'+
       '<span class="tb-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M13 11.5c-.5-.6-1.3-.9-2-.9-1.1 0-2 .6-2 1.5 0 2 4 1.2 4 3.2 0 .9-.9 1.5-2 1.5-.8 0-1.6-.3-2.1-.9M11 9.5v1.1M11 17.3v1.1"/></svg></span>'+
       '<span class="ios-lbl"><b>Ready to bill</b><small class="tb-age">'+escHtml(what+' · '+_tbAge(rows[0].oldest))+'</small></span>'+
-      '<span class="ios-fact tb-total">'+escHtml('$'+Math.round(sum).toLocaleString('en-US'))+'</span>'+
+      '<span class="ios-fact tb-total">'+escHtml(fmt(sum,{whole:true}))+'</span>'+
       '<span class="ios-chev tb-chev-sum'+(open?' open':'')+'" aria-hidden="true">›</span></button>'+
     '<div class="tb-list'+(open?' open':'')+'" style="max-height:'+(open?rows.length*72+(nDraft?80:8):0)+'px"'+(open?'':' inert')+'>'+rows.map((r,i)=>
       (nDraft&&(i===0||(!r.draft&&rows[i-1].draft))?'<div class="tb-grp">'+(r.draft?'Drafts':'Not started')+'</div>':'')+
