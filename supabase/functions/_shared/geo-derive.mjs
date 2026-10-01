@@ -65,14 +65,17 @@
 //      Otherwise it was one drive and the classifier was wrong.
 //   6. A pending chain that later reaches a saved fence collapses to ONE leg:
 //      first saved origin to this fence, direct-route miles, drive minutes =
-//      the automotive segments only (a stop is not drive time).
+//      the automotive segments only (a stop is not drive time). The TIME rows
+//      of its closed segments do not wait for that: each drive and each stop
+//      between them is written the moment the next drive starts, under the
+//      keys the leg will use (owner 2026-10-01). Only the mileage waits.
 //   7. Same fence both ends is a round trip: NO MILEAGE, ever. If a stop
 //      happened between them, the drive time rows are still written and the
 //      hole between them is an unsaved job site (owner 2026-09-04). A
 //      same-fence loop with no stop in it writes nothing at all.
-//   8. A chain still pending at the end of the day writes nothing. The manual
-//      clock covers it, and the blend already shows that remainder as Manual
-//      time.
+//   8. A chain still pending at the end of the day writes no mileage. The
+//      manual clock covers it, and the blend already shows that remainder as
+//      Manual time. Its closed drives and stops are time rows (rule 6).
 //   9. A dwell exists only between an arrival and a departure. The first
 //      stretch of the day (before any drive) and the last (after the final
 //      drive) are not automatic rows: home is not work, and if it was, the
@@ -424,9 +427,73 @@ function _gdSettledAway(fixes, fix, reg, fences, radiusFt) {
 
 // Rule 21, applied to the journey list before anything reads it, so the leg
 // and the dwell after it move together: one boundary, not two.
-function _gdArrivalTrim(journeys, spans) {
+//
+// ── AND A DRIVE THE TAPE HAS NOT CLOSED YET (owner 2026-10-01) ───────────
+// "I want to see on time shit within 10 seconds 100% of the time." Two
+// arrivals that day reached the timesheet minutes late for the same reason.
+//
+//   Jack    regionEnter shop 12:59:57, a fix inside at 13:00:39, still at
+//           13:01:20. Shop row first written 13:08:47.
+//   Logan   regionEnter shop 12:19:47, fixes inside from 12:19:52, still at
+//           12:25:52. Shop row first written 13:07:23.
+//
+// The crossing was proven both times (_gdOpenArrivals had it) and nothing
+// used it, because this function only ever trimmed a journey that already
+// HAD an end. A drive ends on the tape (a foot flip, or ten minutes of
+// still) or on a four-minute cluster of fixes, and neither had happened yet,
+// so the drive stayed open and the arrival waited behind it.
+//
+// So a proven unpaired arrival may end an OPEN drive, on four conditions,
+// every one of which a truck driving past a fence fails:
+//   1. rule 21's own proof: a fix after the crossing, inside the fence;
+//   2. the newest fix is STILL inside it, by this file's radius, so a pass
+//      whose exit was lost reads as driving the moment it is out the far side;
+//   3. the tape has left automotive since the crossing, and has not gone back
+//      (Jack's 08:08 that morning: Menards and Lowe's entered while the tape
+//      still said automotive, and without this line his drive ended at
+//      Menards);
+//   4. parkedStillMs has passed since the crossing. A red light inside a
+//      fence passes 1 to 3. It does not pass this, and it has to be stopped
+//      here rather than corrected later: the server writes a mileage leg
+//      once and never rewrites it (geo_replace_day, 20261060, the miles
+//      loop under p_sweep false), so a drive ended at a stoplight would keep
+//      that end forever. Time rows would heal on the next derive; the leg
+//      would not.
+// Jack's shop row lands at 13:04:35 instead of 13:08:47, Logan's at 12:25:54
+// instead of 13:07:23.
+function _gdArrivalSettled(j, s, ctx) {
+  if (!ctx || !s || !s.unpaired || !s.f || !(s.from > j.startTs)) return false;
+  const nowMs = Number(ctx.nowMs);
+  const opts = ctx.opts || GEO_DERIVE_DEFAULTS;
+  const parked = Number(opts.parkedStillMs) > 0 ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
+  if (!(nowMs - s.from >= parked)) return false;
+  const maxAcc = Number(opts.maxFixAccM) > 0 ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  let newest = null;
+  for (const f of (Array.isArray(ctx.fixes) ? ctx.fixes : [])) {
+    if (!f || typeof f.ts !== 'number' || f.lat == null || f.lng == null || f.ts > nowMs) continue;
+    if (f.acc != null && Number(f.acc) > maxAcc) continue;
+    if (!newest || f.ts > newest.ts) newest = f;
+  }
+  if (!newest || !(newest.ts > s.from)) return false;
+  if (!_gdSameFence(geoFenceAt(newest, ctx.fences, opts.radiusFt), s.f)) return false;
+  let last = null;
+  for (const x of (Array.isArray(ctx.tape) ? ctx.tape : [])) {
+    if (!x || typeof x.ts !== 'number' || !(x.ts > s.from) || x.ts > nowMs) continue;
+    const k = _gdKind(x.kind);
+    if (k && (!last || x.ts >= last.ts)) last = { ts: x.ts, k };
+  }
+  return !!last && last.k !== 'auto';
+}
+function _gdArrivalTrim(journeys, spans, ctx) {
   if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
   return journeys.map((j) => {
+    if (j && j.open && j.endTs == null && typeof j.startTs === 'number') {
+      let best = null;
+      for (const s of spans) {
+        if (_gdArrivalSettled(j, s, ctx) && (!best || s.from < best.from)) best = s;
+      }
+      return best ? { startTs: j.startTs, id: j.id, endTs: best.from, endFence: best.f } : j;
+    }
     if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
     let arrival = null, fence = null;
     for (const s of spans) {
@@ -1047,7 +1114,8 @@ function geoDeriveDay(input) {
   const journeys = _gdShuffleDrop(_gdArrivalTrim(
     _gdCrossingSplit(_gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
       regionSpans, fixes, fences, opts, inp.personId),
-    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
+    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes)),
+    { fixes, fences, opts, nowMs, tape: inp.tape }),
     fixes, fences, opts);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
@@ -1835,7 +1903,15 @@ function geoDeriveDay(input) {
     // never made it into the fence list cannot be arrived at, and that is
     // indistinguishable from a day where nobody stopped anywhere.
     fenceCount: fences.length,
-    pending: chain ? { id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) } : null,
+    pending: chain ? Object.assign({ id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) },
+      // The chain's CLOSED drives and the stops between them, while the next
+      // drive is still on the road (openSince). geoDeriveRows writes their
+      // time rows now; see "THE STOP IS A ROW BEFORE THE CHAIN IS A LEG".
+      (chain.openSince && Array.isArray(chain.drives) && chain.drives.length) ? {
+        drives: chain.drives.map(sg => sg.slice()), via: (chain.via || []).slice(),
+        openSince: chain.openSince,
+        fromHouse: !!(chain.originFence && _gdIsHouse(chain.originFence, fences, opts.radiusFt)),
+      } : {}) : null,
     journeys,
   };
 }
@@ -4181,6 +4257,62 @@ function geoDeriveRows(result, ids) {
     // so the card counts its miles as part of the errand they belong to.
     back.pendingReceipt = true;
     back.supplyRunName = outRow.supplyRunName || 'Store';
+  }
+  // ── THE STOP IS A ROW BEFORE THE CHAIN IS A LEG (owner 2026-10-01) ────────
+  // "he was def on a job site because he took photos there." Jack's afternoon:
+  //
+  //   14:38:23  automotive    leaves the shop
+  //   15:01:38  cycling       out of the truck at an address nobody saved
+  //   15:25:10  automotive    on the road again
+  //
+  // Twenty-four minutes is under workStopMs, so the stop stayed inside the
+  // chain (rule 5) and its row only ever came from the segment-gap writer
+  // above, which runs on a finished LEG. While the 15:25 drive was still on
+  // the road there was no leg, so there was no stop row and no row for the
+  // 14:38 drive either, and geo_replace_day ended the live drive row it had
+  // replaced (20261060, step 5c). The Time Log showed the half hour he spent
+  // working there as Unaccounted.
+  //
+  // The chain's CLOSED segments are facts already: he drove, he stopped, he
+  // left. So they are written now by the same writer, under the same keys the
+  // finished leg will give them (the drive by the flip that began it, the
+  // stop by the flip that ended the drive before it), and the leg lands on
+  // these rows instead of beside them. The interior floor is the same one,
+  // with the drive still on the road counted as the last segment, so the
+  // keys cannot disagree. The MILEAGE still waits for both ends (rule 6), and
+  // a chain still pending at the end of the day still writes no mileage
+  // (rule 8). Held when the chain left the house: the commute question
+  // (rule 20) has no answer until the arrival, same as the live drive row.
+  const _pc = result && result.pending;
+  if (_pc && Number(_pc.openSince) > 0 && Array.isArray(_pc.drives) && _pc.drives.length) {
+    const live = [Number(_pc.openSince), null, 0, null, null];
+    const all = _pc.drives.concat([live]);
+    const segs = all.filter((sg, i) => i === 0 || i === all.length - 1 ||
+      (Number(sg[1]) - Number(sg[0])) >= GEO_DERIVE_DEFAULTS.minLegMs);
+    const span = { startTs: Number(_pc.startTs), endTs: Number(_pc.openSince), from: _pc.origin, to: null };
+    const pClaim = geoSpanClaim(span, claimCtx);
+    const dv = result.driving;
+    const hs = (_pc.fromHouse === true || (dv && dv.counts === false)) ? '-held' : '';
+    if (!pClaim.claim) held.push({ kind: 'leg', id: _pc.id, startTs: span.startTs, endTs: span.endTs });
+    else {
+      segs.forEach((sg, i) => {
+        if (sg === live) return;
+        const a = Number(sg[0]), b = Number(sg[1]);
+        if (!(a > 0 && b > a)) return;
+        time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
+          arrived_at: iso(a), departed_at: iso(b),
+          minutes: Math.max(1, Math.round(Number(sg[2] || (b - a)) / 60000)),
+          dest_place: null, origin_place: i === 0 ? ((_pc.origin && _pc.origin.name) || null) : null,
+          client_key: String(sg[3] || _pc.id), source: 'drive' + hs });
+      });
+      for (let i = 0; i + 1 < segs.length; i++) {
+        const a = Number(segs[i][1]), b = Number(segs[i + 1][0]);
+        if (!(a > 0 && b - a >= GEO_DERIVE_DEFAULTS.minLegMs)) continue;
+        time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
+          arrived_at: iso(a), departed_at: iso(b), minutes: Math.round((b - a) / 60000),
+          dest_place: null, client_key: 'd-' + String(segs[i][4] || _pc.id), source: 'unsaved' + hs });
+      }
+    }
   }
   // `held` is the spans this account declined, so the caller can say so
   // rather than the day quietly coming up short. Never written anywhere: the
