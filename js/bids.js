@@ -195,9 +195,14 @@ function showJobScorecard(jobId,collectBidId){
     // they already paid, what is left, and the one tap that closes it out.
     (collectBid&&(collectBid.amount||0)>0
       ?_settleSumHtml(collectBid)+_settleActionsHtml(collectBid,j.client_id)
-      :'<div style="display:grid;grid-template-columns:1fr;gap:8px">'+
+      // No priced proposal behind it (owner 2026-10-01): the job is billed
+      // from the invoice, which already holds this customer's hours,
+      // receipts and parts. One tap, no new screen.
+      :'<div style="display:grid;grid-template-columns:1fr 1.5fr;gap:8px">'+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
           'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
+        '<button type="button" data-settle="invoice" onclick="this.closest(\'.zmodal-overlay\').remove();openQuickInvoice('+JSON.stringify(j.client_id).replace(/"/g,'&quot;')+')" '+
+          'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Bill for it</button>'+
       '</div>');
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});

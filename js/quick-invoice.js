@@ -1418,6 +1418,19 @@ function _qiSave(){
     qiPulled:hourly?_qi.tracked.filter(l=>l.extra&&!_qi.off.has(l.day)).map(l=>l.extra):[],
     qiExpenseIds:hourly?_qiOnExpIds():[]};
   bids.unshift(bid);
+  // Billing it is finishing it (owner 2026-10-01): this customer's job that
+  // is due and has no proposal of its own is done the moment its bill goes
+  // out, so nobody has to remember to Mark done as well. A job a proposal
+  // covers is settled from that proposal, and a future day is left alone
+  // (_jobDueForDone, the same rule that shows Mark done).
+  (jobs||[]).forEach(j=>{
+    if(!j||String(j.client_id)!==String(c.id)||_qiPropBid(j))return;
+    if(typeof _jobDueForDone!=='function'||!_jobDueForDone(j))return;
+    // Remembered on the bill, so a bill that never goes out opens it again.
+    (bid.qiClosedJobs=bid.qiClosedJobs||[]).push({id:j.id,status:j.status||null,bidId:j.bid_id!=null?j.bid_id:null});
+    j.status='done';j.completion_date=todayKey();
+    if(j.bid_id==null)j.bid_id=bid.id;
+  });
   // What went out, next to what Tim made (timLogScope above, same id).
   if(hourly&&typeof timLogKept==='function')timLogKept(bid.id,_qi.work.slice(),'qi');
   c.qiMode=_qi.mode;
@@ -1505,6 +1518,12 @@ function _qiUnsend(bidId,cid,addr,snap){
   const b=bids[i];
   if(b.sentAt||(typeof getBidPaid==='function'&&getBidPaid(b.id)>0))return;   // it went out, or he took money on it
   bids.splice(i,1);
+  // The jobs this bill finished are open again: it never went out.
+  (b.qiClosedJobs||[]).forEach(r=>{
+    const j=(jobs||[]).find(x=>x&&String(x.id)===String(r.id));if(!j)return;
+    j.status=r.status;if(j.status==null)delete j.status;
+    delete j.completion_date;j.bid_id=r.bidId;if(j.bid_id==null)delete j.bid_id;
+  });
   const c=getClientById(cid);
   if(c){
     const D=(c.qiDrafts&&typeof c.qiDrafts==='object')?c.qiDrafts:{};

@@ -129,6 +129,45 @@ test.describe('Settle up', () => {
     expect(r.settle).toBe(false);
   });
 
+  // Owner 2026-10-01: "best way to mark a job complete that wasn't from a
+  // proposal but also from a proposal", without new screens.
+  test('a job with no proposal ends on Bill for it, which opens the invoice for that customer', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 'j-np', client_id: 901, name: 'Leak call', start: todayKey(), days: 1 });
+      showJobScorecard('j-np', null);
+      const box = [...document.querySelectorAll('.zmodal')].pop();
+      const btns = [...box.querySelectorAll('button')].map(b => b.textContent.trim());
+      let opened = null;
+      const orig = window.openQuickInvoice;
+      window.openQuickInvoice = (cid) => { opened = cid; };
+      box.querySelector('[data-settle="invoice"]').click();
+      window.openQuickInvoice = orig;
+      return { btns, opened };
+    });
+    expect(r.btns).toEqual(['Close', 'Bill for it']);
+    expect(r.opened).toBe(901);
+  });
+
+  test('sending the bill finishes the job; a bill that never goes out opens it again', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      jobs.push({ id: 'j-np', client_id: 901, name: 'Leak call', start: todayKey(), days: 1 },
+        { id: 'j-later', client_id: 901, name: 'Next week', start: addDays(todayKey(), 7), days: 1 });
+      openQuickInvoice(901);
+      _qiSetMode('set');
+      _qi.typed = [{ desc: 'Fix the leak', amount: '250' }];
+      _qi.due = 'receipt';
+      const bid = _qiSave();
+      const j = jobs.find(x => x.id === 'j-np'), later = jobs.find(x => x.id === 'j-later'), prop = jobs.find(x => x.id === 'j7101');
+      const done = { status: j.status, date: j.completion_date === todayKey(), bill: j.bid_id === bid.id, later: later.status || null, prop: prop.status || null };
+      _qiUnsend(bid.id, 901, '', {});
+      return { done, back: { status: j.status || null, date: j.completion_date || null, bill: j.bid_id || null } };
+    });
+    expect(r.done).toEqual({ status: 'done', date: true, bill: true, later: null, prop: null });
+    expect(r.back).toEqual({ status: null, date: null, bill: null });
+  });
+
   test('null, unknown and junk ids never throw', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
