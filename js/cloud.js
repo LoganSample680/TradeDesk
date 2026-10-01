@@ -756,7 +756,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.1';
+const APP_VERSION='10.01.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -8389,6 +8389,8 @@ async function _fetchProposalViews(){
     // probe errors → full poll, the exact pre-fix behavior; rows without
     // updated_at never arm the watermark, so an un-migrated database stays on
     // full polls forever.
+    // The top-up asks from the watermark as it stood BEFORE the probe moved it.
+    const since=_pvPollWatermark;
     if(_pvPollWatermark){
       const{data:_probe,error:_pErr}=await _supa.from('proposal_views')
         .select('updated_at')
@@ -8398,10 +8400,13 @@ async function _fetchProposalViews(){
         .limit(1);
       if(!_pErr&&_probe&&!_probe.length)return; // nothing changed, zero-row tick
       if(_pErr){_pvKept=kept=null;}
+      // The probe row is the global max updated_at (desc, limit 1), advance from
+      // it so an old row's update (outside the top-500 by opened_at below) can't
+      // wedge the watermark into probing positive on every tick.
+      if(!_pErr&&_probe)_probe.forEach(v=>{if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
     }
-    if(kept&&_pvPollWatermark){
+    if(kept&&since){
       // Something changed: only the rows that did.
-      const since=_pvPollWatermark;
       let vr=null,ar=null;
       try{
         [vr,ar]=await Promise.all([
@@ -8437,7 +8442,8 @@ async function _fetchProposalViews(){
         .order('opened_at',{ascending:false})
         .limit(500);
       if(data&&!error){
-        _pvPollWatermark=null;
+        // Only ever raised: the probe above may already have moved it past
+        // anything in the newest 500, and resetting it would wedge the probe.
         data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
         _pvApplyViews(data);
       }

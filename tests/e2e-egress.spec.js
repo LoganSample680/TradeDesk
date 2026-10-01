@@ -1017,6 +1017,27 @@ test.describe('egress round 3, proposal views and audit kept and topped up', () 
     expect(r.foreign).toBe(null);
   });
 
+  test('an old view updated outside the newest 500 never wedges the probe', async () => {
+    // No audit rows, so nothing is kept and every hit takes the whole-read
+    // path, which only sees the newest 500. The probe row has to move the
+    // watermark itself or this change reads positive on every tick forever.
+    await seed(620, 0);
+    await page.evaluate(() => { window.__pvDb.proposal_audit_events = null; });   // the audit read fails: nothing is kept
+    await freshLoad(); await forget();
+    await page.evaluate(() => _fetchProposalViews());
+    expect(await page.evaluate(() => _pvKept), 'whole-read path').toBe(null);
+    await page.evaluate(() => {
+      const v = window.__pvDb.proposal_views;
+      v[3].updated_at = new Date(Date.UTC(2026, 9, 1, 9)).toISOString();   // opened long ago: not in the newest 500
+    });
+    await page.evaluate(() => _fetchProposalViews());                       // sees the change once
+    const n0 = await page.evaluate(() => window.__pvLog.length);
+    await page.evaluate(() => _fetchProposalViews());
+    const log = await page.evaluate((n) => window.__pvLog.slice(n), n0);
+    expect(log.map((c) => c.tbl + ':' + c.sel), 'the next tick is the probe alone').toEqual(['proposal_views:updated_at']);
+    await page.evaluate(() => { window.__pvDb.proposal_audit_events = []; });
+  });
+
   test('no console errors from the kept-views suite', async () => {
     assertNoErrors(page, 'kept proposal views');
   });
