@@ -638,4 +638,28 @@ test.describe('Shared code, the leftovers', () => {
     expect(src('js/utils.js')).not.toMatch(/function adaBrand/);
     expect(look).toMatch(/function adaBrand[\s\S]*function _cdnPhoto[\s\S]*function tdCoLinesHTML/);
   });
+
+  // The copied-code check (owner 2026-10-01). It runs in CI on every PR; these
+  // pin the three things it caught on the way in.
+  test('the copied-code check exists and runs on every PR', async () => {
+    const yml = src('.github/workflows/test.yml');
+    expect(yml).toMatch(/node scripts\/ci\/dup-check\.mjs/);
+    const chk = src('scripts/ci/dup-check.mjs');
+    expect(chk).toMatch(/const WINDOW = 5;/);
+    expect(chk).toMatch(/use _cents/);
+    expect(chk).toMatch(/25% deposit/);
+    expect(chk).toMatch(/use fmt/);
+  });
+  test('the industrial proposal asks for his deposit, not a flat 25%', async () => {
+    const s = src('js/generic-estimate.js');
+    expect(s).not.toMatch(/midPrice\*0\.25/);
+    expect(s).not.toMatch(/>25% Deposit Due/);
+    expect(s).toMatch(/const _indDepPct=_geiDepositDefault\(\);/);
+  });
+  test('the customer pages share one phone and zip listener', async () => {
+    for (const f of ['client.html', 'intake.html']) {
+      expect(src(f)).toContain('<script src="js/num-public.js"></script>');
+      expect(src(f)).not.toContain("document.addEventListener('input',function(e){");
+    }
+  });
 });

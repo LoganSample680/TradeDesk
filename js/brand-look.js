@@ -76,7 +76,7 @@ function tdLogoLook(img){
     for(let i=0;i<N;i++)for(const j of RING){
       for(const p of[px(i,j),px(j,i)]){ring++;if(p[3]>235&&Math.abs(p[0]-bgRgb[0])+Math.abs(p[1]-bgRgb[1])+Math.abs(p[2]-bgRgb[2])<90)near++;}
     }
-    const solid=ea/en>235&&near/ring>=0.85,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
+    const solid=ea/en>235&&near/ring>=0.85,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100; // dup-ok: a shape ratio, not money
     return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark,solid,ratio,light:!dark&&lum(bgRgb[0],bgRgb[1],bgRgb[2])>0.92};
   }catch(e){return null;}
 }
