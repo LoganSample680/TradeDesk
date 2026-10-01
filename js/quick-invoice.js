@@ -946,6 +946,9 @@ function renderQuickInvoice(){
       _qiMathHtml(total)+
       _qiSetPriceHtml(hourly)+
       _qiDueHtml()+
+      // The note to them, the same row a proposal has (_noteRowHtml).
+      '<div class="ios-sec">'+_noteRowHtml({open:!!_qi.noteOpen,value:_qi.note,toggle:'_qiNoteToggle()',input:'_qi.note=this.value',
+        id:'qi-note',on:'invoice',placeholder:'e.g. Thanks for having us out. Call anytime something comes up.'})+'</div>'+
       _qiSeeHtml(hourly)+
       // Pinned to the bottom of the screen (Earl): Send is never three
       // screens down on a small phone.
@@ -1061,6 +1064,11 @@ function _qiSetPriceHtml(hourly){
   '</div></div>';
 }
 // What the customer sees, in the step where he checks what they get.
+function _qiNoteToggle(){
+  if(!_qi)return;
+  _qi.noteOpen=!_qi.noteOpen;renderQuickInvoice();
+  if(_qi.noteOpen)setTimeout(()=>document.getElementById('qi-note')?.focus(),30);
+}
 function _qiSeeHtml(hourly){
   return '<div class="ios-sec"><div class="ios-h"><span>What they see</span></div><div class="ios-group">'+
     _qiCopyHtml()+
@@ -1270,6 +1278,8 @@ function _qiDocHtml(num){
       label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
       project:escHtml(_qiMoney(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
     _propSection('Work performed',escHtml(_qiWorkTitle()),_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
+    // His note, printed the way a proposal prints it, signed (_propNoteHtml).
+    (typeof _propNoteHtml==='function'?_propNoteHtml(_qi.note,''):'')+
     _propSignoff(bname,'Thank you for choosing'));
 }
 // What he said he did, as a plain list above the charges. Hourly only.
@@ -1378,6 +1388,7 @@ function _qiSave(){
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
     qiWork:hourly?_qi.work.slice():[],
     qiWorkItems:hourly?_qiWorkSaved():[],
+    qiNote:String(_qi.note||'').trim()||null,
     qiMode:_qi.mode,
     // The days it carries, never a through-mark (see _qiBilled).
     qiTimeThrough:null,
@@ -1700,7 +1711,7 @@ function _qiDraftGet(c,addr){const D=c&&c.qiDrafts;return D&&typeof D==='object'
 function _qiDraftApply(d){
   if(!_qi||!d)return;
   _qi.off=new Set(d.off||[]);_qi.open=new Set(d.open||[]);
-  _qi.dayNote=Object.assign({},d.dayNote||{});_qi.work=Array.isArray(d.work)?d.work.slice():[];
+  _qi.dayNote=Object.assign({},d.dayNote||{});_qi.note=String(d.note||'');_qi.work=Array.isArray(d.work)?d.work.slice():[];
   // Rooms and all when the draft has them; an older draft is words only.
   _qi.workRecs=Array.isArray(d.workItems)&&d.workItems.length?d.workItems.filter(x=>x&&x.label).map(x=>{const r=_tmRec(x.label,x.section,x.notes);r.on=x.on!==false;if(x._written)r._written=true;if(x._tim)r._tim=x._tim;return r;}):[];
   _qiWorkSync();
@@ -1717,7 +1728,7 @@ function _qiDraftApply(d){
 // Everything on the screen, as a draft. qiSaveDraft keeps it; qiSend holds it
 // so an invoice he never sent can go back to being a draft.
 function _qiDraftSnap(){
-  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_qiWorkSaved(true),
+  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_qiWorkSaved(true),note:_qi.note||'',
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
     added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};

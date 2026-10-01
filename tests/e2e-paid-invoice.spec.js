@@ -120,6 +120,24 @@ test.describe('Paid invoice: what the client sees', () => {
   // Owner 2026-08-16 asked whether unpaid gets a red stamp. It does, but only once
   // it is LATE. Every invoice starts unpaid, and a red stamp on the day it is handed
   // over accuses a client who has not had a chance to pay.
+  // Owner 2026-10-01: the invoice's note to them ("a good way to thank them")
+  // shows on their copy, signed; and the tax line is the tax the invoice
+  // charged (parts only on a Kansas repair), not one backed out of the total.
+  test('their copy shows his note, signed, and the tax the invoice charged', async () => {
+    const r = await page.evaluate(() => {
+      _hub.signerName = 'John Schonfeldt'; _hub.salesTaxRate = 9.15;
+      _hub.bids = [{ id: 7030, amount: 1157.65, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14',
+        note: 'Thanks for having us out. Call anytime.', salesTax: 9.15, salesTaxRate: 9.15 }];
+      _hub.payments = [];
+      openInvoice(7030);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(r).toContain('Thanks for having us out. Call anytime.');
+    expect(r).toContain('John Schonfeldt');
+    expect(r).toMatch(/Sales tax \(9\.15%\)\s*\$9\.15/);
+    expect(r).toMatch(/Contract price\s*\$1,148\.50/);
+  });
+
   test('an unpaid invoice within terms carries no stamp at all', async () => {
     const txt = await page.evaluate(() => {
       _hub.bids = [{ id: 7020, amount: 2375, type: 'Repaint', completion_date: '2026-08-14', daysOverdue: 0 }];

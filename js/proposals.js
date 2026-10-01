@@ -76,6 +76,10 @@ function _buildClientHubSnapshot(clientId){
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
+      // The invoice's note to them and the tax it charged (owner 2026-10-01),
+      // so their copy shows the note and the real tax, not one backed out of
+      // the total at his Settings rate.
+      note:b.qiNote||'',salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
@@ -179,6 +183,8 @@ function _buildClientHubSnapshot(clientId){
     // which is the one string that must never reach a client-facing invoice or
     // proposal. Falls back to the owner's own name, then to nothing at all.
     contractorName:S.bname||((typeof getOwnerName==='function'&&getOwnerName())||''),
+    // Who signs his notes: the proposal signer (_propSigner).
+    signerName:(typeof _propSigner==='function'&&_propSigner())||'',
     contractorPhone:S.bphone||'',
     // Letterhead facts an invoice is expected to carry (research 2026-08-16: a
     // trade invoice is expected to show the business address, email and LICENSE

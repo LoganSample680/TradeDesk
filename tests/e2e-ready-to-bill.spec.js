@@ -1485,3 +1485,28 @@ test.describe('Invoice work done, the proposal list', () => {
     expect(r).toEqual([['work', 'Secure the tub spout', 'Re-secured the tub spout']]);
   });
 });
+
+// Owner 2026-10-01: "Love the your note to them on invoice too, good way to
+// thank them". The same row T&M has; it prints on their copy, signed, rides
+// the draft and is saved on the invoice for the hub.
+test.describe('Invoice: your note to them', () => {
+  test('the note row is T&M\'s; it prints, survives the draft and saves', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('#qi-page .ios-row .ios-lbl')].some(e => /^Your note to them/.test(e.textContent));
+      _qiNoteToggle();
+      const box = document.getElementById('qi-note');
+      box.value = 'Thanks for having us out.'; box.dispatchEvent(new Event('input'));
+      const doc = _qiDocHtml();
+      const snap = _qiDraftSnap(); _qi.note = ''; _qiDraftApply(snap);
+      const back = _qi.note;
+      _qi.due = '15';
+      const bid = _qiSave();
+      const hub = _buildClientHubSnapshot(701);
+      return { row, inDoc: doc.includes('Thanks for having us out.'), back, saved: bid.qiNote, hub: (hub.bids.find(b => b.id === bid.id) || {}).note };
+    });
+    expect(r).toEqual({ row: true, inDoc: true, back: 'Thanks for having us out.', saved: 'Thanks for having us out.', hub: 'Thanks for having us out.' });
+    await assertNoErrors(page);
+  });
+});
