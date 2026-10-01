@@ -2415,7 +2415,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mobile-topbar-icon{width:34px;height:34px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
 /* His brand owns the corner once he has one (applyBrandLogo, js/settings.js). */
 #mobile-topbar-brand.is-branded .mobile-topbar-icon{display:none}
-#mobile-topbar-brand.is-branded .mobile-topbar-name{display:block;font-size:clamp(14px,4.1vw,17px)}
+#mobile-topbar-brand.is-branded{max-height:56px;overflow:hidden}
+#mobile-topbar-brand.is-branded .mobile-topbar-name{display:block;max-height:48px;overflow:hidden;font-size:clamp(14px,4.1vw,17px)}
 .mobile-topbar-icon svg{width:16px;height:16px;stroke:rgba(245,239,226,.9);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
 /* Name wraps to up to TWO lines so long names ("ZJ's Painting & Special Coatings")
    show in FULL, no mid-word ellipsis. Tight line-height + viewport-scaled font

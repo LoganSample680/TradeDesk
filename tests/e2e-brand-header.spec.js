@@ -119,5 +119,11 @@ test.describe('Brand in the top corner', () => {
       return { inside: n.bottom <= bar.bottom + 1 && n.top >= bar.top - 1, bleed: document.documentElement.scrollWidth > innerWidth + 1 };
     });
     expect(r).toEqual({ inside: true, bleed: false });
+    // Nothing of the brand reaches below the bar, where it could cover a tap.
+    const below = await page.evaluate(() => {
+      const bar = document.getElementById('mobile-topbar').getBoundingClientRect();
+      return [...document.querySelectorAll('#mobile-topbar-brand *')].some(e => { const b = e.getBoundingClientRect(); return b.height && b.bottom > bar.bottom + 1; });
+    });
+    expect(below).toBe(false);
   });
 });

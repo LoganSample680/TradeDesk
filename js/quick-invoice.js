@@ -1852,7 +1852,10 @@ function _tbRows(lab){
   const withReceipts=new Set(((typeof expenses!=='undefined'&&expenses)||[]).filter(e=>e&&e.client_id!=null&&Number(e.amount)>0).map(e=>String(e.client_id)));
   const rows=[];
   per.forEach(({c,addr,pl,first})=>{
-    if(_qiPropJobs(c.id).length)return;          // billed from the proposal's job
+    // Billed from the proposal's job. Only a proposal that HAS a job: a signed
+    // one with no day on the calendar covers no visit, so his tracked time
+    // at that house is still his to bill here.
+    if(_qiPropJobs(c.id).some(p=>p.jobId!=null))return;
     const set=new Set();
     pl.forEach(n=>(byPlace[n]||[]).forEach(e=>set.add(e)));
     _qiJobsAt(c.id,addr).forEach(j=>(byJob[String(j.id)]||[]).forEach(e=>set.add(e)));

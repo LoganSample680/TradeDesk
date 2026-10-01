@@ -1122,7 +1122,12 @@ test.describe('Invoice: add time from the day', () => {
     log.push('card rows ' + rows);
     await tap('Ready to bill', '#dash-to-bill .tb-sum');
     if (!(await page.locator('#qi-page #qi-say').count())) { await page.waitForTimeout(400); await tap('Tagen Miller', '#dash-to-bill .tb-row:has-text("Tagen")'); }
-    await page.waitForSelector('#qi-page #qi-say', { timeout: 4000 });
+    // A miss says which tap missed and what was on screen, not just a timeout.
+    await page.waitForSelector('#qi-page #qi-say', { timeout: 4000 }).catch(async (e) => {
+      const at = await page.evaluate(() => ({ pg: [...document.querySelectorAll('.pg.active')].map(x => x.id), qi: !!document.getElementById('qi-page'),
+        ov: [...document.querySelectorAll('.zmodal-overlay')].map(x => x.textContent.slice(0, 80)), rows: [...document.querySelectorAll('#dash-to-bill .tb-row')].map(x => x.textContent.slice(0, 40)) }));
+      throw new Error(e.message + '\n' + log.join('\n') + '\n' + JSON.stringify(at));
+    });
     await page.waitForTimeout(400);
     await type('what we did', '#qi-say', 'Replaced the water heater.');
     await tap('Add to work done', '#qi-page button:has-text("Add to work done")');
