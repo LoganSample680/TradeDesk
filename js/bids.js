@@ -1281,7 +1281,7 @@ function showCancellationRefund(bidId){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">'+escHtml(bid.client_name||'Client')+' · Deposit collected: <strong>'+fmt(totalPaid)+'</strong></div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label>Materials purchased for this job ($)</label>'+
-      '<input type="number" id="_cr-mat" data-paid="'+totalPaid+'" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+
+      '<input type="text" data-num="money" inputmode="decimal" id="_cr-mat" data-paid="'+totalPaid+'" placeholder="0.00"'+
         ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center"'+
         ' oninput="_crCalc()">'+
     '</div>'+
@@ -1303,7 +1303,7 @@ function _crCalc(){
   const submit=document.getElementById('_cr-submit');
   if(!inp||!res)return;
   const paid=parseFloat(inp.dataset.paid)||0;
-  const mat=parseFloat(inp.value)||0;
+  const mat=_numVal(inp);
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   if(mat>=paid){
     res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit, no refund owed.</span><br><span style="font-size:11px">The deposit covers materials.</span>';
@@ -1320,7 +1320,7 @@ function _submitCancellationRefund(bidId){
   const dateEl=document.getElementById('_cr-date');
   if(!inp)return;
   const paid=parseFloat(inp.dataset.paid)||0;
-  const mat=parseFloat(inp.value)||0;
+  const mat=_numVal(inp);
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   const pdate=(dateEl?dateEl.value:'')||todayKey();
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;

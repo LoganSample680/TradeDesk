@@ -222,9 +222,9 @@ function _timAskRate(){
     const r=parseFloat(String(v||'').replace(/[^0-9.]/g,''));
     if(!(r>0)){if(typeof showToast==='function')showToast('Nothing changed','ℹ️',2200);return;}
     _timSetRate(r);
-  },{title:'What would you like to change it to?',placeholder:'125'});
+  },{title:'What would you like to change it to?',placeholder:'125',num:'rate'});
   const inp=document.getElementById('zprompt-inp');
-  if(inp){inp.setAttribute('inputmode','decimal');inp.setAttribute('aria-label','Hourly rate');}
+  if(inp)inp.setAttribute('aria-label','Hourly rate');
 }
 
 // Where the photos live, walked the way he would: open More, tap Photos. He

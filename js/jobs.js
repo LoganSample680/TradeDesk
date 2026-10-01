@@ -2271,7 +2271,7 @@ function openAssignSubModal(jobId,clientId){
     '<div class="f" style="margin-bottom:12px"><label>Description of work</label>'+
       '<input id="asub-desc" placeholder="Drywall repair, trim, plumbing rough-in..." style="font-size:14px;padding:10px"></div>'+
     '<div class="f" style="margin-bottom:16px"><label>Amount owed ($)</label>'+
-      '<input id="asub-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+      '<input id="asub-amount" type="text" data-num="money" inputmode="decimal" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="document.getElementById(\'_asub-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button id="asub-save" onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
@@ -2284,7 +2284,7 @@ function _saveSubAssignment(jobId,clientId){
   const sub=(S.subcontractors||[])[idx];
   if(!sub)return showToast('Select a subcontractor','⚠️');
   const desc=(document.getElementById('asub-desc')?.value||'').trim();
-  const amount=parseFloat(document.getElementById('asub-amount')?.value||0)||0;
+  const amount=_numVal('asub-amount');
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(!j.subs)j.subs=[];
   j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
@@ -3032,7 +3032,7 @@ function showJobDebrief(jobId){
   let debriefRows='';
   const _row=(room,s)=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
         <div style="font-size:13px;flex:1">${s.icon?svgIcon(s.icon):''} ${escHtml(s.label)}</div>
-        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
+        <input type="text" data-num="dec" inputmode="decimal" placeholder="hrs"
           data-room="${encodeURIComponent(room)}" data-scope="${escHtml(s.id)}"
           style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
       </div>`;

@@ -774,7 +774,7 @@ function _qiPeopleHtml(){
           '<span class="qi-chk'+(is?' on':'')+'" aria-hidden="true"></span>'+
           '<span class="ios-lbl">'+escHtml(n)+'<small>'+(tracked.includes(n)?'Tracked in the app':'Same hours as the crew')+'</small></span></button>';}).join('')+
       '<div class="ios-row qi-new"><input id="qi-new-name" class="qi-desc" type="text" autocapitalize="words" placeholder="New person, no app needed" onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'qi-new-rate\').focus();}">'+
-        '<span class="ios-val">$<input id="qi-new-rate" type="text" inputmode="decimal" placeholder="0" aria-label="Their rate per hour" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_qiAddNew();}">/hr</span>'+
+        '<span class="ios-val">$<input id="qi-new-rate" type="text" data-num="rate" inputmode="decimal" placeholder="0" aria-label="Their rate per hour" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_qiAddNew();}">/hr</span>'+
         '<button type="button" class="ios-pill" onclick="_qiAddNew()">Add</button></div>'
     :'')+
   '</div>';
@@ -836,10 +836,10 @@ function renderQuickInvoice(){
     const ex=items.filter(x=>x.l.extra);
     const exMins=ex.reduce((s2,x)=>s2+x.l.mins,0);
     const need=!(Number(l.rate)>0);
-    const rateBox='<span class="qi-rate'+(need?' need':'')+'">$<input type="text" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr</span>'+
+    const rateBox='<span class="qi-rate'+(need?' need':'')+'">$<input type="text" data-num="rate" inputmode="decimal" aria-label="Rate for '+escHtml(l.who)+'" value="'+(l.rate||'')+'" placeholder="0" oninput="_qiRate('+i+',this.value)" onchange="_qiRateDone('+i+')" onblur="_qiRateDone('+i+')">/hr</span>'+
       // $0 with a flag to change it (owner 2026-09-29), never a blank box.
       (need?' <button type="button" class="qi-set-rate" onclick="this.parentNode.querySelector(\'.qi-rate input\').focus()">Set rate</button>':'');
-    const hrsBox='<span class="qi-hrs" data-key="'+escHtml(l.day+'|'+l.who)+'"><input type="text" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>';
+    const hrsBox='<span class="qi-hrs" data-key="'+escHtml(l.day+'|'+l.who)+'"><input type="text" data-num="dec" inputmode="decimal" aria-label="Hours for '+escHtml(l.who)+'" value="'+(Math.round(mins/6)/10)+'" onchange="_qiRiderSet(\''+l.day+'\',\''+qk+'\',this.value)">h</span>';
     // The runs between visits, said once: where to, and how long.
     const places=[...new Set(ex.map(x=>String(x.l.detail||'').match(/^At (.+?)(?:,| ·|$)/)).filter(Boolean).map(m=>m[1]))];
     const runs=exMins>0?' + '+_qiMins(exMins)+' '+(places.length?places.map(p=>p==='the shop'?'shop':p).join(' and ')+' run':'driving between visits'):'';
@@ -906,7 +906,7 @@ function renderQuickInvoice(){
   // owner 2026-09-29: "use the same one that's in proposal"). Here: charges.
   const typed=_qi.typed.map((l,i)=>l.part?''
     :'<div class="ios-row"><input class="qi-desc" type="text" placeholder="'+(hourly?'Other charge, like a trip fee':'Describe the work')+'" value="'+escHtml(l.desc||'')+'" oninput="_qiTyped('+i+',\'desc\',this.value)">'+
-    '<span class="ios-val">$<input type="text" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
+    '<span class="ios-val">$<input type="text" data-num="money" inputmode="decimal" placeholder="0" value="'+(l.amount===''?'':escHtml(String(l.amount)))+'" oninput="_qiTyped('+i+',\'amount\',this.value)"></span></div>').join('');
   const pb=_qiPb();
   const pbHtml=_qi.pbOpen&&pb.length?'<div class="qi-pb">'+pb.slice(0,12).map((p,i)=>
     '<button type="button" onclick="_qiAddPb('+i+')">'+escHtml(p.desc)+(Number(p.rate)>0?' · '+fmt(p.rate).replace('.00',''):'')+'</button>').join('')+'</div>':'';
@@ -1071,7 +1071,7 @@ function _qiSetPriceHtml(hourly){
   return '<div class="ios-sec"><div class="ios-group">'+
     '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Change the total<small>Type what they pay. They see that one number, not the hours.</small></span>'+
       '<input type="checkbox" class="ios-switch" id="qi-fixed-on" '+(_qi.fixed!=null?'checked':'')+' onchange="_qiSetFixed(this.checked)"></label>'+
-    (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">The price</span><span class="ios-val">$<input id="qi-fixed" type="text" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':'')+
+    (_qi.fixed!=null?'<div class="ios-row"><span class="ios-lbl">The price</span><span class="ios-val">$<input id="qi-fixed" type="text" data-num="money" inputmode="decimal" value="'+(_qi.fixed||'')+'" oninput="_qiFixedTyped(this.value)"></span></div>':'')+
   '</div></div>';
 }
 // What the customer sees, in the step where he checks what they get.

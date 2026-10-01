@@ -638,7 +638,7 @@ function openHepaLog(id){
       '</select>'+
       '<input id="_hepa-who" placeholder="Who (optional)" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<input id="_hepa-notes" placeholder="Notes (optional)" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
-      '<input id="_hepa-date" placeholder="MM/DD/YYYY" value="'+_licDateDisp(todayKey())+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
+      '<input type="text" data-num="date" inputmode="numeric" id="_hepa-date" placeholder="MM/DD/YYYY" value="'+_licDateDisp(todayKey())+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<button class="btn btn-p btn-full" onclick="_addHepaEntry('+id+')">+ Add Entry</button>'+
     '</div>'+
     '<button class="btn btn-sec btn-full" style="margin-top:10px" onclick="document.getElementById(\'_hepa-modal-ov\').remove()">Close</button>';
@@ -1066,7 +1066,7 @@ function saveSettings(){
   // the form guard, so it also happens for accounts that never open Settings.
   delete S.ccSurchargeEnabled;delete S.ccSurchargePct;
   if(!window._settingsFormFilled){saveAll();return;}
-  const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
+  const gf=id=>_numVal(id),gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
   const _smsD=_getSmsDefaults();
   S={...S,
@@ -1090,8 +1090,8 @@ function saveSettings(){
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
     venmoUser:document.getElementById('set-venmo')?_venmoClean(gs('set-venmo')):(S.venmoUser||''),
-    scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
-    scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
+    scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(_numVal('set-scan-price'))):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
+    scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,_numVal('set-scan-rate')):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
@@ -1143,7 +1143,7 @@ function loadTrueRatesForm(){
 // read, a blank field saves as 0 (never NaN/undefined), matching the
 // Math.max(0,...) guard those readers already apply to every field.
 function saveTrueRates(){
-  const gf=id=>{const el=document.getElementById(id);return Math.max(0,parseFloat(el&&el.value)||0);};
+  const gf=id=>Math.max(0,_numVal(id));
   S.trueMeasureRates={areaSqFt:gf('tr-tm-area'),roofSquare:gf('tr-tm-roof'),distanceLf:gf('tr-tm-dist')};
   S.scanRates={wall:gf('tr-scan-wall'),ceiling:gf('tr-scan-ceiling'),trimLf:gf('tr-scan-trim'),door:gf('tr-scan-door'),window:gf('tr-scan-window')};
   S.scanElecRates={outlet:gf('tr-scan-outlet'),sw:gf('tr-scan-sw'),gfci:gf('tr-scan-gfci')};

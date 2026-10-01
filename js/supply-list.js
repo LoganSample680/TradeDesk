@@ -194,7 +194,7 @@ function _supCardHTML(){
       '<div class="sup-markup">'+
         '<label for="sup-markup">Markup</label>'+
         '<div style="display:flex;align-items:center;gap:6px">'+
-          '<input id="sup-markup" type="number" inputmode="decimal" min="0" max="100" step="1" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)" style="width:72px;padding:7px 8px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);text-align:right">'+
+          '<input id="sup-markup" type="text" data-num="pct" inputmode="decimal" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)" style="width:72px;padding:7px 8px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);text-align:right">'+
           '<span style="font-size:14px;color:var(--text2);font-weight:600">%</span>'+
         '</div>'+
       '</div>'+
@@ -262,7 +262,7 @@ function _supEditCost(i){
     _supSync();
   };
   if(typeof zPrompt==='function'){
-    zPrompt((it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',value:Number(it.cost)>0?String(it.cost):''});
+    zPrompt((it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',num:'money',value:Number(it.cost)>0?String(it.cost):''});
   }
 }
 let _supMarkupTimer=null;

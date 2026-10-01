@@ -1432,7 +1432,7 @@ function _coRenderLines(bidId){
     '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'+
       '<input value="'+escHtml(l.desc||'')+'" placeholder="What it is" oninput="_coLines['+i+'].desc=this.value" '+
         'style="flex:1;min-width:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
-      '<input value="'+escHtml(l.amt==null?'':String(l.amt))+'" placeholder="0" inputmode="decimal" '+
+      '<input type="text" data-num="money" inputmode="decimal" value="'+escHtml(l.amt==null?'':String(l.amt))+'" placeholder="0" '+
         'oninput="_coLines['+i+'].amt=parseFloat(this.value.replace(/,/g,\'\'))||0;_coSyncLines('+bidId+')" '+
         'style="width:92px;flex-shrink:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;text-align:right">'+
       '<button onclick="_coRmLine('+i+','+bidId+')" aria-label="Remove line" '+

@@ -216,7 +216,7 @@ function _tsReviewOpen(wk){
       '<div class="ts-days">'+dayRows+'</div>'+
       '<div class="ts-total"><span>Total</span><b>'+escHtml(fm(e.min)||'0m')+'</b></div>'+
       (()=>{const r=_tsLastRate(wk);return '<label class="ts-pay"><span>Pay</span>'+
-        '<span class="ts-pay-rate">$<input id="ts-rate" type="text" inputmode="decimal" placeholder="0" value="'+(r>0?r:'')+'" oninput="_tsRateInput(this,'+Math.round(e.min)+')">/hr</span>'+
+        '<span class="ts-pay-rate">$<input id="ts-rate" type="text" data-num="rate" inputmode="decimal" placeholder="0" value="'+(r>0?r:'')+'" oninput="_tsRateInput(this,'+Math.round(e.min)+')">/hr</span>'+
         '<b id="ts-pay-total">'+(r>0?_tsPayMoney(_tsPay(e.min,r)):'')+'</b></label>';})()+
       (split?'<div class="ts-split">'+escHtml(split)+'</div>':'')+
       '<div class="ts-btns">'+

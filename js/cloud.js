@@ -4021,7 +4021,7 @@ async function _denyPermissionRequest(reqId){
 function _teamRateChip(id,label,val,ph,onchange){
   return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
     // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
-    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
+    '<input id="'+id+'" type="text" data-num="rate" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
 }
 function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
 // A typed amount: only the money noise ($ , spaces) comes off, never the sign,
@@ -5144,7 +5144,7 @@ function _subModalHTML(sub,idx){
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:16px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">1099-NEC filing info <span style="font-weight:400;text-transform:none;letter-spacing:0">(needed if you pay them $600+/yr)</span></div>'+
       '<div class="fg fg2" style="margin-bottom:8px">'+
-        '<div class="f"><label>EIN or SSN</label><input id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
+        '<div class="f"><label>EIN or SSN</label><input type="text" data-num="ein" inputmode="numeric" id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
         '<div class="f" style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="sub-w9" '+(s.w9?'checked':'')+' style="width:16px;height:16px;accent-color:var(--blue)"> W-9 on file</label></div>'+
       '</div>'+
       '<div class="f"><label>Mailing address</label><input id="sub-addr" value="'+escHtml(s.addr||'')+'" placeholder="Street, City, ST ZIP" style="font-size:13px;padding:10px"></div>'+

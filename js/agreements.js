@@ -145,7 +145,7 @@ function _showAgreementModal(a){
     '<div class="f"><label>Type</label><select id="_ag-type" onchange="_agTypeChanged()">'+typeOpts+'</select></div>'+
     '<div class="f"><label>Title</label><input id="_ag-title" value="'+escHtml(a?.title||'')+'" placeholder="e.g. Profit-Share Partnership"></div>'+
     '<div id="_ag-profit-fields" style="display:'+(t==='profit_share'?'block':'none')+'">'+
-      '<div class="f"><label>Profit %</label><input id="_ag-pct" type="number" inputmode="decimal" oninput="_agApplyTemplate()" value="'+(a?.profitPct!=null?escHtml(String(a.profitPct)):'')+'" placeholder="e.g. 20"></div>'+
+      '<div class="f"><label>Profit %</label><input id="_ag-pct" type="text" data-num="pct" inputmode="decimal" oninput="_agApplyTemplate()" value="'+(a?.profitPct!=null?escHtml(String(a.profitPct)):'')+'" placeholder="e.g. 20"></div>'+
       '<div class="f"><label>Payment cadence</label><input id="_ag-cadence" oninput="_agApplyTemplate()" value="'+escHtml(a?.cadence||'monthly')+'" placeholder="e.g. monthly, quarterly"></div>'+
     '</div>'+
     '<div class="f"><label>Terms</label><textarea id="_ag-body" rows="8" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.5;padding:10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text)">'+escHtml(a?.body||'')+'</textarea></div>'+

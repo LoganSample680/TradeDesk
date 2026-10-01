@@ -1063,7 +1063,7 @@ function _tmAdj(delta){
 }
 function _tmRecalc(){
   _tmCrewCount=parseInt(document.getElementById('tm-crew-display')?.textContent)||_tmCrewCount||1;
-  _tmRatePerMan=parseFloat(document.getElementById('tm-rate')?.value)||0;
+  _tmRatePerMan=_numVal('tm-rate');
   _tmEstHours=parseFloat(document.getElementById('tm-hours')?.value)||0;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   const el=document.getElementById('tm-labor-est');
@@ -1105,7 +1105,7 @@ function _tmCalcNte(){
   if(wrap)wrap.style.display=on?'block':'none';
   if(!on){_byoAutosave();return;}
   const cap=document.getElementById('tm-nte-cap');
-  if(cap&&(!cap.value||parseFloat(cap.value)===0)){
+  if(cap&&(!cap.value||_numVal(cap)===0)){
     const{sub}=calcGeiTotal();
     if(sub>0)cap.value=Math.round(sub*1.15/500)*500; // round to nearest $500
   }
@@ -1232,7 +1232,7 @@ function _geiRenderProfitGauge(prefix,costOninput){
   const wrap=document.getElementById(prefix+'-gauge-wrap');
   if(!wrap||wrap.children.length)return; // idempotent: preserve gauge/animation state across repeat page shows
   wrap.innerHTML=
-    '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
+    '<input type="text" data-num="dec" inputmode="decimal" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-drive-line" style="display:none;padding:10px 12px;margin:0 0 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2)"></div>'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
@@ -1298,9 +1298,9 @@ function _geiRenderDepositField(prefix,onInputExpr){
     '<div class="summary-row" style="align-items:center">'+
       '<span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>'+
       '<span style="display:flex;align-items:center;gap:4px">'+
-        '<input type="number" id="'+prefix+'-deposit-pct" value="25" min="0" max="100" step="5"'+
+        '<input type="text" data-num="pct" inputmode="decimal" id="'+prefix+'-deposit-pct" value="25"'+
           ' oninput="'+onInputExpr+'"'+
-          ' inputmode="decimal" style="width:68px;min-height:44px;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
+          ' style="width:68px;min-height:44px;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
         '<span style="font-size:15px;font-weight:700">%</span>'+
       '</span>'+
     '</div>'+
@@ -3303,7 +3303,7 @@ function _byoRenderPrice(st){
       [...new Set(_GEI_VALID_CHOICES.concat([_geiValidDaysNow()]))].sort((a,b)=>a-b).map(n=>'<option value="'+n+'"'+(n===_geiValidDaysNow()?' selected':'')+'>'+n+' days</option>').join('')+
       '</select></span></label>'+
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
-      '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
+      '<span class="ios-val"><input type="text" data-num="pct" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
   const foot=document.getElementById('byo-price-foot');
@@ -3946,7 +3946,7 @@ function _tmRenderWho(){
       const r=_billRateFor(k),need=!(r>0),first=_crewFirst(k);
       html+='<label class="ios-row tm-who-rate"><span class="ios-lbl">'+escHtml(first)+
           (need?'<small class="qi-need-lbl">Needs a rate</small>':'')+'</span>'+
-        '<span class="ios-val qi-rate'+(need?' need':'')+'">$<input type="text" inputmode="decimal" value="'+(r>0?r:'')+'" placeholder="Rate?" '+
+        '<span class="ios-val qi-rate'+(need?' need':'')+'">$<input type="text" data-num="rate" inputmode="decimal" value="'+(r>0?r:'')+'" placeholder="Rate?" '+
           'aria-label="What '+escHtml(first)+' bills per hour" onchange="_tmWhoRate(this,'+escHtml(JSON.stringify(k))+')">/hr</span></label>';
     });
     const n=_estCrew.length;
@@ -4048,7 +4048,7 @@ function _crewRatesHtml(emps){
       '<div style="'+cell+';font-size:12px;color:var(--text3)">'+(canSeeCost&&loaded>0?('$'+(Math.round(loaded*100)/100)):'')+'</div>'+
       '<div style="'+cell+'">'+
         '<span style="display:inline-flex;align-items:center;height:30px;padding:0 4px 0 8px;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);font-size:13px;font-weight:700;color:var(--text)">$'+
-        '<input type="text" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
+        '<input type="text" data-num="rate" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
           'aria-label="What '+escHtml(first)+' bills per hour" '+
           'onchange="_onBillRateInput(this,'+escHtml(JSON.stringify(email))+')" '+
           'style="width:44px;height:44px;margin:-7px 0;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
@@ -4577,7 +4577,7 @@ function _byaQtyRateHTML(qty,unit,rate,scope){
   return '<div class="f" style="margin-bottom:6px">'+
     '<label>How many, and what each</label>'+
     '<div style="display:flex;gap:8px;align-items:center">'+
-      '<input type="text" inputmode="decimal" id="_bya-qty" value="'+q+'" oninput="_byaLineMath()" aria-label="Quantity" '+
+      '<input type="text" data-num="dec" inputmode="decimal" id="_bya-qty" value="'+q+'" oninput="_byaLineMath()" aria-label="Quantity" '+
         'style="width:72px;flex-shrink:0;text-align:center;font-weight:700">'+
       '<select id="_bya-unit" onchange="_byaLineMath()" aria-label="Unit" style="width:104px;flex-shrink:0;font-family:inherit">'+
         list.map(u=>'<option value="'+escHtml(u)+'"'+(u===cur?' selected':'')+'>'+escHtml(u)+'</option>').join('')+
@@ -7069,9 +7069,9 @@ function _geiAddFreeFormLine(prefill){
         '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint, 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
-        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" inputmode="decimal" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="text" data-num="dec" inputmode="decimal" value="'+(d.qty||1)+'" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
         '<div class="f"><label>Unit</label><input id="_ffa-unit" type="text" value="'+escHtml(d.unit||'ea')+'" placeholder="ea" style="font-size:14px"></div>'+
-        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="number" inputmode="decimal" value="'+(d.rate||'')+'" min="0" step="any" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="text" data-num="rate" inputmode="decimal" value="'+(d.rate||'')+'" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
@@ -7085,17 +7085,17 @@ function _geiAddFreeFormLine(prefill){
   setTimeout(()=>document.getElementById('_ffa-desc')?.focus(),100);
 }
 function _ffaLiveTotal(){
-  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||0;
-  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  const qty=_numVal('_ffa-qty')||0;
+  const rate=_numVal('_ffa-rate');
   const el=document.getElementById('_ffa-total-disp');
   if(el)el.textContent=(qty&&rate)?fmt((qty*rate),{whole:true}):'-';
 }
 function _geiConfirmFreeFormAdd(editIdx){
   const desc=(document.getElementById('_ffa-desc')?.value||'').trim();
   if(!desc){const inp=document.getElementById('_ffa-desc');if(inp){inp.style.borderColor='#dc2626';inp.focus();}return;}
-  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||1;
+  const qty=_numVal('_ffa-qty')||1;
   const unit=(document.getElementById('_ffa-unit')?.value||'ea').trim();
-  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  const rate=_numVal('_ffa-rate');
   document.getElementById('_ff-add-ov')?.remove();
   const line={desc,qty,unit,rate,total:qty*rate};
   if(editIdx>=0&&editIdx<_geiLines.length)_geiLines[editIdx]=line;
@@ -7166,7 +7166,7 @@ function _geiJobPrice(job){
 }
 
 function _geiAddWithRate(job,inputEl){
-  const entered=parseInt(inputEl?.value)||0;
+  const entered=Math.trunc(_numVal(inputEl));
   const p=_geiJobPrice(job);
   const marketTotal=p.labor+(p.mat||0);
   if(entered!==marketTotal&&entered>0){
@@ -7180,11 +7180,15 @@ function _geiAddWithRate(job,inputEl){
   const rate=entered||marketTotal;
   if(job.custom){
     const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
-    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
-    if(!raw)return;
-    const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    _geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
-    if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:p.mat,total:qty*p.mat});
+    // A number-only prompt (zPrompt num), not the browser's prompt(), which
+    // took letters and looked nothing like the app.
+    zPrompt('Enter '+unitLabel,raw=>{
+      const qty=parseFloat(String(raw||'').replace(/,/g,''));if(!qty||isNaN(qty))return;
+      _geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
+      if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:p.mat,total:qty*p.mat});
+      renderGeiLines();calcGeiTotal();
+    },{title:job.name,num:'dec'});
+    return;
   } else {
     if(p.labor>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:p.labor,total:p.labor,jobId:job.id});
     if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:p.mat,total:p.mat});
@@ -7244,7 +7248,7 @@ function _geiOpenCatSheet(catLabel){
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
         <span style="font-size:12px;color:var(--text3)">$</span>
-        <input type="number" inputmode="decimal" id="${inputId}" value="${defaultTotal}" min="0" step="any"
+        <input type="text" data-num="rate" inputmode="decimal" id="${inputId}" value="${defaultTotal}"
           style="width:74px;padding:5px 4px;border-radius:var(--r);${inputBorder};font-size:14px;font-weight:800;${inputColor};text-align:right;background:var(--bg);font-family:inherit"
           onclick="event.stopPropagation()">
         <button onclick="_geiAddWithRate(${JSON.stringify(job).replace(/"/g,'&quot;')},document.getElementById('${inputId}'));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
@@ -7515,11 +7519,13 @@ function _geiAddTemplate(job){
   const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
   if(job.custom){
     const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
-    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
-    if(!raw)return;
-    const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
-    if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:job.mat,total:qty*job.mat});
+    zPrompt('Enter '+unitLabel,raw=>{
+      const qty=parseFloat(String(raw||'').replace(/,/g,''));if(!qty||isNaN(qty))return;
+      if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
+      if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:job.mat,total:qty*job.mat});
+      renderGeiLines();calcGeiTotal();
+    },{title:job.name,num:'dec'});
+    return;
   } else {
     if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:job.mat,total:job.mat});
@@ -7542,12 +7548,12 @@ function _geiShowFreeFormModal(job){
         <input id="_ff-model" type="text" placeholder="${escHtml(job.freeFormLabel||'e.g. Mitsubishi MSZ-GL09NA')}" style="font-size:14px" autocomplete="off">
       </div>
       ${isCustomQty?`<div class="fg fg2" style="margin-bottom:10px">
-        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="number" inputmode="decimal" value="1" min="0.1" step="any" style="font-size:14px"></div>
+        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="text" data-num="dec" inputmode="decimal" value="1" style="font-size:14px"></div>
         <div></div>
       </div>`:''}
       <div class="fg fg2" style="margin-bottom:14px">
-        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" inputmode="decimal" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
-        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" inputmode="decimal" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
+        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="text" data-num="rate" inputmode="decimal" value="${laborRate}" style="font-size:14px"></div>
+        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="text" data-num="rate" inputmode="decimal" value="${job.mat}" style="font-size:14px"></div>`:'<div></div>'}
       </div>
       <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to proposal</button>
       <button class="btn" onclick="document.getElementById('_gei-ff-ov')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>
@@ -7558,9 +7564,9 @@ function _geiShowFreeFormModal(job){
 
 function _geiConfirmFreeForm(job){
   const model=(document.getElementById('_ff-model')?.value||'').trim();
-  const laborRate=parseFloat(document.getElementById('_ff-labor')?.value)||0;
-  const matRate=parseFloat(document.getElementById('_ff-mat')?.value)||0;
-  const qty=parseFloat(document.getElementById('_ff-qty')?.value)||1;
+  const laborRate=_numVal('_ff-labor');
+  const matRate=_numVal('_ff-mat');
+  const qty=_numVal('_ff-qty')||1;
   document.getElementById('_gei-ff-ov')?.remove();
   const modelTag=model?', '+model:'';
   if(laborRate>0)_geiLines.push({desc:job.name+modelTag+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
@@ -7801,7 +7807,7 @@ function renderGeiLines(){
       <div style="display:grid;grid-template-columns:60px 50px 1fr 90px;gap:8px;align-items:end">
         <div>
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Qty</div>
-          <input type="number" value="${l.qty||1}" min="0" step="any" inputmode="decimal" ${isLabor?'readonly':''}
+          <input type="text" data-num="dec" inputmode="decimal" value="${l.qty||1}" ${isLabor?'readonly':''}
             oninput="_geiLines[${i}].qty=parseFloat(this.value)||1;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((parseFloat(this.value)||1)*(${l.rate||0})).toLocaleString('en-US',{maximumFractionDigits:0})"
             style="width:100%;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;text-align:center;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box;${isLabor?'opacity:.7;':''}">
         </div>
@@ -7812,8 +7818,8 @@ function renderGeiLines(){
         </div>
         <div>
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Rate ($)</div>
-          <input type="number" value="${l.rate||''}" min="0" step="any" inputmode="decimal" ${isLabor?'readonly':''}
-            oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*(parseFloat(this.value)||0)).toLocaleString('en-US',{maximumFractionDigits:0})"
+          <input type="text" data-num="rate" inputmode="decimal" value="${l.rate||''}" ${isLabor?'readonly':''}
+            oninput="_geiLines[${i}].rate=_numVal(this);calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*_numVal(this)).toLocaleString('en-US',{maximumFractionDigits:0})"
             onblur="_geiRateBlur(${i},this.value)" placeholder="0"
             style="width:100%;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;text-align:right;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box;${isLabor?'opacity:.7;':''}">
         </div>
@@ -7859,7 +7865,7 @@ function _geiRateBlur(i,val){
   if(!job)return;
   const p=_geiJobPrice(job);
   const market=p.labor+(p.mat||0);
-  const entered=parseInt(val)||0;
+  const entered=parseInt(String(val||'').replace(/,/g,''))||0;
   if(entered>0&&entered!==market){
     S.myRates=S.myRates||{};S.myRates[line.jobId]={labor:entered,mat:0};_settingsChanged();showToast('Rate saved','💾');
   }
@@ -7909,7 +7915,7 @@ function _panelRenderSection(){
     const phaseOpts=['L1','L2','2pole'].map(p=>`<option value="${p}"${c.phase===p?' selected':''}>${p==='2pole'?'2-pole':p}</option>`).join('');
     rows+=`<div style="${rowStyle}">
       <input type="text" value="${escHtml(c.desc||'')}" oninput="_panelSched.circuits[${i}].desc=this.value" placeholder="e.g. Kitchen outlets" style="padding:6px 7px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
-      <input type="number" value="${c.amps||''}" min="1" max="400" step="1" oninput="_panelSched.circuits[${i}].amps=+this.value;_panelSched.circuits[${i}].gauge=_panelSched.circuits[${i}].gauge||_panelAutoGauge(+this.value);_panelRenderSection()" placeholder="20" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
+      <input type="text" data-num="int" inputmode="numeric" maxlength="3" value="${c.amps||''}" oninput="_panelSched.circuits[${i}].amps=+this.value;_panelSched.circuits[${i}].gauge=_panelSched.circuits[${i}].gauge||_panelAutoGauge(+this.value);_panelRenderSection()" placeholder="20" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
       <select oninput="_panelSched.circuits[${i}].phase=this.value;_panelRenderSection()" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">${phaseOpts}</select>
       <input type="text" value="${escHtml(c.gauge||'')}" oninput="_panelSched.circuits[${i}].gauge=this.value" placeholder="12 AWG" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:11px;background:var(--bg2);color:var(--text3);width:100%;box-sizing:border-box">
       <label style="display:flex;align-items:center;justify-content:center;cursor:pointer"><input type="checkbox" ${c.afci?'checked':''} onchange="_panelSched.circuits[${i}].afci=this.checked" style="width:16px;height:16px;cursor:pointer"></label>
@@ -8123,7 +8129,7 @@ function saveGenericEstimate(draft,opts){
     tmDepositPct:0,
     tmDepositAmt:_tmFlatDep,
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
-    tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
+    tmNteCap:_tmNteFromNew||_numVal('tm-nte-cap'),
   }:{isTM:false};
   let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_geiDepositPct()/100);
   // State max-deposit cap (home-improvement compliance). Parse state from client
@@ -8228,7 +8234,7 @@ function _geiBuildTermsHtml(){
   const bname=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   const _party=bname||'Contractor';
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
+  const _tmNteCap=_numVal('tm-nte-cap');
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
   const _warrantyPeriod=S?.warrantyPeriod||'1 year';
@@ -8856,7 +8862,7 @@ async function sendGenericProposal(previewOnly,opts){
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
   // T&M: the flat figure or nothing (_tmDepositState), never a percent.
   const _tmDepAmt=_geiIsTM?_tmDeposit():Math.round(total*_tmDepPct)/100;
-  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
+  const _tmNteCap=_numVal('tm-nte-cap');
   const depositFmt=fmt(_tmDepAmt);
   // MUST be declared before the template literals below that use it, TDZ if declared after
   // Use the client's job address state, not the contractor's home state
@@ -9436,11 +9442,11 @@ function _renderIndModal(){
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Add Equipment Pieces</div>'+
     '<div style="display:grid;grid-template-columns:1fr 60px auto;gap:8px;align-items:center;margin-bottom:6px">'+
       '<select id="ind-type-sel" onchange="_indTypeChange()" style="padding:9px 8px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">'+typeOpts+'</select>'+
-      '<input id="ind-qty" type="number" value="1" min="1" max="99" style="padding:9px 6px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;text-align:center">'+
+      '<input id="ind-qty" type="text" data-num="int" inputmode="numeric" maxlength="2" value="1" style="padding:9px 6px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;text-align:center">'+
       '<button onclick="_addIndPiece()" style="padding:9px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Add</button>'+
     '</div>'+
     '<div id="ind-custom-sqft-row" style="display:none;margin-bottom:8px">'+
-      '<input id="ind-custom-sqft" type="number" placeholder="Enter square footage for this piece" min="1" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit">'+
+      '<input id="ind-custom-sqft" type="text" data-num="dec" inputmode="decimal" placeholder="Enter square footage for this piece" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit">'+
     '</div>'+
     '<div id="ind-pieces-list" style="margin-bottom:14px"></div>'+
     '<div id="ind-result-card"></div>'+
@@ -9498,10 +9504,15 @@ function _indAiSuggest(){
 }
 function _addIndFromSuggest(typeKey){
   const typ=IND_EQUIP_TYPES[typeKey];if(!typ)return;
-  let sqft=typ.sqft;
-  if(!sqft){sqft=parseInt(prompt('Square footage for '+typ.name+' (estimate OK):')||'0');if(!sqft)return;}
-  _indPieces.push({typeKey,qty:1,sqft,name:typ.name,lift:typ.lift,note:typ.note});
-  _renderIndPieces();_renderIndResult();
+  const add=sqft=>{
+    _indPieces.push({typeKey,qty:1,sqft,name:typ.name,lift:typ.lift,note:typ.note});
+    _renderIndPieces();_renderIndResult();
+  };
+  if(typ.sqft){add(typ.sqft);return;}
+  zPrompt('An estimate is OK.',raw=>{
+    const sqft=parseInt(String(raw||'').replace(/,/g,''))||0;if(!sqft)return;
+    add(sqft);
+  },{title:'Square footage for '+typ.name,num:'int'});
 }
 function _indTypeChange(){
   const sel=document.getElementById('ind-type-sel');if(!sel)return;
@@ -9707,14 +9718,14 @@ function openSalesTaxSetup(){
       '<div style="font-size:16px;font-weight:700;color:var(--text1);margin-bottom:4px">Sales Tax Rate</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+stName+', rate charged on taxable materials on your proposals</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-        '<input id="stsu-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric"'+
+        '<input type="text" data-num="zip" inputmode="numeric" id="stsu-zip" placeholder="ZIP code" maxlength="5"'+
           ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
         '<button onclick="_stsuLookup()" style="padding:10px 14px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Look up</button>'+
       '</div>'+
       '<div id="stsu-lookup-result" style="font-size:11px;color:var(--text3);min-height:16px;margin-bottom:10px"></div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Or enter manually</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">'+
-        '<input id="stsu-rate" type="number" step="0.001" min="0" max="20" placeholder="e.g. 9.350"'+
+        '<input id="stsu-rate" type="text" data-num="pct" inputmode="decimal" placeholder="e.g. 9.350"'+
           ' value="'+(curRate||'')+'"'+
           ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
         '<span style="font-size:14px;color:var(--text2);font-weight:600">%</span>'+

@@ -12,6 +12,10 @@ function formatPhoneDisplay(val){
 }
 function fmtPhone(input){
   let d=input.value.replace(/\D/g,'');
+  // Autofill and contacts paste "+1 (316) 555-0101": that is 11 digits with
+  // the country code in front. Drop the 1 so the number lands as 316-555-0101
+  // instead of being cut off at the end.
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
   if(d.length>10)d=d.slice(0,10);
   if(d.length>=7)d=d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6);
   else if(d.length>=4)d=d.slice(0,3)+'-'+d.slice(3);
@@ -24,7 +28,9 @@ const todayKey=()=>dateKey(new Date());
 const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
-const nv=id=>parseFloat(v(id))||0;
+// Commas are stripped first: a money or rate field shows "1,200" and a bare
+// parseFloat would read that as 1.
+const nv=id=>parseFloat(v(id).replace(/,/g,''))||0;
 // Shared dollar-amount input formatter, native <input type="number"> rejects
 // commas outright (worst on iOS Safari, which blocks the keystroke before it's
 // even typed; other browsers fail more quietly by dropping the value on read).
@@ -42,6 +48,13 @@ function _fmtMoneyInput(el){
   el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
 }
 const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+// The read side of every data-num field (see _tdNumFormat below). Takes an id
+// or the element itself, strips the display commas, and gives 0 for blank or
+// junk so a reader never has to guard NaN.
+function _numVal(idOrEl){
+  const el=typeof idOrEl==='string'?document.getElementById(idOrEl):idOrEl;
+  return parseFloat(String((el&&el.value)||'').replace(/,/g,''))||0;
+}
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -257,6 +270,10 @@ function zPrompt(msg, onOk, opts={}){
   document.body.appendChild(overlay);
   const inp=overlay.querySelector('#zprompt-inp');
   inp.placeholder=placeholder;
+  // opts.num ('money', 'int', 'dec', ...) makes this a number-only prompt: the
+  // delegated data-num listener strips anything else, and the phone shows the
+  // number pad. Read the answer with parseFloat after stripping commas.
+  if(opts.num){inp.setAttribute('data-num',opts.num);inp.setAttribute('inputmode',_TD_NUM_INPUTMODE[opts.num]||'decimal');}
   if(opts.value)inp.value=opts.value;
   const ok=overlay.querySelector('#zprompt-ok');
   const cancel=overlay.querySelector('.zmodal-cancel');
@@ -439,6 +456,92 @@ function _applyAutoCapAttrs(root){
       if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'true');
     });
   } catch (_e) {}
+}
+// NUMBER-ONLY FIELDS (owner 2026-10-01: "we don't want a number only field
+// like phones, dollars, percentages etc to ever allow a character").
+//
+// One delegated listener, the same shape as the auto-cap tagging above: a field
+// opts in with data-num="<kind>" plus the matching inputmode, and every
+// keystroke and paste is cleaned before any of the field's own oninput
+// handlers run (capture phase), so a handler never sees a letter.
+// type="number" is not used for these on purpose: iPhone WebKit blocks some
+// keys and lets others through, and e, + and - get past it everywhere.
+//   money, rate  digits, one dot, 2 decimals, live commas (_fmtMoneyInput)
+//   pct          digits, one dot, never above 100
+//   dec          digits, one dot
+//   int          digits only
+//   phone        XXX-XXX-XXXX (fmtPhone, drops a leading 1 from autofill)
+//   zip          5 digits
+//   ein          XX-XXXXXXX
+//   date         MM/DD/YYYY
+//   ym           a year or MM/YYYY, digits and one slash, no auto slash
+// No kind allows a minus sign. Read these fields with _numVal / _moneyVal,
+// which strip the commas back out.
+const _TD_NUM_INPUTMODE={money:'decimal',rate:'decimal',pct:'decimal',dec:'decimal',int:'numeric',zip:'numeric',ein:'numeric',date:'numeric',ym:'numeric',phone:'tel'};
+function _tdOneDot(raw){
+  raw=String(raw||'').replace(/[^\d.]/g,'');
+  const dot=raw.indexOf('.');
+  return dot===-1?raw:raw.slice(0,dot+1)+raw.slice(dot+1).replace(/\./g,'');
+}
+// Rewrites el.value for its kind. The caret is the listener's job.
+function _tdNumFormat(el,kind){
+  if(!el)return;
+  const val=String(el.value||'');
+  if(kind==='money'||kind==='rate'){_fmtMoneyInput(el);return;}
+  if(kind==='phone'){fmtPhone(el);return;}
+  let out;
+  if(kind==='pct'){
+    out=_tdOneDot(val);
+    if(parseFloat(out)>100)out='100';
+  }else if(kind==='dec'){
+    out=_tdOneDot(val);
+  }else if(kind==='zip'){
+    out=val.replace(/\D/g,'').slice(0,5);
+  }else if(kind==='ein'){
+    const d=val.replace(/\D/g,'').slice(0,9);
+    out=d.length>2?d.slice(0,2)+'-'+d.slice(2):d;
+  }else if(kind==='date'){
+    const d=val.replace(/\D/g,'').slice(0,8);
+    out=d.length>4?d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4):d.length>2?d.slice(0,2)+'/'+d.slice(2):d;
+  }else if(kind==='ym'){
+    out=val.replace(/[^\d/]/g,'');
+    const sl=out.indexOf('/');
+    if(sl!==-1)out=out.slice(0,sl+1)+out.slice(sl+1).replace(/\//g,'');
+    out=out.slice(0,7);
+  }else{
+    out=val.replace(/\D/g,'');
+  }
+  if(out!==val)el.value=out;
+}
+// Characters that carry meaning for a kind. The caret is restored by counting
+// these before it, so "1,2|00" stays between the 2 and the 0 after a comma is
+// added or a letter is stripped.
+function _tdNumSig(kind,ch){
+  if(kind==='money'||kind==='rate'||kind==='pct'||kind==='dec')return /[\d.]/.test(ch);
+  if(kind==='ym')return /[\d/]/.test(ch);
+  return /\d/.test(ch);
+}
+function _tdNumOnInput(e){
+  const el=e&&e.target;
+  if(!el||!el.getAttribute||e.isComposing)return;
+  const kind=el.getAttribute('data-num');
+  if(!kind)return;
+  const before=String(el.value||'');
+  let caret=null;
+  try{caret=el.selectionStart;}catch(_e){}
+  let n=0;
+  if(caret!=null)for(let i=0;i<caret&&i<before.length;i++)if(_tdNumSig(kind,before[i]))n++;
+  _tdNumFormat(el,kind);
+  const after=String(el.value||'');
+  if(after===before||caret==null)return;
+  // fmtPhone dropped a leading country-code 1 that sat before the caret.
+  if(kind==='phone'&&before.replace(/\D/g,'').length===11&&after.replace(/\D/g,'').length===10&&n>0)n--;
+  let pos=0,seen=0;
+  while(pos<after.length&&seen<n){if(_tdNumSig(kind,after[pos]))seen++;pos++;}
+  try{if(document.activeElement===el)el.setSelectionRange(pos,pos);}catch(_e){}
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('input', _tdNumOnInput, true);
 }
 if (typeof document !== 'undefined' && document.addEventListener) {
   // Tag static fields once the DOM is ready, and expose a hook so code that

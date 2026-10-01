@@ -419,9 +419,9 @@ test.describe('true-measure.js: exhaustive coverage', () => {
       expect(r.byoItem.price).toBe(215);
     });
 
-    // type="number" inputs silently reject or revert an invalid string
-    // assignment at the DOM level (a real user physically can't type
-    // non-numeric characters into one), so the realistic "bad input" case
+    // These are number-only fields (data-num in js/utils.js strips anything
+    // that is not a digit or a dot as it is typed, so a real user physically
+    // can't type non-numeric characters into one), so the realistic "bad input" case
     // for this field type is the DOM node being missing entirely, §11.1's
     // "missing DOM" class, not a string the browser would never store.
     test('_tmAddToEstimate: missing qty/rate DOM nodes never throw or go negative', async () => {
