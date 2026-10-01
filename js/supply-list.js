@@ -40,10 +40,8 @@ function _supBlank(){
   return {items:[],markup:0,vendor:'',vendorEmail:'',quote:null,sentAt:null};
 }
 function _supCents(n){return Math.round((Number(n)||0)*100)/100;}
-function _supMoney(n){
-  const v=_supCents(n);
-  return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-}
+// Rounded to the cent first (_supCents), then the app's one money format.
+function _supFmt(n){return fmt(_supCents(n));}
 function _supClampMarkup(v){
   const n=parseFloat(v);
   if(!isFinite(n)||n<0)return 0;
@@ -174,7 +172,7 @@ function _supCardHTML(){
       // misheard): tap either and it opens as one line to retype.
       '<button type="button" class="sup-qty sup-edit" aria-label="Edit '+escHtml(it.desc)+'" onclick="_supEditItem('+i+')">'+escHtml(String(it.qty))+' '+escHtml(it.unit||'ea')+'</button>'+
       '<button type="button" class="sup-desc sup-edit" onclick="_supEditItem('+i+')">'+escHtml(it.desc)+flag+'</button>'+
-      '<button type="button" class="sup-cost" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supMoney(it.cost):'<span class="sup-cost-add">+ price</span>')+'</button>'+
+      '<button type="button" class="sup-cost" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supFmt(it.cost):'<span class="sup-cost-add">+ price</span>')+'</button>'+
       '<button type="button" class="sup-del" aria-label="Remove" onclick="_supDel('+i+')">'+svgIcon('✕',{size:12})+'</button>'+
     '</div>';
   }).join('');
@@ -201,7 +199,7 @@ function _supCardHTML(){
         '</div>'+
       '</div>'+
       (priced
-        ?'<div class="sup-totals"><span>Your cost '+_supMoney(cost)+'</span><span><b>Client price '+_supMoney(price)+'</b></span></div>'
+        ?'<div class="sup-totals"><span>Your cost '+_supFmt(cost)+'</span><span><b>Client price '+_supFmt(price)+'</b></span></div>'
         :(items.length?'<div class="sup-totals"><span style="color:var(--text3)">Waiting on their quote for prices</span></div>':''))+
       (taxNote?'<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">'+escHtml(taxNote)+'</div>':'')+
       '<div class="sup-actions">'+
@@ -318,7 +316,7 @@ function _supCheckQuote(q){
     if(!flag&&qty>0&&isFinite(unitPrice)&&unitPrice>=0){
       const expect=qty*unitPrice;
       if(Math.abs(expect-ext)>Math.max(0.011,qty*0.0051)){
-        flag='Does not add up: '+qty+' x '+unitPrice+' is '+_supMoney(expect)+', the quote says '+_supMoney(ext)+'.';
+        flag='Does not add up: '+qty+' x '+unitPrice+' is '+_supFmt(expect)+', the quote says '+_supFmt(ext)+'.';
       }
     }
     if(flag)out.flagged++;
@@ -599,8 +597,8 @@ function _supReview(checked){
   const sumLine=checked.subtotal===null
     ?'<div class="tip tip-w" style="margin:10px 0">Could not find the quote\'s subtotal to check the lines against.</div>'
     :(checked.sumOk
-      ?'<div style="font-size:12px;color:var(--green-dk,#15803d);margin:8px 0">Lines add up to their subtotal, '+_supMoney(checked.subtotal)+'.</div>'
-      :'<div class="tip tip-w" style="margin:10px 0">Lines add up to '+_supMoney(checked.sum)+' but the quote says '+_supMoney(checked.subtotal)+'. Check the amber lines.</div>');
+      ?'<div style="font-size:12px;color:var(--green-dk,#15803d);margin:8px 0">Lines add up to their subtotal, '+_supFmt(checked.subtotal)+'.</div>'
+      :'<div class="tip tip-w" style="margin:10px 0">Lines add up to '+_supFmt(checked.sum)+' but the quote says '+_supFmt(checked.subtotal)+'. Check the amber lines.</div>');
   const tax=checked.taxCharged
     ?'Tax was charged on this quote.'
     :'No tax on this quote.';
@@ -613,7 +611,7 @@ function _supReview(checked){
           '<button type="button" class="byo-check on" data-i="'+i+'" onclick="_supReviewToggle(this)">'+svgIcon('✓',{size:14})+'</button>'+
           '<div class="sup-qty">'+escHtml(String(l.qty))+' '+escHtml(l.unit)+'</div>'+
           '<div class="sup-desc">'+escHtml(l.desc)+(l.flag?'<div style="font-size:11px;color:var(--amber-dk,#b45309);margin-top:2px">'+escHtml(l.flag)+'</div>':'')+(l.note?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(l.note)+'</div>':'')+'</div>'+
-          '<div class="sup-cost">'+_supMoney(l.cost)+'</div>'+
+          '<div class="sup-cost">'+_supFmt(l.cost)+'</div>'+
         '</div>').join('')+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);margin:8px 0 12px">Untick anything you are not buying, like the other water heater on a quote that prices two.</div>'+

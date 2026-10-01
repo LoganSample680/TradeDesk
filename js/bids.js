@@ -1282,6 +1282,8 @@ async function _sendPaidInvoice(bidId,opts){
   const c=getClientById(bid.client_id);
   if(!c){showToast('No client on this job.','⚠');unsent();return;}
   document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
+  // A quick invoice's saved document first, so the hub the link opens has it.
+  try{if(typeof _qiDocUploads!=='undefined'&&_qiDocUploads[bidId])await _qiDocUploads[bidId];}catch(_e){}
   try{
     if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
   }catch(_e){}

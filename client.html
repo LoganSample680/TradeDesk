@@ -2999,8 +2999,24 @@ function _hubBidPaid(bidId){
     .reduce((s,p)=>s+(p.amount||0),0);
   return (b.amount||0)>0&&((b.amount||0)-paid)<0.01;
 }
+// THE INVOICE THEY GET IS THE ONE HE PREVIEWED (audit 2026-10-01). A quick
+// invoice saves its document, built by the same _qiDocHtml his "See what they
+// get" shows, the way a proposal saves its own (proposalKey). This page shows
+// that saved copy and adds only what is live: what has been paid, the
+// balance, and the Pay button. An invoice with no saved copy (older ones, a
+// proposal billed in full) is drawn here as before.
+const _invDocs={};
 function openInvoice(bidId){
   const h=_hub,bid=h.bids.find(b=>b.id===bidId);if(!bid)return;
+  if(bid.invoiceDocKey&&!(bidId in _invDocs)&&typeof _fetchStorageJson==='function'){
+    _invDocs[bidId]=null;
+    _fetchStorageJson(bid.invoiceDocKey).then(r=>{
+      _invDocs[bidId]=r&&r.data&&typeof r.data.invoiceHtml==='string'?r.data.invoiceHtml:null;
+      openInvoice(bidId);
+    }).catch(()=>openInvoice(bidId));
+    return;
+  }
+  const _doc=_invDocs[bidId]||null;
   const job=(h.jobs||[]).find(j=>j.bid_id===bidId);
   const bidPayments=h.payments.filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1));
   const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
@@ -3109,6 +3125,9 @@ function openInvoice(bidId){
       (h.signerName?'<div style="margin-top:10px;font-size:14px;font-weight:700;color:#0b1220">'+esc(h.signerName)+'</div>':'')+
     '</div>';
   }
+  // His saved invoice in place of the redrawn top half: the stamp stays,
+  // because paid or past due is live and the saved copy cannot know it.
+  if(_doc)html=(isPaid?_stamp('PAID','#3B8C2A'):_late?_stamp('PAST DUE','#A32D2D'):'')+'<div class="inv-doc">'+sanitizeHtml(_doc)+'</div>';
   // TOTALS. Subtotal, tax when the contractor charges it, then payments applied,
   // then the balance. Tax gets its own line because a lump sum with tax baked in
   // is the other thing clients query.

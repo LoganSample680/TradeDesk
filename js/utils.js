@@ -1,4 +1,8 @@
-const fmt=n=>'$'+(isNaN(+n)?0:+n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// THE MONEY FORMAT (audit 2026-10-01: the invoice, Build Your Own and the
+// supply list each had their own). "$1,234.56"; fmt(n,{whole:true}) gives
+// "$1,235". Only a real {whole:true} counts, so arr.map(fmt), which passes an
+// index second, still formats cents.
+const fmt=(n,o)=>{const v=isNaN(+n)?0:+n;return o&&o.whole===true?'$'+Math.round(v).toLocaleString('en-US',{maximumFractionDigits:0}):'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});};
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 function formatPhoneDisplay(val){
   let d=(val||'').replace(/\D/g,'').slice(0,10);
