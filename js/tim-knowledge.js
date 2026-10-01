@@ -2044,6 +2044,9 @@ function timScopeFrom(text){
 // I can start asap. I appreciate your faith ... John Schonfeldt Plumbing
 // Solutions by JS". The price, the days it holds and the courtesy are not
 // steps. Tim takes the price and the days as answers and leaves the rest out.
+// A signature never starts with the work: "Install GFCI" in capitals at the
+// end of a priced list is the last job, not a name.
+const _TIMK_WORKVERB=/^(?:install|replace|repair|remove|run|set|cap|seal|secure|drill|rough|hang|paint|patch|pull|swap|add|fix|move|mount|wire|tie|test|clean|haul|demo|frame|pour|reset|rewire|upgrade|service|inspect|flush|snake|clear|caulk|grout|tile|build|dig|trench|level|sand|prime|stain|stack)\b/i;
 const _TIMK_COURTESY=/^(?:if\s+you\s+(?:approve|accept|agree|want\s+to\s+move\s+forward|have\s+(?:any\s+)?questions)|i\s+(?:appreciate|look\s+forward|thank)|we\s+(?:appreciate|look\s+forward|thank)|thank(?:s|\s+you)|looking\s+forward|look\s+forward|please\s+(?:let|call|text|reach)|let\s+me\s+know|feel\s+free|call\s+(?:me|us)|text\s+(?:me|us)|hope\b|sincerely|regards|best\b|god\s+bless)/i;
 function timLetter(text){
   let t=String(text||'');
@@ -2070,12 +2073,16 @@ function timLetter(text){
   if(/\n/.test(t)&&(letter||sents.some(x=>_TIMK_COURTESY.test(x)))){
     while(sents.length>1){
       const q=sents[sents.length-1],w=q.split(/\s+/);
-      if(/[.!?,:;]$/.test(q)||w.length>6||!w.every(x=>/^[A-Z&<]/.test(x)||/^(?:by|and|of|the|llc|inc)$/i.test(x)))break;
+      if(/[.!?,:;]$/.test(q)||w.length>6||_TIMK_WORKVERB.test(q)||!w.every(x=>/^[A-Z&<]/.test(x)||/^(?:by|and|of|the|llc|inc)$/i.test(x)))break;
       sigBy.unshift(sents.pop());
     }
     // Only when a finished sentence sits above it: a bulleted list that ends
     // on "Install GFCI" is still work.
-    if(sigBy.length&&!/[.!?]$/.test(sents[sents.length-1]||'')){sents.push(...sigBy);sigBy.length=0;}
+    // A closing line ("Thanks," "Best regards,") counts as finished too: the
+    // name under it is the signature (owner 2026-10-01: "Thanks, John" left
+    // "John" on all three screens as a step).
+    const _above=sents[sents.length-1]||'';
+    if(sigBy.length&&!/[.!?]$/.test(_above)&&!(/,$/.test(_above)&&_TIMK_COURTESY.test(_above))){sents.push(...sigBy);sigBy.length=0;}
   }
   if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
   // The courtesy is not scope, but it is his to say: it goes on the proposal
@@ -2085,13 +2092,15 @@ function timLetter(text){
   const keep=sents.filter((x,i)=>{
     const q=x.trim();if(!q)return false;
     if(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?\d{1,3}\s+days?\b/i.test(q)&&/\b(?:estimate|quote|price|bid|offer|this)\b/i.test(q))return false;
+    // A bare closing is how the letter ends, not something he said to them.
+    if(/^(?:thanks|thank\s+you|regards|best(?:\s+regards)?|sincerely|cheers|god\s+bless)[\s,.!]*$/i.test(q)){letter=true;return false;}
     if(_TIMK_COURTESY.test(q)){letter=true;note.push(q);return false;}
     if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q)){note.push(q);return false;}
     const low=q.toLowerCase().replace(/[.!?]+$/,'');
     if(bizNames.some(b=>b&&low.includes(b))){if(i===sents.length-1)noteBy=_timkSigner(q,bizNames.slice(0,1));return false;}
     // The signature: in a letter only, the last sentence, two words or more,
     // every word capitalised. "Interconnect." on a spoken walk is a step.
-    if(letter&&i===sents.length-1&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&(noteBy=_timkSigner(q,bizNames.slice(0,1)),true)&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
+    if(letter&&i===sents.length-1&&!_TIMK_WORKVERB.test(q)&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&(noteBy=_timkSigner(q,bizNames.slice(0,1)),true)&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
     return true;
   });
   const tidy=x=>x.replace(/\basap\b/gi,'ASAP').replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').replace(/,\s*or\s+/g,', or ').trim();

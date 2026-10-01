@@ -162,10 +162,11 @@ test.describe('layout integrity, mobile', () => {
       _byoItems = [{ id: 1, section: 'Interior', label: 'Test', notes: garbage, price: 100, on: true }];
       _byoRenderSections(); // re-render rows with the note now that the page shell exists
       const overflow = document.documentElement.scrollWidth - window.innerWidth;
-      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
-      // price on one line, the description full width under them
-      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
-      const metaEl = [...document.querySelectorAll('.byo-line .byo-note')].find(el => el.textContent.includes(garbage.slice(0, 20)));
+      // THE BYO LINE IS THE SHARED STEP ROW since 2026-10-01 (§10.4): number,
+      // title and price on one line, the description full width under them
+      // (.step-line / .ios-lbl / .step-note), the row T&M and the invoice draw.
+      // What this guards is unchanged.
+      const metaEl = [...document.querySelectorAll('.step-line .step-note')].find(el => el.textContent.includes(garbage.slice(0, 20)));
       return {
         overflow,
         metaFound: !!metaEl,
@@ -226,11 +227,12 @@ test.describe('layout integrity, mobile', () => {
       // guards lives in every other section (#100, 2026-09-26).
       _byoItems = [{ id: 1, section: _byoWorkSection(), label: 'test', notes: 'n', price: 1232134, on: true }];
       _byoRenderSections();
-      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
-      // price on one line, the description full width under them
-      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
-      const label = document.querySelector('.byo-line .byo-title');
-      const hd = document.querySelector('.byo-line');
+      // THE BYO LINE IS THE SHARED STEP ROW since 2026-10-01 (§10.4): number,
+      // title and price on one line, the description full width under them
+      // (.step-line / .ios-lbl / .step-note), the row T&M and the invoice draw.
+      // What this guards is unchanged.
+      const label = document.querySelector('.step-line .ios-lbl');
+      const hd = document.querySelector('#byo-sections .step-line');
       if (!label || !hd) return { missing: true };
       const lh = parseFloat(getComputedStyle(label).lineHeight) || 18;
       return {
@@ -244,7 +246,7 @@ test.describe('layout integrity, mobile', () => {
     expect(r.overflows, 'and the row itself must never scroll sideways').toBe(false);
   });
 
-  test('BYO item row: checkbox and price/actions stay top-aligned with the item title, even with a long wrapped note', async () => {
+  test('BYO item row: number and price stay top-aligned with the item title, even with a long wrapped note', async () => {
     const r = await page.evaluate(() => {
       const c = { id: 79102, name: 'Row Align Client', addr: '1 Row Align St' };
       clients = clients.filter(x => x.id !== 79102).concat([c]);
@@ -256,25 +258,26 @@ test.describe('layout integrity, mobile', () => {
       // A Work item: Materials rows have no tick box (the shared card, js/materials.js).
       _byoItems = [{ id: 1, section: 'Work', label: 'test', notes: longNote, price: 1232134, on: true }];
       _byoRenderSections();
-      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
-      // price on one line, the description full width under them
-      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
-      const row = document.querySelector('.byo-line');
+      // THE BYO LINE IS THE SHARED STEP ROW since 2026-10-01 (§10.4): number,
+      // title and price on one line, the description full width under them
+      // (.step-line / .ios-lbl / .step-note), the row T&M and the invoice draw.
+      // What this guards is unchanged.
+      const row = document.querySelector('#byo-sections .step-line');
       if (!row) return { missing: true };
-      const check = row.querySelector('.ios-check');
-      const label = row.querySelector('.byo-title');
+      const check = row.querySelector('.ios-num');
+      const label = row.querySelector('.ios-lbl');
       const price = row.querySelector('.ios-fact');
       const lr = label.getBoundingClientRect(), cr = check.getBoundingClientRect();
       const lh = parseFloat(getComputedStyle(label).lineHeight) || 22;
       return {
         missing: false,
-        // The check's centre on the title's first line, not the row's middle.
+        // The number on the title's first line, not the row's middle.
         checkNearLabel: Math.abs((cr.top + cr.height / 2) - (lr.top + lh / 2)) < 5,
         priceNearLabel: Math.abs(price.getBoundingClientRect().top - lr.top) < 5,
       };
     });
     expect(r.missing, 'the BYO item row must exist for this test to mean anything').toBe(false);
-    expect(r.checkNearLabel, 'checkbox must stay aligned with the item title, not centered against a tall note').toBe(true);
+    expect(r.checkNearLabel, 'the number must stay aligned with the item title, not centered against a tall note').toBe(true);
     expect(r.priceNearLabel, 'price must stay aligned with the item title, not centered against a tall note').toBe(true);
   });
 
@@ -297,13 +300,14 @@ test.describe('layout integrity, mobile', () => {
       // guards lives in every other section (#100, 2026-09-26).
       _byoItems = [{ id: 1, section: _byoWorkSection(), label: 'Bedroom', notes: longNote, price: 234234, on: true }];
       _byoRenderSections();
-      // THE BYO LINE IS AN iOS ROW since 2026-09-23 (§10.4): check, title and
-      // price on one line, the description full width under them
-      // (.byo-line / .byo-title / .byo-note). What this guards is unchanged.
-      const row = document.querySelector('.byo-line');
+      // THE BYO LINE IS THE SHARED STEP ROW since 2026-10-01 (§10.4): number,
+      // title and price on one line, the description full width under them
+      // (.step-line / .ios-lbl / .step-note), the row T&M and the invoice draw.
+      // What this guards is unchanged.
+      const row = document.querySelector('#byo-sections .step-line');
       if (!row) return { missing: true };
-      const hd = row.querySelector('.byo-title');
-      const meta = row.querySelector('.byo-note');
+      const hd = row.querySelector('.ios-lbl');
+      const meta = row.querySelector('.step-note');
       if (!hd || !meta) return { missing: true };
       const rowRect = row.getBoundingClientRect();
       const hdRect = hd.getBoundingClientRect();
