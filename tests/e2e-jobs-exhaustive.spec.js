@@ -1861,6 +1861,18 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
+    // _clockAddTaskConfirm clocks in 60ms after it returns; wait for that and
+    // clear it, or it lands in the next test (same leak as e2e-exhaustive,
+    // which turned "clockIn null jobId" red in CI on #134 and #136).
+    test.afterEach(async () => {
+      await page.evaluate(async () => {
+        await new Promise(r => setTimeout(r, 150));
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        timeEntries = timeEntries.filter(e => !e.open);
+      });
+    });
+
     test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
