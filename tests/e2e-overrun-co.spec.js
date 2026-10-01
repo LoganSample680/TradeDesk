@@ -418,12 +418,14 @@ test.describe('a job running long becomes a change order', () => {
 
   test('every save path stamps the promise, not just the autosave', async () => {
     const r = await page.evaluate(() => {
+      // The fields an estimate saves are named once, in _geiContentFields;
+      // the autosave and both branches of saveGenericEstimate (editing the
+      // pre-created draft stub, and creating a bid outright) call it.
+      const fields = String(_geiContentFields || '');
       const auto = String(_byoAutosave || '');
       const save = String(saveGenericEstimate || '');
-      const has = s => /estHours\s*[:=]/.test(s) && /estCrewSize\s*[:=]/.test(s);
-      // saveGenericEstimate has two branches: editing the pre-created draft
-      // stub, and creating a bid outright. Both have to carry it.
-      return { auto: has(auto), save: has(save), saveBranches: (save.match(/estHours\s*[:=]/g) || []).length };
+      const has = s => /estHours\s*[:=]/.test(fields) && /estCrewSize\s*[:=]/.test(fields) && /_geiContentFields\(\)/.test(s);
+      return { auto: has(auto), save: has(save), saveBranches: (save.match(/_geiContentFields\(\)/g) || []).length };
     });
     expect(r.auto, 'without a stamped promise the comparison drifts as the price book learns').toBe(true);
     expect(r.save, 'relying on an autosave having happened first is how a bid reaches a job with nothing to measure it against').toBe(true);

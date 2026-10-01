@@ -865,6 +865,9 @@ test.describe('Invoice: the customer copy', () => {
   // next to a day's money give away the rate even with the rate hidden.
   test('Show the hours off: their copy has the work and each day total, no hours and no rate', async ({ page }) => {
     await boot(page);
+    // Illinois wants the rate on a T&M bill, which locks both switches on; this
+    // is a house in a state with no such rule.
+    await page.evaluate(() => { getClientById(701).addr = '2210 Birch Ln, Wichita, KS 67202'; });
     await open(page, 701);
     const r = await page.evaluate(() => {
       const before = { on: _qiShowHours(), hrs: _qiDocHtml().includes(' hrs on site') };
