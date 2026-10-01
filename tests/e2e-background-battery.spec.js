@@ -268,6 +268,33 @@ test.describe('a backgrounded page does no screen work', () => {
     } finally { await restoreSupa(); }
   });
 
+  // Born in a pocket: iOS killed Jack's app at 10:01 and relaunched it in the
+  // background, so the screen never came on and no 'hidden' change ever fired.
+  test('an app relaunched in the background arms the pocket as its channels open', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const r = await page.evaluate(() => {
+        _isEmployee = false;
+        _rtArmPocket();
+        const armed = !!_rtPocketT;
+        clearTimeout(_rtPocketT); _rtPocketT = null;
+        return armed;
+      });
+      const src = await page.evaluate(async () => (await fetch('/js/cloud.js')).text());
+      expect(r, 'a hidden boot starts the same countdown the screen going off would').toBe(true);
+      expect(src, 'and it is called where the channels open').toMatch(/_initRealtimeSubscriptions\(uid\);[\s\S]{0,600}?_rtArmPocket\(\);\}/);
+    } finally { await restoreSupa(); }
+  });
+
+  test('a visible boot arms nothing', async () => {
+    await fakeSupa();
+    try {
+      const r = await page.evaluate(() => { _rtArmPocket(); return !!_rtPocketT; });
+      expect(r).toBe(false);
+    } finally { await restoreSupa(); }
+  });
+
   test('pocketed, the background check drops to once every five minutes', async () => {
     const body = await page.evaluate(async () => (await fetch('/js/cloud.js')).text());
     expect(body).toMatch(/const _HIDDEN_CURSOR_POCKET_MS=300000;/);

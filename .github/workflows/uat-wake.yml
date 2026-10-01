@@ -1,0 +1,51 @@
+# Wake every phone once a UAT roll is live (owner 2026-10-01: "How can we get
+# new JS code from a uat roll on a phone that has never rolled it?").
+#
+# The TestFlight shell loads the live UAT site, and a phone already updates
+# itself when it is woken: the app asks for version.json and reloads into the
+# new build (_geoBgUpdateCheck, js/geo-track.js). The gap was waiting for the
+# next wake, up to half an hour. So after a roll this waits until Cloudflare is
+# actually serving the new version (waking phones into the OLD build would only
+# spend the wake), then asks push-geo-ping for one deploy wake to every phone.
+#
+# push-geo-ping gates deploy wakes to one per 3 minutes on its own watermark,
+# so a burst of rolls costs at most one extra wake each, and the half-hourly
+# tick is untouched.
+name: UAT wake
+
+on:
+  push:
+    branches: [uat]
+
+concurrency:
+  group: uat-wake
+  cancel-in-progress: true   # a newer roll supersedes the one still waiting
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for UAT to serve this build, then wake every phone
+        run: |
+          WANT=$(node -e "console.log(require('./version.json').version)")
+          echo "rolled version: $WANT"
+          for i in $(seq 1 48); do
+            GOT=$(curl -sS -m 10 "https://uat.tradedesk-cyp.pages.dev/version.json?_=$(date +%s)" \
+              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version)}catch(e){console.log('')}})")
+            if [ "$GOT" = "$WANT" ]; then
+              echo "UAT is serving $GOT"
+              OUT=$(curl -sS -m 30 -X POST \
+                "https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/push-geo-ping" \
+                -H "Content-Type: application/json" -d '{"reason":"deploy"}') || { echo "::warning::push-geo-ping unreachable"; exit 0; }
+              echo "$OUT"
+              echo "$OUT" | grep -q '"ok":true' || echo "::warning::push-geo-ping reported failure: $OUT"
+              exit 0
+            fi
+            echo "UAT still serving '${GOT}', waiting"
+            sleep 15
+          done
+          echo "::warning::UAT never served $WANT within 12 minutes; no wake sent"
