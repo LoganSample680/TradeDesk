@@ -75,7 +75,7 @@ const HOURS = Array.from({ length: 24 }, (_, h) => ({
 // The same seam e2e-ops-portal.spec.js uses: the page builds its client the
 // moment the vendor script defines window.supabase. Every device call is
 // recorded so a test can prove WHO it asked about.
-function stubRpc(page, { defs = DEFS, days = DAYS, hours = HOURS, daysError = null, brief = BRIEF, periods = PERIODS } = {}) {
+function stubRpc(page, { defs = DEFS, days = DAYS, hours = HOURS, daysError = null, brief = BRIEF, periods = PERIODS, roster = ROSTER } = {}) {
   return page.addInitScript(({ ROSTER, BY, SUMMARY, brief, defs, days, hours, daysError, periods }) => {
     window.__dev = [];
     window.__defs = defs;
@@ -113,7 +113,7 @@ function stubRpc(page, { defs = DEFS, days = DAYS, hours = HOURS, daysError = nu
         } };
       }
     });
-  }, { ROSTER, BY, SUMMARY, brief, defs, days, hours, daysError, periods });
+  }, { ROSTER: roster, BY, SUMMARY, brief, defs, days, hours, daysError, periods });
 }
 
 async function openBiz(page) {
@@ -237,6 +237,25 @@ test.describe('Ops portal: one person\'s phone', () => {
     await page.locator('#biz-chips .chip', { hasText: 'Logan' }).click();
     await expect(page.locator('#phone-title')).toHaveText("Logan's phone");
     await expect(page.locator('#biz-phone .pday-body')).toHaveCount(0);
+    assertNoErrors(page, 'ops phone');
+    await ctx.close();
+  });
+
+  test('the account owner is picked first even when a co-owner sorts ahead of them', async ({ browser }) => {
+    // Logan's own business on 2026-10-01: Blake is a co-owner (role owner on
+    // team_members), sorts first by name, and the page opened on his phone.
+    // Logan's profile name is his email, so his chip reads the part before @.
+    const roster = [
+      { contractor_user_id: 'biz-a', business: 'Sample Plumbing', trade: 'plumbing', trade_lines: null, person_user_id: 'u-blake', person_name: 'Blake Sample', person_email: 'b@x.com', role: 'owner', permissions: {}, active: true },
+      { contractor_user_id: 'biz-a', business: 'Sample Plumbing', trade: 'plumbing', trade_lines: null, person_user_id: 'biz-a', person_name: 'logansample97@gmail.com', person_email: 'logansample97@gmail.com', role: 'owner', permissions: {}, active: true },
+    ];
+    const days = { 'biz-a': [day('2026-09-30', { person_user_id: 'biz-a' })], 'u-blake': [] };
+    const { ctx, page } = await boot(browser, { roster, days });
+    await openBiz(page);
+    await expect(page.locator('#biz-chips .chip.on')).toHaveText('logansample97');
+    await expect(page.locator('#phone-title')).toHaveText("logansample97's phone");
+    await expect(page.locator('#biz-phone .pday')).toHaveCount(1);
+    await expect(page.locator('#biz-chips .chip', { hasText: 'Blake' })).toHaveCount(1);
     assertNoErrors(page, 'ops phone');
     await ctx.close();
   });

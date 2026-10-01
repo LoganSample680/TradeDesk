@@ -765,9 +765,16 @@ const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFraction
 // the owner's screen is the one that shows everything.
 let WHO=null;
 
+// A first name for a chip. A profile whose name was saved as an email reads
+// as the part before the @, not the whole address.
+const firstName=p=>String(p.person_name||p.person_email||'Unknown').split(/[ @]/)[0]||'Unknown';
+
 function renderBiz(b){
   const s=STATS.get(b.id)||{};
-  const owner=b.people.find(p=>p.role==='owner');
+  // The person who OWNS the account, not the first one carrying the owner
+  // role: a co-owner (team_members role 'owner') sorts first by name, and the
+  // page opened on Blake's phone for Logan's own business (owner 2026-10-01).
+  const owner=b.people.find(p=>p.person_user_id===b.id)||b.people.find(p=>p.role==='owner');
   if(!WHO||!b.people.some(p=>p.person_user_id===WHO))WHO=(owner||b.people[0]||{}).person_user_id||null;
   $('biz-name').textContent=b.name;
   $('biz-sub').textContent=[TRADE_LABEL(b.trade)+(b.lines&&b.lines!==b.trade?' ('+b.lines+')':''),
@@ -777,7 +784,7 @@ function renderBiz(b){
 
   // One chip per person, so "see it as the crew sees it" is one tap from here
   // and not a trip down to the People list.
-  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc((p.person_name||p.person_email||'Unknown').split(' ')[0])}${p.role==='owner'?'':' · crew'}</button>`).join('');
+  $('biz-chips').innerHTML=b.people.map(p=>`<button class="chip${p.person_user_id===WHO?' on':''}" data-who="${esc(p.person_user_id)}"><span class="dot dot-${esc(liveState(p.person_user_id))}"></span>${esc(firstName(p))}${p.role==='owner'?'':' · crew'}</button>`).join('');
 
   $('biz-people').innerHTML=b.people.map(p=>`<button class="row" data-person="${esc(p.person_user_id)}">
     <span class="row-main">
@@ -1168,7 +1175,7 @@ const rowKey=r=>PHONE.grain==='day'?r.day:r.period;
 
 async function loadPhone(b){
   const who=WHO, person=b.people.find(p=>p.person_user_id===who);
-  const first=person?String(person.person_name||person.person_email||'').split(/[ @]/)[0]:'';
+  const first=person?firstName(person):'';
   $('phone-title').textContent=first?first+"'s phone":'Phone';
   if(!who){ $('biz-phone').innerHTML=''; return; }
   const grain=PHONE.grain, {from,to}=phoneRange();
@@ -1391,7 +1398,7 @@ function paintBar(){
   const people=PEOPLE.filter(r=>r.contractor_user_id===VIEW.contractor_user_id);
   // One chip per person on this account: switching inside a business costs no
   // reload, the frame already holds its rows.
-  $('view-people').innerHTML=people.map(p=>`<button data-pid="${esc(p.person_user_id)}" class="${p.person_user_id===VIEW.person_user_id?'on':''}">${esc((p.person_name||p.person_email||'?').split(' ')[0])}</button>`).join('');
+  $('view-people').innerHTML=people.map(p=>`<button data-pid="${esc(p.person_user_id)}" class="${p.person_user_id===VIEW.person_user_id?'on':''}">${esc(firstName(p))}</button>`).join('');
 }
 
 $('view-people').addEventListener('click',e=>{
