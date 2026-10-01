@@ -953,7 +953,17 @@ async function _timeLogRows(sinceISO,opts){
       // August ran 46 minutes past a 3:45pm clock-out. Same class as the 2026
       // -08-29 split-bar bug, a rule keyed on a friendly label, so the fix is
       // the same: carry the fact on the row and test that.
-      destUnsaved:_unnamedDrive
+      destUnsaved:_unnamedDrive,
+      // A PERSONAL PLACE IS NOT ON THE RAIL AT ALL (owner 2026-09-30: "Colaw is
+      // still showing as manual time, it shouldn't show on the day rail at
+      // all"). It had no arm in _tlRailKind, so it fell to the unpaid
+      // catch-all and read "Manual time". Same shape as a personal gap answer:
+      // the row stays in `rows` so the blend and the gap filler see the stretch
+      // covered, and _tlDayRailHtml is the one thing that drops it. Unlike an
+      // answered visit it carries no undo chip, because it is not a one-tap
+      // answer: he saved the place as Personal, and changing the place is the
+      // way back.
+      dismissed:_es==='place-personal'||undefined
     });
   });
   const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
