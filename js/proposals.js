@@ -79,7 +79,12 @@ function _buildClientHubSnapshot(clientId){
       // The invoice's note to them and the tax it charged (owner 2026-10-01),
       // so their copy shows the note and the real tax, not one backed out of
       // the total at his Settings rate.
-      note:b.qiNote||'',salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
+      note:b.qiNote||'',
+      // A quick invoice's own rows (text and amount, head or sub), drawn on
+      // their copy the way the preview draws them, and what he said he did.
+      rows:b.kind==='quick_invoice'&&Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows:null,
+      work:b.kind==='quick_invoice'&&Array.isArray(b.qiWork)?b.qiWork.filter(w=>String(w||'').trim()):[],
+      salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};

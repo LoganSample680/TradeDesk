@@ -700,6 +700,34 @@ test.describe('Invoice: the customer copy', () => {
     expect(r.seen.priced).toEqual({ list: true, price: true, receipts: true, total: 1084.5, sum: 1084.5 });
   });
 
+  // Owner 2026-10-01: "the materials button on invoice ... doesn't actually
+  // work". It changed the preview only; the copy the customer opens printed
+  // the words with no prices. The saved bill now carries the preview's rows.
+  test('the Materials switch reaches the customer copy: hidden, listed, then priced', async ({ page }) => {
+    await boot(page);
+    await ks(page);
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      _matPut('Materials', { label: 'Supply line', qty: 2, unit: 'ea', rate: 18, notes: '' });
+      _qi.due = '15';
+      const out = {}, me = _qi;
+      ['total', 'items', 'priced'].forEach(m => {
+        _qi = me; _qiSetPartsMode(m);
+        const bid = _qiSave();   // saving closes the invoice; the next mode reopens the same one
+        const hb = _buildClientHubSnapshot(701).bids.find(b => b.id === bid.id) || {};
+        const rows = hb.rows || [];
+        const txt = rows.map(x => x.text).join(' | ');
+        out[m] = { listed: /supply line/i.test(txt), priced: rows.some(x => /supply line/i.test(x.text) && x.amount === 36),
+          tax: rows.some(x => /tax/i.test(x.text)) || /tax/i.test(bid.desc) };
+      });
+      return out;
+    });
+    expect(r.total).toMatchObject({ listed: false, priced: false, tax: false });
+    expect(r.items).toMatchObject({ listed: true, priced: false, tax: false });
+    expect(r.priced).toMatchObject({ listed: true, priced: true, tax: false });
+    await assertNoErrors(page);
+  });
+
   // Owner 2026-09-29: "use the same one that's in proposal for T&M and BYO,
   // should carry over to bill and invoices". The invoice's Materials step is
   // the proposals' Materials card (js/materials.js): the same add sheet, the
@@ -1367,7 +1395,7 @@ test.describe('Invoice sales tax, the proposal rule', () => {
     expect(r.tax, '9.15% of the $100 part only').toBe(9.15);
     expect(r.label).toBe('Materials tax (9.15%)');
     expect(r.total).toBe(Math.round((r.sub + 9.15) * 100) / 100);
-    expect(r.taxRow, 'the customer sees the tax as its own line').toEqual({ text: 'Materials tax (9.15%)', amount: 9.15 });
+    expect(r.taxRow, 'the customer sees the tax as its own line').toEqual({ text: 'Materials tax (9.15%)', amount: 9.15, tax: true });
     expect(r.rowSum, 'what they see adds up to what they pay').toBe(r.total);
     expect(r.shown).toBe('Materials tax (9.15%)');
     const saved = await page.evaluate(() => { const b = _qiSave(); return { amount: b.amount, tax: b.salesTax, rate: b.salesTaxRate }; });
