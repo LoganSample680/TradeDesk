@@ -600,7 +600,8 @@ test.describe('Quick invoice', () => {
     expect(r.text).not.toContain('Jack Sample');
     expect(r.text).toContain('John has a');
     expect(r.text).toContain('$500 paid');
-    expect(r.text).toContain('Bill that one from the job');
+    expect(r.text).toContain('$1,500 left');
+    expect(r.text).toContain('Settle it up');
     expect(r.total).toBe('$300.00');                 // only the receipt is left
   });
 
@@ -613,7 +614,7 @@ test.describe('Quick invoice', () => {
       openQuickInvoice(901);
       return document.getElementById('qi-page').textContent;
     });
-    expect(t).not.toContain('Bill that one from the job');
+    expect(t).not.toContain('Settle it up');
   });
 
   test('See it opens the invoice in the proposal\'s own letterhead, before anything is saved', async ({ page }) => {

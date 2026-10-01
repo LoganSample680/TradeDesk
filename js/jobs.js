@@ -2778,6 +2778,9 @@ function markJobDone(jobId){
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Job complete</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||'')+'</div>'+
+    // Where it stands before he closes it out (owner 2026-10-01): a deposit
+    // or a card payment on their page shows here, so he never bills it twice.
+    ((bid&&(bid.amount||0)>0&&_moneyVisible()&&typeof _settleSumHtml==='function')?_settleSumHtml(bid):'')+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Completion date</label>'+
       '<input type="date" id="job-done-date" value="'+todayKey()+'" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text)">'+
@@ -2815,6 +2818,11 @@ function markJobDone(jobId){
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   box._jobId=jobId;
+  // Anything paid away from this phone lands before the numbers are trusted.
+  if(bid&&(bid.amount||0)>0&&typeof _settleFetch==='function')_settleFetch(bid).then(ch=>{
+    const el=ch&&document.getElementById('settle-sum-'+bid.id);
+    if(el&&typeof _settleSumHtml==='function')el.outerHTML=_settleSumHtml(bid);
+  });
 }
 let _adjType=null;
 // Root cause (found while wiring the price-increase signature gate below): the
