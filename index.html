@@ -3357,7 +3357,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
         <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px;min-width:0">
           <div style="min-width:0"><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
-          <div style="min-width:0"><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
+          <div style="min-width:0"><label>Zip</label><input type="text" data-num="zip" inputmode="numeric" id="cf-zip" placeholder="80203" maxlength="5" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
         </div>
         <div class="f" style="grid-column:1/-1">
           <label>Who are you working for? <span style="font-weight:400;color:var(--text3)">(optional)</span></label>
@@ -3426,7 +3426,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 = EPA disclosure</span></label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
+              <input id="cf-year-built" type="text" maxlength="4" data-num="int" inputmode="numeric" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
               <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
             </div>
             <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px"><span data-ico="⚠" data-ico-size="14"></span> Pre-1978: Lead paint pamphlet required</div>
@@ -3553,7 +3553,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <option value="custom">Custom amount</option>
             </select>
           </div>
-          <div class="f"><label>Amount ($)</label><input type="number" id="pay-amount" placeholder="0.00" step="0.01" min="0"></div>
+          <div class="f"><label>Amount ($)</label><input type="text" data-num="money" inputmode="decimal" id="pay-amount" placeholder="0.00"></div>
           <div class="f"><label>Date received</label><input type="date" id="pay-date"></div>
           <div class="f"><label>Method</label>
             <select id="pay-method"><option>Check</option><option>Cash</option><option>Venmo/Zelle</option><option>Credit card</option></select>
@@ -3956,11 +3956,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div style="background:var(--bg2);border-radius:var(--rl);padding:12px 14px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">$/hr per worker</div>
-          <input type="number" id="tm-rate" placeholder="120" min="0" step="5" inputmode="decimal" oninput="_tmRecalc()" style="width:100%;background:transparent;border:none;border-bottom:2px solid var(--border2);font-size:24px;font-weight:700;color:var(--text);outline:none;padding:2px 0 6px;font-family:inherit;box-sizing:border-box">
+          <input type="text" data-num="rate" inputmode="decimal" id="tm-rate" placeholder="120" oninput="_tmRecalc()" style="width:100%;background:transparent;border:none;border-bottom:2px solid var(--border2);font-size:24px;font-weight:700;color:var(--text);outline:none;padding:2px 0 6px;font-family:inherit;box-sizing:border-box">
         </div>
         <div style="background:var(--bg2);border-radius:var(--rl);padding:12px 14px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Est. total hours</div>
-          <input type="number" id="tm-hours" placeholder="80" min="0" step="1" inputmode="decimal" oninput="_tmRecalc()" style="width:100%;background:transparent;border:none;border-bottom:2px solid var(--border2);font-size:24px;font-weight:700;color:var(--text);outline:none;padding:2px 0 6px;font-family:inherit;box-sizing:border-box">
+          <input type="text" data-num="dec" inputmode="decimal" id="tm-hours" placeholder="80" oninput="_tmRecalc()" style="width:100%;background:transparent;border:none;border-bottom:2px solid var(--border2);font-size:24px;font-weight:700;color:var(--text);outline:none;padding:2px 0 6px;font-family:inherit;box-sizing:border-box">
         </div>
       </div>
       <!-- Labor total -->
@@ -3983,47 +3983,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Step 3: Review & Send -->
   <div id="gei-s3" style="display:none;padding:10px 14px 80px">
-    <!-- Contract terms (T&M mode only) -->
-    <div id="gei-tm-terms" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:12px">Contract Terms</div>
-      <!-- Billing cycle -->
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Billing cycle</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="tmc-weekly"     onclick="_tmSetCycle('weekly')"     class="btn btn-sm" style="font-size:12px">Weekly</button>
-          <button id="tmc-biweekly"   onclick="_tmSetCycle('biweekly')"   class="btn btn-sm" style="font-size:12px">Bi-weekly</button>
-          <button id="tmc-milestone"  onclick="_tmSetCycle('milestone')"  class="btn btn-sm" style="font-size:12px">Milestone</button>
-          <button id="tmc-completion" onclick="_tmSetCycle('completion')" class="btn btn-sm" style="font-size:12px">At completion</button>
-        </div>
-      </div>
-      <!-- Deposit -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div class="f">
-          <label>Mobilization deposit %
-            <span style="font-weight:400;color:var(--text3);font-size:10px;display:block">Standard: 20% commercial</span>
-          </label>
-          <input type="number" id="tm-dep-pct" value="20" min="0" max="100" step="5" oninput="_tmCalcDeposit()">
-        </div>
-        <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Deposit amount</div>
-          <div id="tm-dep-amt" style="font-size:22px;font-weight:800;color:var(--green-mid)">-</div>
-        </div>
-      </div>
-      <!-- NTE cap -->
-      <div>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" id="tm-nte-on" checked onchange="_tmCalcNte()" style="width:16px;height:16px;accent-color:var(--blue)">
-          <span style="font-size:13px;font-weight:600">Most it can cost</span>
-        </label>
-        <div id="tm-nte-wrap" style="margin-left:24px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-            <span style="font-size:14px;color:var(--text2);font-weight:600">$</span>
-            <input type="number" id="tm-nte-cap" min="0" step="500" oninput="_byoAutosave()" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1.5px solid var(--blue);font-size:16px;font-weight:700;color:var(--blue);background:var(--blue-lt)">
-          </div>
-          <div style="font-size:11px;color:var(--text3)">Client pays actual T&amp;M only, up to this cap</div>
-        </div>
-      </div>
-    </div>
+    <!-- T&M "most it can cost": the save and the proposal read these two, and
+         opening a bid writes them. Never shown; the T&M screen has its own field. -->
+    <input type="text" data-num="money" inputmode="decimal" id="tm-nte-cap" hidden>
+    <input type="checkbox" id="tm-nte-on" checked hidden>
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)" id="gei-lines-label">Line items</div>
@@ -4039,7 +4002,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:13px;color:var(--text2)">Tax / markup</span>
-          <input type="number" id="gei-tax-pct" value="0" min="0" max="100" step="0.5" oninput="calcGeiTotal()" style="width:56px;padding:4px 6px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg2);color:var(--text)">
+          <input type="text" data-num="pct" inputmode="decimal" id="gei-tax-pct" value="0" oninput="calcGeiTotal()" style="width:56px;padding:4px 6px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg2);color:var(--text)">
           <span style="font-size:12px;color:var(--text3)">%</span>
         </div>
         <span id="gei-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
@@ -4060,7 +4023,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="font-size:15px;font-weight:800">Total</span>
         <span id="gei-total" style="font-size:22px;font-weight:800;color:var(--blue)">$0.00</span>
       </div>
-      <input type="number" id="gei-expected-cost" style="display:none" oninput="calcGeiTotal()">
+      <input type="text" data-num="dec" inputmode="decimal" id="gei-expected-cost" style="display:none" oninput="calcGeiTotal()">
       <div id="gei-gauge-hint" style="display:none"></div>
       <div id="gei-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
         <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B,#EF4444,#F97316,#FCD34D,#22C55E,#FCD34D,#F97316,#EF4444,#991B1B);margin:14px 10px 26px">
@@ -4154,7 +4117,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="sf-row" id="s-value-row" style="display:none">
         <div class="sf-body"><span class="sf-lbl">Job value</span>
-          <input id="s-value" type="number" placeholder="0" inputmode="decimal">
+          <input id="s-value" type="text" data-num="money" inputmode="decimal" placeholder="0">
         </div>
       </div>
     </div>
@@ -4170,7 +4133,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="sf-row" id="s-dur-days-row">
         <div class="sf-body"><span class="sf-lbl">Duration (days)</span>
-          <input id="s-days" type="number" value="1" min="1" max="60" inputmode="numeric" oninput="refreshAvail()">
+          <input id="s-days" type="text" data-num="int" inputmode="numeric" value="1" oninput="refreshAvail()">
         </div>
       </div>
       <div class="sf-row" id="s-dur-hours-row" style="display:none">
@@ -4524,19 +4487,19 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="f">
         <label>Spouse / other income ($/yr)</label>
-        <input type="number" id="tx-spouse" value="0" oninput="calcTax()" placeholder="0">
+        <input type="text" data-num="money" inputmode="decimal" id="tx-spouse" value="0" oninput="calcTax()" placeholder="0">
       </div>
       <div class="f">
         <label>Quarterly taxes already paid ($)</label>
-        <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
+        <input type="text" data-num="money" inputmode="decimal" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
       <div class="f">
         <label>Last year's total tax ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From last year's return. Keeps you clear of penalties</span></label>
-        <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0: enter from last year's return">
+        <input type="text" data-num="money" inputmode="decimal" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0: enter from last year's return">
       </div>
       <div class="f">
         <label>Last year's adjusted gross income ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Line 11 of your 1040. Leave 0 if you don't know</span></label>
-        <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0: from last year's return line 11">
+        <input type="text" data-num="money" inputmode="decimal" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0: from last year's return line 11">
       </div>
     </div>
   </div>
@@ -4794,7 +4757,7 @@ body.dark .cal-cell.other{background:var(--cream)}
                    than its siblings on iOS Safari despite sharing the same font/padding/border
                    rule: a platform quirk, not a CSS mismatch. Fixing the height forces parity
                    across every engine instead of trusting each browser's intrinsic sizing. -->
-              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5" style="height:48px">
+              <input type="text" data-num="zip" inputmode="numeric" id="set-bzip" placeholder="67214" maxlength="5" style="height:48px">
             </div>
           </div>
         </div>
@@ -4817,13 +4780,13 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year, no need to update it.</div></div>
-          <div class="set-form-ctrl"><input type="number" id="set-since-year" min="1900" max="2100" placeholder="e.g. 2013"></div>
+          <div class="set-form-ctrl"><input type="text" data-num="int" inputmode="numeric" maxlength="4" id="set-since-year" placeholder="e.g. 2013"></div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any proposal.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px">
-              <input type="number" id="set-sales-tax-rate" step="0.001" min="0" max="20" placeholder="e.g. 9.350" style="flex:1">
+              <input type="text" data-num="pct" inputmode="decimal" id="set-sales-tax-rate" placeholder="e.g. 9.350" style="flex:1">
               <span style="font-size:13px;color:var(--text2);font-weight:600">%</span>
             </div>
           </div>
@@ -4842,7 +4805,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div class="set-form-lbl">Labor burden</div><div class="set-form-hint">Your true cost above wages, payroll taxes, workers' comp, insurance. Used for loaded labor cost in Job Profit and Crew Cost. 30% is typical.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px">
-              <input type="number" id="set-labor-burden" step="5" min="0" max="100" placeholder="30" style="flex:1">
+              <input type="text" data-num="pct" inputmode="decimal" id="set-labor-burden" placeholder="30" style="flex:1">
               <span style="font-size:13px;color:var(--text2);font-weight:600">% over wage</span>
             </div>
           </div>
@@ -4852,7 +4815,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl">
             <div style="display:grid;grid-template-columns:120px 1fr;gap:8px">
               <select id="set-owner-pay-type"><option value="hourly">Hourly</option><option value="salary">Salary</option></select>
-              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13px;color:var(--text2);font-weight:600">$</span><input type="number" id="set-owner-pay-rate" min="0" step="0.5" placeholder="0" style="flex:1"></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13px;color:var(--text2);font-weight:600">$</span><input type="text" data-num="rate" inputmode="decimal" id="set-owner-pay-rate" placeholder="0" style="flex:1"></div>
             </div>
           </div>
         </div>
@@ -4977,20 +4940,20 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div style="padding:16px">
       <div class="fg fg2" style="margin-top:4px">
-        <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
+        <div class="f"><label>Monthly revenue goal ($)</label><input type="text" data-num="money" inputmode="decimal" id="set-goal-monthly" placeholder="e.g. 8000"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
         <button type="button" class="f" id="set-rates-team" onclick="_closeSetDetail&&_closeSetDetail();goPg('pg-team')" style="display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);padding:10px 12px;font:inherit;font-size:14px;color:var(--text);cursor:pointer;text-align:left">Hourly rates are under Team<span style="color:var(--text3)">›</span></button>
-        <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
-        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new proposal (0 = no deposit)</div></div>
-        <div class="f"><label>Price good for (days)</label><input type="number" id="set-est-valid-days" min="1" max="365" step="1" placeholder="30"><div style="font-size:10px;color:var(--text3);margin-top:3px">Printed on every proposal and stamped when you send it. Shorter windows close faster when material costs move.</div></div>
-        <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
-        <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
-        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
+        <div class="f"><label>Profit margin target (%)</label><input type="text" data-num="pct" inputmode="decimal" id="set-margin"></div>
+        <div class="f"><label>Default deposit (%)</label><input type="text" data-num="pct" inputmode="decimal" id="set-deposit-pct"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new proposal (0 = no deposit)</div></div>
+        <div class="f"><label>Price good for (days)</label><input type="text" data-num="int" inputmode="numeric" id="set-est-valid-days" placeholder="30"><div style="font-size:10px;color:var(--text3);margin-top:3px">Printed on every proposal and stamped when you send it. Shorter windows close faster when material costs move.</div></div>
+        <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="text" data-num="dec" inputmode="decimal" id="set-cov"></div>
+        <div class="f"><label>Materials markup (%)</label><input type="text" data-num="dec" inputmode="decimal" id="set-mm"></div>
+        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="text" data-num="rate" inputmode="decimal" id="set-supplies-rate" placeholder="0.40"></div>
       </div>
       <!-- Generic labor rates -->
       <div id="set-rates-lg" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px" id="set-rates-lg-title">Labor rates</div>
         <div class="fg fg2">
-          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item proposals for this trade.</div></div>
+          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="text" data-num="rate" inputmode="decimal" placeholder="75"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item proposals for this trade.</div></div>
         </div>
       </div>
       <!-- Workmanship warranty period -->
@@ -5021,7 +4984,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="fg fg2">
               <div class="f">
                 <label>Finance charge rate (%/month)</label>
-                <input type="number" id="set-finance-charge-pct" min="0" max="5" step="0.1" style="width:80px" value="1.5">
+                <input type="text" data-num="pct" inputmode="decimal" id="set-finance-charge-pct" style="width:80px" value="1.5">
                 <div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to balances unpaid 30+ days after job completion. Default: 1.5%/month (18% APR).</div>
               </div>
             </div>
@@ -5077,27 +5040,27 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="set-rates-tm" style="margin-bottom:14px">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueMeasure rates</div>
         <div class="fg fg2">
-          <div class="f"><label>Area ($/sq ft)</label><input type="number" id="tr-tm-area" min="0" step="0.01" placeholder="0"></div>
-          <div class="f"><label>Roofing ($/square)</label><input type="number" id="tr-tm-roof" min="0" step="1" placeholder="0"></div>
-          <div class="f"><label>Distance / run ($/ln ft)</label><input type="number" id="tr-tm-dist" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Area ($/sq ft)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-tm-area" placeholder="0"></div>
+          <div class="f"><label>Roofing ($/square)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-tm-roof" placeholder="0"></div>
+          <div class="f"><label>Distance / run ($/ln ft)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-tm-dist" placeholder="0"></div>
         </div>
       </div>
       <div id="set-rates-scan" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; surfaces</div>
         <div class="fg fg2">
-          <div class="f"><label>Walls ($/sq ft)</label><input type="number" id="tr-scan-wall" min="0" step="0.01" placeholder="0"></div>
-          <div class="f"><label>Ceiling ($/sq ft)</label><input type="number" id="tr-scan-ceiling" min="0" step="0.01" placeholder="0"></div>
-          <div class="f"><label>Trim ($/ln ft)</label><input type="number" id="tr-scan-trim" min="0" step="0.01" placeholder="0"></div>
-          <div class="f"><label>Doors ($/door)</label><input type="number" id="tr-scan-door" min="0" step="1" placeholder="0"></div>
-          <div class="f"><label>Windows ($/window)</label><input type="number" id="tr-scan-window" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Walls ($/sq ft)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-wall" placeholder="0"></div>
+          <div class="f"><label>Ceiling ($/sq ft)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-ceiling" placeholder="0"></div>
+          <div class="f"><label>Trim ($/ln ft)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-trim" placeholder="0"></div>
+          <div class="f"><label>Doors ($/door)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-door" placeholder="0"></div>
+          <div class="f"><label>Windows ($/window)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-window" placeholder="0"></div>
         </div>
       </div>
       <div id="set-rates-scan-elec" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; electrical</div>
         <div class="fg fg2">
-          <div class="f"><label>Outlets ($/outlet)</label><input type="number" id="tr-scan-outlet" min="0" step="1" placeholder="0"></div>
-          <div class="f"><label>Switches ($/switch)</label><input type="number" id="tr-scan-sw" min="0" step="1" placeholder="0"></div>
-          <div class="f"><label>GFCI protection ($/lot)</label><input type="number" id="tr-scan-gfci" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Outlets ($/outlet)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-outlet" placeholder="0"></div>
+          <div class="f"><label>Switches ($/switch)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-sw" placeholder="0"></div>
+          <div class="f"><label>GFCI protection ($/lot)</label><input type="text" data-num="rate" inputmode="decimal" id="tr-scan-gfci" placeholder="0"></div>
         </div>
       </div>
       <button class="btn btn-p" onclick="saveTrueRates()" style="width:100%;margin-top:16px;padding:13px">Save</button>
@@ -5213,11 +5176,11 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
               <div><div style="font-size:13px;font-weight:700">Floor plan price</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Default when selling a scanned floor plan standalone. Adjustable per scan.</div></div>
-              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-price" min="0" step="1" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="text" data-num="money" inputmode="decimal" id="set-scan-price" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0">
               <div><div style="font-size:13px;font-weight:700">Scan rate per wall sq ft</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Auto-prices scanned rooms when they load into an estimate: room total = measured wall footage times this. Leave 0 to price each room by hand.</div></div>
-              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-rate" min="0" step="0.05" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="text" data-num="rate" inputmode="decimal" id="set-scan-rate" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
             </div>
           </div>
         </div>
@@ -5242,7 +5205,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <input type="hidden" id="set-b10"><input type="hidden" id="set-b12"><input type="hidden" id="set-b22"><input type="hidden" id="set-b24"><input type="hidden" id="set-b32"><input type="hidden" id="set-b35">
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Mileage &amp; year</div>
       <div class="fg fg2">
-        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
+        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="text" data-num="dec" inputmode="decimal" id="set-irs"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
         <input type="hidden" id="set-year">
       </div>
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin:14px 0 6px">Federal standard deductions <span id="set-bracket-yr-note" style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>

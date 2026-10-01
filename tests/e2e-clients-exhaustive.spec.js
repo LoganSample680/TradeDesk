@@ -1695,57 +1695,50 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // pipelineResendSms
+  // resendProposal (replaces pipelineResendSms)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('pipelineResendSms', () => {
-    test('null bidId, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { pipelineResendSms(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
+  test.describe('resendProposal', () => {
+    test('the three old resend paths are gone (§7.1)', async () => {
+      const r = await page.evaluate(() => ({
+        sendBidEmail: typeof window.sendBidEmail,
+        resendProposalLink: typeof window.resendProposalLink,
+        pipelineResendSms: typeof window.pipelineResendSms,
+        resendProposal: typeof window.resendProposal,
+      }));
+      expect(r.sendBidEmail).toBe('undefined');
+      expect(r.resendProposalLink).toBe('undefined');
+      expect(r.pipelineResendSms).toBe('undefined');
+      expect(r.resendProposal).toBe('function');
     });
 
-    test('nonexistent bidId, returns early', async () => {
+    test('null and nonexistent bidId, do not throw and open nothing', async () => {
       const r = await page.evaluate(() => {
-        try { pipelineResendSms(9999999); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('bid without signingToken, returns early', async () => {
-      const r = await page.evaluate(() => {
-        try { pipelineResendSms(88803); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('valid bid with signingToken, attempts SMS redirect without throw', async () => {
-      const r = await page.evaluate(() => {
-        let navHref = null;
-        const origHref = Object.getOwnPropertyDescriptor(window.location, 'href');
-        // Mock location.href so we capture the navigation intent without actually navigating.
-        // In Chromium, window.location.href may not be configurable, ignore the error and proceed.
-        try {
-          Object.defineProperty(window.location, 'href', {
-            set: (v) => { navHref = v; },
-            get: () => window.location.toString(),
-            configurable: true,
-          });
-        } catch (_) {}
-        try {
-          pipelineResendSms(88801);
-          try { Object.defineProperty(window.location, 'href', origHref || { value: window.location.toString(), configurable: true }); } catch (_) {}
-          return { ok: true, navAttempted: !!navHref };
+        const out = [];
+        for (const v of [null, undefined, 999999999]) {
+          try { resendProposal(v); out.push(true); } catch (e) { out.push(e.message); }
         }
-        catch (e) {
-          try { Object.defineProperty(window.location, 'href', origHref || { value: window.location.toString(), configurable: true }); } catch (_) {}
-          return { ok: false, err: e.message };
-        }
+        return { out, sheet: !!document.getElementById('_resend-overlay') };
       });
-      expect(r.ok).toBe(true);
+      expect(r.out).toEqual([true, true, true]);
+      expect(r.sheet).toBe(false);
+    });
+
+    test('a sent bid opens the shared send sheet with its signing link', async () => {
+      const r = await page.evaluate(() => {
+        const id = 77790;
+        bids.push({ id, client_name: 'Resend Probe', amount: 800, status: 'Pending', signingToken: 'tok-resend', bid_date: '2026-01-01' });
+        let err = '';
+        try { resendProposal(id); } catch (e) { err = e.message; }
+        const ov = document.getElementById('_resend-overlay');
+        const res = { err, open: !!ov, url: ov ? (ov.querySelector('.zmodal').dataset.url || '') : '' };
+        ov?.remove();
+        bids = bids.filter(b => b.id !== id);
+        return res;
+      });
+      expect(r.err).toBe('');
+      expect(r.open).toBe(true);
+      expect(r.url).toContain('sign.html?t=tok-resend');
+      expect(r.url).toContain('&b=77790');
     });
   });
 
@@ -4749,6 +4742,38 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.props.propDataMiss).toBe(true);
       // And it is marked county-answered, so nothing asks about it again.
       expect(r.props.propDataSource).toBe('county');
+    });
+
+    // Jack's 5713 SW 14th St (2026-10-01): the county answered and saved the
+    // parcel, but a sync swapped the client for a new object during the wait
+    // and the answer went onto the old one, so the card stayed blank.
+    test('an answer that lands after the client was swapped for a new copy reaches the copy on screen', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        clients.length = 0;
+        const first = { id: 9032, addr: '32 Real St', street: '32 Real St', city: 'Topeka', state: 'KS', zip: '66604' };
+        clients.push(first);
+        window.fetch = async () => {
+          clients[0] = Object.assign({}, first, { notes: 'from another device' });
+          return new Response(JSON.stringify({ year_built: 1954, assessed_value: 120420 }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        };
+        try {
+          await _lookupPropertyData(9032, { street: '32 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+          const now = clients.find((x) => x.id === 9032);
+          return { swapped: now !== first, year: getProperty(now, '32 Real St').yearBuilt || null, notes: now.notes };
+        } finally {
+          clients.length = 0; saved.forEach((x) => clients.push(x));
+          window.saveAll = savedSave; window.fetch = savedFetch;
+        }
+      });
+      expect(r.swapped).toBe(true);
+      expect(r.year).toBe(1954);
+      expect(r.notes).toBe('from another device');
     });
 
     test('concurrent calls do not double-apply (§11.2 guard)', async () => {

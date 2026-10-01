@@ -9,6 +9,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/num-public.js"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin async onload="_intakeInitMapKit()"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -82,7 +83,7 @@ textarea.input{resize:vertical;min-height:90px}
       </div>
       <div class="field">
         <div class="field-label">Phone number <span class="req">*</span></div>
-        <input id="f-phone" class="input" type="tel" placeholder="(555) 555-5555" autocomplete="tel" oninput="_qrTrackField()">
+        <input id="f-phone" class="input" type="tel" data-num="phone" inputmode="tel" placeholder="(555) 555-5555" autocomplete="tel" oninput="_qrTrackField()">
       </div>
       <div class="field">
         <div class="field-label">Property address <span class="req">*</span></div>
@@ -93,7 +94,7 @@ textarea.input{resize:vertical;min-height:90px}
         <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px">
           <input id="f-city" class="input" type="text" placeholder="City" autocomplete="address-level2">
           <input id="f-state" class="input" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
-          <input id="f-zip" class="input" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code">
+          <input id="f-zip" class="input" type="text" data-num="zip" inputmode="numeric" placeholder="Zip" maxlength="5" autocomplete="postal-code">
         </div>
       </div>
       <div class="field">

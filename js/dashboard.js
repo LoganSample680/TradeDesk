@@ -3308,7 +3308,7 @@ function renderTodayFeed(){
         '</div>'+
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
-          '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
+          '<button onclick="resendProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
           (_showExtend?'<button onclick="_extendBidPrice('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Extend price</button>':'')+
           '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+
@@ -3455,7 +3455,7 @@ function checkGoalPrompt(){
       '<div class="zmodal-title" style="text-align:center">5 paid jobs, milestone!</div>'+
       '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many proposals you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
-        '<input type="number" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" min="0" step="500" '+
+        '<input type="text" data-num="money" inputmode="decimal" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" '+
           'style="font-size:18px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center">'+
         '<button id="goal-prompt-set" class="btn btn-p" style="font-size:15px;padding:12px;width:100%">Set my goal</button>'+
         '<button id="goal-prompt-skip" class="btn" style="font-size:13px;padding:10px;width:100%;color:var(--text3)">Maybe later</button>'+
@@ -3463,7 +3463,7 @@ function checkGoalPrompt(){
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     document.getElementById('goal-prompt-set').onclick=()=>{
-      const val=parseFloat(document.getElementById('goal-prompt-input').value)||0;
+      const val=_numVal('goal-prompt-input');
       if(!val)return;
       S.goalMonthly=val;
       // Bump settingsTs so this goal wins the next cloud merge. Without it, a cloud

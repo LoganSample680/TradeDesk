@@ -758,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.13';
+const APP_VERSION='10.01.26.18';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -4021,7 +4021,7 @@ async function _denyPermissionRequest(reqId){
 function _teamRateChip(id,label,val,ph,onchange){
   return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
     // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
-    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
+    '<input id="'+id+'" type="text" data-num="rate" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
 }
 function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
 // A typed amount: only the money noise ($ , spaces) comes off, never the sign,
@@ -5063,7 +5063,7 @@ async function _saveEmployee(idx){
             notifyEmail:_supaUser.email||'',
             status:'sent',signedAt:null,signerName:null,sigData:null,
             createdAt:agRecord.createdAt,inviteUrl};
-          await _supa.storage.from('proposals').upload(agKey,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+          await _tdStoreDoc(agKey,snapshot);
           saveAll();
           const _base=_clientBaseUrl?_clientBaseUrl():(window.location.origin+window.location.pathname.split('index.html')[0]);
           signUrl=_base+'contract-sign.html?t='+agToken+'&u='+cid+'&a='+agId;
@@ -5144,7 +5144,7 @@ function _subModalHTML(sub,idx){
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:16px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">1099-NEC filing info <span style="font-weight:400;text-transform:none;letter-spacing:0">(needed if you pay them $600+/yr)</span></div>'+
       '<div class="fg fg2" style="margin-bottom:8px">'+
-        '<div class="f"><label>EIN or SSN</label><input id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
+        '<div class="f"><label>EIN or SSN</label><input type="text" data-num="ein" inputmode="numeric" id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
         '<div class="f" style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="sub-w9" '+(s.w9?'checked':'')+' style="width:16px;height:16px;accent-color:var(--blue)"> W-9 on file</label></div>'+
       '</div>'+
       '<div class="f"><label>Mailing address</label><input id="sub-addr" value="'+escHtml(s.addr||'')+'" placeholder="Street, City, ST ZIP" style="font-size:13px;padding:10px"></div>'+
@@ -8716,7 +8716,7 @@ function editSentBid(bidId){
     _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
       if(!data)return;
       data.text().then(txt=>{
-        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true,cacheControl:'0'});}catch(e){}
+        try{const p=JSON.parse(txt);_tdStoreDoc(b.signingKey,{...p,status:'voided'});}catch(e){}
       });
     });
   }
@@ -8740,7 +8740,7 @@ async function _extendBidPrice(bidId,days){
       if(dl&&dl.data){
         const j=JSON.parse(await dl.data.text());
         j.validUntil=b.validUntil;
-        await _supa.storage.from('proposals').upload(b.proposalKey,JSON.stringify(j),{contentType:'application/json',upsert:true,cacheControl:'0'});
+        await _tdStoreDoc(b.proposalKey,j);
       }
     }
     if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
@@ -8751,7 +8751,7 @@ async function _extendBidPrice(bidId,days){
 // ── After an in-person signature ────────────────────────────────────────────
 // He signs at the kitchen table and the client used to walk away with nothing
 // in their hand while he was still standing there. Both of these use the hub
-// link the account already mints (same builder as resendProposalLink), so
+// link the account already mints (resendProposal uses this builder too), so
 // there is one client-facing URL in the product, not a second one.
 function _geiHubUrlFor(bid){
   const c=bid&&bid.client_id?getClientById(bid.client_id):null;
@@ -8784,24 +8784,6 @@ function _geiCollectDepositNow(bidId){
   const url=_geiHubUrlFor(b);
   if(!url){if(typeof showToast==='function')showToast('Connect Stripe to collect here','⚠️');return;}
   try{window.open(url,'_blank');}catch(_e){window.location.href=url;}
-}
-function resendProposalLink(bidId){
-  const b=bids.find(x=>x.id===bidId);
-  if(!b)return;
-  const baseUrl=_clientBaseUrl();
-  const c=getClientById(b.client_id);
-  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
-  if(hubUrl&&c?.phone){
-    const firstName=(c.name||b.client_name||'there').split(' ')[0];
-    const biz=S.bname||'your contractor';
-    const msg='Hi '+firstName+', '+biz+' sent you a proposal to review and sign. Open your project hub here: '+hubUrl;
-    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
-  } else if(hubUrl){
-    navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>{});
-  } else if(b.signingToken){
-    const sigUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
-    navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
-  }
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;

@@ -494,7 +494,7 @@ test.describe('county parcel records', () => {
       expect(data, '_countyProperty must pass {found:false} through, not null it')
         .toMatch(/return d;\s*\/\/ may be \{found:false\}/);
       expect(readSrc('js/clients.js'), 'only an explicit found:false records a miss')
-        .toMatch(/_propApplyMatch\(c,keyAddr,d\.found===false\?null:d\)/);
+        .toMatch(/_propApplyMatch\(cur,keyAddr,d\.found===false\?null:d\)/);
     });
   });
 

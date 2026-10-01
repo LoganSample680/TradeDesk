@@ -217,9 +217,9 @@ function showJobScorecard(jobId,collectBidId){
 // _sendPaidInvoice). Shared by Mark done, the job scorecard and the invoice
 // screen's proposal banner, so all three say the same numbers.
 function _settleNums(bid){
-  const total=Math.round((Number(bid&&bid.amount)||0)*100)/100;
-  const paid=Math.round(getBidPaid(bid.id)*100)/100;
-  return {total,paid,balance:Math.max(0,Math.round((total-paid)*100)/100)};
+  const total=_cents(bid&&bid.amount);
+  const paid=_cents(getBidPaid(bid.id));
+  return {total,paid,balance:Math.max(0,_cents(total-paid))};
 }
 // Payments booked away from this phone (a card payment on the customer's page,
 // another device) reach it on the next sync. Settling up asks for this bid's
@@ -668,6 +668,17 @@ function schedFromDate(dateKey){
 function getBidPayments(bidId){return payments.filter(p=>p.bid_id===bidId);}
 function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+(p.amount||0),0);}
 function getBidBalance(bid){return Math.max(0,(bid.amount||0)-getBidPaid(bid.id));}
+// THE DEPOSIT DUE (audit 2026-10-01: the pay panel, its amount chips, the
+// badge and the hub snapshot each had their own copy). The deposit this bid
+// stores; with none stored, a quarter of the total, which is what every copy
+// already did. A quick invoice bills work already done, so no deposit. Pass
+// the balance to cap it at what is still owed.
+function _bidDepositDue(bid,balance){
+  if(!bid||bid.kind==='quick_invoice')return 0;
+  const stored=Number(bid.deposit)||0;
+  const dep=stored>0?stored:(Number(bid.amount)||0)*.25; // dup-ok: the one place the no-deposit-saved default lives
+  return _cents(balance==null?dep:Math.min(dep,balance));
+}
 function _calcFinanceCharge(bid){
   if(!bid||(!bid.completion_date&&!bid.signedAt))return 0;
   const balance=getBidBalance(bid);
@@ -679,72 +690,6 @@ function _calcFinanceCharge(bid){
   if(daysOverdue===0)return 0;
   const rate=(typeof S!=='undefined'&&S.financeChargePct?parseFloat(S.financeChargePct):1.5)/100/30;
   return Math.round(balance*rate*daysOverdue*100)/100;
-}
-
-function sendBidEmail(bidId){
-  const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const c=b.client_id?getClientById(b.client_id):null;
-  const toEmail=c&&c.email?c.email:'';
-  const firstName=(b.client_name||b.name||'').split(' ')[0]||'there';
-  const bname=S.bname||'TradeDesk';
-  const bphone=S.bphone||'';
-  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  // Same stamp the document and the portal use, never its own +30 (§ price hold).
-  const expD=(typeof _bidValidUntil==='function'&&typeof _fmtValidUntil==='function')
-    ?(_fmtValidUntil(_bidValidUntil(b))||'30 days from now')
-    :(b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now');
-  const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
-  const paintL=(b.paint?PAINT[b.paint]:null)||'Premium Sherwin-Williams';
-  const surfs=b.surfaces||[];
-  const scope=b.scope?Object.entries(b.scope).filter(([k,v])=>v).map(([k])=>{
-    const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
-  }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
-  const NL='\n';
-  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached proposal';
-  // Use plain ASCII dashes, Unicode box-drawing chars trigger corporate spam filters
-  const SEP='-------------------------------------'+NL;
-  // Build signing link if this bid has already been sent as a proposal
-  const baseUrl=(typeof _clientBaseUrl==='function')?_clientBaseUrl():(window.location.origin+'/');
-  const hubUrl=c?.clientToken?(baseUrl+'client.html?t='+c.clientToken+'&u='+(window._supaUser?.id||'')+'&c='+c.id):null;
-  const sigUrl=b.signingToken?(baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId):null;
-  const proposalLink=hubUrl||sigUrl;
-  let body='Hi '+firstName+','+NL+NL;
-  body+='It was great meeting you'+( b.addr?' at '+b.addr:'')+' and I appreciate the opportunity to earn your business.'+NL+NL;
-  if(proposalLink){
-    body+='Your proposal is ready to view and sign online:'+NL+NL;
-    body+='    '+proposalLink+NL+NL;
-    body+='Tap the link to review everything we went over and sign when you\'re ready. If the link doesn\'t come through, just reply and I\'ll send it via text.'+NL+NL;
-  } else {
-    body+='Here is your painting proposal:'+NL+NL;
-  }
-  body+=SEP;
-  body+='PAINTING PROPOSAL'+NL;
-  body+=bname+(bphone?' | '+bphone:'')+NL;
-  body+=SEP+NL;
-  body+='Property: '+(b.addr||'')+(NL);
-  body+='Date: '+today+NL;
-  body+='Valid until: '+expD+NL+NL;
-  body+='WHAT IS INCLUDED'+NL;
-  body+=scope+NL;
-  body+='Paint: '+paintL+NL+NL;
-  body+='Every surface will be sanded before painting for proper adhesion. All nail holes, cracks, and imperfections will be spackled for a smooth finish that lasts 8-10 years.'+NL+NL;
-  if(surfs.length){body+='SURFACES'+NL+lineItems+NL+NL;}
-  body+=SEP;
-  body+='TOTAL ESTIMATE: '+fmt(b.amount)+NL;
-  body+='  - 25% deposit to start: '+fmt(b.amount*.25)+NL;
-  body+='  - Balance due on completion: '+fmt(b.amount*.75)+NL;
-  body+='  - '+b.days+' day'+(b.days>1?'s':'')+' estimated to complete'+NL+NL;
-  if(proposalLink){
-    body+='To accept, sign the proposal online or reply to this email.'+NL;
-  } else {
-    body+='To accept, simply reply to this email or give me a call at '+bphone+'.'+NL;
-  }
-  body+='I will get you on the schedule right away.'+NL+NL;
-  body+='Looking forward to working with you,'+NL;
-  body+=bname+NL;
-  if(bphone)body+=bphone+NL;
-  const subject=encodeURIComponent('Your painting proposal -- '+fmt(b.amount)+' | '+bname);
-  window.location.href='mailto:'+(toEmail?encodeURIComponent(toEmail):'')+'?subject='+subject+'&body='+encodeURIComponent(body);
 }
 
 function toggleBidSummary(bidId){
@@ -821,104 +766,19 @@ function toggleBidSummary(bidId){
   card.appendChild(panel);
 }
 
+// His printed bill is the customer's page (audit 2026-10-01: three invoice
+// layouts became one, _invoiceDocForBid in js/quick-invoice.js), with what is
+// already paid and the balance on it, in a window his phone can print or
+// save as a PDF.
 function printInvoice(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const c=b.client_id?getClientById(b.client_id):null;
-  const paid=getBidPaid(bidId);
-  const balance=getBidBalance(b);
-  const bPmts=payments.filter(p=>p.bid_id===bidId);
-  const bname=S.bname||'TradeDesk';
-  const bphone=S.bphone||'';
-  const blic=S.blic||'';
-  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  const invoiceNum='INV-'+String(bidId).slice(-6);
-
-  const html=`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice ${invoiceNum}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);background:#fff;padding:32px;max-width:680px;margin:0 auto}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid #185FA5}
-  .co-name{font-size:24px;font-weight:800;color:#185FA5}
-  .co-sub{font-size:12px;color:#666;margin-top:4px}
-  .inv-title{text-align:right}
-  .inv-title h1{font-size:32px;font-weight:800;color:var(--text);letter-spacing:-.02em}
-  .inv-num{font-size:12px;color:#666;margin-top:4px}
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px}
-  .section-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:6px}
-  .client-name{font-size:16px;font-weight:700}
-  .client-detail{font-size:13px;color:#444;margin-top:2px;line-height:1.5}
-  table{width:100%;border-collapse:collapse;margin-bottom:24px}
-  th{text-align:left;padding:8px 10px;background:#f5f5f3;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#666;border-bottom:1px solid #e0e0dc}
-  td{padding:10px;border-bottom:1px solid #f0eeec;font-size:13px;vertical-align:top}
-  td.amt{text-align:right;font-weight:600}
-  .totals{margin-left:auto;width:260px}
-  .total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #f0eeec}
-  .total-row.grand{font-size:16px;font-weight:800;border-top:2px solid #1a1a18;border-bottom:none;padding-top:10px;margin-top:4px}
-  .balance-due{background:${balance<0.01?'#F0FBF0':'#FFF8F0'};border:2px solid ${balance<0.01?'#63B841':'#E89A3C'};border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center}
-  .balance-label{font-size:12px;font-weight:700;color:${balance<0.01?'#3B8C2A':'#B8600A'};text-transform:uppercase;letter-spacing:.05em}
-  .balance-amount{font-size:28px;font-weight:800;color:${balance<0.01?'#3B8C2A':'#B8600A'}}
-  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e0e0dc;font-size:11px;color:#999;text-align:center}
-  @media print{body{padding:16px}@page{margin:0.5in}}
-</style>
-</head><body>
-<div class="header">
-  <div>
-    <div class="co-name">${bname}</div>
-    <div class="co-sub">${bphone}${blic?' · '+blic:''}</div>
-  </div>
-  <div class="inv-title">
-    <h1>INVOICE</h1>
-    <div class="inv-num">${invoiceNum}</div>
-    <div style="font-size:12px;color:#666;margin-top:4px">Date: ${today}</div>
-  </div>
-</div>
-
-<div class="two-col">
-  <div>
-    <div class="section-label">Bill to</div>
-    <div class="client-name">${escHtml(c?c.name:b.client_name||'Client')}</div>
-    <div class="client-detail">${escHtml(b.addr||c&&c.addr||'')}</div>
-    ${c&&c.phone?`<div class="client-detail">${escHtml(c.phone)}</div>`:''}
-  </div>
-  <div>
-    <div class="section-label">Job details</div>
-    <div class="client-detail"><strong>Type:</strong> ${escHtml(b.type||'Painting job')}</div>
-    <div class="client-detail"><strong>Proposal date:</strong> ${b.bid_date||''}</div>
-    ${b.completion_date?`<div class="client-detail"><strong>Completed:</strong> ${b.completion_date}</div>`:''}
-  </div>
-</div>
-
-<table>
-  <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
-  <tbody>
-    ${b.kind==='quick_invoice'&&Array.isArray(b.lineItems)&&b.lineItems.length
-      ?(Array.isArray(b.qiWork)&&b.qiWork.length?`<tr><td colspan="2">Work done: ${b.qiWork.map(w=>escHtml(w)).join('; ')}</td></tr>`:'')+b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
-      :`<tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>`}
-  </tbody>
-</table>
-
-<div class="totals">
-  <div class="total-row"><span>Subtotal</span><span>${fmt(b.amount)}</span></div>
-  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${escHtml(p.date||'')}): ${escHtml(p.method||'')}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
-  <div class="total-row grand"><span>Balance due</span><span>${fmt(balance)}</span></div>
-</div>
-
-<div class="balance-due">
-  <div>
-    <div class="balance-label">${balance<0.01?'Paid in full '+svgIcon('✓',{size:12}):'Balance due'}</div>
-    ${balance>=0.01?`<div style="font-size:11px;color:#B8600A;margin-top:3px">Please remit payment at your earliest convenience</div>`:'<div style="font-size:11px;color:#3B8C2A;margin-top:3px">Thank you for your business!</div>'}
-  </div>
-  <div class="balance-amount">${fmt(balance)}</div>
-</div>
-
-<div class="footer">
-  ${escHtml(bname)} · ${escHtml(bphone)} · Thank you for choosing us!<br>
-  <em style="margin-top:4px;display:block">To print or save as PDF: tap Share → Print in Safari</em>
-</div>
-</body></html>`;
-
+  const doc=typeof _invoiceDocForBid==='function'?_invoiceDocForBid(b,{live:true}):'';
+  const num='INV-'+String(bidId).slice(-6);
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<title>Invoice '+num+'</title><style>body{margin:0;padding:16px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}'+
+    '.wrap{max-width:720px;margin:0 auto}.hint{font-size:12px;color:#5b6475;text-align:center;margin:14px 0}'+
+    '@media print{body{background:#fff;padding:0}.hint{display:none}@page{margin:0.4in}}</style></head><body><div class="wrap">'+doc+
+    '<div class="hint">To print or save as a PDF: tap Share, then Print.</div></div></body></html>';
   const win=window.open('','_blank');
   if(win){
     win.document.write(html);
@@ -971,7 +831,7 @@ function payStatus(bid){
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
-  const dep=bid.deposit||Math.round(total*0.25*100)/100;
+  const dep=_bidDepositDue(bid);
   if(dep>0&&paid>=dep-0.01)return{label:'Deposit paid',cls:'bdg-deposit',color:'var(--blue)'};
   return{label:'Partial: '+fmt(balance)+' due',cls:'bdg-pending',color:'var(--amber)'};
 }
@@ -999,11 +859,11 @@ function openPayPanel(bidId, autoType){
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
   // A quick invoice bills work already done: no deposit, only the balance.
-  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositDue=_bidDepositDue(bid,balance);
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
-  const overpaidAmt=_rateSheet?0:Math.round((rawPaid-total)*100)/100;
+  const overpaidAmt=_rateSheet?0:_cents(rawPaid-total);
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
     ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
@@ -1282,8 +1142,13 @@ async function _sendPaidInvoice(bidId,opts){
   const c=getClientById(bid.client_id);
   if(!c){showToast('No client on this job.','⚠');unsent();return;}
   document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
-  // A quick invoice's saved document first, so the hub the link opens has it.
-  try{if(typeof _qiDocUploads!=='undefined'&&_qiDocUploads[bidId])await _qiDocUploads[bidId];}catch(_e){}
+  // The bill's document first, so the hub the link opens shows the same page
+  // he would print (_invoiceDocForBid). A quick invoice saved its own when it
+  // was made; any other bill is saved now, as it stands today.
+  try{
+    if(bid.kind!=='quick_invoice'&&typeof _invoiceDocUpload==='function'&&typeof _invoiceDocForBid==='function')_invoiceDocUpload(bid,_invoiceDocForBid(bid));
+    if(typeof _invoiceDocUploads!=='undefined'&&_invoiceDocUploads[bidId])await _invoiceDocUploads[bidId];
+  }catch(_e){}
   try{
     if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
   }catch(_e){}
@@ -1361,7 +1226,7 @@ function showCancellationRefund(bidId){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">'+escHtml(bid.client_name||'Client')+' · Deposit collected: <strong>'+fmt(totalPaid)+'</strong></div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label>Materials purchased for this job ($)</label>'+
-      '<input type="number" id="_cr-mat" data-paid="'+totalPaid+'" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+
+      '<input type="text" data-num="money" inputmode="decimal" id="_cr-mat" data-paid="'+totalPaid+'" placeholder="0.00"'+
         ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center"'+
         ' oninput="_crCalc()">'+
     '</div>'+
@@ -1383,7 +1248,7 @@ function _crCalc(){
   const submit=document.getElementById('_cr-submit');
   if(!inp||!res)return;
   const paid=parseFloat(inp.dataset.paid)||0;
-  const mat=parseFloat(inp.value)||0;
+  const mat=_numVal(inp);
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   if(mat>=paid){
     res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit, no refund owed.</span><br><span style="font-size:11px">The deposit covers materials.</span>';
@@ -1400,7 +1265,7 @@ function _submitCancellationRefund(bidId){
   const dateEl=document.getElementById('_cr-date');
   if(!inp)return;
   const paid=parseFloat(inp.dataset.paid)||0;
-  const mat=parseFloat(inp.value)||0;
+  const mat=_numVal(inp);
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   const pdate=(dateEl?dateEl.value:'')||todayKey();
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1487,7 +1352,7 @@ function selectPayType(btn, bidId){
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
   // A quick invoice bills work already done: no deposit, only the balance.
-  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositDue=_bidDepositDue(bid,balance);
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
   const hint=document.getElementById('mpay-max-hint');
@@ -1532,7 +1397,7 @@ function selectPayType(btn, bidId){
   if(hf)hf.style.display='none';
 
   if(kind==='refund'){
-    const refAmt=Math.max(0,Math.round((getBidPaid(bidId)-total)*100)/100);
+    const refAmt=Math.max(0,_cents(getBidPaid(bidId)-total));
     if(tf)tf.value='refund';
     if(amtEl){amtEl.value=refAmt>0?_moneyStr(refAmt):'';amtEl.readOnly=false;}
     if(amtRow)amtRow.style.display='block';
@@ -2075,7 +1940,7 @@ function riskBadge(cid){
 function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
-  const stateCode=(typeof stateFromAddr==='function'?stateFromAddr(addr):null)||S.state||'KS';
+  const stateCode=_stateOf(addr);
   let county=null;
   // The county record for this property is the best answer (propDataCounty,
   // e.g. "Shawnee, KS", written by the county lookup). The city table below is

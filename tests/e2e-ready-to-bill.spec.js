@@ -743,7 +743,7 @@ test.describe('Invoice: the customer copy', () => {
         _qi.due = '15';
         const preview = _qiDocHtml();
         const bid = _qiSave();
-        await _qiDocUploads[bid.id];
+        await _invoiceDocUploads[bid.id];
         const hb = _buildClientHubSnapshot(701).bids.find(b => b.id === bid.id) || {};
         const doc = put[0] ? put[0].body.invoiceHtml : '';
         return { n: put.length, bucket: put[0] && put[0].b, path: /^invoice-doc\/11111111-2222-3333-4444-555555555555\/\d+_[a-z0-9]{8,}\.json$/.test(put[0] && put[0].key),
@@ -859,6 +859,43 @@ test.describe('Invoice: the customer copy', () => {
     await open(page, 701);
     const r = await page.evaluate(() => ({ locked: document.getElementById('qi-show-rate').disabled, on: _qiShowRate(), doc: _qiDocHtml().includes('/hr') }));
     expect(r).toEqual({ locked: true, on: true, doc: true });
+  });
+
+  // Owner 2026-10-01: "8 hours on the job, $800 job, $100 an hour". Hours
+  // next to a day's money give away the rate even with the rate hidden.
+  test('Show the hours off: their copy has the work and each day total, no hours and no rate', async ({ page }) => {
+    await boot(page);
+    // Illinois wants the rate on a T&M bill, which locks both switches on; this
+    // is a house in a state with no such rule.
+    await page.evaluate(() => { getClientById(701).addr = '2210 Birch Ln, Wichita, KS 67202'; });
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const before = { on: _qiShowHours(), hrs: _qiDocHtml().includes(' hrs on site') };
+      document.getElementById('qi-show-hours').click();
+      const doc = _qiDocHtml();
+      const after = { on: _qiShowHours(), hrs: doc.includes(' hrs on site') || / hrs?\b/.test(doc.replace(/<[^>]+>/g, ' ')), rateRow: !!document.getElementById('qi-show-rate'), rate: _qiShowRate(), total: doc.includes('$1,048.50'), labor: doc.includes('Labor') };
+      const n = [...document.querySelectorAll('#qi-page .qi-always')].length;
+      document.querySelector('#qi-page .qi-always').click();
+      openQuickInvoice(701, '');
+      return { before, after, n, saved: S.copyShow.invoice.hours, next: _qiShowHours() };
+    });
+    expect(r.before).toEqual({ on: true, hrs: true });
+    expect(r.after).toEqual({ on: false, hrs: false, rateRow: false, rate: false, total: true, labor: true });
+    expect(r.n).toBe(1);
+    expect(r.saved).toBe(false);
+    expect(r.next).toBe(false);
+  });
+
+  test('a flat price has no hours to show, and a state that wants the rate keeps the hours on, locked', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => { getClientById(701).addr = '2210 Birch Ln, Phoenix, AZ 85001'; S.copyShow = { invoice: { hours: false } }; });
+    await open(page, 701);
+    const r = await page.evaluate(() => {
+      const locked = { on: _qiShowHours(), dis: document.getElementById('qi-show-hours').disabled };
+      _qiSetMode('set');
+      return { locked, flat: _qiShowHours(), row: !!document.getElementById('qi-show-hours') };
+    });
+    expect(r).toEqual({ locked: { on: true, dis: true }, flat: false, row: false });
   });
 
   test('the proposal and the invoice read one setting for the rate, each with its own starting point', async ({ page }) => {

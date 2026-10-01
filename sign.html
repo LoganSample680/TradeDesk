@@ -687,14 +687,20 @@ function _dismissSignBoot(fast){
 // Safety net, never leave the boot up if init() throws before a show().
 setTimeout(()=>_dismissSignBoot(true),5000);
 
-function _showPortfolioOffer(){
+// THE PORTFOLIO PRICES (audit 2026-10-01: the offer card and the accept
+// step each did this math). The contractor's discounted price when he set
+// one, otherwise the full price less the offer's percent, to the cent.
+function _portfolioPrices(){
   const pct=_prop.portfolioPct||15;
+  const fullP=_prop.fullPrice||_prop.amount;
+  const discP=_prop.discountedPrice||_cents(fullP*(1-pct/100));
+  return {pct,fullP,discP,savings:_cents(fullP-discP)};
+}
+function _showPortfolioOffer(){
+  const {pct,fullP,discP,savings}=_portfolioPrices();
   const years=_prop.portfolioYears||0;
   const target=_prop.portfolioTarget||5;
   const owner=_prop.portfolioOwnerName||_prop.businessName||'Your contractor';
-  const fullP=_prop.fullPrice||_prop.amount;
-  const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
-  const savings=Math.round((fullP-discP)*100)/100;
   document.getElementById('po-pct-hdr').textContent=pct;
   document.getElementById('po-pitch').textContent='We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected for this opportunity. In exchange for permission to photograph your home before and after completion and feature the results across our platforms, we are offering '+pct+'% off this project. No personal information is ever shared without your explicit permission.';
   document.getElementById('po-full-price').textContent=fmt(fullP);
@@ -710,10 +716,8 @@ function portfolioAccept(){
     document.getElementById('po-accept-btn').textContent='I agree, apply '+pct+'% discount';
     _portfolioStep=1;
   } else {
-    const fullP=_prop.fullPrice||_prop.amount;
-    const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
-    const savings=Math.round((fullP-discP)*100)/100;
-    const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
+    const {discP,savings}=_portfolioPrices();
+    const _depFrac=_signDepFrac();
     const newDep=Math.round(discP*_depFrac*100)/100;
     const newBal=Math.round(discP*(1-_depFrac)*100)/100;
     window._portfolioAccepted=true;
@@ -738,19 +742,6 @@ function portfolioDecline(){
 // cache could show a stale status for up to an hour. Fetch the public object URL
 // with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
 // fall back to storage.download() on any failure so the error UI is unchanged.
-async function _fetchStorageJson(key){
-  try{
-    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
-    if(!pub)throw new Error('no public url');
-    const res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    return{data:await res.json(),error:null};
-  }catch(e){
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)return{data:null,error:error||e};
-    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
-  }
-}
 // "Already signed" terminal page, extracted from init so the stash-handoff path
 // can also reach it from its background signed-status verify.
 // Signing state, through the token-checked RPC (20261049). signed_proposals
@@ -766,15 +757,6 @@ async function _sigStatus(key){
   }catch(_){return null;}
 }
 function _sigIsDecline(r){return !!r&&(r.payment_status==='declined'||r.payment_method==='declined');}
-// Every write this page makes goes through proposal-sign (20261049), which
-// proves the link, takes the amount from the stored proposal and writes the
-// row and the proposal file together.
-async function _signCall(body){
-  const{data,error}=await _supa.functions.invoke('proposal-sign',{body});
-  if(error)throw error;
-  if(data&&data.error)throw new Error(data.error);
-  return data||{};
-}
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
   const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -890,11 +872,7 @@ async function init(){
           if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
         }catch(_){}
         window._viewerIsContractor=(_viewerType==='contractor');
-        fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-          body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
-        }).catch(()=>{});
+        _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType});
       }).catch(()=>{});},1600);
     }
     const _biz=_prop.businessName||'Your Contractor';
@@ -1236,11 +1214,7 @@ function _logStep(step){
   if(_isPreview||window._viewerIsContractor||!_prop?.contractorUserId||!_prop?.id)return;
   if(_stepsSent.has(step))return;
   _stepsSent.add(step);
-  fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-    body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step})
-  }).catch(()=>{});
+  _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step});
 }
 function approveAndSign(){
   _logStep('approved');
@@ -1357,8 +1331,7 @@ function goToPayment(){
   _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
-  const depAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
-  const fullAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt2,full:fullAmt2}=_signPayAmts();
   const nowAmt=_payFullAmount?fullAmt2:depAmt2;
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(nowAmt);
@@ -1370,9 +1343,23 @@ function selPay(opt){
   _payOpt=opt;
   if(opt==='cash')_paySign('cash');
 }
+// WHAT IS DUE TODAY (audit 2026-10-01: the pay tiles, the pay button, the
+// tile picker and the checkout each worked it out on their own, two of them
+// with a hardcoded 25% on the discounted price). The deposit's share of the
+// price, or a quarter when the proposal carries no deposit, applied to the
+// portfolio price once it is accepted.
+function _signDepFrac(){
+  return (_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
+}
+function _signPayAmts(){
+  const frac=_signDepFrac();
+  const disc=window._portfolioAccepted&&_prop?.discountedPrice;
+  return {frac,
+    dep:disc?_cents(_prop.discountedPrice*frac):_prop?.deposit||0,
+    full:disc?_prop.discountedPrice:_prop?.amount||0};
+}
 function _selectPayTile(choice){
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt,full:fullAmt}=_signPayAmts();
   // Don't allow full-pay tile if amounts are the same
   if(choice==='full'&&Math.abs(fullAmt-depAmt)<0.01)return;
   _payFullAmount=choice==='full';
@@ -1380,13 +1367,11 @@ function _selectPayTile(choice){
   _updatePayButtons();
 }
 function _renderPayTiles(){
-  // A RATE SHEET'S DEPOSIT IS A FLAT FIGURE. _depFrac's 0.25 fallback would
+  // A RATE SHEET'S DEPOSIT IS A FLAT FIGURE. _signDepFrac's 0.25 fallback would
   // label a $500 mobilization deposit "25% Deposit" against a total of zero,
   // which is both wrong and the kind of number a client rings up about.
   if(_prop?.rateOnly)return _renderRateSheetPayTiles();
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {frac:_depFrac,dep:depAmt,full:fullAmt}=_signPayAmts();
   const showFull=fullAmt>depAmt+0.01;
   const depSel=!_payFullAmount;
   const td=document.getElementById('pay-tile-dep'),tf=document.getElementById('pay-tile-full');
@@ -1439,9 +1424,7 @@ function _updatePayButtons(){
     if(pndR)pndR.textContent=fmt(Number(_prop?.deposit)||0);
     return;
   }
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt,full:fullAmt}=_signPayAmts();
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
@@ -1468,7 +1451,7 @@ async function _saveSignature(method){
   const ts=new Date().toISOString();
   // The function takes the amount and deposit from the stored proposal, never
   // from this page, and writes the row and the signed proposal file together.
-  await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
+  await _proposalSign({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
     portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
     buyerSenior:!!window._buyerSenior});
   // Signal the contractor's open TradeDesk tab to refresh immediately
@@ -1597,7 +1580,7 @@ async function _confirmDecline(){
   try{
     // proposal-sign writes the declined row (the contractor app reads it as
     // Closed Lost) and marks the stored proposal declined, after proving the link.
-    await _signCall({action:'decline',key,reason:declineReason||null});
+    await _proposalSign({action:'decline',key,reason:declineReason||null});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
@@ -1685,9 +1668,9 @@ async function _paySign(method){
   }
   // 'stripe', open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
   if(_isPreview){document.getElementById('pay-err').textContent='Preview mode, card payment is disabled. Your client will see a real checkout here.';return;}
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100):Math.round((_prop.deposit||0)*100);
-  const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
+  const _pa=_signPayAmts();
+  const depBase=Math.round(_pa.dep*100);
+  const fullBase=Math.round(_pa.full*100);
   const amt=_payFullAmount?fullBase:depBase;
   const btn=document.getElementById('_pay-now-btn');
   if(btn){btn.disabled=true;btn.textContent='Opening secure checkout…';}
@@ -1731,34 +1714,10 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
-    // Stripe.js MUST be initialised with that account or the client_secret won't resolve.
-    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
-    _stripeInst=stripeObj;
-    document.getElementById('sign-embed-container').innerHTML='';
-    // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout
-    // pi_                = PaymentIntent   → use Payment Element (accordion)
-    if(d.clientSecret.startsWith('cs_')){
-      const inst=await stripeObj.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');}
-      });
-      inst.mount('#sign-embed-container');
-      _stripeInst={destroy:()=>inst.destroy()};
-      _stripeElements=null;
-      if(submitBtn){submitBtn.style.display='none';}// Stripe's own UI has submit built in
-    }else{
-      _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-      const payEl=_stripeElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      });
-      payEl.mount('#sign-embed-container');
-      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
-      payEl.on('loaderror',()=>{
-        _closeStripeModal();
-        document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
-      });
-    }
+    const m=await _tdMountStripe(d,{container:'sign-embed-container',submitBtn,
+      onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');},
+      onLoadError:()=>{_closeStripeModal();document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';}});
+    _stripeInst=m.inst;_stripeElements=m.elements;
   }catch(e){
     console.error('[_launchEmbedded]',e);
     _closeStripeModal();

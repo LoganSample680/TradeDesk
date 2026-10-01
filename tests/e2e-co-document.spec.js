@@ -175,10 +175,10 @@ test.describe('the change order document', () => {
 
   test('the document itemizes, and a lump sum still prints one Adjustment', async () => {
     const r = await page.evaluate(() => ({
-      lines: _coLinesHTML([{ desc: 'Stack', amt: 780 }, { desc: 'Re-tie', amt: 240 }], 'blue', 'add'),
-      sub: _coLinesHTML([{ desc: 'Dropped the tile', amt: 400 }], 'red', 'sub'),
-      none: _coLinesHTML([], 'blue', 'add'),
-      nul: _coLinesHTML(null, 'blue', 'add')
+      lines: tdCoLinesHTML([{ desc: 'Stack', amt: 780 }, { desc: 'Re-tie', amt: 240 }], 'blue', 'add', escHtml, fmt),
+      sub: tdCoLinesHTML([{ desc: 'Dropped the tile', amt: 400 }], 'red', 'sub', escHtml, fmt),
+      none: tdCoLinesHTML([], 'blue', 'add', escHtml, fmt),
+      nul: tdCoLinesHTML(null, 'blue', 'add', escHtml, fmt)
     }));
     expect(r.lines).toContain('Stack');
     expect(r.lines).toContain('+$780.00');

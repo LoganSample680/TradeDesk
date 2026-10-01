@@ -434,17 +434,10 @@ function _geiOnAddrInput(){
   _geiTaxLookupTimer=setTimeout(_geiLookupClientTaxRate,700);
 }
 async function _geiLookupClientTaxRate(){
-  const addr=(document.getElementById('gei-addr')?.value||'').trim();
-  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
-  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
-  if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
-  if(typeof lookupSalesTaxRate==='function'){
-    const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip, db_county or db_state), never show hardcoded base rate
-    _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
-    calcGeiTotal();
-    if(_geiIsFreeForm)_byoUpdateRail();
-  }
+  const r=await _docTaxRateFor(document.getElementById('gei-addr')?.value||'');
+  _geiClientTaxRate=r;
+  calcGeiTotal();
+  if(_geiIsFreeForm)_byoUpdateRail();
 }
 
 function openTMEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'tm');}
@@ -554,7 +547,7 @@ function _geiOpenModeEstimate(c,bidId,mode){
 // ever names another state this follows it.
 function _tmHomeBlock(addr,commercial){
   if(commercial)return null;
-  const st=(typeof stateFromAddr==='function'?stateFromAddr(addr||''):null)||(typeof S!=='undefined'&&S&&S.state)||'';
+  const st=_stateOf(addr,{fallback:''});
   const r=(typeof statePriceRule==='function'&&st)?statePriceRule(st):{rule:'none'};
   if(r.rule!=='block')return null;
   return Object.assign({state:st,name:_tmStateName(st)||st},r);
@@ -602,7 +595,7 @@ function _geiShowDraftChooser(c,mode,drafts,addr){
   const rows=drafts.map(b=>{
     const items=(b.byoItems||[]).length||(b.geiLines||[]).length;
     const parts=[];
-    if(b.amount)parts.push('$'+Number(b.amount).toLocaleString());
+    if(b.amount)parts.push(fmt(Number(b.amount),{short:true}));
     if(items)parts.push(items+' item'+(items>1?'s':''));
     if(b.bid_date)parts.push('started '+b.bid_date);
     return '<button data-bid="'+b.id+'" onclick="_geiResumeChosenDraft(this.dataset.bid)" style="display:block;width:100%;text-align:left;padding:12px 14px;border:1.5px solid var(--border2);border-radius:10px;background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px">'+
@@ -727,7 +720,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     const seed=window._scanEstimateSeed;window._scanEstimateSeed=null;
     _geiScanId=seed.scanId||null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
-      _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
+      _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:_cents((l.qty||1)*(l.rate||0)),notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
       // A seed that is not a scan says what it is (Tim, a spoken estimate):
       // "loaded from the scan" on a job nobody scanned reads as a bug.
       if(typeof showToast==='function')showToast(seed.say||(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan'),seed.say?'✅':'📐');
@@ -738,7 +731,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     const _scanRate=Math.max(0,+(S.scanRateSqFt||0));
     _geiPendingSeedLines=(seed.rooms||[]).map(r=>({
       desc:(r.name||'Room')+' · '+(r.wallSqFt||0)+' wall sq ft, '+(r.ceilHt||'')+' ceilings'+(r.doors||r.windows?' ('+(r.doors||0)+' doors, '+(r.windows||0)+' windows)':''),
-      qty:r.wallSqFt||1,unit:'sq ft',rate:_scanRate,total:Math.round((r.wallSqFt||1)*_scanRate*100)/100,notes:'Measured by LiDAR scan',_byoSection:'Interior'
+      qty:r.wallSqFt||1,unit:'sq ft',rate:_scanRate,total:_cents((r.wallSqFt||1)*_scanRate),notes:'Measured by LiDAR scan',_byoSection:'Interior'
     }));
     if(_geiPendingSeedLines.length&&typeof showToast==='function'){
       const priced=_scanRate>0;
@@ -752,7 +745,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(window._trueMeasureSeed&&!bidId&&c&&String(window._trueMeasureSeed.clientId)===String(c.id)){
     const seed=window._trueMeasureSeed;window._trueMeasureSeed=null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
-      _geiPendingSeedLines=(_geiPendingSeedLines||[]).concat(seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Exterior'})));
+      _geiPendingSeedLines=(_geiPendingSeedLines||[]).concat(seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:_cents((l.qty||1)*(l.rate||0)),notes:l.notes||'',_byoSection:l._byoSection||'Exterior'})));
       if(typeof showToast==='function')showToast('Measured line loaded from TrueMeasure','🛰️');
     }
   }
@@ -1043,7 +1036,7 @@ function goGeiStep(n){
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
-  ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-tm-terms','gei-ff-chip'].forEach(id=>{
+  ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-ff-chip'].forEach(id=>{
     const d=document.getElementById(id);if(d)d.style.display='none';
   });
   const svcWrap=document.getElementById('gei-svc-wrap');
@@ -1063,11 +1056,11 @@ function _tmAdj(delta){
 }
 function _tmRecalc(){
   _tmCrewCount=parseInt(document.getElementById('tm-crew-display')?.textContent)||_tmCrewCount||1;
-  _tmRatePerMan=parseFloat(document.getElementById('tm-rate')?.value)||0;
+  _tmRatePerMan=_numVal('tm-rate');
   _tmEstHours=parseFloat(document.getElementById('tm-hours')?.value)||0;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   const el=document.getElementById('tm-labor-est');
-  if(el)el.textContent=labor?'$'+labor.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
+  if(el)el.textContent=labor?fmt(labor,{whole:true}):'-';
   const fml=document.getElementById('tm-crew-formula');
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
@@ -1088,43 +1081,6 @@ function _tmRecalc(){
   else if(labor>0)_geiLines.unshift(line);
   renderGeiLines();calcGeiTotal();
   _byoAutosave();
-}
-function _tmCalcDeposit(){
-  const {sub}=calcGeiTotal();
-  const pct=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
-  const amt=Math.round(sub*pct/100);
-  const el=document.getElementById('tm-dep-amt');
-  if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
-  // Also update NTE suggestion if not manually set
-  _tmCalcNte();
-  _byoAutosave();
-}
-function _tmCalcNte(){
-  const on=document.getElementById('tm-nte-on')?.checked;
-  const wrap=document.getElementById('tm-nte-wrap');
-  if(wrap)wrap.style.display=on?'block':'none';
-  if(!on){_byoAutosave();return;}
-  const cap=document.getElementById('tm-nte-cap');
-  if(cap&&(!cap.value||parseFloat(cap.value)===0)){
-    const{sub}=calcGeiTotal();
-    if(sub>0)cap.value=Math.round(sub*1.15/500)*500; // round to nearest $500
-  }
-  _byoAutosave();
-}
-function _tmSetCycle(v){
-  _tmBillingCycle=v;
-  _tmSyncCycleButtons();
-  _byoAutosave();
-}
-function _tmSyncCycleButtons(){
-  ['weekly','biweekly','milestone','completion'].forEach(c=>{
-    const btn=document.getElementById('tmc-'+c);
-    if(!btn)return;
-    const active=_tmBillingCycle===c;
-    btn.style.background=active?'var(--blue)':'var(--bg2)';
-    btn.style.color=active?'#fff':'var(--text2)';
-    btn.style.border=active?'1.5px solid var(--blue)':'1.5px solid var(--border2)';
-  });
 }
 
 // ── T&M / BYO shared markup, one template, rendered per-prefix ─────────────
@@ -1232,7 +1188,7 @@ function _geiRenderProfitGauge(prefix,costOninput){
   const wrap=document.getElementById(prefix+'-gauge-wrap');
   if(!wrap||wrap.children.length)return; // idempotent: preserve gauge/animation state across repeat page shows
   wrap.innerHTML=
-    '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
+    '<input type="text" data-num="dec" inputmode="decimal" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-drive-line" style="display:none;padding:10px 12px;margin:0 0 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2)"></div>'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
@@ -1298,9 +1254,9 @@ function _geiRenderDepositField(prefix,onInputExpr){
     '<div class="summary-row" style="align-items:center">'+
       '<span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>'+
       '<span style="display:flex;align-items:center;gap:4px">'+
-        '<input type="number" id="'+prefix+'-deposit-pct" value="25" min="0" max="100" step="5"'+
+        '<input type="text" data-num="pct" inputmode="decimal" id="'+prefix+'-deposit-pct" value="25"'+
           ' oninput="'+onInputExpr+'"'+
-          ' inputmode="decimal" style="width:68px;min-height:44px;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
+          ' style="width:68px;min-height:44px;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
         '<span style="font-size:15px;font-weight:700">%</span>'+
       '</span>'+
     '</div>'+
@@ -1735,6 +1691,13 @@ function _geiHidePage(pageId){
 }
 
 // ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
+// WHO IS ON THE JOB, back from a saved bid (audit 2026-10-01: T&M and Build
+// Your Own each restored it). Copies, so editing the crew never edits the bid
+// until it is saved. No bid, or junk on it, is nobody.
+function _estCrewRestore(b){
+  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
+}
 function _tmShowPage(){
   // A fresh page is not a tap on the bar (_tmDockReady).
   _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
@@ -1796,8 +1759,7 @@ function _tmShowPage(){
   if(_savedLayers||_restored.length)_tmLayers=new Set(_restored);
   _tmApplyLayers();
   // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
-  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
-  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
+  _estCrewRestore(b);
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
@@ -1878,8 +1840,7 @@ function _byoShowPage(){
   _byoJobPrice=Number(b&&b.byoJobPrice)>0?Number(b.byoJobPrice):0;
   _geiValidDays=Number(b&&b.validDays)>0?Number(b.validDays):0;
   _geiNote=String(b&&b.closeNote||'');_geiNoteBy=String(b&&b.closeNoteBy||'');
-  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
-  _estCrewRates=(b&&b.estCrewRates&&typeof b.estCrewRates==='object')?Object.assign({},b.estCrewRates):{};
+  _estCrewRestore(b);
   _injectRrpItems();
   _tmDockTapAt=0;_tmDockSince=0;_tmDockLabel='';
   _byoSayOpen=false;_byoMissed=[];_geiChecking=false;
@@ -2167,7 +2128,7 @@ function _geiScopeBuild(containerId){
     if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   }else{
     built.steps.forEach(st=>{
-      const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+      const t=st.price?st.text+', '+fmt(Number(st.price),{short:true}):st.text;
       if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))_geiScopeChips.push(t);
     });
     _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
@@ -2702,13 +2663,7 @@ function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn
 // One normalizer, called from _byoRenderSections, which runs after every change:
 // no add path can forget it, and an item saved before this shipped is read as
 // one at its old price. Nothing to migrate, nothing to sweep.
-// Round half UP at the cent, the way money rounds. Math.round alone does not:
-// 2.5 x 3.33 is 8.325, which floats to 832.4999999999999 and rounds DOWN to
-// $8.32, a penny off on the client's line for no reason a human could explain.
-function _geiCents(n){
-  const v=Number(n)||0;
-  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
-}
+// Money rounds half up at the cent through _cents (js/utils.js).
 function _byoNormItem(it){
   if(!it||typeof it!=='object')return it;
   const q=Number(it.qty);
@@ -2726,7 +2681,7 @@ function _byoNormItem(it){
     it.rate=Number(it.price)||0;
     it.qty=1;
   }
-  it.price=_geiCents(it.qty*it.rate);
+  it.price=_cents(it.qty*it.rate);
   return it;
 }
 function _byoNormAll(){(_byoItems||[]).forEach(_byoNormItem);}
@@ -2749,7 +2704,7 @@ function _geiItemRowHtml(opts){
     '<div class="byo-row-hd">'+
       checkHtml+
       '<div class="byo-label">'+escHtml(label)+'</div>'+
-      '<div class="byo-price">$'+price.toLocaleString()+'</div>'+
+      '<div class="byo-price">'+fmt(price,{short:true})+'</div>'+
       '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
         _geiRowActionBtns(editFn,delFn,delTitle,dupFn)+
       '</div>'+
@@ -3128,7 +3083,7 @@ function _byoTakeSaid(said,heard){
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
   // filled in where they go instead of printed as steps.
   const _filled=[];
-  if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
+  if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push(fmt(built.jobPrice,{short:true}));}
   _filled.push(...r.filled);
   if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   _byoSayOpen=false;
@@ -3182,10 +3137,10 @@ function _byoRenderSections(){
   const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
   // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
   // page so autosave and the proposal keep reading it by its id.
-  const noteFold='<div id="byo-note-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your note to them</span></div>'+
-    '<div class="ios-group"><textarea id="byo-note" class="ios-say" rows="4" placeholder="e.g. I appreciate your trust in us and look forward to the work." '+
-      'oninput="_geiNote=this.value;_byoAutosave()">'+escHtml(_geiNote||'')+'</textarea></div>'+
-    '<div class="ios-foot">Printed under the scope, word for word, with your name.</div></div></div>';
+  // His note: the same row T&M and the invoice use (_noteRowHtml, audit
+  // 2026-10-01: BYO had its own textarea). Kept open across repaints.
+  const _nh=document.getElementById('byo-sec-note'),noteOpen=!!(_nh&&_nh.dataset.open==='1');
+  const noteFold='<div class="ios-sec" id="byo-sec-note" data-open="'+(noteOpen?'1':'0')+'">'+_docNoteHtml('byo',noteOpen)+'</div>';
   const terms='<div id="byo-terms-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your own terms</span></div>'+
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
@@ -3223,7 +3178,7 @@ function _byoState(){
 // is under none.
 function _geiDepositLaw(){
   const addr=(document.getElementById('gei-addr')||{}).value||'';
-  const st=((typeof stateFromAddr==='function'?stateFromAddr(addr):null)||(typeof S!=='undefined'&&S.state)||'KS').toUpperCase();
+  const st=_stateOf(addr).toUpperCase();
   const law=(typeof STATE_DEPOSIT_CAP!=='undefined'&&STATE_DEPOSIT_CAP[st])||{rule:'none'};
   return {st,law,applies:!!(!_geiIsCommercial&&law.rule&&law.rule!=='none')};
 }
@@ -3303,9 +3258,8 @@ function _byoRenderPrice(st){
       [...new Set(_GEI_VALID_CHOICES.concat([_geiValidDaysNow()]))].sort((a,b)=>a-b).map(n=>'<option value="'+n+'"'+(n===_geiValidDaysNow()?' selected':'')+'>'+n+' days</option>').join('')+
       '</select></span></label>'+
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
-      '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
+      '<span class="ios-val"><input type="text" data-num="pct" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
-    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-note-wrap\')"><span class="ios-lbl">Your note to them<small>'+(String(_geiNote||'').trim()?'On the proposal':'Optional')+'</small></span><span class="ios-chev">›</span></button>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
   const foot=document.getElementById('byo-price-foot');
   if(foot)foot.textContent='The customer sees the total and the deposit. Line prices, your cost and your profit stay on this screen.';
@@ -3319,7 +3273,7 @@ function _byoToggleFold(id){
 }
 function _byoCostInput(el){
   const c=document.getElementById('byo-expected-cost');if(!c)return;
-  const v=(typeof _moneyVal==='function')?_moneyVal('byo-cost-in'):parseFloat(String(el.value).replace(/,/g,''))||0;
+  const v=_numVal(el);
   c.value=v>0?String(v):'';
   if(v>0)c.dataset.userSet='true';else delete c.dataset.userSet;
   _byoUpdateRail();_byoAutosave();
@@ -3332,7 +3286,7 @@ function _byoDepInput(el){
   pct.dispatchEvent(new Event('input',{bubbles:true}));
 }
 function _byoDockNext(st){
-  if(!st.n)return {label:'Price it out',fn:'_byoDockBuild()'};
+  if(!st.n)return {label:'Price it out',fn:"_docDockBuild('byo-say',_byoSayBuild)"};
   // Tim before the prices: a step he adds is a line that needs a price, so
   // pricing first would send him back to pricing (2026-09-26, shared walk).
   const tim=_geiTimStep(_byoMissed);
@@ -3351,9 +3305,13 @@ function _byoDockNext(st){
   return _geiNumsStep({has:st.total>0,check:'Check the price',target:'byo-price-group',
     yes:'Yes: '+fmt(st.total,{whole:true})+', '+(D.pct>0?D.pct+'% deposit':'no deposit')});
 }
-function _byoDockBuild(){
-  const el=document.getElementById('byo-say');
-  if(el&&String(el.value||'').trim()){_byoSayBuild();return;}
+// THE DOCK'S BUILD BUTTON (audit 2026-10-01: BYO and T&M each had one). The
+// words in the box get built; nothing in the box says so and puts him in it.
+// A button that does nothing visible gets tapped five more times and then
+// thrown.
+function _docDockBuild(boxId,build){
+  const el=document.getElementById(boxId);
+  if(el&&String(el.value||'').trim()){if(typeof build==='function')build();return;}
   if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
   if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
 }
@@ -3376,6 +3334,31 @@ function _docDockPaint(pre,nx){
     :'<button type="button" class="ios-btn ios-btn-tint" id="'+pre+'-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
      '<button type="button" class="ios-btn ios-btn-fill" id="'+pre+'-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
+// WHAT AN ESTIMATE SAVES, once (audit 2026-10-01: the autosave, the Save
+// button's existing-bid branch and its new-bid branch each listed these fields,
+// and the new-bid copy had already lost the crew's rates). Every save writes
+// this one object; each keeps only what is its own (money, status, dates).
+function _geiContentFields(){
+  const desc=(document.getElementById('gei-desc')||{}).value||'';
+  const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  const typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(trade);
+  const f={type:desc||typeLabel,geiDesc:desc,descUserSet:!!_geiDescUserSet,
+    estCrew:[..._estCrew],estCrewRates:Object.assign({},_estCrewRates),estCrewSize:_estCrew.length||1,
+    // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
+    // and his scope history, so it MOVES as the book learns. Stamping it is
+    // what lets the job compare what really happened against what this
+    // estimate actually said (js/jobs.js _jobOverrun). Zero is stored as zero.
+    estHours:_estLaborHours(),
+    exclusions:[..._geiExclusions],scopeChips:[..._geiScopeChips],scopeNoScope:_geiScopeNoScope||false};
+  if(_geiIsTM)f.scopeItems=_scopeRowsSaved(_tmItems());
+  if(_geiIsFreeForm&&!_geiIsTM){
+    const termsEl=document.getElementById('byo-custom-terms');
+    f.byoItems=JSON.parse(JSON.stringify(_byoItems));
+    f.byoCustomSections=[..._byoCustomSections];
+    f.byoCustomTerms=termsEl?termsEl.value:(_byoCustomTerms||'');
+  }
+  return f;
+}
 function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
@@ -3387,43 +3370,20 @@ function _byoAutosave(){
   // T&M. So the empty-stub-to-real-content transition happens here, capture it
   // before mutating.
   const _wasEmpty=_geiDraftIsEmpty(b);
-  // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
-  // button (saveGenericEstimate): every autosave silently dropped a name edit until
-  // the user hit Save, so backing out mid-edit lost the new name.
-  const _trade=_geiTrade||getActiveTrade();
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(_trade);
-  const _descVal=document.getElementById('gei-desc')?.value||'';
-  b.type=_descVal||_typeLabel;
-  b.geiDesc=_descVal;
-  b.descUserSet=!!_geiDescUserSet;
-  b.byoItems=JSON.parse(JSON.stringify(_byoItems));
+  // The name, the crew, the scope and the items: the one shared set
+  // (_geiContentFields), so a name edit is never lost to a missed field.
+  Object.assign(b,_geiContentFields());
   b.byoJobPrice=_byoJobPrice||0;
   b.validDays=_geiValidDays||0;
   b.closeNote=_geiNote||'';b.closeNoteBy=_geiNoteBy||'';
-  b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
-  b.estCrew=[..._estCrew];
-  b.estCrewRates=Object.assign({},_estCrewRates);
-  b.exclusions=[..._geiExclusions];
-  // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
-  // and his scope history, so it MOVES as the book learns. Stamping it here is
-  // what lets the job compare what really happened against what this estimate
-  // actually said, instead of against a number that has since drifted
-  // (js/jobs.js _jobOverrun). Zero is stored as zero on purpose: a bid with no
-  // hours behind it has no promise to be over.
-  b.estHours=_estLaborHours();
-  b.estCrewSize=_estCrew.length||1;
-  b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
-  b.scopeNoScope=_geiScopeNoScope||false;
-  const _termsEl=document.getElementById('byo-custom-terms');
-  if(_termsEl)b.byoCustomTerms=_termsEl.value;
   const {total}=calcGeiTotal();
   if(total>0){
     b.amount=total;
-    b.deposit=Math.round(total*_geiDepositPct()/100);
+    b.deposit=_byoDepositState(total).amt;
   }
   if(_geiIsTM){
     b.isTM=true;
@@ -3501,10 +3461,7 @@ function _hasEmployees(){return !!(typeof S!=='undefined'&&Array.isArray(S.emplo
 // Median of the contractor's own recorded hours for a scope (from past job debriefs), or null.
 function _scopeHistoryHrs(id){
   const h=(typeof S!=='undefined'&&S.scopeHistory&&S.scopeHistory[id])||[];
-  const vals=h.map(x=>x&&x.hrs).filter(v=>typeof v==='number'&&v>0).sort((a,b)=>a-b);
-  if(!vals.length)return null;
-  const m=Math.floor(vals.length/2);
-  return vals.length%2?vals[m]:(vals[m-1]+vals[m])/2;
+  return _median(h.map(x=>x&&x.hrs).filter(v=>typeof v==='number'&&v>0));
 }
 // Estimated crew hours for this bid, derived automatically from the selected scope:
 // the contractor's own debrief history first, then the crowdsourced benchmark median.
@@ -3580,10 +3537,6 @@ function _empNextJob(emp){
     return String(j.assignedTo)===eid||inCrew;
   }).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
   return upcoming[0]||null;
-}
-function _shortDate(d){
-  if(!d)return'';
-  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return d;}
 }
 // Loaded hourly rate (wage × payroll burden) for one employee email, from the pay-rate cache.
 function _empLoadedFor(email){
@@ -3768,10 +3721,12 @@ function _bidValidDaysLeft(b){
   if(isNaN(z))return null;
   return Math.round((z-a)/86400000);
 }
+// The app's one date stamp (fmtDateMDY, js/utils.js), and blank for anything
+// that is not a real day rather than echoing it back.
 function _fmtValidUntil(key){
   if(!_isDateKey(key))return'';
-  const d=new Date(String(key)+'T12:00');
-  return isNaN(d)?'':d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const s=fmtDateMDY(String(key));
+  return /^\d{2}\/\d{2}\/\d{4}$/.test(s)?s:'';
 }
 function _ownerLoadedHourly(){
   if(typeof _empLoadedHourly!=='function')return 0;
@@ -3886,7 +3841,7 @@ function _crewRateWords(){
   return _estCrew.map(email=>{
     const first=_crewFirst(email);
     const r=_billRateFor(email);
-    return first+(r>0?(' at $'+r.toLocaleString()):'');
+    return first+(r>0?(' at '+fmt(r,{short:true})):'');
   }).join(', ');
 }
 // ── WHO'S GOING (owner 2026-09-29) ──────────────────────────────────────────
@@ -3945,13 +3900,13 @@ function _tmRenderWho(){
       const r=_billRateFor(k),need=!(r>0),first=_crewFirst(k);
       html+='<label class="ios-row tm-who-rate"><span class="ios-lbl">'+escHtml(first)+
           (need?'<small class="qi-need-lbl">Needs a rate</small>':'')+'</span>'+
-        '<span class="ios-val qi-rate'+(need?' need':'')+'">$<input type="text" inputmode="decimal" value="'+(r>0?r:'')+'" placeholder="Rate?" '+
+        '<span class="ios-val qi-rate'+(need?' need':'')+'">$<input type="text" data-num="rate" inputmode="decimal" value="'+(r>0?r:'')+'" placeholder="Rate?" '+
           'aria-label="What '+escHtml(first)+' bills per hour" onchange="_tmWhoRate(this,'+escHtml(JSON.stringify(k))+')">/hr</span></label>';
     });
     const n=_estCrew.length;
     const miss=_tmCrewMissing().length;
     html+='<div class="ios-row tm-who-sum"><span class="ios-lbl">'+n+' '+(n>1?'people':'person')+(miss?'<small>Not counting '+escHtml(_tmCrewMissing().map(_crewFirst).join(', '))+' yet</small>':'')+'</span>'+
-      '<span class="ios-val">$'+_crewHourlyBill().toLocaleString('en-US')+'/hr</span></div>';
+      '<span class="ios-val">'+fmt(_crewHourlyBill(),{short:true})+'/hr</span></div>';
   }
   w.innerHTML=html;
 }
@@ -3975,10 +3930,10 @@ function _tmPayAttention(){
 function _tmPaySummary(){
   const parts=[];
   const dep=_tmLayers.has('dep')?(typeof _tmDeposit==='function'?_tmDeposit():0):0;
-  parts.push(dep>0?('$'+dep.toLocaleString('en-US')+' deposit'):'No deposit');
+  parts.push(dep>0?(fmt(dep,{short:true})+' deposit'):'No deposit');
   if(_tmLayers.has('rate'))parts.push(_tmBillingCycle?_tmBillWords(_tmBillingCycle):'billing not picked');
   const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
-  const sub=cap>0?('The most it can cost: $'+cap.toLocaleString('en-US')):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
+  const sub=cap>0?('The most it can cost: '+fmt(cap,{short:true})):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
   return {main:parts.join(', '),sub};
 }
 function _tmRenderPay(){
@@ -4044,10 +3999,10 @@ function _crewRatesHtml(emps){
     html+='<div style="padding:7px 0;border-top:1px solid var(--border);min-width:0;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(first)+
         (e.role?'<span style="display:block;font-size:10px;font-weight:500;color:var(--text3)">'+escHtml(e.role)+'</span>':'')+
       '</div>'+
-      '<div style="'+cell+';font-size:12px;color:var(--text3)">'+(canSeeCost&&loaded>0?('$'+(Math.round(loaded*100)/100)):'')+'</div>'+
+      '<div style="'+cell+';font-size:12px;color:var(--text3)">'+(canSeeCost&&loaded>0?('$'+(_cents(loaded))):'')+'</div>'+
       '<div style="'+cell+'">'+
         '<span style="display:inline-flex;align-items:center;height:30px;padding:0 4px 0 8px;border-radius:var(--r-sm);background:var(--bg);box-shadow:0 0 0 1px var(--border2);font-size:13px;font-weight:700;color:var(--text)">$'+
-        '<input type="text" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
+        '<input type="text" data-num="rate" inputmode="decimal" value="'+(bill>0?bill:'')+'" placeholder="'+(_tmRatePerMan>0?_tmRatePerMan:'0')+'" '+
           'aria-label="What '+escHtml(first)+' bills per hour" '+
           'onchange="_onBillRateInput(this,'+escHtml(JSON.stringify(email))+')" '+
           'style="width:44px;height:44px;margin:-7px 0;border:0;background:none;padding:0 4px;font-family:inherit;font-size:13px;font-weight:700;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">'+
@@ -4064,11 +4019,11 @@ function _crewRatesHtml(emps){
     html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:0 0 8px">'+
       '<span style="min-width:0">'+
         '<span style="display:block;font-size:12px;font-weight:600;color:var(--text)">'+
-          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+'$'+perHr.toLocaleString()+' an hour</span>'+
-        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is $'+day.toLocaleString()+'.'+
-          (canSeeCost&&cost>0?(' Costs you $'+cost.toLocaleString()+'.'):'')+'</span>'+
+          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+fmt(perHr,{short:true})+' an hour</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is '+fmt(day,{short:true})+'.'+
+          (canSeeCost&&cost>0?(' Costs you '+fmt(cost,{short:true})+'.'):'')+'</span>'+
       '</span>'+
-      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">$'+perHr.toLocaleString()+
+      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">'+fmt(perHr,{short:true})+
         '<span style="font-size:11px;font-weight:600;color:var(--text3)">/hr</span></span>'+
     '</div>';
   }
@@ -4114,8 +4069,8 @@ function _renderLaborPicker(type){
     const star=i===0&&t.count>0?svgIcon('★',{size:11})+' ':''; // top-ranked, proven crew
     const jobsTag=t.count>0?'<span style="opacity:.6;font-weight:600"> · '+t.count+'</span>':'';
     const nj=_empNextJob(e);
-    const bookedTag=nj?'<span style="opacity:.75;font-weight:600;color:#B45309"> · '+_shortDate(nj.start)+'</span>':'';
-    const titleTxt=t.count+' jobs · '+fmt(t.dollars)+' lifetime'+(nj?' · Booked '+_shortDate(nj.start):'· Available');
+    const bookedTag=nj?'<span style="opacity:.75;font-weight:600;color:#B45309"> · '+fmtDateMDY(nj.start)+'</span>':'';
+    const titleTxt=t.count+' jobs · '+fmt(t.dollars)+' lifetime'+(nj?' · Booked '+fmtDateMDY(nj.start):'· Available');
     const borderColor=on?'#A32D2D':nj?'#D97706':'var(--border2)';
     const bgColor=on?'#FEF2F2':nj?'#FFFBEB':'var(--bg)';
     const textColor=on?'#A32D2D':nj?'#92400E':'var(--text2)';
@@ -4142,7 +4097,7 @@ function _renderLaborPicker(type){
       : '<span style="color:var(--c-amber)">Add their pay on the Team page to see what they cost you.</span>';
   }else{
     const ppl=_estCrew.length;
-    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
+    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+fmtDateMDY(_empNextJob(e).start)).join(' · ')+'</div>':'';
     body='<span style="color:#A32D2D;font-weight:800;font-size:14px">− '+fmt(cost)+'</span>'+
       '<span style="color:var(--text3)"> crew pay, benefits in · '+ppl+' '+(ppl>1?'people':'person')+' · about '+hrs+' hrs</span>'+conflictNote;
   }
@@ -4261,7 +4216,7 @@ function _updateMarginGauge(type,total){
     if(dot){dot.style.left=pos+'%';dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';}
   }
   const profit=total-cost;
-  const profitFmt='$'+Math.round(profit).toLocaleString('en-US');
+  const profitFmt=fmt(Math.round(profit),{short:true});
   const dollarsEl=document.getElementById(type+'-gauge-dollars');
   if(pct){pct.textContent=margin+'%';pct.style.color=color;}
   if(dollarsEl){dollarsEl.textContent=profitFmt+' profit';dollarsEl.style.color=color==='#22C55E'?'var(--text3)':color;}
@@ -4289,6 +4244,21 @@ function _geiTaxLineType(l){
   if(sec&&sec!=='add-ons'&&!/^rrp\b/.test(sec))return 'labor';
   return null;
 }
+// THE CUSTOMER'S TAX RATE, FROM THE HOUSE'S ADDRESS (audit 2026-10-01: the
+// proposal and the invoice each looked it up). Resolves to the database rate
+// (zip, county or state) or null: no address to go on, no lookup loaded, or
+// only the hardcoded base rate, which is never shown as his customer's rate.
+// Never rejects.
+async function _docTaxRateFor(addr){
+  addr=String(addr||'').trim();
+  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
+  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
+  if((!zip&&!state)||typeof lookupSalesTaxRate!=='function')return null;
+  try{
+    const r=await lookupSalesTaxRate(zip||'',state||(typeof S!=='undefined'&&S&&S.state)||'KS');
+    return (r&&r.source&&r.source!=='hardcoded')?r:null;
+  }catch(_e){return null;}
+}
 // SALES TAX, ONE ANSWER FOR EVERY DOCUMENT (owner 2026-10-01: "tax logic from
 // proposal carry over"). Build Your Own, T&M and the invoice all ask this.
 // lines: [{desc,total,lineType}] with lineType from _geiTaxLineType (or
@@ -4298,13 +4268,13 @@ function _geiTaxLineType(l){
 function _docSalesTax(o){
   o=o||{};
   const addr=String(o.addr||'');
-  const state=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)||(typeof S!=='undefined'&&S&&S.state)||'KS';
+  const state=_stateOf(addr);
   const rate=(o.rateObj!=null)?(Number(o.rateObj.rate)||0):(parseFloat(typeof S!=='undefined'&&S&&S.salesTaxRate)||0);
   const scope=o.scope||'repair';
   const out={tax:0,rate,scope,treatment:null,label:''};
   if(!(rate>0)||typeof calcSalesTax!=='function')return out;
   const r=calcSalesTax({state,tradeType:o.trade||'general',scope,propertyType:o.commercial?'commercial':'residential',taxRate:rate,lineItems:o.lines||[]});
-  out.tax=Math.round((Number(r.taxAmount)||0)*100)/100;
+  out.tax=_cents(Number(r.taxAmount)||0);
   out.treatment=r.treatment||null;
   const t=out.treatment;
   if(out.tax>0){
@@ -4324,17 +4294,17 @@ function _docSalesTax(o){
 function _byoApplyJobPrice(lines){
   if(!(_byoJobPrice>0)||!lines.length)return;
   const priced=lines.reduce((s,l)=>s+(Number(l.total)||0),0);
-  const rest=Math.round((_byoJobPrice-priced)*100)/100;
+  const rest=_cents(_byoJobPrice-priced);
   if(!(rest>0))return;
   const work=lines.filter(l=>!l._supply&&!l._rrp);
   const c=work.find(l=>!(Number(l.total)>0))||work[0];
   if(!c)return;
-  c.rate=c.total=Math.round(((Number(c.total)||0)+rest)*100)/100;c._lump=true;
+  c.rate=c.total=_cents((Number(c.total)||0)+rest);c._lump=true;
 }
 function _byoPriceInput(el){
   _geiNumsTouched();
-  const v=(typeof _moneyVal==='function')?_moneyVal('byo-price-in'):parseFloat(String(el.value).replace(/[^0-9.]/g,''))||0;
-  _byoJobPrice=v>0?Math.round(v*100)/100:0;
+  const v=_numVal(el);
+  _byoJobPrice=v>0?_cents(v):0;
   _byoUpdateRail();_byoAutosave();
 }
 function _byoGoPrice(){
@@ -4356,26 +4326,26 @@ function _byoUpdateRail(){
   _byoApplyJobPrice(_geiLines);
   const sub=_geiLines.reduce((s,l)=>s+(Number(l.total)||0),0);
 
-  // Sales tax: the one shared answer (_docSalesTax).
+  // Sales tax: the proposal's own figure (calcGeiTotal), never a second
+  // _docSalesTax call with its own line totals and scope default, so the rail
+  // can never show a different tax than the proposal (audit 2026-10-01).
   const taxRow=document.getElementById('byo-rail-tax-row');
   const taxAmt=document.getElementById('byo-rail-tax-amt');
   const taxLbl=document.getElementById('byo-rail-tax-lbl');
-  const _st=sub>0?_docSalesTax({addr:document.getElementById('gei-addr')?.value||'',rateObj:_geiClientTaxRate,trade:_geiTrade||'general',
-    scope:_geiJobScope||'repair',commercial:_geiIsCommercial,lines:_geiLines.map(l=>({desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)}))}):{tax:0,label:''};
-  const salesTax=_st.tax;
+  const _gt=sub>0?calcGeiTotal():null;
+  const salesTax=_gt?(Number(_gt.salesTax)||0):0;
+  const taxLabel=_gt?(_gt.salesTaxLabel||''):'';
   if(taxRow&&taxAmt&&taxLbl){
-    if(_st.label){
-      taxLbl.textContent=_st.label;
-      taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(taxLabel){
+      taxLbl.textContent=taxLabel;
+      taxAmt.textContent=fmt(salesTax);
       taxRow.style.display='';
     }else taxRow.style.display='none';
   }
 
   const total=sub+salesTax;
-  const depPct=_geiDepositPct()/100;
-  const deposit=Math.round(total*depPct);
+  const deposit=_byoDepositState(total).amt;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   setT('byo-rail-sub',fmt(sub));
   setT('byo-rail-total',fmt(total));
   setT('byo-rail-deposit',fmt(deposit));
@@ -4412,10 +4382,7 @@ function _byaPriceValue(id){
   return parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
 }
 function _byoAddItem(sec){
-  document.getElementById('_byo-add-modal')?.remove();
-  const ov=document.createElement('div');ov.id='_byo-add-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
+  _byaSheet(
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">'+
       '<div style="font-weight:800;font-size:16px">Add to '+escHtml(sec)+'</div>'+
       '<div id="_bya-count" style="font-size:12px;font-weight:700;color:var(--text3)"></div>'+
@@ -4428,41 +4395,16 @@ function _byoAddItem(sec){
     '<div style="display:flex;gap:10px;margin-top:14px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1" id="_bya-close">Cancel</button>'+
       '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
-    '</div></div>';
-  document.body.appendChild(ov);
-  _byaBackdropGuard(ov);
+    '</div>');
   _byaDescHint();_byaLineMath();_byaLineMath();
   _byaRenderBook(sec);
   // The search is wired synchronously: the field exists the moment the sheet is
   // in the DOM, and a listener that only attaches 50ms later misses whatever he
   // typed in the meantime. Only the focus call needs to wait for the paint.
   document.getElementById('_bya-label')?.addEventListener('input',()=>_byaSuggest(sec));
-  setTimeout(()=>{
-    const labelEl=document.getElementById('_bya-label');
-    const priceEl=document.getElementById('_bya-price');
-    const notesEl=document.getElementById('_bya-notes');
-    if(labelEl)labelEl.focus();
-    if(notesEl){
-      // Enter makes a newline in notes; only Tab saves and advances. On a phone
-      // there is no Tab key, which is what the Add item button is for.
-      notesEl.addEventListener('keydown',e=>{
-        if(e.key==='Tab'&&!e.shiftKey){
-          e.preventDefault();
-          _byaConfirmAndNext(sec);
-        }
-      });
-    }
-    if(labelEl){
-      labelEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}
-      });
-    }
-    if(priceEl){
-      priceEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
-      });
-    }
-  },50);
+  // Enter makes a newline in notes; only Tab saves and advances. On a phone
+  // there is no Tab key, which is what the Add item button is for.
+  _byaSheetKeys(()=>_byaConfirmAndNext(sec));
 }
 // What he has charged before, at the top of the sheet, one tap each. This is
 // the whole answer to why a Build Your Own estimate cost ninety interactions
@@ -4577,7 +4519,7 @@ function _byaQtyRateHTML(qty,unit,rate,scope){
   return '<div class="f" style="margin-bottom:6px">'+
     '<label>How many, and what each</label>'+
     '<div style="display:flex;gap:8px;align-items:center">'+
-      '<input type="text" inputmode="decimal" id="_bya-qty" value="'+q+'" oninput="_byaLineMath()" aria-label="Quantity" '+
+      '<input type="text" data-num="dec" inputmode="decimal" id="_bya-qty" value="'+q+'" oninput="_byaLineMath()" aria-label="Quantity" '+
         'style="width:72px;flex-shrink:0;text-align:center;font-weight:700">'+
       '<select id="_bya-unit" onchange="_byaLineMath()" aria-label="Unit" style="width:104px;flex-shrink:0;font-family:inherit">'+
         list.map(u=>'<option value="'+escHtml(u)+'"'+(u===cur?' selected':'')+'>'+escHtml(u)+'</option>').join('')+
@@ -4596,7 +4538,7 @@ function _byaLineMath(){
   const r=_byaPriceValue('_bya-price');
   const u=document.getElementById('_bya-unit')?.value||'ea';
   if(!(q>1)||!(r>0)){el.textContent='';return;}
-  const t=_geiCents(q*r);
+  const t=_cents(q*r);
   el.textContent=q+' '+u+' × '+((typeof fmt==='function')?fmt(r):'$'+r)+' = '+((typeof fmt==='function')?fmt(t):'$'+t);
 }
 function _byaQtyValue(){const v=parseFloat((document.getElementById('_bya-qty')?.value||'').replace(/,/g,''));return (v>0)?v:1;}
@@ -4660,11 +4602,19 @@ function _byaBumpCount(){
   const close=document.getElementById('_bya-close');
   if(close)close.textContent='Done';
 }
+// THE SHEET'S FOUR FIELDS, read once (audit 2026-10-01: add, add-and-next and
+// edit each read them): the title spell-checked for the trade, the rate, the
+// quantity and unit, and the description.
+function _byaReadForm(){
+  return {
+    label:_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim()),
+    rate:_byaPriceValue('_bya-price'),
+    qty:_byaQtyValue(),unit:_byaUnitValue(),
+    notes:(document.getElementById('_bya-notes')?.value||'').trim(),
+  };
+}
 function _byaConfirm(sec){
-  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
-  const rate=_byaPriceValue('_bya-price');
-  const qty=_byaQtyValue(),unit=_byaUnitValue();
-  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
+  const {label,qty,unit,rate,notes}=_byaReadForm();
   if(!label)return;
   _matPut(sec,{label,qty,unit,rate,notes});
   // THE RATE, never the line total. Handing the book 12 doors' worth of money
@@ -4675,10 +4625,7 @@ function _byaConfirm(sec){
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
-  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
-  const rate=_byaPriceValue('_bya-price');
-  const qty=_byaQtyValue(),unit=_byaUnitValue();
-  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
+  const {label,qty,unit,rate,notes}=_byaReadForm();
   if(label){
     _matPut(sec,{label,qty,unit,rate,notes});
     _pbLearn(label,rate,unit,notes);
@@ -4691,10 +4638,7 @@ function _byoEditItem(idx){
   if(window._roomDragJustEnded&&Date.now()-window._roomDragJustEnded<400)return;
   // Read through the shared store so a T&M material line opens in this same sheet.
   const it=_matView(idx);if(!it)return;
-  document.getElementById('_byo-add-modal')?.remove();
-  const ov=document.createElement('div');ov.id='_byo-add-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
+  _byaSheet(
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">'+(_byaIsScopeLine(it)?'Edit this line':'Edit item')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Title <span style="font-weight:400;color:var(--text3)">, the client sees this</span></label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="'+escHtml(_byaExample(0))+'"></div>'+
     // A scope line prices the whole line: rate times quantity, as saved.
@@ -4710,10 +4654,25 @@ function _byoEditItem(idx){
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
-    '</div></div>';
+    '</div>');
+  _byaDescHint();
+  // Enter makes a newline in the notes textarea, Save changes button submits.
+  _byaSheetKeys(null);
+}
+// THE ADD/EDIT SHEET'S SHELL (audit 2026-10-01: add and edit each built it).
+// One sheet at a time, centered, with the tap-outside guard.
+function _byaSheet(html){
+  document.getElementById('_byo-add-modal')?.remove();
+  const ov=document.createElement('div');ov.id='_byo-add-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+String(html||'')+'</div>';
   document.body.appendChild(ov);
   _byaBackdropGuard(ov);
-  _byaDescHint();
+  return ov;
+}
+// The sheet's keys, once it has painted: the title takes focus, Enter walks
+// title to price to notes, and Tab in the notes runs onTab when there is one.
+function _byaSheetKeys(onTab){
   setTimeout(()=>{
     const labelEl=document.getElementById('_bya-label');
     const priceEl=document.getElementById('_bya-price');
@@ -4722,8 +4681,10 @@ function _byoEditItem(idx){
       labelEl.focus();
       labelEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}});
     }
-    if(priceEl){priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});}
-    // Enter makes a newline in the notes textarea, Save changes button submits.
+    if(priceEl)priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});
+    if(notesEl&&typeof onTab==='function'){
+      notesEl.addEventListener('keydown',e=>{if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();onTab();}});
+    }
   },50);
 }
 // A Build Your Own line (not a T&M material row) that is not required.
@@ -4732,10 +4693,7 @@ function _byaOnOffable(idx){
 }
 function _byaEditConfirm(idx){
   if(!_matView(idx))return;
-  const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
-  const rate=_byaPriceValue('_bya-price');
-  const qty=_byaQtyValue(),unit=_byaUnitValue();
-  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
+  const {label,qty,unit,rate,notes}=_byaReadForm();
   if(!label)return;
   const onEl=document.getElementById('_bya-on');
   if(onEl&&_byaOnOffable(idx))_byoItems[idx].on=!!onEl.checked;
@@ -5007,9 +4965,6 @@ function _tmLoad(b){
   }
   _tmWrote();
 }
-function _tmSaved(){
-  return _tmItems().map(r=>{const o={label:r.label,section:r.section,notes:r.notes||'',on:r.on!==false};if(r._written)o._written=true;return o;});
-}
 // Rooms on: more than one section in use, the rule both screens use.
 function _tmRoomsOn(){return new Set(_tmItems().map(r=>r.section)).size>1;}
 // Keep each room's lines together, rooms in the order they first appear, so
@@ -5046,6 +5001,18 @@ _ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename,edit:_tmEditStep};
 function _scopeKey(){return (typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm':'byo';}
 // The invoice's work list is a third list of the same records (js/quick-invoice.js).
 function _scopeArr(key){key=key||_scopeKey();return key==='tm'?_tmItems():key==='qi'?_qiWorkArr():_byoItems;}
+// THE RECORDS AS SAVED (audit 2026-10-01: T&M and the invoice each copied
+// this). o.named drops a row with no words on it; o.tim keeps what Tim wrote
+// (a draft only). Junk in, empty list out.
+function _scopeRowsSaved(rows,o){
+  o=o||{};
+  return (Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object'&&(!o.named||String(r.label||'').trim())).map(r=>{
+    const x={label:r.label,section:r.section,notes:r.notes||'',on:r.on!==false};
+    if(r._written)x._written=true;
+    if(o.tim&&r._tim)x._tim=r._tim;
+    return x;
+  });
+}
 function _scopeWork(arr){return (arr||[]).filter(x=>x&&!x._supply&&!x._rrp);}
 function _scopeNewRec(key,text,sec,price){return key==='byo'?_byoLineRec(text,sec,price):_tmRec(text,sec);}
 function _scopeCommit(key){
@@ -5076,7 +5043,7 @@ function _scopeTakeBuilt(key,built){
   (built.steps||[]).forEach(st=>{
     // T&M and the invoice's work list have no line price: a price he said
     // stays in the step's words.
-    const text=(key!=='byo'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    const text=(key!=='byo'&&st.price)?st.text+', '+fmt(Number(st.price),{short:true}):st.text;
     if(have.has(text.toLowerCase()))return;
     have.add(text.toLowerCase());
     // Painting keeps its own two, Interior and Exterior.
@@ -5364,7 +5331,6 @@ function _presentName(b){
   if(!b)return 'Proposal';
   return b.optionLabel?('Option '+b.optionLabel):(String(b.type||'Proposal').trim()||'Proposal');
 }
-function _presentMoney(n){return '$'+(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 // Entry point. Save first: from here on the client is reading it, and a number
 // on screen that is not the number on the record is the one mistake this whole
 // mode exists to avoid.
@@ -5381,15 +5347,11 @@ async function _geiPresent(){
 // The lines on an option RIGHT NOW. For the one he has open that means the
 // editor, not the record: he may have changed it thirty seconds ago and the
 // client is about to read it.
+// A rounded dollar figure in Tim's voice when he is loaded, else plain.
+const _geiRoundMoney=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):fmt(Math.round(v),{short:true});
 function _presentLines(b,cur){
   if(cur&&b&&b.id===cur.id){
-    const live=[];
-    if(typeof _byoItems!=='undefined'&&Array.isArray(_byoItems))_byoItems.forEach(it=>{
-      if(it&&it.on!==false&&!it._rrp&&it.label)live.push({label:String(it.label).trim(),unit:it.unit||'',rate:Number(it.rate)||0,notes:it.notes||''});
-    });
-    if(!live.length&&typeof _geiLines!=='undefined'&&Array.isArray(_geiLines))_geiLines.forEach(l=>{
-      if(l&&!l._tmLabor&&!l._rrp&&l.desc)live.push({label:String(l.desc).trim(),unit:l.unit||'',rate:Number(l.rate)||0,notes:l.notes||''});
-    });
+    const live=_pkgBidLines({byoItems:typeof _byoItems!=='undefined'?_byoItems:null,geiLines:typeof _geiLines!=='undefined'?_geiLines:null});
     if(live.length)return live;
   }
   return _pkgBidLines(b);
@@ -5424,8 +5386,7 @@ function _presentUnique(b,list,cur){
 function _presentDeposit(b,me,total){
   if(me){
     if(_geiIsTM)return _tmDeposit();
-    const pct=(typeof _geiDepositPct==='function')?_geiDepositPct():0;
-    return pct>0?Math.round(total*pct/100*100)/100:0;
+    return _byoDepositState(total).amt;
   }
   return Number(b&&b.deposit)||0;
 }
@@ -5467,8 +5428,8 @@ function _presentChooser(list){
         '<div style="font-size:15px;font-weight:700;color:#1B1612;line-height:1.3;margin-top:4px;min-height:2.6em;padding-right:24px;overflow-wrap:anywhere">'+escHtml(head||'')+'</div>'+
         // tabular-nums is load-bearing: three prices in a row with proportional
         // digits do not line up at their commas and the comparison reads sloppy.
-        '<div style="font-size:38px;font-weight:800;color:#1B1612;letter-spacing:-1.5px;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums">'+_presentMoney(amt)+'</div>'+
-        (dep>0?'<div style="font-size:11.5px;color:#6B6355;margin-top:6px;font-variant-numeric:tabular-nums">'+_presentMoney(dep)+' to get started</div>':'')+
+        '<div style="font-size:38px;font-weight:800;color:#1B1612;letter-spacing:-1.5px;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums">'+fmt(amt,{whole:true})+'</div>'+
+        (dep>0?'<div style="font-size:11.5px;color:#6B6355;margin-top:6px;font-variant-numeric:tabular-nums">'+fmt(dep,{whole:true})+' to get started</div>':'')+
       '</div>'+
       (rows
         ?'<div style="padding:14px 16px 0"><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:'+accent+';margin-bottom:8px">'+(list.length>1&&shared.length?'What this adds':'Includes')+'</div>'+
@@ -5565,7 +5526,7 @@ function _openComparisonPicker(){
   const rows=clientBids.map((b,i)=>{
     const total=b.amount||0;
     const label=b.type||('Proposal '+(i+1));
-    return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
+    return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">${fmt(total,{short:true})} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
   box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 proposals, your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
@@ -5577,7 +5538,6 @@ function _buildComparisonPreview(){
   const bidA=bids.find(x=>x.id===checked[0]);
   const bidB=bids.find(x=>x.id===checked[1]);
   if(!bidA||!bidB){showToast('Proposals not found','⚠️');return;}
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
     const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
     const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5;overflow-wrap:anywhere"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
@@ -5639,7 +5599,7 @@ function _tmInputChange(){
     : (crewRates
       // Never names: the customer reads "2 techs", not who they are
       // (owner 2026-09-29). The names are his, on the rail.
-      ? ('Labor: '+_estCrew.length+' tech'+(_estCrew.length>1?'s':'')+' · $'+perHour.toLocaleString()+'/hr on site')
+      ? ('Labor: '+_estCrew.length+' tech'+(_estCrew.length>1?'s':'')+' · '+fmt(perHour,{short:true})+'/hr on site')
       : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
   const line=_hideRate
     ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
@@ -5649,28 +5609,28 @@ function _tmInputChange(){
   // Stat tiles
   const dayRate=perHour*8;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
-  setT('tm-stat-day','$'+dayRate.toLocaleString());
+  setT('tm-stat-day',fmt(dayRate,{short:true}));
   setT('tm-stat-day-s',perHour>0?(crewRates?_estCrew.length+'-person crew · 8hr day · their own rates':_tmCrewCount+'-person crew · 8hr day'):'enter rate & crew');
-  setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × $'+perHour.toLocaleString()+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
+  setT('tm-stat-labor',fmt(labor,{short:true}));
+  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × '+fmt(perHour,{short:true})+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
   setT('tm-stat-days',_tmEstHours);
   // Materials subtotal, shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
   const total=labor+matRaw;
   // Rail breakdown
-  setT('tm-rail-total','$'+total.toLocaleString());
-  setT('tm-rail-labor','$'+labor.toLocaleString());
-  setT('tm-rail-mat','$'+matRaw.toLocaleString());
+  setT('tm-rail-total',fmt(total,{short:true}));
+  setT('tm-rail-labor',fmt(labor,{short:true}));
+  setT('tm-rail-mat',fmt(matRaw,{short:true}));
   // The rate head, which is what a rate sheet's rail says instead of a total.
-  setT('tm-rail-rate','$'+perHour.toLocaleString());
+  setT('tm-rail-rate',fmt(perHour,{short:true}));
   const _rateEl=document.getElementById('tm-rail-rate');
-  if(_rateEl)_rateEl.innerHTML='$'+perHour.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
-  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?'$'+_tmRatePerMan.toLocaleString()+' per worker, '+_tmCrewCount+' on site':'per worker'));
+  if(_rateEl)_rateEl.innerHTML=fmt(perHour,{short:true})+'<span style="font-size:18px;font-weight:700">/hr</span>';
+  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?fmt(_tmRatePerMan,{short:true})+' per worker, '+_tmCrewCount+' on site':'per worker'));
   setT('tm-rail-rate-crew',String(crewRates?_estCrew.length:_tmCrewCount));
-  setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
-  setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
+  setT('tm-rail-rate-day',fmt(dayRate,{short:true}));
+  setT('tm-rail-rate-mat',matRaw>0?fmt(matRaw,{short:true})+' est.':'at cost');
   const _tmDepNow=_tmDeposit();
-  setT('tm-rail-balance','$'+Math.max(0,total-_tmDepNow).toLocaleString());
+  setT('tm-rail-balance',fmt(Math.max(0,total-_tmDepNow),{short:true}));
   let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
   // PENNSYLVANIA SETS THE CEILING, SO HE DOES NOT. js/legal.js: the estimate,
@@ -5699,13 +5659,13 @@ function _tmInputChange(){
   // the app arguing with him about arithmetic it is not doing.
   if(nteInp&&!_tmRateOnly&&nte>0&&nte<total){
     nteInp.style.borderColor='var(--red)';
-    nteInp.title='NTE cap cannot be less than the estimated total ($'+total.toLocaleString()+')';
+    nteInp.title='NTE cap cannot be less than the estimated total ('+fmt(total,{short:true})+')';
   } else if(nteInp){nteInp.style.borderColor='';nteInp.title='';}
   const nteRow=document.getElementById('tm-rail-nte-row');
   // Not shown on T&M (2026-09-23): the Billing row directly above it already
   // says the most it can cost, with the figure typed into it.
   if(nteRow)nteRow.style.display='none';
-  if(nte>0)setT('tm-rail-nte-amt','$'+nte.toLocaleString());
+  if(nte>0)setT('tm-rail-nte-amt',fmt(nte,{short:true}));
   // Mirror values to legacy DOM ids so saveGenericEstimate/sendGenericProposal pick them up
   const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
   setV('tm-rate',_tmRatePerMan);
@@ -5794,26 +5754,19 @@ function _tmRenderMoneyRows(n){
   // which belong on the proposal and the tax documents where precision is a
   // legal matter. This rail is neither, and ".00" three times is just noise on
   // three figures he is glancing at.
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const money=_geiRoundMoney;
   const target=_MARGIN_BANDS.target;
   const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
 
   const billSub=n.perHour>0&&n.hours>0
-    ? ('$'+Number(n.perHour).toLocaleString()+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
+    ? (fmt(Number(n.perHour),{short:true})+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
     : 'labor and materials on this proposal';
   const costBits=[];
   if(n.pay>0)costBits.push('their pay '+money(n.pay));
   if(n.materials>0)costBits.push('materials '+money(n.materials));
   if(n.drive>0)costBits.push('driving '+money(n.drive));
 
-  const row=(label,sub,value,strong)=>
-    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
-      '<span style="min-width:0">'+
-        '<span style="display:block;font-size:12.5px;font-weight:'+(strong?'700':'600')+';color:var(--text)">'+label+'</span>'+
-        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub)+'</span>'+
-      '</span>'+
-      '<span style="font-size:'+(strong?'17px':'15px')+';font-weight:700;color:'+(strong?colour:'var(--text)')+';font-variant-numeric:tabular-nums;letter-spacing:-.2px;flex-shrink:0">'+value+'</span>'+
-    '</div>';
+  const row=_tmMoneyRow;
 
   el.innerHTML=
     '<div style="display:flex;align-items:center;gap:7px;padding:0 0 10px">'+
@@ -5822,7 +5775,7 @@ function _tmRenderMoneyRows(n){
     '</div>'+
     row('You bill',billSub,money(bill),false)+
     row('It costs you',costBits.join(' · ')||'what this job takes',money(cost),false)+
-    row('You keep',cents+' cents on the dollar at these rates',money(keep),true)+
+    row('You keep',cents+' cents on the dollar at these rates',money(keep),true,colour)+
     '<div style="height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:8px">'+
       '<div style="width:'+cents+'%;height:100%;background:'+colour+'"></div>'+
     '</div>'+
@@ -5833,19 +5786,24 @@ function _tmRenderMoneyRows(n){
     '</div>'+
     '<div class="summary-divider"></div>';
 }
-// The rate-sheet version of the rows above: one hour, and the parts.
-function _tmMoneyPerHourHtml(n){
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
-  const perHour=Number(n.perHour)||0,hourCost=Number(n.hourCost)||0;
-  const matBill=Number(n.matBill)||0,matCost=Number(n.materials)||0,markup=Math.round(matBill-matCost);
-  const row=(label,sub,value,strong,colour)=>
-    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
+// ONE ROW OF HIS FIGURES (audit 2026-10-01: the job view and the rate-sheet
+// view each carried this template). label is trusted markup from the callers
+// above; sub is escaped. strong is the bottom line; colour paints its value.
+function _tmMoneyRow(label,sub,value,strong,colour){
+  return '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:'+(strong?'9px 0 10px':'0 0 9px')+';'+(strong?'':'border-bottom:1px solid var(--border)')+'">'+
       '<span style="min-width:0">'+
         '<span style="display:block;font-size:12.5px;font-weight:'+(strong?'700':'600')+';color:var(--text)">'+label+'</span>'+
-        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub)+'</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">'+escHtml(sub==null?'':String(sub))+'</span>'+
       '</span>'+
       '<span style="font-size:'+(strong?'17px':'15px')+';font-weight:700;color:'+(colour||'var(--text)')+';font-variant-numeric:tabular-nums;letter-spacing:-.2px;flex-shrink:0">'+value+'</span>'+
     '</div>';
+}
+// The rate-sheet version of the rows above: one hour, and the parts.
+function _tmMoneyPerHourHtml(n){
+  const money=_geiRoundMoney;
+  const perHour=Number(n.perHour)||0,hourCost=Number(n.hourCost)||0;
+  const matBill=Number(n.matBill)||0,matCost=Number(n.materials)||0,markup=Math.round(matBill-matCost);
+  const row=_tmMoneyRow;
   let rows='';
   if(hourCost>0){
     const keep=perHour-hourCost;
@@ -5916,8 +5874,7 @@ Object.defineProperty(window,'_tmLayers',{get:()=>_tmLayers,set:v=>{_tmLayers=(v
 // Read off the JOB address, not his own: he may work across a line.
 function _tmStateRule(){
   const addr=(typeof _geiSiteAddr==='function')?_geiSiteAddr():'';
-  const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)
-    ||(typeof S!=='undefined'&&S.state)||'';
+  const st=_stateOf(addr,{fallback:''});
   const r=(typeof statePriceRule==='function')?statePriceRule(st):{rule:'none'};
   // EVERY ONE OF THESE IS A HOME IMPROVEMENT STATUTE (B&P 7159, HICPA, the
   // Illinois Home Repair and Remodeling Act, MGL 142A and the rest). A
@@ -6028,7 +5985,7 @@ function _tmLegal(){
   else if(D.over&&(D.overCap&&!(D.applies&&D.max<D.cap)))
     out.problems.push({k:'dep',say:'The money up front is more than the most this job can cost.',fix:'Lower the deposit.'});
   else if(D.over)
-    out.problems.push({k:'dep',say:dname+' allows a deposit of up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.',
+    out.problems.push({k:'dep',say:dname+' allows a deposit of up to '+fmt(Math.floor(D.max),{short:true})+' here.',
       fix:'Lower the deposit.',law:D.law.statute||''});
   return out;
 }
@@ -6181,7 +6138,6 @@ function _tmFold(id,label,value){
 
 // What each one says when it is folded. Only ever what he actually put in it.
 function _tmFoldAll(){
-  const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
   const rate=Number(_tmRatePerMan)||0;
   const crew=Math.max(1,Number(_tmCrewCount)||1);
   // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside
@@ -6363,11 +6319,11 @@ function _tmShape(){
   // a ceiling. Only a figure in the box does, and only a figure goes on the
   // contract, so the sentence reads the same thing the contract does.
   const cap=(L.has('cap')&&typeof _tmCapVal==='function')?_tmCapVal():0;
-  const capWords=cap>0?('never more than $'+cap.toLocaleString('en-US')):'';
+  const capWords=cap>0?('never more than '+fmt(cap,{short:true})):'';
   // The figure, not the switch: an Up front row set to Amount and left empty
   // asks for nothing (_tmDepositState).
   const depAmt=(typeof _tmDeposit==='function')?_tmDeposit():0;
-  const depWords=depAmt>0?('$'+depAmt.toLocaleString('en-US')+' up front'):'';
+  const depWords=depAmt>0?(fmt(depAmt,{short:true})+' up front'):'';
   if(!L.has('rate')&&!L.has('mat')&&!(cap>0)){
     // The one nobody believes is finished. It usually is.
     return {head:'Scope only, no price',
@@ -6457,7 +6413,7 @@ function _tmSteps(){
       value:_tmScopeDone()?'Written above':'Nothing yet',
       why:'Say what you will do, up at the top. That part is the proposal.'},
     {k:'rate',label:'Your rate',done:rateOn,act:rateOn?null:'rate',req:locked.has('rate'),
-      value:rateOn?('$'+Number(_tmRatePerMan).toLocaleString()+'/hr each'):'Not set',
+      value:rateOn?(fmt(Number(_tmRatePerMan),{short:true})+'/hr each'):'Not set',
       why:locked.has('rate')
         ?sname+' requires your hourly rate on a time and materials contract.'
         :'The one term a time and materials contract actually has, and what Tim invoices the clocked hours at.'},
@@ -6473,7 +6429,7 @@ function _tmSteps(){
   // The reason this row got reordered. Whether it is the NEXT thing is decided
   // below, not here: a ceiling is not the next move while there is no rate.
   out.push({k:'cap',label:'The most it can cost',done:capOn,act:capOn||rule.capOverEst?null:'cap',req:capLocked,
-    value:capOn?('$'+_tmCapVal().toLocaleString()):(capLocked?'Required here':'None'),
+    value:capOn?(fmt(_tmCapVal(),{short:true})):(capLocked?'Required here':'None'),
     why:rule.capOverEst
       ?sname+' sets this for you: your estimate plus ten percent. It fills in on its own.'
       :capLocked
@@ -6542,7 +6498,7 @@ function _tmRenderAddRow(rule,locked){
   // A rate no tradesman charges is a slipped thumb, not a price. Said on the
   // row, never blocking: a specialist may mean it (2026-09-23).
   {const r=Number(_tmRatePerMan)||0,el=document.getElementById('tm-lbl-rate');
-   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">$'+r.toLocaleString('en-US')+' an hour. Check it.</small>');}
+   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">'+fmt(r,{short:true})+' an hour. Check it.</small>');}
   // The Billing group's footnote: what the customer will get, in plain words,
   // and what happens at the most it can cost when there is one.
   const foot=document.getElementById('tm-nte-sub');
@@ -6616,7 +6572,7 @@ function _tmStepsState(all){
   const need=legal.length?legal[0].fix.replace(/\.$/,'')
     :!rateOk?'Put in your rate':!estOk?'Say how many days':'';
   const s2=two
-    ?(L.has('rate')?(crewOn?(_estCrew.length+' '+(_estCrew.length>1?'people':'person')+' · $'+_crewHourlyBill().toLocaleString('en-US')+'/hr'):('$'+rate.toLocaleString('en-US')+'/hr')):'No price, scope only')
+    ?(L.has('rate')?(crewOn?(_estCrew.length+' '+(_estCrew.length>1?'people':'person')+' · '+fmt(_crewHourlyBill(),{short:true})+'/hr'):(fmt(rate,{short:true})+'/hr')):'No price, scope only')
     :(crewOn&&L.has('rate')&&_tmCrewMissing().length?(_crewFirst(_tmCrewMissing()[0])+' needs a rate'):need);
   return {one,two,s1,s2};
 }
@@ -6632,17 +6588,24 @@ function _noteRowHtml(o){
     (o.open?'<textarea id="'+o.id+'" class="ios-say" rows="4" placeholder="'+escHtml(o.placeholder||'')+'" oninput="'+o.input+'">'+escHtml(o.value||'')+'</textarea>':'')+
   '</div><div class="ios-foot">Printed on the '+o.on+', word for word, with your name.</div>';
 }
-function _tmRenderNote(){
-  const host=document.getElementById('tm-sec-note');if(!host)return;
-  host.innerHTML=_noteRowHtml({open:host.dataset.open==='1',value:_geiNote,toggle:'_tmNoteToggle()',input:'_geiNote=this.value;_byoAutosave()',
-    id:'tm-note',on:'proposal',placeholder:'e.g. I appreciate your trust in us and look forward to the work.'});
+// THE NOTE ROW, for Build Your Own and T&M alike (one row, one look, audit
+// 2026-10-01). pre is the screen (byo / tm): the section is <pre>-sec-note,
+// the box <pre>-note.
+function _docNoteHtml(pre,open){
+  return _noteRowHtml({open:!!open,value:_geiNote,toggle:'_docNoteToggle(\''+pre+'\')',input:'_geiNote=this.value;_byoAutosave()',
+    id:pre+'-note',on:'proposal',placeholder:'e.g. I appreciate your trust in us and look forward to the work.'});
 }
-function _tmNoteToggle(){
-  const host=document.getElementById('tm-sec-note');if(!host)return;
+function _docNoteRender(pre){
+  const host=document.getElementById(pre+'-sec-note');if(!host)return;
+  host.innerHTML=_docNoteHtml(pre,host.dataset.open==='1');
+}
+function _docNoteToggle(pre){
+  const host=document.getElementById(pre+'-sec-note');if(!host)return;
   host.dataset.open=host.dataset.open==='1'?'0':'1';
-  _tmRenderNote();
-  if(host.dataset.open==='1')document.getElementById('tm-note')?.focus();
+  _docNoteRender(pre);
+  if(host.dataset.open==='1')document.getElementById(pre+'-note')?.focus();
 }
+function _tmRenderNote(){_docNoteRender('tm');}
 function _tmRenderSteps(all,rule){
   if(!document.activeElement||document.activeElement.id!=='tm-note')_tmRenderNote();
   const st=_tmStepsState(all);
@@ -6682,7 +6645,7 @@ function _tmRenderSteps(all,rule){
 // is still one place.
 function _tmDockNext(st,rule,all){
   if(rule.rule==='block')return {label:'Make it a fixed price',fn:'_tmToFixedPrice()'};
-  if(!st.one)return {label:'Write it up',fn:'_tmDockBuild()'};
+  if(!st.one)return {label:'Write it up',fn:"_docDockBuild('gei-scope-say',function(){_geiScopeBuild('tm-scope-wrap');})"};
   if(!st.two){
     if(_tmCrewOn()&&_tmLayers.has('rate')&&_tmCrewMissing().length)
       return {label:'Add '+_crewFirst(_tmCrewMissing()[0])+'\'s rate',fn:'_tmStepAct(\'rate\')'};
@@ -6709,7 +6672,7 @@ function _tmDockNext(st,rule,all){
   // The hour as it bills: the crew's rates added up when he picked a crew.
   const r=_tmHourlyBill()||0,c=_tmCrewOn()?_estCrew.length:(_tmCrewCount||1);
   const nums=_geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
-    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+    yes:'Yes: '+fmt(r,{short:true})+'/hr, '+c+' '+(c>1?'people':'person')});
   if(nums)return nums;
   // When he bills: asked, never assumed (owner 2026-09-29).
   if(_tmLayers.has('rate')&&!_tmBillingCycle)return {label:'Pick when you bill',fn:'_tmPickBilling()'};
@@ -6792,14 +6755,6 @@ function _tmMarkRateChecked(){_geiNumsMark();}
 function _tmTouchedRate(){_geiNumsTouched();}
 function _tmCheckRate(){_geiNumsGo('tm-blk-rate');}
 function _tmGoTimAsks(){_geiGoTimAsks();}
-function _tmDockBuild(){
-  const el=document.getElementById('gei-scope-say');
-  if(el&&String(el.value||'').trim()){_geiScopeBuild('tm-scope-wrap');return;}
-  // Nothing in the box: say so, and put him in it. A button that does
-  // nothing visible gets tapped five more times and then thrown.
-  if(el){try{el.scrollIntoView({block:'center'});}catch(_e){}try{el.focus();}catch(_e){}}
-  if(typeof showToast==='function')showToast('Type or say the job in the box first','✏️',2600);
-}
 // A BUTTON THAT CHANGES UNDER HIS THUMB WAITS A MOMENT. Earl tapped Build the
 // steps twice because the first one "didn't take". The first tap built them,
 // his rate was already in, the same button became Send it, and the second tap
@@ -6893,7 +6848,7 @@ function _tmRenderBillTerms(){
     let t='',law=false;
     if(D.needCap){t=sname+' limits it to a share of the price. Put in the most it can cost first.';law=true;}
     else if(D.over&&D.overCap&&!(D.applies&&D.max<D.cap)){t='More than the most it can cost.';law=true;}
-    else if(D.over){t=sname+' allows up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.';law=true;}
+    else if(D.over){t=sname+' allows up to '+fmt(Math.floor(D.max),{short:true})+' here.';law=true;}
     else if(D.pctOfCap!=null)t=D.pctOfCap+'% of the most it can cost'+(lim?'. '+lim+'.':'.');
     else if(D.amt>0)t='For materials and getting started.';
     else t=lim?lim+'.':'For materials and getting started.';
@@ -6902,7 +6857,7 @@ function _tmRenderBillTerms(){
   // What the rate switch means, in words, with his figure in it.
   const rs=document.getElementById('tm-show-rate-sub');
   if(rs){
-    const r=Number(_tmRatePerMan)||0,f='$'+r.toLocaleString('en-US');
+    const r=Number(_tmRatePerMan)||0,f=fmt(r,{short:true});
     const shown=!(_tmHideRate&&_tmCanHideRate());
     // WHERE it shows, said plainly: the rate is never printed on the proposal
     // page itself (owner, 2026-09-17: "hourly rate never gets exposed to the
@@ -6910,7 +6865,7 @@ function _tmRenderBillTerms(){
     // contract they sign.
     const cr=_tmCrewOn()?_crewHourlyBill():0;
     rs.textContent=(shown&&cr>0)
-      ?('They agree to $'+cr.toLocaleString('en-US')+' an hour for the crew. It is in the contract they sign.')
+      ?('They agree to '+fmt(cr,{short:true})+' an hour for the crew. It is in the contract they sign.')
       :shown
       ?(r>0?'They agree to '+f+' an hour per worker. It is in the contract they sign.':'They agree to your hourly rate in the contract they sign.')
       :(r>0?'Hidden from them. You still bill '+f+' an hour.':'Hidden from them. You still bill your hourly rate.');
@@ -7013,7 +6968,7 @@ function _geiRenderFreeFormBuilder(){
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Recently used, '+curTrade.charAt(0).toUpperCase()+curTrade.slice(1)+'</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
-      hist.map((h,i)=>{const realIdx=allHist.findIndex(x=>x.desc===h.desc&&x.trade===h.trade);return'<button onclick="_geiHistoryChipAdd('+realIdx+')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'+escHtml(h.desc)+'<span style="color:var(--blue);font-weight:700">$'+(h.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</span></button>';}).join('')+
+      hist.map((h,i)=>{const realIdx=allHist.findIndex(x=>x.desc===h.desc&&x.trade===h.trade);return'<button onclick="_geiHistoryChipAdd('+realIdx+')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'+escHtml(h.desc)+'<span style="color:var(--blue);font-weight:700">'+fmt((h.rate||0),{whole:true})+'</span></button>';}).join('')+
       '</div></div>':'';
   const hasLines=_geiLines.length>0;
   el.innerHTML=
@@ -7031,11 +6986,11 @@ function _geiRenderFreeFormLines(){
   if(!_geiLines.length){el.innerHTML='';return;}
   el.innerHTML=_geiLines.map((l,i)=>{
     const total=(l.qty||1)*(l.rate||0);
-    const totalFmt='$'+total.toLocaleString('en-US',{maximumFractionDigits:0});
+    const totalFmt=fmt(total,{whole:true});
     return'<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2);padding:11px 13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(l.desc||'-')+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ $'+(l.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ '+fmt((l.rate||0),{whole:true})+'</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
         '<div style="font-size:15px;font-weight:800;color:var(--blue)">'+totalFmt+'</div>'+
@@ -7064,13 +7019,13 @@ function _geiAddFreeFormLine(prefill){
         '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint, 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
-        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" inputmode="decimal" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="text" data-num="dec" inputmode="decimal" value="'+(d.qty||1)+'" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
         '<div class="f"><label>Unit</label><input id="_ffa-unit" type="text" value="'+escHtml(d.unit||'ea')+'" placeholder="ea" style="font-size:14px"></div>'+
-        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="number" inputmode="decimal" value="'+(d.rate||'')+'" min="0" step="any" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="text" data-num="rate" inputmode="decimal" value="'+(d.rate||'')+'" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
-        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'-')+'</span>'+
+        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?fmt(((d.qty||1)*(d.rate||0)),{whole:true}):'-')+'</span>'+
       '</div>'+
       '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to proposal')+'</button>'+
       '<button class="btn" onclick="document.getElementById(\'_ff-add-ov\')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>'+
@@ -7080,17 +7035,17 @@ function _geiAddFreeFormLine(prefill){
   setTimeout(()=>document.getElementById('_ffa-desc')?.focus(),100);
 }
 function _ffaLiveTotal(){
-  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||0;
-  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  const qty=_numVal('_ffa-qty')||0;
+  const rate=_numVal('_ffa-rate');
   const el=document.getElementById('_ffa-total-disp');
-  if(el)el.textContent=(qty&&rate)?'$'+(qty*rate).toLocaleString('en-US',{maximumFractionDigits:0}):'-';
+  if(el)el.textContent=(qty&&rate)?fmt((qty*rate),{whole:true}):'-';
 }
 function _geiConfirmFreeFormAdd(editIdx){
   const desc=(document.getElementById('_ffa-desc')?.value||'').trim();
   if(!desc){const inp=document.getElementById('_ffa-desc');if(inp){inp.style.borderColor='#dc2626';inp.focus();}return;}
-  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||1;
+  const qty=_numVal('_ffa-qty')||1;
   const unit=(document.getElementById('_ffa-unit')?.value||'ea').trim();
-  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  const rate=_numVal('_ffa-rate');
   document.getElementById('_ff-add-ov')?.remove();
   const line={desc,qty,unit,rate,total:qty*rate};
   if(editIdx>=0&&editIdx<_geiLines.length)_geiLines[editIdx]=line;
@@ -7161,10 +7116,13 @@ function _geiJobPrice(job){
 }
 
 function _geiAddWithRate(job,inputEl){
-  const entered=parseInt(inputEl?.value)||0;
+  const entered=Math.trunc(_numVal(inputEl));
   const p=_geiJobPrice(job);
   const marketTotal=p.labor+(p.mat||0);
-  if(entered!==marketTotal&&entered>0){
+  // His number wins, on THIS add too (audit 2026-10-01: the price used to be
+  // worked out before his rate was saved, so the first add ignored it).
+  const mine=entered>0&&entered!==marketTotal;
+  if(mine){
     S.myRates=S.myRates||{};
     S.myRates[job.id]={labor:entered,mat:0};
     _settingsChanged();
@@ -7172,19 +7130,29 @@ function _geiAddWithRate(job,inputEl){
   }
   if(job.gasLic)showToast('Gas work, verify you\'re licensed for gas in your state','⚠️');
   if(job.freeForm){_geiShowFreeFormModal(job);return;}
-  const rate=entered||marketTotal;
-  if(job.custom){
-    const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
-    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
-    if(!raw)return;
-    const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    _geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
-    if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:p.mat,total:qty*p.mat});
-  } else {
-    if(p.labor>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:p.labor,total:p.labor,jobId:job.id});
-    if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:p.mat,total:p.mat});
-  }
-  renderGeiLines();calcGeiTotal();
+  if(mine)_geiPushJobLines(job,entered,0,job.id);
+  else _geiPushJobLines(job,Math.round(p.labor),p.mat,job.id);
+}
+// THE ONE TRADE-TEMPLATE ADD (audit 2026-10-01: _geiAddWithRate and
+// _geiAddTemplate each carried this). A per-unit job asks how many first; the
+// rest add one of each. `jobId` tags the labor line so a rate typed on it later
+// is learned (_geiRateBlur); the plain template add leaves it off, as before.
+function _geiPushJobLines(job,labor,mat,jobId){
+  if(!job||typeof job!=='object')return;
+  labor=Number(labor)||0;mat=Number(mat)||0;
+  const push=qty=>{
+    if(labor>0){const l={desc:job.name+', labor',qty,unit:job.unit,rate:labor,total:qty*labor};if(jobId)l.jobId=jobId;_geiLines.push(l);}
+    if(mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:mat,total:qty*mat});
+    renderGeiLines();calcGeiTotal();
+  };
+  if(!job.custom){push(1);return;}
+  const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
+  // A number-only prompt (zPrompt num), not the browser's prompt(), which
+  // took letters and looked nothing like the app.
+  zPrompt('Enter '+unitLabel,raw=>{
+    const qty=parseFloat(String(raw||'').replace(/,/g,''));if(!qty||isNaN(qty))return;
+    push(qty);
+  },{title:job.name,num:'dec'});
 }
 
 // The "Set up your services" gate is DELETED (owner 2026-09-06: "any trade
@@ -7239,7 +7207,7 @@ function _geiOpenCatSheet(catLabel){
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
         <span style="font-size:12px;color:var(--text3)">$</span>
-        <input type="number" inputmode="decimal" id="${inputId}" value="${defaultTotal}" min="0" step="any"
+        <input type="text" data-num="rate" inputmode="decimal" id="${inputId}" value="${defaultTotal}"
           style="width:74px;padding:5px 4px;border-radius:var(--r);${inputBorder};font-size:14px;font-weight:800;${inputColor};text-align:right;background:var(--bg);font-family:inherit"
           onclick="event.stopPropagation()">
         <button onclick="_geiAddWithRate(${JSON.stringify(job).replace(/"/g,'&quot;')},document.getElementById('${inputId}'));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
@@ -7277,7 +7245,7 @@ function _geiRenderCartBar(){
   const _lift=()=>{if(typeof timDockRefresh==='function')timDockRefresh();};
   if(!n||_geiStep!==2){bar.style.display='none';_lift();return;}
   bar.style.display='flex';
-  bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">$${sub.toLocaleString('en-US',{maximumFractionDigits:0})} · Review →</span>`;
+  bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">${fmt(sub,{whole:true})} · Review →</span>`;
   _lift();
 }
 
@@ -7317,7 +7285,7 @@ function _geiRenderTemplates(){
     const makeChip=job=>{
       const p=_geiJobPrice(job);
       const total=p.labor+(p.mat||0);
-      const priceStr=job.custom?`$${total}/${job.unit}`:`$${total.toLocaleString()}`;
+      const priceStr=job.custom?`$${total}/${job.unit}`:`${fmt(total,{short:true})}`;
       const safeJob=escHtml(JSON.stringify(job));
       return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));_geiRenderCartBar()" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:var(--text3)">${priceStr}</span></button>`;
     };
@@ -7353,13 +7321,16 @@ function _geiToggleFacts(){
   _geiFactsOpen=!_geiFactsOpen;
   _geiSyncJobTypeButtons();
 }
-function _geiRenderFactsLine(){
-  const txt=document.getElementById('gei-facts-text');
-  const card=document.getElementById('gei-facts-card');
-  const chev=document.getElementById('gei-facts-chev');
-  if(txt)txt.textContent=_geiFactsLine();
-  if(card)card.style.display=_geiFactsOpen?'':'none';
-  if(chev)chev.textContent=_geiFactsOpen?'Done':'Change';
+function _geiRenderFactsLine(){_geiFoldPaint('gei-facts',_geiFactsLine(),_geiFactsOpen);}
+// ONE LINE THAT OPENS INTO ITS CONTROLS (audit 2026-10-01: the facts line and
+// the who/where line each painted their own). <prefix>-text is the line,
+// <prefix>-card (or -fields) the controls behind it, <prefix>-chev the button.
+function _geiFoldPaint(prefix,text,open){
+  const g=k=>document.getElementById(prefix+'-'+k);
+  const txt=g('text'),card=g('card')||g('fields'),chev=g('chev');
+  if(txt)txt.textContent=text==null?'':String(text);
+  if(card)card.style.display=open?'':'none';
+  if(chev)chev.textContent=open?'Done':'Change';
 }
 
 // Who it is for, where, and when: one line he reads, not three fields he fills.
@@ -7379,17 +7350,10 @@ function _geiJobLineText(){
   if(addr)parts.push(addr);
   if(!parts.length)return 'Add who this is for';
   const d=v('gei-date');
-  if(d&&typeof todayKey==='function'&&d!==todayKey()&&typeof _shortDate==='function')parts.push(_shortDate(d));
+  if(d&&typeof todayKey==='function'&&d!==todayKey()&&typeof fmtDateMDY==='function')parts.push(fmtDateMDY(d));
   return parts.join(' \u00b7 ');
 }
-function _geiRenderJobLine(){
-  const txt=document.getElementById('gei-job-text');
-  const card=document.getElementById('gei-job-fields');
-  const chev=document.getElementById('gei-job-chev');
-  if(txt)txt.textContent=_geiJobLineText();
-  if(card)card.style.display=_geiJobOpen?'':'none';
-  if(chev)chev.textContent=_geiJobOpen?'Done':'Change';
-}
+function _geiRenderJobLine(){_geiFoldPaint('gei-job',_geiJobLineText(),_geiJobOpen);}
 // What the proposal is called, derived from the work he already described.
 // Contractors do not name documents: every competitor identifies a quote by
 // number + customer, and a "Name your proposal" box just makes him type the
@@ -7454,15 +7418,19 @@ function _geiSyncJobTypeButtons(){
     btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
     btn.style.color=on?'var(--blue-dk)':'var(--text2)';
   });
-  const noteEl=document.getElementById('gei-jtype-note');
-  if(!noteEl)return;
+  _geiTaxCertNote(document.getElementById('gei-jtype-note'));
+}
+// THE TAX CERTIFICATE NOTE under the job-type buttons (audit 2026-10-01: both
+// button rows drew their own copy). New construction in a state that needs a
+// certificate says which form; any other choice clears the note.
+function _geiTaxCertNote(el){
+  if(!el)return;
   if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
-    const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
-    const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required: client must sign before work begins.':'New construction: no tax';
-    noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
+    const t=getJobTaxTreatment(_stateOf(document.getElementById('gei-addr')?.value||''),_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
+    el.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required: client must sign before work begins.':'New construction: no tax';
+    el.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else {
-    noteEl.textContent='';
+    el.textContent='';
   }
 }
 
@@ -7482,15 +7450,7 @@ function _geiSyncJobScopeButtons(){
     btn.style.color=active?'var(--blue-dk)':'var(--text2)';
   });
   // Show certificate note if improvement + state requires cert
-  const noteEl=document.getElementById('gei-jscope-note');
-  if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
-    const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
-    const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required: client must sign before work begins.':'New construction: no tax';
-    noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
-  } else if(noteEl){
-    noteEl.textContent='';
-  }
+  _geiTaxCertNote(document.getElementById('gei-jscope-note'));
 }
 
 function _geiToggleEmergency(){
@@ -7507,19 +7467,7 @@ function _geiToggleEmergency(){
 function _geiAddTemplate(job){
   if(job.gasLic)showToast('Gas work, verify you\'re licensed for gas in your state','⚠️');
   if(job.freeForm){_geiShowFreeFormModal(job);return;}
-  const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-  if(job.custom){
-    const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
-    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
-    if(!raw)return;
-    const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
-    if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:job.mat,total:qty*job.mat});
-  } else {
-    if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
-    if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:job.mat,total:job.mat});
-  }
-  renderGeiLines();calcGeiTotal();
+  _geiPushJobLines(job,_geiEmergency?Math.round(job.labor*1.5):job.labor,job.mat);
 }
 
 function _geiShowFreeFormModal(job){
@@ -7537,12 +7485,12 @@ function _geiShowFreeFormModal(job){
         <input id="_ff-model" type="text" placeholder="${escHtml(job.freeFormLabel||'e.g. Mitsubishi MSZ-GL09NA')}" style="font-size:14px" autocomplete="off">
       </div>
       ${isCustomQty?`<div class="fg fg2" style="margin-bottom:10px">
-        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="number" inputmode="decimal" value="1" min="0.1" step="any" style="font-size:14px"></div>
+        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="text" data-num="dec" inputmode="decimal" value="1" style="font-size:14px"></div>
         <div></div>
       </div>`:''}
       <div class="fg fg2" style="margin-bottom:14px">
-        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" inputmode="decimal" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
-        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" inputmode="decimal" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
+        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="text" data-num="rate" inputmode="decimal" value="${laborRate}" style="font-size:14px"></div>
+        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="text" data-num="rate" inputmode="decimal" value="${job.mat}" style="font-size:14px"></div>`:'<div></div>'}
       </div>
       <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to proposal</button>
       <button class="btn" onclick="document.getElementById('_gei-ff-ov')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>
@@ -7553,9 +7501,9 @@ function _geiShowFreeFormModal(job){
 
 function _geiConfirmFreeForm(job){
   const model=(document.getElementById('_ff-model')?.value||'').trim();
-  const laborRate=parseFloat(document.getElementById('_ff-labor')?.value)||0;
-  const matRate=parseFloat(document.getElementById('_ff-mat')?.value)||0;
-  const qty=parseFloat(document.getElementById('_ff-qty')?.value)||1;
+  const laborRate=_numVal('_ff-labor');
+  const matRate=_numVal('_ff-mat');
+  const qty=_numVal('_ff-qty')||1;
   document.getElementById('_gei-ff-ov')?.remove();
   const modelTag=model?', '+model:'';
   if(laborRate>0)_geiLines.push({desc:job.name+modelTag+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
@@ -7752,10 +7700,7 @@ function _pbLearnFromJob(bid,hours){
 }
 // Median of what it took, null until it has been measured at least once.
 function _pbHrs(entry){
-  const vals=((entry&&entry.h)||[]).filter(v=>typeof v==='number'&&v>0).sort((a,b)=>a-b);
-  if(!vals.length)return null;
-  const m=Math.floor(vals.length/2);
-  return vals.length%2?vals[m]:(vals[m-1]+vals[m])/2;
+  return _median(((entry&&entry.h)||[]).filter(v=>typeof v==='number'&&v>0));
 }
 // The bid's own priced lines, one shape for BYO items and generic lines, so
 // the hours math and the coverage note both read the same list.
@@ -7786,7 +7731,7 @@ function renderGeiLines(){
   }
   el.innerHTML=_geiLines.map((l,i)=>{
     const total=((l.qty||1)*(l.rate||0));
-    const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const totalFmt=fmt(total,{whole:true});
     const isLabor=l._tmLabor;
     return `<div style="background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);padding:13px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">
@@ -7796,7 +7741,7 @@ function renderGeiLines(){
       <div style="display:grid;grid-template-columns:60px 50px 1fr 90px;gap:8px;align-items:end">
         <div>
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Qty</div>
-          <input type="number" value="${l.qty||1}" min="0" step="any" inputmode="decimal" ${isLabor?'readonly':''}
+          <input type="text" data-num="dec" inputmode="decimal" value="${l.qty||1}" ${isLabor?'readonly':''}
             oninput="_geiLines[${i}].qty=parseFloat(this.value)||1;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((parseFloat(this.value)||1)*(${l.rate||0})).toLocaleString('en-US',{maximumFractionDigits:0})"
             style="width:100%;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;text-align:center;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box;${isLabor?'opacity:.7;':''}">
         </div>
@@ -7807,8 +7752,8 @@ function renderGeiLines(){
         </div>
         <div>
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Rate ($)</div>
-          <input type="number" value="${l.rate||''}" min="0" step="any" inputmode="decimal" ${isLabor?'readonly':''}
-            oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*(parseFloat(this.value)||0)).toLocaleString('en-US',{maximumFractionDigits:0})"
+          <input type="text" data-num="rate" inputmode="decimal" value="${l.rate||''}" ${isLabor?'readonly':''}
+            oninput="_geiLines[${i}].rate=_numVal(this);calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent=fmt((${l.qty||1})*_numVal(this),{whole:true})"
             onblur="_geiRateBlur(${i},this.value)" placeholder="0"
             style="width:100%;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;text-align:right;background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box;${isLabor?'opacity:.7;':''}">
         </div>
@@ -7854,7 +7799,7 @@ function _geiRateBlur(i,val){
   if(!job)return;
   const p=_geiJobPrice(job);
   const market=p.labor+(p.mat||0);
-  const entered=parseInt(val)||0;
+  const entered=parseInt(String(val||'').replace(/,/g,''))||0;
   if(entered>0&&entered!==market){
     S.myRates=S.myRates||{};S.myRates[line.jobId]={labor:entered,mat:0};_settingsChanged();showToast('Rate saved','💾');
   }
@@ -7904,7 +7849,7 @@ function _panelRenderSection(){
     const phaseOpts=['L1','L2','2pole'].map(p=>`<option value="${p}"${c.phase===p?' selected':''}>${p==='2pole'?'2-pole':p}</option>`).join('');
     rows+=`<div style="${rowStyle}">
       <input type="text" value="${escHtml(c.desc||'')}" oninput="_panelSched.circuits[${i}].desc=this.value" placeholder="e.g. Kitchen outlets" style="padding:6px 7px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
-      <input type="number" value="${c.amps||''}" min="1" max="400" step="1" oninput="_panelSched.circuits[${i}].amps=+this.value;_panelSched.circuits[${i}].gauge=_panelSched.circuits[${i}].gauge||_panelAutoGauge(+this.value);_panelRenderSection()" placeholder="20" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
+      <input type="text" data-num="int" inputmode="numeric" maxlength="3" value="${c.amps||''}" oninput="_panelSched.circuits[${i}].amps=+this.value;_panelSched.circuits[${i}].gauge=_panelSched.circuits[${i}].gauge||_panelAutoGauge(+this.value);_panelRenderSection()" placeholder="20" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
       <select oninput="_panelSched.circuits[${i}].phase=this.value;_panelRenderSection()" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">${phaseOpts}</select>
       <input type="text" value="${escHtml(c.gauge||'')}" oninput="_panelSched.circuits[${i}].gauge=this.value" placeholder="12 AWG" style="padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:11px;background:var(--bg2);color:var(--text3);width:100%;box-sizing:border-box">
       <label style="display:flex;align-items:center;justify-content:center;cursor:pointer"><input type="checkbox" ${c.afci?'checked':''} onchange="_panelSched.circuits[${i}].afci=this.checked" style="width:16px;height:16px;cursor:pointer"></label>
@@ -7970,7 +7915,7 @@ function _panelPrint(){
   const circuits=_panelSched.circuits||[];
   const client=document.getElementById('gei-client')?.value||'';
   const addr=document.getElementById('gei-addr')?.value||'';
-  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const dateStr=fmtDateMDY(new Date());
   const biz=S.bname||getBusinessName()||'';
   const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance, rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
@@ -8030,7 +7975,6 @@ function calcGeiTotal(){
   const salesTax=_st.tax,_stRate=_st.rate;
 
   const total=sub+markup+salesTax;
-  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('gei-subtotal',fmt(sub));set('gei-tax-amt',fmt(markup));set('gei-total',fmt(total));
 
@@ -8065,7 +8009,7 @@ function calcGeiTotal(){
 
   // Margin on pre-tax revenue: sub + markup but not salesTax (pass-through to government).
   _updateMarginGauge('gei',sub+markup);
-  return{sub,tax:markup+salesTax,markup,salesTax,total};
+  return{sub,tax:markup+salesTax,markup,salesTax,salesTaxLabel:_st.label||'',total};
 }
 
 // When an estimate is saved at an address the client doesn't have on file yet
@@ -8119,38 +8063,25 @@ function saveGenericEstimate(draft,opts){
     tmDepositPct:0,
     tmDepositAmt:_tmFlatDep,
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
-    tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
+    tmNteCap:_tmNteFromNew||_numVal('tm-nte-cap'),
   }:{isTM:false};
-  let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_geiDepositPct()/100);
-  // State max-deposit cap (home-improvement compliance). Parse state from client
-  // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
+  // The deposit and its state limit come from _byoDepositState, the same
+  // answer the screen shows, so a business job (no deposit law) is never
+  // capped on save while the screen says it is fine (audit 2026-10-01).
   // T&M is measured against its ceiling by _tmLegal and refused at Send and
   // Sign, with the fix, rather than quietly cut here; a draft may hold a
   // figure he is still deciding on.
-  if(!_geiIsTM&&typeof _maxDeposit==='function'){
-    // stateFromAddr (js/legal.js), the same reader the price rule uses, so the
-    // deposit cap and the T&M rule can never be read off two different states.
-    const _depState=(typeof stateFromAddr==='function'?stateFromAddr(v('gei-addr')||''):null)||(typeof S!=='undefined'&&S.state)||'KS';
-    // A rate sheet's contract price is 0 by design, and _maxDeposit ends in
-    // Math.min(cap, amount), so running it here would clamp every mobilization
-    // deposit to nothing. _maxDepositNoTotal applies the arm that can still be
-    // evaluated without a price (the flat dollar ceiling) and nothing else.
-    const _depMax=(_geiIsTM&&_tmRateOnly&&typeof _maxDepositNoTotal==='function')
-      ?_maxDepositNoTotal(_depState)
-      :_maxDeposit(_depState,total);
-    if(_deposit>_depMax+0.005){
-      _deposit=Math.round(_depMax*100)/100;
-      if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
+  let _deposit=_tmFields.tmDepositAmt||0;
+  if(!_geiIsTM){
+    const D=_byoDepositState(total);
+    _deposit=D.amt;
+    if(D.over){
+      _deposit=_cents(D.max);
       if(typeof showToast==='function'&&typeof _depositCapNote==='function'){
-        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+', '+_depositCapNote(_depState),'⚠️',6000);
+        showToast('Deposit capped to '+fmt(_deposit)+', '+_depositCapNote(D.st),'⚠️',6000);
       }
     }
   }
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(trade);
-  // Extract BYO field values before object literals, Safari fails to parse ?.?? inside spread conditionals
-  const _byoTermsEl=document.getElementById('byo-custom-terms');
-  const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
-  const _byoSecsSave=[..._byoCustomSections];
   // What went out, against what Tim made (js/tim-log.js timLogKept). Only a
   // real save: a draft is still being fixed, and the fixing is the lesson.
   if(!draft&&_geiEditBidId!=null&&typeof timLogKept==='function'){
@@ -8168,23 +8099,12 @@ function saveGenericEstimate(draft,opts){
       // mutating: the transition from stub to real content is the "wrote a
       // proposal" moment the "new bid" branch's lcProposalSaved can never fire.
       const _wasEmpty=_geiDraftIsEmpty(b);
-      b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';b.descUserSet=!!_geiDescUserSet;
+      Object.assign(b,_geiContentFields());
+      b.amount=total;
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
-      b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
-      b.scopeNoScope=_geiScopeNoScope||false;
-      // The promise, stamped on the deliberate save too, not only on autosave
-      // (_byoAutosave). Relying on an autosave having happened first is how a
-      // bid reaches a job with nothing to measure it against.
-      b.estHours=_estLaborHours();
-      b.estCrew=[..._estCrew];
-  b.estCrewRates=Object.assign({},_estCrewRates);
-      b.estCrewSize=_estCrew.length||1;
-      b.exclusions=[..._geiExclusions];
-      if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
-      if(_geiIsFreeForm){b.byoCustomSections=_byoSecsSave;b.byoCustomTerms=_byoTermsSave;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
@@ -8199,18 +8119,12 @@ function saveGenericEstimate(draft,opts){
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
       amount:total,deposit:_deposit,
-      type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',descUserSet:!!_geiDescUserSet,
+      ..._geiContentFields(),
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiScanId?{scanId:_geiScanId}:{}),
-      ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
-      ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
-      scopeChips:[..._geiScopeChips],scopeItems:_geiIsTM?_tmSaved():undefined,
-      scopeNoScope:_geiScopeNoScope||false,
-      estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
-      exclusions:[..._geiExclusions],
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
@@ -8245,8 +8159,8 @@ function _geiBuildTermsHtml(){
   // his terms; with no name set they say "Contractor".
   const bname=S.bname||((typeof _account!=='undefined'&&_account&&_account.business_name)||'');
   const _party=bname||'Contractor';
-  const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
+  const _stateKey=_stateOf(v('gei-addr'));
+  const _tmNteCap=_numVal('tm-nte-cap');
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
   const _warrantyPeriod=S?.warrantyPeriod||'1 year';
@@ -8295,10 +8209,10 @@ function _geiBuildTermsHtml(){
   // across a state line cannot arrive with a required term missing.
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
     (_tmCrewOn()&&_crewHourlyBill()>0
-      ?`Labor is billed at $${_crewHourlyBill().toLocaleString()} per hour for the crew on site, ${_estCrew.length} tech${_estCrew.length>1?'s':''}, for time worked on this project. Crew size may change with Buyer&apos;s knowledge; each tech added or removed changes the hourly figure by that tech&apos;s rate.`
-      :`Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.`)+`${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+      ?`Labor is billed at ${fmt(_crewHourlyBill(),{short:true})} per hour for the crew on site, ${_estCrew.length} tech${_estCrew.length>1?'s':''}, for time worked on this project. Crew size may change with Buyer&apos;s knowledge; each tech added or removed changes the hourly figure by that tech&apos;s rate.`
+      :`Labor is billed at ${fmt((Number(_tmRatePerMan)||0),{short:true})} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.`)+`${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed ${fmt(_tmNteCap,{short:true})}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
     // Time sheets, not receipts: receipts never go on a bill (owner,
@@ -8644,10 +8558,11 @@ function _propLogoFields(){
   const url=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
   return {logoUrl:url,logoData:url?'':(S.logoData||''),brandColor:(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor)||''};
 }
+// The logo to draw: the stored copy when it is current, else the one on the
+// phone (_propLogoFields decides which is current, audit 2026-10-01).
 function _propLogoSrc(){
-  if(typeof S==='undefined'||!S)return '';
-  const cur=(typeof _hubHash==='function'&&S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'';
-  return cur||S.logoData||'';
+  const f=_propLogoFields();
+  return f.logoUrl||f.logoData||'';
 }
 // Dates the way a letter writes them: "Sep 23, 2026". Accepts mm/dd/yyyy or
 // a date key; anything else passes through untouched.
@@ -8856,7 +8771,7 @@ async function sendGenericProposal(previewOnly,opts){
   const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'-';
   const _geiNow=new Date();
-  const dateStr=_geiNow.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const dateStr=fmtDateMDY(_geiNow);
   // The price-hold date is decided ONCE, here, and written onto the bid before
   // the document is built, so the printed date, the snapshot the client signs,
   // the portal chip and the dashboard all read the same stamp (see
@@ -8868,17 +8783,17 @@ async function sendGenericProposal(previewOnly,opts){
     :((_bidForValid&&_bidForValid.validUntil)||addDays(todayKey(),_estValidDays()));
   if(!previewOnly&&_bidForValid&&(_geiValidDays>0||!_bidForValid.validUntil))_bidForValid.validUntil=_validUntilKey;
   const _geiExpD=_fmtValidUntil(_validUntilKey);
-  const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const totalFmt=fmt(total);
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
   // T&M: the flat figure or nothing (_tmDepositState), never a percent.
-  const _tmDepAmt=_geiIsTM?_tmDeposit():Math.round(total*_tmDepPct)/100;
-  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
-  const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const _tmDepAmt=_geiIsTM?_tmDeposit():_byoDepositState(total).amt;
+  const _tmNteCap=_numVal('tm-nte-cap');
+  const depositFmt=fmt(_tmDepAmt);
   // MUST be declared before the template literals below that use it, TDZ if declared after
   // Use the client's job address state, not the contractor's home state
-  const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
+  const _stateKey=_stateOf(v('gei-addr'));
   // Proposal accent, uses the contractor's own S.brandColor (set in Settings →
   // Branding) when present, same hex→rgb→lighter-shade treatment as the sign-in
   // boot overlay, so a branded account's proposal actually looks like THEIRS
@@ -8919,7 +8834,7 @@ async function sendGenericProposal(previewOnly,opts){
   // rush that takes more crew, raise it too, by the same signed change order.
   const _tmCapFineTxt='Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.';
   const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
-  const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const _rsMoney=n=>fmt(Number(n||0),{whole:true});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:15px 24px;font-size:14px;font-weight:500;border-top:1px solid #eceef2">${lbl}</td><td style="padding:15px 24px;text-align:right;font-size:14.5px;font-weight:700;white-space:nowrap;border-top:1px solid #eceef2">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle]||'Billing not picked yet';
   const _rsFlatDep=_tmDeposit();
@@ -9108,7 +9023,7 @@ async function sendGenericProposal(previewOnly,opts){
               <div style="font-size:12px;font-weight:800;color:${_me?_pAccent:'#4a5568'}">${escHtml(_nm)}${_me?' <span style="font-weight:700;font-size:10px;color:#718096">, this one</span>':(_u?' <span style="font-weight:700;font-size:10px;color:'+_pAccent+'">, read it →</span>':'')}</div>
               ${_hd?`<div style="font-size:10.5px;color:#718096;margin-top:1px;overflow-wrap:anywhere">${escHtml(_hd)}</div>`:''}
             </div>
-            <div style="font-size:14px;font-weight:800;color:#111;white-space:nowrap">${'$'+_amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            <div style="font-size:14px;font-weight:800;color:#111;white-space:nowrap">${fmt(_amt)}</div>
           </div>`;
         const _box=`display:flex;padding:9px 12px;border-radius:8px;margin-bottom:6px;background:${_me?'#EBF2FB':'#f8fafc'};border:1.5px solid ${_me?_pAccent:'#e2e8f0'}`;
         return _u
@@ -9158,7 +9073,7 @@ async function sendGenericProposal(previewOnly,opts){
         // into an evening of back and forth: the answer has to be a tap that
         // lands them on that option's own document, where they can sign it.
         const _u=_geiSignUrlFor(x);
-        const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
+        const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${fmt(_amt,{whole:true})})</span>`:''} also includes`;
         return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
       }).filter(Boolean).join('');
       if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
@@ -9248,7 +9163,7 @@ async function sendGenericProposal(previewOnly,opts){
       if(!rl.length||!r.label)return;
       const col=_pal[_legend.length%_pal.length];
       _fills[gi]=col;
-      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · $'+Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)).toLocaleString('en-US')+'</span>');
+      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · '+fmt(Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)),{short:true})+'</span>');
     });
     const _sts=(typeof _scanStories==='function')?_scanStories(_sc):[1];
     const _plans=_sts.map(st=>
@@ -9328,14 +9243,12 @@ async function sendGenericProposal(previewOnly,opts){
     lienStatute:(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_stateKey])?STATE_LIEN[_stateKey].statute:'applicable mechanic\'s lien statutes',
     yearBuilt:_geiYearBuilt,
     epaRequired:_geiEpaRequired,
-    rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
-    rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
-    rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    ..._rrpCerts(),
     bwebsite:S.bwebsite||'',
     baddr:S.baddr||'',
     poweredBy:S.poweredBy!==false,
   };
-  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
+  const _uploadRes=await _tdStoreDoc(proposalKey,proposalData);
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed, check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
@@ -9454,11 +9367,11 @@ function _renderIndModal(){
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Add Equipment Pieces</div>'+
     '<div style="display:grid;grid-template-columns:1fr 60px auto;gap:8px;align-items:center;margin-bottom:6px">'+
       '<select id="ind-type-sel" onchange="_indTypeChange()" style="padding:9px 8px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">'+typeOpts+'</select>'+
-      '<input id="ind-qty" type="number" value="1" min="1" max="99" style="padding:9px 6px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;text-align:center">'+
+      '<input id="ind-qty" type="text" data-num="int" inputmode="numeric" maxlength="2" value="1" style="padding:9px 6px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;text-align:center">'+
       '<button onclick="_addIndPiece()" style="padding:9px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Add</button>'+
     '</div>'+
     '<div id="ind-custom-sqft-row" style="display:none;margin-bottom:8px">'+
-      '<input id="ind-custom-sqft" type="number" placeholder="Enter square footage for this piece" min="1" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit">'+
+      '<input id="ind-custom-sqft" type="text" data-num="dec" inputmode="decimal" placeholder="Enter square footage for this piece" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit">'+
     '</div>'+
     '<div id="ind-pieces-list" style="margin-bottom:14px"></div>'+
     '<div id="ind-result-card"></div>'+
@@ -9516,10 +9429,15 @@ function _indAiSuggest(){
 }
 function _addIndFromSuggest(typeKey){
   const typ=IND_EQUIP_TYPES[typeKey];if(!typ)return;
-  let sqft=typ.sqft;
-  if(!sqft){sqft=parseInt(prompt('Square footage for '+typ.name+' (estimate OK):')||'0');if(!sqft)return;}
-  _indPieces.push({typeKey,qty:1,sqft,name:typ.name,lift:typ.lift,note:typ.note});
-  _renderIndPieces();_renderIndResult();
+  const add=sqft=>{
+    _indPieces.push({typeKey,qty:1,sqft,name:typ.name,lift:typ.lift,note:typ.note});
+    _renderIndPieces();_renderIndResult();
+  };
+  if(typ.sqft){add(typ.sqft);return;}
+  zPrompt('An estimate is OK.',raw=>{
+    const sqft=parseInt(String(raw||'').replace(/,/g,''))||0;if(!sqft)return;
+    add(sqft);
+  },{title:'Square footage for '+typ.name,num:'int'});
 }
 function _indTypeChange(){
   const sel=document.getElementById('ind-type-sel');if(!sel)return;
@@ -9630,7 +9548,7 @@ function _saveIndBid(silent){
   const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
   const bidData={
     id:_indBidId||_newBidId(),client_id:_indClientId,client_name:c?.name||'',
-    bid_date:todayKey(),amount:midPrice,deposit:Math.round(midPrice*0.25),
+    bid_date:todayKey(),amount:midPrice,deposit:Math.round(midPrice*_geiDepositDefault()/100),
     type:'Industrial Equipment Coating',trade_type:'painting',status:'Pending',draft:true,
     notes,indPieces:_indPieces,indTier:_indTier,indResult:r,
     indColor:color,indPrimerColor:primerColor,indFinish:finish,indColorNotes:colorNotes,
@@ -9656,12 +9574,15 @@ async function _sendIndProposal(){
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
   const clientName=escHtml(c?.name||'');const clientAddr=escHtml(c?.addr||'');
-  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const dateStr=fmtDateMDY(new Date());
   const estNum=String(_indBidId).slice(-6);
   const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
-  const totalFmt='$'+midPrice.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const depositFmt='$'+Math.round(midPrice*0.25).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const rangeStr='$'+r.totalLow.toLocaleString()+' – $'+r.totalHigh.toLocaleString();
+  const totalFmt=fmt(midPrice);
+  // His deposit, not a flat 25% (audit run 6): the same account default every
+  // other proposal opens at, and no deposit row when he takes none.
+  const _indDepPct=_geiDepositDefault();
+  const depositFmt=fmt(Math.round(midPrice*_indDepPct/100));
+  const rangeStr=fmt(r.totalLow,{short:true})+' – '+fmt(r.totalHigh,{short:true});
   const crewLabel=r.crew===1?'Solo':r.crew===2?'2-Person':r.crew===3?'3-Person':'4-Person';
   const resolvedPrimer=primerColor||(tier.products.split('→')[0]?.trim()||'Per spec');
   const resolvedTopcoat=color||(tier.products.split('→')[1]?.trim()||'Per spec');
@@ -9671,7 +9592,7 @@ async function _sendIndProposal(){
   }).join('');
   const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day): verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Proposal</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT PROPOSAL</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Proposal</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT PROPOSAL</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr>${_indDepPct>0?`<tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_indDepPct}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`:''}</table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${_indBidId}_${token}.json`;
   // Per-property EPA RRP: key year built + rrpDisturb to THIS estimate's address
@@ -9683,20 +9604,18 @@ async function _sendIndProposal(){
   const proposalData={
     id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),..._propLogoFields(),
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
-    proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
+    proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*_indDepPct/100),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
     businessPhone:S.bphone||'',businessEmail:S.bemail||'',contactName:_propSigner(),stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
     acceptCash:S.acceptCash!==false,acceptCheck:S.acceptCheck!==false,allowPayLater:S.allowPayLater!==false,
     trade_type:'painting',
     yearBuilt:_indYearBuilt,
     epaRequired:_indEpaRequired,
-    rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
-    rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
-    rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    ..._rrpCerts(),
     poweredBy:S.poweredBy!==false,
   };
   showToast('Uploading proposal…','⏳');
-  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));
+  {const _r=await _tdStoreDoc(proposalKey,proposalData);if(_r.error)console.error('[ind proposal upload]',_r.error);}
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();
@@ -9725,14 +9644,14 @@ function openSalesTaxSetup(){
       '<div style="font-size:16px;font-weight:700;color:var(--text1);margin-bottom:4px">Sales Tax Rate</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+stName+', rate charged on taxable materials on your proposals</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-        '<input id="stsu-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric"'+
+        '<input type="text" data-num="zip" inputmode="numeric" id="stsu-zip" placeholder="ZIP code" maxlength="5"'+
           ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
         '<button onclick="_stsuLookup()" style="padding:10px 14px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Look up</button>'+
       '</div>'+
       '<div id="stsu-lookup-result" style="font-size:11px;color:var(--text3);min-height:16px;margin-bottom:10px"></div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Or enter manually</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">'+
-        '<input id="stsu-rate" type="number" step="0.001" min="0" max="20" placeholder="e.g. 9.350"'+
+        '<input id="stsu-rate" type="text" data-num="pct" inputmode="decimal" placeholder="e.g. 9.350"'+
           ' value="'+(curRate||'')+'"'+
           ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
         '<span style="font-size:14px;color:var(--text2);font-weight:600">%</span>'+
@@ -9855,9 +9774,8 @@ function _geiSignInPerson(){
   const depPct=_geiDepositPct();
   // On a rate sheet the deposit is the FLAT mobilization figure, not a percent
   // of a total that does not exist, exactly as sendGenericProposal does it.
-  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
-  const bal=_ipRateOnly?0:Math.max(0,Math.round((total-depAmt)*100)/100);
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const depAmt=_geiIsTM?_tmDeposit():_byoDepositState(total).amt;
+  const bal=_ipRateOnly?0:Math.max(0,_cents(total-depAmt));
   const depLabel=_geiIsTM?'Up front, before work begins':'Deposit ('+depPct+'%)';
   document.getElementById('_gei-ip-ov')?.remove();
   const ov=document.createElement('div');
@@ -9931,10 +9849,9 @@ async function _geiConfirmInPerson(){
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Proposal not found','⚠️');return;}
   const{total}=calcGeiTotal();
-  const depPct=_geiDepositPct();
   // T&M: the flat figure (_tmDepositState), and a rate sheet keeps its zero
   // amount. This used to write a percent over the mobilization deposit.
-  const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
+  const depAmt=_geiIsTM?_tmDeposit():_byoDepositState(total).amt;
   const ts=new Date().toISOString();
   bid.amount=(_geiIsTM&&_tmRateOnly)?0:total;bid.deposit=depAmt;
   if(_geiIsTM){bid.tmDepositAmt=depAmt;bid.tmDepositPct=0;}bid.status='Closed Won';bid.draft=false;
@@ -9971,7 +9888,6 @@ async function _geiConfirmInPerson(){
   try{if(typeof _presentClose==='function')_presentClose();}catch(_e){}
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   if(ov){
     ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+
