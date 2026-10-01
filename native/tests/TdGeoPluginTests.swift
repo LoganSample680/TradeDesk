@@ -22,6 +22,8 @@ import CoreLocation
 // UIApplication.applicationState, for the two flush tests that skip rather
 // than assert vacuously when the host app is not foregrounded.
 import UIKit
+// The two MetricKit subscriber entry points, called with empty payload lists.
+import MetricKit
 @testable import TdGeo
 
 final class TdGeoPluginTests: XCTestCase {
@@ -4166,4 +4168,294 @@ extension TdGeoPluginTests {
         XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollTickKeyForTest))
         clearSeqState()
     }
+
+    // MARK: - The wake updates the web app itself (owner 2026-10-01)
+
+    func testSetUpdateProbe_rejectsAnythingButAnHttpsUrlAndAVersion() {
+        let bad: [[String: Any]] = [
+            [:],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json"],
+            ["version": "10.01.26.8"],
+            ["url": "http://uat.tradedesk-cyp.pages.dev/version.json", "version": "10.01.26.8"],
+            ["url": "not a url", "version": "10.01.26.8"],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": ""],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": String(repeating: "9", count: 40)],
+            ["url": 42, "version": 7]
+        ]
+        for o in bad {
+            let exp = expectation(description: "reject \(o)")
+            plugin.setUpdateProbe(makeCall(options: o, onSuccess: { _ in XCTFail("accepted \(o)"); exp.fulfill() },
+                                           onError: { _ in exp.fulfill() }))
+            wait(for: [exp], timeout: 30)
+        }
+    }
+
+    func testSetUpdateProbe_storesAGoodOne() {
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+        let exp = expectation(description: "accept")
+        plugin.setUpdateProbe(makeCall(options: ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": "10.01.26.8"],
+                                       onSuccess: { _ in exp.fulfill() }))
+        wait(for: [exp], timeout: 30)
+        let p = UserDefaults.standard.dictionary(forKey: "td_update_probe")
+        XCTAssertEqual(p?["version"] as? String, "10.01.26.8")
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+    }
+
+    func testVersionIn_readsOnlyARealVersionFile() {
+        XCTAssertEqual(TdGeoPlugin.versionIn(#"{"version":"10.01.26.8"}"#.data(using: .utf8)), "10.01.26.8")
+        XCTAssertNil(TdGeoPlugin.versionIn(nil))
+        XCTAssertNil(TdGeoPlugin.versionIn(Data()))
+        XCTAssertNil(TdGeoPlugin.versionIn("<html>offline</html>".data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"{"version":7}"#.data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"{"version":""}"#.data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"["10.01.26.8"]"#.data(using: .utf8)))
+    }
+
+    func testShouldReload_onlyWhenTheServedVersionDiffers() {
+        XCTAssertTrue(TdGeoPlugin.shouldReload(have: "10.01.26.6", served: "10.01.26.8"))
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "10.01.26.8", served: "10.01.26.8"))
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "10.01.26.8", served: nil), "an unreadable answer reloads nothing")
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: nil, served: "10.01.26.8"), "no probe set, nothing to compare")
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "", served: ""))
+    }
+
+    func testSilentPush_andHeartbeat_withNoProbeSet_neverThrowAndStillRecord() {
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.load()
+        let before = bufferCount(ofType: "push-ping")
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let done = expectation(description: "push handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "push-ping"), before)
+            XCTAssertEqual(self.bufferCount(ofType: "native-reload"), 0, "no probe, no reload")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    // MARK: - How the phone is doing
+
+    func testDeviceStats_carriesOnlyWhatIOSLetsUsRead() {
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            let s = self.plugin.deviceStats()
+            XCTAssertNotNil(s["lp"] as? Bool, "Low Power Mode")
+            XCTAssertNotNil(s["th"] as? String, "heat level")
+            XCTAssertTrue(["on", "off", "restricted", "unknown"].contains(s["bgr"] as? String ?? ""), "Background App Refresh")
+            if let b = s["batt"] as? Int { XCTAssertTrue((0...100).contains(b)) }
+            if let c = s["cpu"] as? Double { XCTAssertGreaterThanOrEqual(c, 0) }
+            if let m = s["mem"] as? Double { XCTAssertGreaterThan(m, 0) }
+            XCTAssertNil(s["temp"], "there is no temperature API; nothing may pretend otherwise")
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_offTheMainThreadStillAnswersWithoutTouchingUIKit() {
+        let exp = expectation(description: "stats off main")
+        DispatchQueue.global().async {
+            let s = self.plugin.deviceStats()
+            XCTAssertNotNil(s["lp"] as? Bool)
+            XCTAssertNotNil(s["bgr"] as? String)
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testAppCpuAndMemory_readThisProcess() {
+        XCTAssertNotNil(TdGeoPlugin.appCpuPercent())
+        let m = TdGeoPlugin.appMemoryMB()
+        XCTAssertNotNil(m)
+        XCTAssertGreaterThan(m ?? 0, 1)
+        // Concurrent reads: the thread list is copied and freed per call.
+        let group = DispatchGroup()
+        for _ in 0..<20 { group.enter(); DispatchQueue.global().async { _ = TdGeoPlugin.appCpuPercent(); group.leave() } }
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+    }
+
+    func testPushPing_carriesStats() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.load()
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let done = expectation(description: "push handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            let ping = rows.last { ($0["type"] as? String) == "push-ping" }
+            XCTAssertNotNil(ping?["stats"] as? [String: Any])
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    // MARK: - Everything else Apple lets an app read (owner 2026-10-01)
+
+    func testDeviceStats_saysWhereTheAppWasAndWhatItWasAllowed() {
+        TdGeoPlugin.processStartedAt = Date(timeIntervalSinceNow: -125)
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            let s = self.plugin.deviceStats()
+            XCTAssertTrue(["active", "inactive", "background", "unknown"].contains(s["app"] as? String ?? ""))
+            XCTAssertNotNil(s["locked"] as? Bool)
+            XCTAssertTrue(["always", "whenInUse", "denied", "restricted", "notDetermined", "unknown"].contains(s["loc"] as? String ?? ""))
+            XCTAssertTrue(["full", "reduced"].contains(s["acc"] as? String ?? ""))
+            XCTAssertGreaterThanOrEqual(s["up"] as? Int ?? -1, 2, "minutes since this process started")
+            if let n = s["net"] as? String { XCTAssertTrue(["none", "wifi", "cell", "wired", "other"].contains(n)) }
+            if let r = s["radio"] as? String { XCTAssertTrue(["5g", "lte", "3g", "2g"].contains(r)) }
+            XCTAssertNil(s["temp"]); XCTAssertNil(s["health"]); XCTAssertNil(s["cycles"])
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_permissionReadNeverStartsALocationSession() {
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            XCTAssertFalse(self.plugin.hasLocationManagerForTest)
+            _ = self.plugin.deviceStats()
+            XCTAssertFalse(self.plugin.hasLocationManagerForTest, "a stats read must not arm a manager")
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_manyQueuesAtOnceNeverCrash() {
+        plugin.startPathMonitorForTest()
+        // Half of these run on main, so the test must not block main while it
+        // waits for them: wait(for:) keeps the run loop turning, a
+        // DispatchGroup.wait() on main would wait on itself.
+        let all = (0..<40).map { i -> XCTestExpectation in
+            let e = expectation(description: "stats \(i)")
+            (i % 2 == 0 ? DispatchQueue.main : DispatchQueue.global()).async { _ = self.plugin.deviceStats(); e.fulfill() }
+            return e
+        }
+        wait(for: all, timeout: 20)
+    }
+
+    func testRadioWord_namesOnlyRealRadios() {
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyNR"), "5g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyNRNSA"), "5g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyLTE"), "lte")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyWCDMA"), "3g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyEdge"), "2g")
+        XCTAssertNil(TdGeoPlugin.radioWord(nil))
+        XCTAssertNil(TdGeoPlugin.radioWord(""))
+        XCTAssertNil(TdGeoPlugin.radioWord("LTE"), "only Apple's own constants")
+        XCTAssertNil(TdGeoPlugin.radioWord("CTRadioAccessTechnologySomethingNew"))
+    }
+
+    func testNetWord_offlineWinsThenWifiThenCell() {
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: false, wifi: true, cellular: true, wired: false), "none")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: true, cellular: true, wired: false), "wifi")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: true, wired: false), "cell")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: false, wired: true), "wired")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: false, wired: false), "other")
+    }
+
+    func testStateWords_coverEveryCase() {
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.active), "active")
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.inactive), "inactive")
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.background), "background")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.authorizedAlways), "always")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.authorizedWhenInUse), "whenInUse")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.denied), "denied")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.restricted), "restricted")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.notDetermined), "notDetermined")
+    }
+
+    func testMetricRow_keepsOnlyFiniteNonNegativeNumbers() {
+        let a = Date(timeIntervalSince1970: 1_759_276_800), b = a.addingTimeInterval(86_400)
+        let row = TdGeoPlugin.metricRow(begin: a, end: b, values: [
+            "cpu_s": 61.26, "bg_loc_s": 3600, "bad": -1, "nan": .nan, "inf": .infinity,
+            String(repeating: "k", count: 40): 5,
+        ])
+        XCTAssertEqual(row?["type"] as? String, "metrickit")
+        XCTAssertEqual(row?["ts"] as? Double, b.timeIntervalSince1970 * 1000)
+        XCTAssertEqual(row?["from"] as? Double, a.timeIntervalSince1970 * 1000)
+        let mx = row?["mx"] as? [String: Double]
+        XCTAssertEqual(mx, ["cpu_s": 61.3, "bg_loc_s": 3600])
+    }
+
+    func testMetricRow_noWindowOrNoNumbersIsNoRow() {
+        let a = Date()
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a, values: ["cpu_s": 1]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(-5), values: ["cpu_s": 1]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(5), values: [:]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(5), values: ["x": -3]))
+    }
+
+    func testDiagRow_onlyWhenSomethingHappened_andTheReasonIsBounded() {
+        let a = Date(), b = a.addingTimeInterval(60)
+        XCTAssertNil(TdGeoPlugin.diagRow(begin: a, end: b, crashes: 0, hangs: 0, cpuExceptions: 0, diskExceptions: 0, why: "x"))
+        let r = TdGeoPlugin.diagRow(begin: a, end: b, crashes: 1, hangs: 2, cpuExceptions: 0, diskExceptions: 0,
+                                    why: String(repeating: "w", count: 500))
+        XCTAssertEqual(r?["type"] as? String, "mx-diag")
+        XCTAssertEqual(r?["crashes"] as? Int, 1)
+        XCTAssertEqual(r?["hangs"] as? Int, 2)
+        XCTAssertEqual((r?["why"] as? String)?.count, 120)
+        let quiet = TdGeoPlugin.diagRow(begin: a, end: b, crashes: 0, hangs: 1, cpuExceptions: 0, diskExceptions: 0, why: "")
+        XCTAssertNil(quiet?["why"])
+    }
+
+    func testMetricRows_recordOnlyWhileTrackingIsArmed() {
+        let a = Date(timeIntervalSinceNow: -86_400), b = Date()
+        let row = TdGeoPlugin.metricRow(begin: a, end: b, values: ["cpu_s": 4])!
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.recordMetricRowsForTest([row])
+        let off = expectation(description: "unarmed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertFalse(rows.contains { ($0["type"] as? String) == "metrickit" }, "tracking off writes nothing")
+            off.fulfill()
+        }
+        wait(for: [off], timeout: 30)
+
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.recordMetricRowsForTest([row, row])
+        let on = expectation(description: "armed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertEqual(rows.filter { ($0["type"] as? String) == "metrickit" }.count, 2)
+            on.fulfill()
+        }
+        wait(for: [on], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testMetricKit_emptyDeliveriesAndRepeatedLoadsAreHarmless() {
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        for _ in 0..<5 { plugin.load() }
+        plugin.didReceive([MXMetricPayload]())
+        plugin.didReceive([MXDiagnosticPayload]())
+        let exp = expectation(description: "nothing recorded")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertFalse(rows.contains { ["metrickit", "mx-diag"].contains($0["type"] as? String ?? "") })
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testMetricRow_concurrentBuildsAgree() {
+        let a = Date(timeIntervalSince1970: 1_759_276_800), b = a.addingTimeInterval(86_400)
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var seen = Set<Double>()
+        for i in 0..<50 {
+            group.enter()
+            DispatchQueue.global().async {
+                let r = TdGeoPlugin.metricRow(begin: a, end: b, values: ["cpu_s": Double(i % 3)])
+                let v = (r?["mx"] as? [String: Double])?["cpu_s"] ?? -1
+                lock.lock(); seen.insert(v); lock.unlock()
+                group.leave()
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(seen, [0, 1, 2])
+    }
 }
+

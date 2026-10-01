@@ -4991,16 +4991,50 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.rows.open[0]._table).toBe('shop_time_entries');
     });
 
-    test('the drive out of his own driveway waits to be judged whole (rule 20)', async () => {
+    // AMENDED 2026-10-01. This test used to assert that a drive out of his
+    // own driveway wrote NO live row, because rule 20 may make it a commute.
+    // That was right about pay and wrong about the timesheet: Jack's 8:02 drive
+    // from home reached the server at 8:12, when he stopped, as a paid drive
+    // after all. Now the row goes up the second the drive starts, HELD (in no
+    // total), and the arrival decides: a paid drive lands on the same key, a
+    // commute closes into no row and geo_replace_day ends the live one (5c).
+    test('the drive out of his own driveway is on the road at once, held until it is judged (rule 20)', async () => {
       const r = await derive({ fences: F, clocks: CLOCK,
         tape: [mo(T(7, 20), 'automotive')],
         fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD)], nowMs: T(7, 23) });
-      expect(r.rows.open.length).toBe(0);
+      expect(r.rows.open.length, 'a live row the moment the drive starts').toBe(1);
+      expect(r.rows.open[0].source, 'held: in no total until the arrival decides').toBe('drive-held');
+      expect(r.rows.open[0].departed_at).toBeNull();
+      expect(r.rows.open[0].arrived_at).toBe(new Date(T(7, 20)).toISOString());
+      const held = await page.evaluate(() => _geoIsHeldSource('drive-held'));
+      expect(held, 'and the money totals already skip a -held source').toBe(true);
     });
 
-    test('a Time off day with no clock running writes no live drive', async () => {
+    test('a driveway drive that turns out to be paid closes onto the same row as a paid drive', async () => {
+      const live = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD)], nowMs: T(7, 23) });
+      const key = live.rows.open[0].client_key;
+      const done = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive'), mo(T(7, 35), 'onFoot')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD), fix(T(7, 35, 10), DOE), fix(T(7, 50), DOE)], nowMs: T(7, 55) });
+      const all = done.rows.job_time_entries;
+      const same = all.find(x => x.client_key === key);
+      // Either it is a paid drive on the same key, or it is a commute and no
+      // row carries the key (geo_replace_day then ends the live one). Never a
+      // second drive under a different key for the same minutes.
+      const others = all.filter(x => /^drive/.test(x.source) && x.client_key !== key && Date.parse(x.arrived_at) < T(7, 35));
+      expect(others.length).toBe(0);
+      if (same) expect(same.departed_at).toBe(new Date(T(7, 35)).toISOString());
+    });
+
+    // AMENDED 2026-10-01, same reason: a Time off day used to show no live
+    // drive at all. It shows one now, held, which is what time off means
+    // everywhere else (rule 25: held, never dropped).
+    test('a Time off day with no clock running shows the drive live, held', async () => {
       const r = await derive(Object.assign({}, AT_YARD, { clocks: [], timeOff: [{ start: DAY, end: DAY }], nowMs: T(10, 5) }));
-      expect(r.rows.open.filter(x => x.source === 'drive').length).toBe(0);
+      expect(r.rows.open.filter(x => x.source === 'drive').length, 'never as paid').toBe(0);
+      expect(r.rows.open.filter(x => x.source === 'drive-held').length).toBe(1);
     });
 
     test('never two live rows: a derive at every minute of the morning has one at most', async () => {

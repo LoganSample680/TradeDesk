@@ -6083,6 +6083,15 @@ function _geoTdInit(){
   const Td=_geoTdPlugin();
   if(!Td)return;
   window._geoTdBound=true;
+  // ── THE WAKE CAN UPDATE US EVEN WHILE THIS PAGE SLEEPS (owner 2026-10-01) ──
+  // Tell the native layer which version this page is and where to ask, so a
+  // silent push or heartbeat that wakes only the native side can still see a
+  // newer build and reload the WebView (TdGeoPlugin.checkForUpdate). A shell
+  // that predates the method just skips it.
+  try{
+    if(typeof Td.setUpdateProbe==='function'&&typeof APP_VERSION!=='undefined'&&APP_VERSION&&location.protocol==='https:')
+      Promise.resolve(Td.setUpdateProbe({url:location.origin+'/version.json',version:String(APP_VERSION)})).catch(()=>{});
+  }catch(_e){}
   try{
     if(typeof Td.addListener==='function')Td.addListener('geoEvent',(ev)=>{_geoTdEvent(ev);});
   }catch(_e){}
