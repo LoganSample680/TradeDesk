@@ -83,8 +83,8 @@ function _buildClientHubSnapshot(clientId){
       // A quick invoice's own rows (text and amount, head or sub), drawn on
       // their copy the way the preview draws them, and what he said he did.
       rows:b.kind==='quick_invoice'&&Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows:null,
-      // The saved invoice document, the one he previewed (_qiDocUpload).
-      invoiceDocKey:b.kind==='quick_invoice'&&b.invoiceDocKey?b.invoiceDocKey:null,
+      // The saved invoice document, any bill's (_invoiceDocUpload).
+      invoiceDocKey:b.invoiceDocKey||null,
       work:b.kind==='quick_invoice'&&Array.isArray(b.qiWork)?b.qiWork.filter(w=>String(w||'').trim()):[],
       salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
@@ -371,7 +371,7 @@ async function _uploadClientHub(clientId){
     const _hash=_hubHash(JSON.stringify(snapshot,(k,v)=>k==='generatedAt'?undefined:v));
     if(c.clientHubKey&&c.clientHubHash===_hash)return;
     const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
-    const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _tdStoreDoc(key,_json);
     if(error)throw error;
     // Stamp the LIVE array object, not the reference captured before the await: a
     // delta/realtime merge during the upload replaces row objects in `clients`, so
@@ -515,7 +515,7 @@ async function _refreshClientHub(clientId){
   snapshot.token=c.clientToken;
   const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
   try{
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _tdStoreDoc(key,snapshot);
     if(error)throw error;
     // Same live-object rule as _uploadClientHub, never stamp a pre-await reference.
     const live=clients.find(x=>x.id===clientId)||c;

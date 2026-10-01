@@ -2,7 +2,7 @@
 // supply list each had their own). "$1,234.56"; fmt(n,{whole:true}) gives
 // "$1,235". Only a real {whole:true} counts, so arr.map(fmt), which passes an
 // index second, still formats cents.
-const fmt=(n,o)=>{const v=isNaN(+n)?0:+n;return o&&o.whole===true?'$'+Math.round(v).toLocaleString('en-US',{maximumFractionDigits:0}):'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});};
+const fmt=(n,o)=>{const v=isNaN(+n)?0:+n;const whole=o&&(o.whole===true||(o.short===true&&Math.round(v*100)%100===0));return whole?'$'+Math.round(v).toLocaleString('en-US',{maximumFractionDigits:0}):'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});};
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 function formatPhoneDisplay(val){
   let d=(val||'').replace(/\D/g,'').slice(0,10);
@@ -731,4 +731,18 @@ function bizTime(iso){
   if(isNaN(d.getTime()))return '';
   try{return d.toLocaleTimeString('en-US',{timeZone:bizTz(),hour:'numeric',minute:'2-digit'});}
   catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+}
+
+// SAVE A DOCUMENT FOR A LINK (audit 2026-10-01: ten copies of this upload).
+// Proposals, the client hub, agreements, invoices and photo shares are JSON
+// files in the proposals bucket that a link opens. data is an object or an
+// already-built string. Resolves to {error}, never throws.
+function _tdStoreDoc(key,data,o){
+  o=o||{};
+  try{
+    if(typeof _supa==='undefined'||!_supa||!key)return Promise.resolve({error:new Error('not signed in')});
+    const body=typeof data==='string'?data:JSON.stringify(data);
+    return Promise.resolve(_supa.storage.from('proposals').upload(key,body,{contentType:'application/json',upsert:o.upsert!==false,cacheControl:o.cache||'0'}))
+      .then(r=>({error:(r&&r.error)||null})).catch(e=>({error:e}));
+  }catch(e){return Promise.resolve({error:e});}
 }

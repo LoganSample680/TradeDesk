@@ -750,25 +750,6 @@ const _signHref=url=>url?((_isContractorPreview?(url+(url.includes('?')?'&':'?')
 // contractor logs a payment. Fetch the public object URL with cache:'no-store'
 // plus a cb= cache-buster (defeats CDN/edge caches too); fall back to
 // storage.download() on any failure so the existing error UI is unchanged.
-async function _fetchStorageJson(key){
-  try{
-    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
-    if(!pub)throw new Error('no public url');
-    // 10s abort, a hung request on a weak connection must fall through to the
-    // download() path instead of freezing the boot screen forever.
-    const ac=new AbortController();
-    const tm=setTimeout(()=>ac.abort(),10000);
-    let res;
-    try{res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store',signal:ac.signal});}
-    finally{clearTimeout(tm);}
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    return{data:await res.json(),error:null};
-  }catch(e){
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)return{data:null,error:error||e};
-    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
-  }
-}
 // The hub's signing state, through the token-checked RPC (20261049).
 // signed_proposals is closed to anon: the hub link (u, c, t) is the proof, the
 // server checks it and returns only this client's bids and only the fields the

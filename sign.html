@@ -738,19 +738,6 @@ function portfolioDecline(){
 // cache could show a stale status for up to an hour. Fetch the public object URL
 // with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
 // fall back to storage.download() on any failure so the error UI is unchanged.
-async function _fetchStorageJson(key){
-  try{
-    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
-    if(!pub)throw new Error('no public url');
-    const res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    return{data:await res.json(),error:null};
-  }catch(e){
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)return{data:null,error:error||e};
-    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
-  }
-}
 // "Already signed" terminal page, extracted from init so the stash-handoff path
 // can also reach it from its background signed-status verify.
 // Signing state, through the token-checked RPC (20261049). signed_proposals

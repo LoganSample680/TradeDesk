@@ -1596,7 +1596,7 @@ test.describe('bids.js: exhaustive coverage', () => {
         window.open = () => ({ document: { write: (h) => { invoiceHtml = h; }, close: () => {} } });
         printInvoice(77703); // opportunity bid with no payments
         window.open = origOpen;
-        return { hasNaN: invoiceHtml.includes('NaN'), hasInvoice: invoiceHtml.includes('INVOICE') };
+        return { hasNaN: invoiceHtml.includes('NaN'), hasInvoice: /Invoice/i.test(invoiceHtml) };
       });
       expect(r.hasNaN).toBe(false);
       expect(r.hasInvoice).toBe(true);

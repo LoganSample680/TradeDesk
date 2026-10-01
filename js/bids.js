@@ -821,104 +821,19 @@ function toggleBidSummary(bidId){
   card.appendChild(panel);
 }
 
+// His printed bill is the customer's page (audit 2026-10-01: three invoice
+// layouts became one, _invoiceDocForBid in js/quick-invoice.js), with what is
+// already paid and the balance on it, in a window his phone can print or
+// save as a PDF.
 function printInvoice(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const c=b.client_id?getClientById(b.client_id):null;
-  const paid=getBidPaid(bidId);
-  const balance=getBidBalance(b);
-  const bPmts=payments.filter(p=>p.bid_id===bidId);
-  const bname=S.bname||'TradeDesk';
-  const bphone=S.bphone||'';
-  const blic=S.blic||'';
-  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  const invoiceNum='INV-'+String(bidId).slice(-6);
-
-  const html=`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice ${invoiceNum}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);background:#fff;padding:32px;max-width:680px;margin:0 auto}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid #185FA5}
-  .co-name{font-size:24px;font-weight:800;color:#185FA5}
-  .co-sub{font-size:12px;color:#666;margin-top:4px}
-  .inv-title{text-align:right}
-  .inv-title h1{font-size:32px;font-weight:800;color:var(--text);letter-spacing:-.02em}
-  .inv-num{font-size:12px;color:#666;margin-top:4px}
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px}
-  .section-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:6px}
-  .client-name{font-size:16px;font-weight:700}
-  .client-detail{font-size:13px;color:#444;margin-top:2px;line-height:1.5}
-  table{width:100%;border-collapse:collapse;margin-bottom:24px}
-  th{text-align:left;padding:8px 10px;background:#f5f5f3;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#666;border-bottom:1px solid #e0e0dc}
-  td{padding:10px;border-bottom:1px solid #f0eeec;font-size:13px;vertical-align:top}
-  td.amt{text-align:right;font-weight:600}
-  .totals{margin-left:auto;width:260px}
-  .total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #f0eeec}
-  .total-row.grand{font-size:16px;font-weight:800;border-top:2px solid #1a1a18;border-bottom:none;padding-top:10px;margin-top:4px}
-  .balance-due{background:${balance<0.01?'#F0FBF0':'#FFF8F0'};border:2px solid ${balance<0.01?'#63B841':'#E89A3C'};border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center}
-  .balance-label{font-size:12px;font-weight:700;color:${balance<0.01?'#3B8C2A':'#B8600A'};text-transform:uppercase;letter-spacing:.05em}
-  .balance-amount{font-size:28px;font-weight:800;color:${balance<0.01?'#3B8C2A':'#B8600A'}}
-  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e0e0dc;font-size:11px;color:#999;text-align:center}
-  @media print{body{padding:16px}@page{margin:0.5in}}
-</style>
-</head><body>
-<div class="header">
-  <div>
-    <div class="co-name">${bname}</div>
-    <div class="co-sub">${bphone}${blic?' · '+blic:''}</div>
-  </div>
-  <div class="inv-title">
-    <h1>INVOICE</h1>
-    <div class="inv-num">${invoiceNum}</div>
-    <div style="font-size:12px;color:#666;margin-top:4px">Date: ${today}</div>
-  </div>
-</div>
-
-<div class="two-col">
-  <div>
-    <div class="section-label">Bill to</div>
-    <div class="client-name">${escHtml(c?c.name:b.client_name||'Client')}</div>
-    <div class="client-detail">${escHtml(b.addr||c&&c.addr||'')}</div>
-    ${c&&c.phone?`<div class="client-detail">${escHtml(c.phone)}</div>`:''}
-  </div>
-  <div>
-    <div class="section-label">Job details</div>
-    <div class="client-detail"><strong>Type:</strong> ${escHtml(b.type||'Painting job')}</div>
-    <div class="client-detail"><strong>Proposal date:</strong> ${b.bid_date||''}</div>
-    ${b.completion_date?`<div class="client-detail"><strong>Completed:</strong> ${b.completion_date}</div>`:''}
-  </div>
-</div>
-
-<table>
-  <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
-  <tbody>
-    ${b.kind==='quick_invoice'&&Array.isArray(b.lineItems)&&b.lineItems.length
-      ?(Array.isArray(b.qiWork)&&b.qiWork.length?`<tr><td colspan="2">Work done: ${b.qiWork.map(w=>escHtml(w)).join('; ')}</td></tr>`:'')+b.lineItems.map(li=>`<tr><td>${escHtml(li.desc||'')}</td><td class="amt">${fmt(li.amount)}</td></tr>`).join('')
-      :`<tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>`}
-  </tbody>
-</table>
-
-<div class="totals">
-  <div class="total-row"><span>Subtotal</span><span>${fmt(b.amount)}</span></div>
-  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${escHtml(p.date||'')}): ${escHtml(p.method||'')}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
-  <div class="total-row grand"><span>Balance due</span><span>${fmt(balance)}</span></div>
-</div>
-
-<div class="balance-due">
-  <div>
-    <div class="balance-label">${balance<0.01?'Paid in full '+svgIcon('✓',{size:12}):'Balance due'}</div>
-    ${balance>=0.01?`<div style="font-size:11px;color:#B8600A;margin-top:3px">Please remit payment at your earliest convenience</div>`:'<div style="font-size:11px;color:#3B8C2A;margin-top:3px">Thank you for your business!</div>'}
-  </div>
-  <div class="balance-amount">${fmt(balance)}</div>
-</div>
-
-<div class="footer">
-  ${escHtml(bname)} · ${escHtml(bphone)} · Thank you for choosing us!<br>
-  <em style="margin-top:4px;display:block">To print or save as PDF: tap Share → Print in Safari</em>
-</div>
-</body></html>`;
-
+  const doc=typeof _invoiceDocForBid==='function'?_invoiceDocForBid(b,{live:true}):'';
+  const num='INV-'+String(bidId).slice(-6);
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<title>Invoice '+num+'</title><style>body{margin:0;padding:16px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}'+
+    '.wrap{max-width:720px;margin:0 auto}.hint{font-size:12px;color:#5b6475;text-align:center;margin:14px 0}'+
+    '@media print{body{background:#fff;padding:0}.hint{display:none}@page{margin:0.4in}}</style></head><body><div class="wrap">'+doc+
+    '<div class="hint">To print or save as a PDF: tap Share, then Print.</div></div></body></html>';
   const win=window.open('','_blank');
   if(win){
     win.document.write(html);
@@ -1282,8 +1197,13 @@ async function _sendPaidInvoice(bidId,opts){
   const c=getClientById(bid.client_id);
   if(!c){showToast('No client on this job.','⚠');unsent();return;}
   document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
-  // A quick invoice's saved document first, so the hub the link opens has it.
-  try{if(typeof _qiDocUploads!=='undefined'&&_qiDocUploads[bidId])await _qiDocUploads[bidId];}catch(_e){}
+  // The bill's document first, so the hub the link opens shows the same page
+  // he would print (_invoiceDocForBid). A quick invoice saved its own when it
+  // was made; any other bill is saved now, as it stands today.
+  try{
+    if(bid.kind!=='quick_invoice'&&typeof _invoiceDocUpload==='function'&&typeof _invoiceDocForBid==='function')_invoiceDocUpload(bid,_invoiceDocForBid(bid));
+    if(typeof _invoiceDocUploads!=='undefined'&&_invoiceDocUploads[bidId])await _invoiceDocUploads[bidId];
+  }catch(_e){}
   try{
     if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
   }catch(_e){}

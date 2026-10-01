@@ -602,7 +602,7 @@ function _geiShowDraftChooser(c,mode,drafts,addr){
   const rows=drafts.map(b=>{
     const items=(b.byoItems||[]).length||(b.geiLines||[]).length;
     const parts=[];
-    if(b.amount)parts.push('$'+Number(b.amount).toLocaleString());
+    if(b.amount)parts.push(fmt(Number(b.amount),{short:true}));
     if(items)parts.push(items+' item'+(items>1?'s':''));
     if(b.bid_date)parts.push('started '+b.bid_date);
     return '<button data-bid="'+b.id+'" onclick="_geiResumeChosenDraft(this.dataset.bid)" style="display:block;width:100%;text-align:left;padding:12px 14px;border:1.5px solid var(--border2);border-radius:10px;background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px">'+
@@ -1067,7 +1067,7 @@ function _tmRecalc(){
   _tmEstHours=parseFloat(document.getElementById('tm-hours')?.value)||0;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   const el=document.getElementById('tm-labor-est');
-  if(el)el.textContent=labor?'$'+labor.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
+  if(el)el.textContent=labor?fmt(labor,{whole:true}):'-';
   const fml=document.getElementById('tm-crew-formula');
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
@@ -1094,7 +1094,7 @@ function _tmCalcDeposit(){
   const pct=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
   const amt=Math.round(sub*pct/100);
   const el=document.getElementById('tm-dep-amt');
-  if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
+  if(el)el.textContent=amt?fmt(amt,{whole:true}):'-';
   // Also update NTE suggestion if not manually set
   _tmCalcNte();
   _byoAutosave();
@@ -2167,7 +2167,7 @@ function _geiScopeBuild(containerId){
     if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   }else{
     built.steps.forEach(st=>{
-      const t=st.price?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+      const t=st.price?st.text+', '+fmt(Number(st.price),{short:true}):st.text;
       if(!_geiScopeChips.some(c=>String(c).toLowerCase()===t.toLowerCase()))_geiScopeChips.push(t);
     });
     _geiScopeMissed=(built.implied||[]).filter(im=>im&&(im.step||im.ask))
@@ -2749,7 +2749,7 @@ function _geiItemRowHtml(opts){
     '<div class="byo-row-hd">'+
       checkHtml+
       '<div class="byo-label">'+escHtml(label)+'</div>'+
-      '<div class="byo-price">$'+price.toLocaleString()+'</div>'+
+      '<div class="byo-price">'+fmt(price,{short:true})+'</div>'+
       '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
         _geiRowActionBtns(editFn,delFn,delTitle,dupFn)+
       '</div>'+
@@ -3128,7 +3128,7 @@ function _byoTakeSaid(said,heard){
   // "Here's my estimate $2800 ... good for 14 days": his price and his days,
   // filled in where they go instead of printed as steps.
   const _filled=[];
-  if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push('$'+built.jobPrice.toLocaleString('en-US'));}
+  if(built.jobPrice>0&&!_byoItems.some(it=>it.on&&!it._supply&&Number(it.price)>0)){_byoJobPrice=built.jobPrice;_filled.push(fmt(built.jobPrice,{short:true}));}
   _filled.push(...r.filled);
   if(_filled.length&&typeof showToast==='function')setTimeout(()=>showToast('Set '+_filled.join(', '),'✓',2600),400);
   _byoSayOpen=false;
@@ -3182,10 +3182,10 @@ function _byoRenderSections(){
   const group=_byoItems.length?'<div class="ios-links left" style="margin:-14px 0 18px"><button type="button" onclick="_byoAddSection()">Group into sections</button></div>':'';
   // Terms: a row under The price (_byoRenderPrice) opens this. It stays in the
   // page so autosave and the proposal keep reading it by its id.
-  const noteFold='<div id="byo-note-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your note to them</span></div>'+
-    '<div class="ios-group"><textarea id="byo-note" class="ios-say" rows="4" placeholder="e.g. I appreciate your trust in us and look forward to the work." '+
-      'oninput="_geiNote=this.value;_byoAutosave()">'+escHtml(_geiNote||'')+'</textarea></div>'+
-    '<div class="ios-foot">Printed under the scope, word for word, with your name.</div></div></div>';
+  // His note: the same row T&M and the invoice use (_noteRowHtml, audit
+  // 2026-10-01: BYO had its own textarea). Kept open across repaints.
+  const _nh=document.getElementById('byo-sec-note'),noteOpen=!!(_nh&&_nh.dataset.open==='1');
+  const noteFold='<div class="ios-sec" id="byo-sec-note" data-open="'+(noteOpen?'1':'0')+'">'+_docNoteHtml('byo',noteOpen)+'</div>';
   const terms='<div id="byo-terms-wrap" style="display:none"><div class="ios-sec"><div class="ios-h"><span>Your own terms</span></div>'+
     '<div class="ios-group"><textarea id="byo-custom-terms" class="ios-say" rows="4" placeholder="e.g. Customer supplies the fixtures. Not responsible for pre-existing damage." '+
       'oninput="_byoCustomTerms=this.value;_byoAutosave()">'+escHtml(_byoCustomTerms||'')+'</textarea></div>'+
@@ -3305,7 +3305,6 @@ function _byoRenderPrice(st){
     '<label class="ios-row"><span class="ios-lbl">Deposit'+depNote.replace('<small','<small id="byo-dep-note"')+'</span>'+
       '<span class="ios-val"><input type="text" inputmode="decimal" id="byo-dep-in" value="'+D.pct+'" oninput="_byoDepInput(this)">%</span></label>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-excl-wrap\')"><span class="ios-lbl">Not included<small>'+(exclN?exclN+' on the proposal':'Name what this job does not cover')+'</small></span><span class="ios-chev" style="transform:rotate('+(exclOpen?'90':'0')+'deg)">›</span></button>'+
-    '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-note-wrap\')"><span class="ios-lbl">Your note to them<small>'+(String(_geiNote||'').trim()?'On the proposal':'Optional')+'</small></span><span class="ios-chev">›</span></button>'+
     '<button type="button" class="ios-row" onclick="_byoToggleFold(\'byo-terms-wrap\')"><span class="ios-lbl">Your own terms<small>'+((_byoCustomTerms||'').trim()?'Added':'Optional')+'</small></span><span class="ios-chev" style="transform:rotate('+(termsOpen?'90':'0')+'deg)">›</span></button>';
   const foot=document.getElementById('byo-price-foot');
   if(foot)foot.textContent='The customer sees the total and the deposit. Line prices, your cost and your profit stay on this screen.';
@@ -3376,6 +3375,31 @@ function _docDockPaint(pre,nx){
     :'<button type="button" class="ios-btn ios-btn-tint" id="'+pre+'-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
      '<button type="button" class="ios-btn ios-btn-fill" id="'+pre+'-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
 }
+// WHAT AN ESTIMATE SAVES, once (audit 2026-10-01: the autosave, the Save
+// button's existing-bid branch and its new-bid branch each listed these fields,
+// and the new-bid copy had already lost the crew's rates). Every save writes
+// this one object; each keeps only what is its own (money, status, dates).
+function _geiContentFields(){
+  const desc=(document.getElementById('gei-desc')||{}).value||'';
+  const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'');
+  const typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(trade);
+  const f={type:desc||typeLabel,geiDesc:desc,descUserSet:!!_geiDescUserSet,
+    estCrew:[..._estCrew],estCrewRates:Object.assign({},_estCrewRates),estCrewSize:_estCrew.length||1,
+    // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
+    // and his scope history, so it MOVES as the book learns. Stamping it is
+    // what lets the job compare what really happened against what this
+    // estimate actually said (js/jobs.js _jobOverrun). Zero is stored as zero.
+    estHours:_estLaborHours(),
+    exclusions:[..._geiExclusions],scopeChips:[..._geiScopeChips],scopeNoScope:_geiScopeNoScope||false};
+  if(_geiIsTM)f.scopeItems=_tmSaved();
+  if(_geiIsFreeForm&&!_geiIsTM){
+    const termsEl=document.getElementById('byo-custom-terms');
+    f.byoItems=JSON.parse(JSON.stringify(_byoItems));
+    f.byoCustomSections=[..._byoCustomSections];
+    f.byoCustomTerms=termsEl?termsEl.value:(_byoCustomTerms||'');
+  }
+  return f;
+}
 function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
@@ -3387,39 +3411,16 @@ function _byoAutosave(){
   // T&M. So the empty-stub-to-real-content transition happens here, capture it
   // before mutating.
   const _wasEmpty=_geiDraftIsEmpty(b);
-  // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
-  // button (saveGenericEstimate): every autosave silently dropped a name edit until
-  // the user hit Save, so backing out mid-edit lost the new name.
-  const _trade=_geiTrade||getActiveTrade();
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(_trade);
-  const _descVal=document.getElementById('gei-desc')?.value||'';
-  b.type=_descVal||_typeLabel;
-  b.geiDesc=_descVal;
-  b.descUserSet=!!_geiDescUserSet;
-  b.byoItems=JSON.parse(JSON.stringify(_byoItems));
+  // The name, the crew, the scope and the items: the one shared set
+  // (_geiContentFields), so a name edit is never lost to a missed field.
+  Object.assign(b,_geiContentFields());
   b.byoJobPrice=_byoJobPrice||0;
   b.validDays=_geiValidDays||0;
   b.closeNote=_geiNote||'';b.closeNoteBy=_geiNoteBy||'';
-  b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
-  b.estCrew=[..._estCrew];
-  b.estCrewRates=Object.assign({},_estCrewRates);
-  b.exclusions=[..._geiExclusions];
-  // THE PROMISE, frozen. _estLaborHours() is derived live from the price book
-  // and his scope history, so it MOVES as the book learns. Stamping it here is
-  // what lets the job compare what really happened against what this estimate
-  // actually said, instead of against a number that has since drifted
-  // (js/jobs.js _jobOverrun). Zero is stored as zero on purpose: a bid with no
-  // hours behind it has no promise to be over.
-  b.estHours=_estLaborHours();
-  b.estCrewSize=_estCrew.length||1;
-  b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
-  b.scopeNoScope=_geiScopeNoScope||false;
-  const _termsEl=document.getElementById('byo-custom-terms');
-  if(_termsEl)b.byoCustomTerms=_termsEl.value;
   const {total}=calcGeiTotal();
   if(total>0){
     b.amount=total;
@@ -3886,7 +3887,7 @@ function _crewRateWords(){
   return _estCrew.map(email=>{
     const first=_crewFirst(email);
     const r=_billRateFor(email);
-    return first+(r>0?(' at $'+r.toLocaleString()):'');
+    return first+(r>0?(' at '+fmt(r,{short:true})):'');
   }).join(', ');
 }
 // ── WHO'S GOING (owner 2026-09-29) ──────────────────────────────────────────
@@ -3951,7 +3952,7 @@ function _tmRenderWho(){
     const n=_estCrew.length;
     const miss=_tmCrewMissing().length;
     html+='<div class="ios-row tm-who-sum"><span class="ios-lbl">'+n+' '+(n>1?'people':'person')+(miss?'<small>Not counting '+escHtml(_tmCrewMissing().map(_crewFirst).join(', '))+' yet</small>':'')+'</span>'+
-      '<span class="ios-val">$'+_crewHourlyBill().toLocaleString('en-US')+'/hr</span></div>';
+      '<span class="ios-val">'+fmt(_crewHourlyBill(),{short:true})+'/hr</span></div>';
   }
   w.innerHTML=html;
 }
@@ -3975,10 +3976,10 @@ function _tmPayAttention(){
 function _tmPaySummary(){
   const parts=[];
   const dep=_tmLayers.has('dep')?(typeof _tmDeposit==='function'?_tmDeposit():0):0;
-  parts.push(dep>0?('$'+dep.toLocaleString('en-US')+' deposit'):'No deposit');
+  parts.push(dep>0?(fmt(dep,{short:true})+' deposit'):'No deposit');
   if(_tmLayers.has('rate'))parts.push(_tmBillingCycle?_tmBillWords(_tmBillingCycle):'billing not picked');
   const cap=(typeof _tmCapVal==='function')?_tmCapVal():0;
-  const sub=cap>0?('The most it can cost: $'+cap.toLocaleString('en-US')):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
+  const sub=cap>0?('The most it can cost: '+fmt(cap,{short:true})):(_tmLayers.has('cap')?'The most it can cost: not set':'No limit on the bill');
   return {main:parts.join(', '),sub};
 }
 function _tmRenderPay(){
@@ -4064,11 +4065,11 @@ function _crewRatesHtml(emps){
     html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:0 0 8px">'+
       '<span style="min-width:0">'+
         '<span style="display:block;font-size:12px;font-weight:600;color:var(--text)">'+
-          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+'$'+perHr.toLocaleString()+' an hour</span>'+
-        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is $'+day.toLocaleString()+'.'+
-          (canSeeCost&&cost>0?(' Costs you $'+cost.toLocaleString()+'.'):'')+'</span>'+
+          (ppl===1?'One on site bills ':(ppl===2?'Two on site bill ':ppl+' on site bill '))+fmt(perHr,{short:true})+' an hour</span>'+
+        '<span style="display:block;font-size:10.5px;color:var(--text3);margin-top:2px">An eight hour day is '+fmt(day,{short:true})+'.'+
+          (canSeeCost&&cost>0?(' Costs you '+fmt(cost,{short:true})+'.'):'')+'</span>'+
       '</span>'+
-      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">$'+perHr.toLocaleString()+
+      '<span style="font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.3px;flex-shrink:0">'+fmt(perHr,{short:true})+
         '<span style="font-size:11px;font-weight:600;color:var(--text3)">/hr</span></span>'+
     '</div>';
   }
@@ -4261,7 +4262,7 @@ function _updateMarginGauge(type,total){
     if(dot){dot.style.left=pos+'%';dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';}
   }
   const profit=total-cost;
-  const profitFmt='$'+Math.round(profit).toLocaleString('en-US');
+  const profitFmt=fmt(Math.round(profit),{short:true});
   const dollarsEl=document.getElementById(type+'-gauge-dollars');
   if(pct){pct.textContent=margin+'%';pct.style.color=color;}
   if(dollarsEl){dollarsEl.textContent=profitFmt+' profit';dollarsEl.style.color=color==='#22C55E'?'var(--text3)':color;}
@@ -4366,7 +4367,7 @@ function _byoUpdateRail(){
   if(taxRow&&taxAmt&&taxLbl){
     if(_st.label){
       taxLbl.textContent=_st.label;
-      taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      taxAmt.textContent=fmt(salesTax);
       taxRow.style.display='';
     }else taxRow.style.display='none';
   }
@@ -4375,7 +4376,6 @@ function _byoUpdateRail(){
   const depPct=_geiDepositPct()/100;
   const deposit=Math.round(total*depPct);
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   setT('byo-rail-sub',fmt(sub));
   setT('byo-rail-total',fmt(total));
   setT('byo-rail-deposit',fmt(deposit));
@@ -5076,7 +5076,7 @@ function _scopeTakeBuilt(key,built){
   (built.steps||[]).forEach(st=>{
     // T&M and the invoice's work list have no line price: a price he said
     // stays in the step's words.
-    const text=(key!=='byo'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    const text=(key!=='byo'&&st.price)?st.text+', '+fmt(Number(st.price),{short:true}):st.text;
     if(have.has(text.toLowerCase()))return;
     have.add(text.toLowerCase());
     // Painting keeps its own two, Interior and Exterior.
@@ -5364,7 +5364,6 @@ function _presentName(b){
   if(!b)return 'Proposal';
   return b.optionLabel?('Option '+b.optionLabel):(String(b.type||'Proposal').trim()||'Proposal');
 }
-function _presentMoney(n){return '$'+(Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:0});}
 // Entry point. Save first: from here on the client is reading it, and a number
 // on screen that is not the number on the record is the one mistake this whole
 // mode exists to avoid.
@@ -5467,8 +5466,8 @@ function _presentChooser(list){
         '<div style="font-size:15px;font-weight:700;color:#1B1612;line-height:1.3;margin-top:4px;min-height:2.6em;padding-right:24px;overflow-wrap:anywhere">'+escHtml(head||'')+'</div>'+
         // tabular-nums is load-bearing: three prices in a row with proportional
         // digits do not line up at their commas and the comparison reads sloppy.
-        '<div style="font-size:38px;font-weight:800;color:#1B1612;letter-spacing:-1.5px;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums">'+_presentMoney(amt)+'</div>'+
-        (dep>0?'<div style="font-size:11.5px;color:#6B6355;margin-top:6px;font-variant-numeric:tabular-nums">'+_presentMoney(dep)+' to get started</div>':'')+
+        '<div style="font-size:38px;font-weight:800;color:#1B1612;letter-spacing:-1.5px;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums">'+fmt(amt,{whole:true})+'</div>'+
+        (dep>0?'<div style="font-size:11.5px;color:#6B6355;margin-top:6px;font-variant-numeric:tabular-nums">'+fmt(dep,{whole:true})+' to get started</div>':'')+
       '</div>'+
       (rows
         ?'<div style="padding:14px 16px 0"><div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:'+accent+';margin-bottom:8px">'+(list.length>1&&shared.length?'What this adds':'Includes')+'</div>'+
@@ -5565,7 +5564,7 @@ function _openComparisonPicker(){
   const rows=clientBids.map((b,i)=>{
     const total=b.amount||0;
     const label=b.type||('Proposal '+(i+1));
-    return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
+    return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">${fmt(total,{short:true})} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
   box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 proposals, your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
@@ -5577,7 +5576,6 @@ function _buildComparisonPreview(){
   const bidA=bids.find(x=>x.id===checked[0]);
   const bidB=bids.find(x=>x.id===checked[1]);
   if(!bidA||!bidB){showToast('Proposals not found','⚠️');return;}
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
     const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
     const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5;overflow-wrap:anywhere"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
@@ -5639,7 +5637,7 @@ function _tmInputChange(){
     : (crewRates
       // Never names: the customer reads "2 techs", not who they are
       // (owner 2026-09-29). The names are his, on the rail.
-      ? ('Labor: '+_estCrew.length+' tech'+(_estCrew.length>1?'s':'')+' · $'+perHour.toLocaleString()+'/hr on site')
+      ? ('Labor: '+_estCrew.length+' tech'+(_estCrew.length>1?'s':'')+' · '+fmt(perHour,{short:true})+'/hr on site')
       : ('Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr'));
   const line=_hideRate
     ? {desc,qty:1,unit:'lot',rate:Math.round(labor),_tmLabor:true,total:Math.round(labor)}
@@ -5649,28 +5647,28 @@ function _tmInputChange(){
   // Stat tiles
   const dayRate=perHour*8;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
-  setT('tm-stat-day','$'+dayRate.toLocaleString());
+  setT('tm-stat-day',fmt(dayRate,{short:true}));
   setT('tm-stat-day-s',perHour>0?(crewRates?_estCrew.length+'-person crew · 8hr day · their own rates':_tmCrewCount+'-person crew · 8hr day'):'enter rate & crew');
-  setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × $'+perHour.toLocaleString()+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
+  setT('tm-stat-labor',fmt(labor,{short:true}));
+  setT('tm-stat-labor-s',(perHour&&daysInput)?(crewRates?(daysInput+'d × 8hr × '+fmt(perHour,{short:true})+'/hr'):(daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan)):'-');
   setT('tm-stat-days',_tmEstHours);
   // Materials subtotal, shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
   const total=labor+matRaw;
   // Rail breakdown
-  setT('tm-rail-total','$'+total.toLocaleString());
-  setT('tm-rail-labor','$'+labor.toLocaleString());
-  setT('tm-rail-mat','$'+matRaw.toLocaleString());
+  setT('tm-rail-total',fmt(total,{short:true}));
+  setT('tm-rail-labor',fmt(labor,{short:true}));
+  setT('tm-rail-mat',fmt(matRaw,{short:true}));
   // The rate head, which is what a rate sheet's rail says instead of a total.
-  setT('tm-rail-rate','$'+perHour.toLocaleString());
+  setT('tm-rail-rate',fmt(perHour,{short:true}));
   const _rateEl=document.getElementById('tm-rail-rate');
-  if(_rateEl)_rateEl.innerHTML='$'+perHour.toLocaleString()+'<span style="font-size:18px;font-weight:700">/hr</span>';
-  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?'$'+_tmRatePerMan.toLocaleString()+' per worker, '+_tmCrewCount+' on site':'per worker'));
+  if(_rateEl)_rateEl.innerHTML=fmt(perHour,{short:true})+'<span style="font-size:18px;font-weight:700">/hr</span>';
+  setT('tm-rail-rate-sub',crewRates?_crewRateWords():(_tmCrewCount>1?fmt(_tmRatePerMan,{short:true})+' per worker, '+_tmCrewCount+' on site':'per worker'));
   setT('tm-rail-rate-crew',String(crewRates?_estCrew.length:_tmCrewCount));
-  setT('tm-rail-rate-day','$'+dayRate.toLocaleString());
-  setT('tm-rail-rate-mat',matRaw>0?'$'+matRaw.toLocaleString()+' est.':'at cost');
+  setT('tm-rail-rate-day',fmt(dayRate,{short:true}));
+  setT('tm-rail-rate-mat',matRaw>0?fmt(matRaw,{short:true})+' est.':'at cost');
   const _tmDepNow=_tmDeposit();
-  setT('tm-rail-balance','$'+Math.max(0,total-_tmDepNow).toLocaleString());
+  setT('tm-rail-balance',fmt(Math.max(0,total-_tmDepNow),{short:true}));
   let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
   // PENNSYLVANIA SETS THE CEILING, SO HE DOES NOT. js/legal.js: the estimate,
@@ -5699,13 +5697,13 @@ function _tmInputChange(){
   // the app arguing with him about arithmetic it is not doing.
   if(nteInp&&!_tmRateOnly&&nte>0&&nte<total){
     nteInp.style.borderColor='var(--red)';
-    nteInp.title='NTE cap cannot be less than the estimated total ($'+total.toLocaleString()+')';
+    nteInp.title='NTE cap cannot be less than the estimated total ('+fmt(total,{short:true})+')';
   } else if(nteInp){nteInp.style.borderColor='';nteInp.title='';}
   const nteRow=document.getElementById('tm-rail-nte-row');
   // Not shown on T&M (2026-09-23): the Billing row directly above it already
   // says the most it can cost, with the figure typed into it.
   if(nteRow)nteRow.style.display='none';
-  if(nte>0)setT('tm-rail-nte-amt','$'+nte.toLocaleString());
+  if(nte>0)setT('tm-rail-nte-amt',fmt(nte,{short:true}));
   // Mirror values to legacy DOM ids so saveGenericEstimate/sendGenericProposal pick them up
   const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
   setV('tm-rate',_tmRatePerMan);
@@ -5794,12 +5792,12 @@ function _tmRenderMoneyRows(n){
   // which belong on the proposal and the tax documents where precision is a
   // legal matter. This rail is neither, and ".00" three times is just noise on
   // three figures he is glancing at.
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):(fmt(Math.round(v),{short:true}));
   const target=_MARGIN_BANDS.target;
   const colour=share>=_MARGIN_BANDS.target?'var(--c-green)':share>=_MARGIN_BANDS.low?'var(--c-amber)':'var(--c-red)';
 
   const billSub=n.perHour>0&&n.hours>0
-    ? ('$'+Number(n.perHour).toLocaleString()+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
+    ? (fmt(Number(n.perHour),{short:true})+' an hour'+(n.crewRates?' for the crew':'')+', '+n.hours+' hours')
     : 'labor and materials on this proposal';
   const costBits=[];
   if(n.pay>0)costBits.push('their pay '+money(n.pay));
@@ -5835,7 +5833,7 @@ function _tmRenderMoneyRows(n){
 }
 // The rate-sheet version of the rows above: one hour, and the parts.
 function _tmMoneyPerHourHtml(n){
-  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):('$'+Math.round(v).toLocaleString('en-US'));
+  const money=v=>(typeof timPrice==='function')?timPrice(Math.round(v)):(fmt(Math.round(v),{short:true}));
   const perHour=Number(n.perHour)||0,hourCost=Number(n.hourCost)||0;
   const matBill=Number(n.matBill)||0,matCost=Number(n.materials)||0,markup=Math.round(matBill-matCost);
   const row=(label,sub,value,strong,colour)=>
@@ -6028,7 +6026,7 @@ function _tmLegal(){
   else if(D.over&&(D.overCap&&!(D.applies&&D.max<D.cap)))
     out.problems.push({k:'dep',say:'The money up front is more than the most this job can cost.',fix:'Lower the deposit.'});
   else if(D.over)
-    out.problems.push({k:'dep',say:dname+' allows a deposit of up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.',
+    out.problems.push({k:'dep',say:dname+' allows a deposit of up to '+fmt(Math.floor(D.max),{short:true})+' here.',
       fix:'Lower the deposit.',law:D.law.statute||''});
   return out;
 }
@@ -6181,7 +6179,7 @@ function _tmFold(id,label,value){
 
 // What each one says when it is folded. Only ever what he actually put in it.
 function _tmFoldAll(){
-  const money=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const money=n=>fmt(Number(n||0),{whole:true});
   const rate=Number(_tmRatePerMan)||0;
   const crew=Math.max(1,Number(_tmCrewCount)||1);
   // WHETHER THEY READ IT BELONGS ON THE FOLDED LINE. The toggle lives inside
@@ -6363,11 +6361,11 @@ function _tmShape(){
   // a ceiling. Only a figure in the box does, and only a figure goes on the
   // contract, so the sentence reads the same thing the contract does.
   const cap=(L.has('cap')&&typeof _tmCapVal==='function')?_tmCapVal():0;
-  const capWords=cap>0?('never more than $'+cap.toLocaleString('en-US')):'';
+  const capWords=cap>0?('never more than '+fmt(cap,{short:true})):'';
   // The figure, not the switch: an Up front row set to Amount and left empty
   // asks for nothing (_tmDepositState).
   const depAmt=(typeof _tmDeposit==='function')?_tmDeposit():0;
-  const depWords=depAmt>0?('$'+depAmt.toLocaleString('en-US')+' up front'):'';
+  const depWords=depAmt>0?(fmt(depAmt,{short:true})+' up front'):'';
   if(!L.has('rate')&&!L.has('mat')&&!(cap>0)){
     // The one nobody believes is finished. It usually is.
     return {head:'Scope only, no price',
@@ -6457,7 +6455,7 @@ function _tmSteps(){
       value:_tmScopeDone()?'Written above':'Nothing yet',
       why:'Say what you will do, up at the top. That part is the proposal.'},
     {k:'rate',label:'Your rate',done:rateOn,act:rateOn?null:'rate',req:locked.has('rate'),
-      value:rateOn?('$'+Number(_tmRatePerMan).toLocaleString()+'/hr each'):'Not set',
+      value:rateOn?(fmt(Number(_tmRatePerMan),{short:true})+'/hr each'):'Not set',
       why:locked.has('rate')
         ?sname+' requires your hourly rate on a time and materials contract.'
         :'The one term a time and materials contract actually has, and what Tim invoices the clocked hours at.'},
@@ -6473,7 +6471,7 @@ function _tmSteps(){
   // The reason this row got reordered. Whether it is the NEXT thing is decided
   // below, not here: a ceiling is not the next move while there is no rate.
   out.push({k:'cap',label:'The most it can cost',done:capOn,act:capOn||rule.capOverEst?null:'cap',req:capLocked,
-    value:capOn?('$'+_tmCapVal().toLocaleString()):(capLocked?'Required here':'None'),
+    value:capOn?(fmt(_tmCapVal(),{short:true})):(capLocked?'Required here':'None'),
     why:rule.capOverEst
       ?sname+' sets this for you: your estimate plus ten percent. It fills in on its own.'
       :capLocked
@@ -6542,7 +6540,7 @@ function _tmRenderAddRow(rule,locked){
   // A rate no tradesman charges is a slipped thumb, not a price. Said on the
   // row, never blocking: a specialist may mean it (2026-09-23).
   {const r=Number(_tmRatePerMan)||0,el=document.getElementById('tm-lbl-rate');
-   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">$'+r.toLocaleString('en-US')+' an hour. Check it.</small>');}
+   if(el&&r>500)el.insertAdjacentHTML('beforeend','<small style="color:var(--ios-law)">'+fmt(r,{short:true})+' an hour. Check it.</small>');}
   // The Billing group's footnote: what the customer will get, in plain words,
   // and what happens at the most it can cost when there is one.
   const foot=document.getElementById('tm-nte-sub');
@@ -6616,7 +6614,7 @@ function _tmStepsState(all){
   const need=legal.length?legal[0].fix.replace(/\.$/,'')
     :!rateOk?'Put in your rate':!estOk?'Say how many days':'';
   const s2=two
-    ?(L.has('rate')?(crewOn?(_estCrew.length+' '+(_estCrew.length>1?'people':'person')+' · $'+_crewHourlyBill().toLocaleString('en-US')+'/hr'):('$'+rate.toLocaleString('en-US')+'/hr')):'No price, scope only')
+    ?(L.has('rate')?(crewOn?(_estCrew.length+' '+(_estCrew.length>1?'people':'person')+' · '+fmt(_crewHourlyBill(),{short:true})+'/hr'):(fmt(rate,{short:true})+'/hr')):'No price, scope only')
     :(crewOn&&L.has('rate')&&_tmCrewMissing().length?(_crewFirst(_tmCrewMissing()[0])+' needs a rate'):need);
   return {one,two,s1,s2};
 }
@@ -6632,17 +6630,24 @@ function _noteRowHtml(o){
     (o.open?'<textarea id="'+o.id+'" class="ios-say" rows="4" placeholder="'+escHtml(o.placeholder||'')+'" oninput="'+o.input+'">'+escHtml(o.value||'')+'</textarea>':'')+
   '</div><div class="ios-foot">Printed on the '+o.on+', word for word, with your name.</div>';
 }
-function _tmRenderNote(){
-  const host=document.getElementById('tm-sec-note');if(!host)return;
-  host.innerHTML=_noteRowHtml({open:host.dataset.open==='1',value:_geiNote,toggle:'_tmNoteToggle()',input:'_geiNote=this.value;_byoAutosave()',
-    id:'tm-note',on:'proposal',placeholder:'e.g. I appreciate your trust in us and look forward to the work.'});
+// THE NOTE ROW, for Build Your Own and T&M alike (one row, one look, audit
+// 2026-10-01). pre is the screen (byo / tm): the section is <pre>-sec-note,
+// the box <pre>-note.
+function _docNoteHtml(pre,open){
+  return _noteRowHtml({open:!!open,value:_geiNote,toggle:'_docNoteToggle(\''+pre+'\')',input:'_geiNote=this.value;_byoAutosave()',
+    id:pre+'-note',on:'proposal',placeholder:'e.g. I appreciate your trust in us and look forward to the work.'});
 }
-function _tmNoteToggle(){
-  const host=document.getElementById('tm-sec-note');if(!host)return;
+function _docNoteRender(pre){
+  const host=document.getElementById(pre+'-sec-note');if(!host)return;
+  host.innerHTML=_docNoteHtml(pre,host.dataset.open==='1');
+}
+function _docNoteToggle(pre){
+  const host=document.getElementById(pre+'-sec-note');if(!host)return;
   host.dataset.open=host.dataset.open==='1'?'0':'1';
-  _tmRenderNote();
-  if(host.dataset.open==='1')document.getElementById('tm-note')?.focus();
+  _docNoteRender(pre);
+  if(host.dataset.open==='1')document.getElementById(pre+'-note')?.focus();
 }
+function _tmRenderNote(){_docNoteRender('tm');}
 function _tmRenderSteps(all,rule){
   if(!document.activeElement||document.activeElement.id!=='tm-note')_tmRenderNote();
   const st=_tmStepsState(all);
@@ -6709,7 +6714,7 @@ function _tmDockNext(st,rule,all){
   // The hour as it bills: the crew's rates added up when he picked a crew.
   const r=_tmHourlyBill()||0,c=_tmCrewOn()?_estCrew.length:(_tmCrewCount||1);
   const nums=_geiNumsStep({has:_tmLayers.has('rate'),check:'Check your rate',target:'tm-blk-rate',
-    yes:'Yes: $'+r.toLocaleString('en-US')+'/hr, '+c+' '+(c>1?'people':'person')});
+    yes:'Yes: '+fmt(r,{short:true})+'/hr, '+c+' '+(c>1?'people':'person')});
   if(nums)return nums;
   // When he bills: asked, never assumed (owner 2026-09-29).
   if(_tmLayers.has('rate')&&!_tmBillingCycle)return {label:'Pick when you bill',fn:'_tmPickBilling()'};
@@ -6893,7 +6898,7 @@ function _tmRenderBillTerms(){
     let t='',law=false;
     if(D.needCap){t=sname+' limits it to a share of the price. Put in the most it can cost first.';law=true;}
     else if(D.over&&D.overCap&&!(D.applies&&D.max<D.cap)){t='More than the most it can cost.';law=true;}
-    else if(D.over){t=sname+' allows up to $'+Math.floor(D.max).toLocaleString('en-US')+' here.';law=true;}
+    else if(D.over){t=sname+' allows up to '+fmt(Math.floor(D.max),{short:true})+' here.';law=true;}
     else if(D.pctOfCap!=null)t=D.pctOfCap+'% of the most it can cost'+(lim?'. '+lim+'.':'.');
     else if(D.amt>0)t='For materials and getting started.';
     else t=lim?lim+'.':'For materials and getting started.';
@@ -6902,7 +6907,7 @@ function _tmRenderBillTerms(){
   // What the rate switch means, in words, with his figure in it.
   const rs=document.getElementById('tm-show-rate-sub');
   if(rs){
-    const r=Number(_tmRatePerMan)||0,f='$'+r.toLocaleString('en-US');
+    const r=Number(_tmRatePerMan)||0,f=fmt(r,{short:true});
     const shown=!(_tmHideRate&&_tmCanHideRate());
     // WHERE it shows, said plainly: the rate is never printed on the proposal
     // page itself (owner, 2026-09-17: "hourly rate never gets exposed to the
@@ -6910,7 +6915,7 @@ function _tmRenderBillTerms(){
     // contract they sign.
     const cr=_tmCrewOn()?_crewHourlyBill():0;
     rs.textContent=(shown&&cr>0)
-      ?('They agree to $'+cr.toLocaleString('en-US')+' an hour for the crew. It is in the contract they sign.')
+      ?('They agree to '+fmt(cr,{short:true})+' an hour for the crew. It is in the contract they sign.')
       :shown
       ?(r>0?'They agree to '+f+' an hour per worker. It is in the contract they sign.':'They agree to your hourly rate in the contract they sign.')
       :(r>0?'Hidden from them. You still bill '+f+' an hour.':'Hidden from them. You still bill your hourly rate.');
@@ -7013,7 +7018,7 @@ function _geiRenderFreeFormBuilder(){
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Recently used, '+curTrade.charAt(0).toUpperCase()+curTrade.slice(1)+'</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
-      hist.map((h,i)=>{const realIdx=allHist.findIndex(x=>x.desc===h.desc&&x.trade===h.trade);return'<button onclick="_geiHistoryChipAdd('+realIdx+')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'+escHtml(h.desc)+'<span style="color:var(--blue);font-weight:700">$'+(h.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</span></button>';}).join('')+
+      hist.map((h,i)=>{const realIdx=allHist.findIndex(x=>x.desc===h.desc&&x.trade===h.trade);return'<button onclick="_geiHistoryChipAdd('+realIdx+')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'+escHtml(h.desc)+'<span style="color:var(--blue);font-weight:700">'+fmt((h.rate||0),{whole:true})+'</span></button>';}).join('')+
       '</div></div>':'';
   const hasLines=_geiLines.length>0;
   el.innerHTML=
@@ -7031,11 +7036,11 @@ function _geiRenderFreeFormLines(){
   if(!_geiLines.length){el.innerHTML='';return;}
   el.innerHTML=_geiLines.map((l,i)=>{
     const total=(l.qty||1)*(l.rate||0);
-    const totalFmt='$'+total.toLocaleString('en-US',{maximumFractionDigits:0});
+    const totalFmt=fmt(total,{whole:true});
     return'<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2);padding:11px 13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(l.desc||'-')+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ $'+(l.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ '+fmt((l.rate||0),{whole:true})+'</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
         '<div style="font-size:15px;font-weight:800;color:var(--blue)">'+totalFmt+'</div>'+
@@ -7070,7 +7075,7 @@ function _geiAddFreeFormLine(prefill){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
-        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'-')+'</span>'+
+        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?fmt(((d.qty||1)*(d.rate||0)),{whole:true}):'-')+'</span>'+
       '</div>'+
       '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to proposal')+'</button>'+
       '<button class="btn" onclick="document.getElementById(\'_ff-add-ov\')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>'+
@@ -7083,7 +7088,7 @@ function _ffaLiveTotal(){
   const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||0;
   const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
   const el=document.getElementById('_ffa-total-disp');
-  if(el)el.textContent=(qty&&rate)?'$'+(qty*rate).toLocaleString('en-US',{maximumFractionDigits:0}):'-';
+  if(el)el.textContent=(qty&&rate)?fmt((qty*rate),{whole:true}):'-';
 }
 function _geiConfirmFreeFormAdd(editIdx){
   const desc=(document.getElementById('_ffa-desc')?.value||'').trim();
@@ -7277,7 +7282,7 @@ function _geiRenderCartBar(){
   const _lift=()=>{if(typeof timDockRefresh==='function')timDockRefresh();};
   if(!n||_geiStep!==2){bar.style.display='none';_lift();return;}
   bar.style.display='flex';
-  bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">$${sub.toLocaleString('en-US',{maximumFractionDigits:0})} · Review →</span>`;
+  bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">${fmt(sub,{whole:true})} · Review →</span>`;
   _lift();
 }
 
@@ -7317,7 +7322,7 @@ function _geiRenderTemplates(){
     const makeChip=job=>{
       const p=_geiJobPrice(job);
       const total=p.labor+(p.mat||0);
-      const priceStr=job.custom?`$${total}/${job.unit}`:`$${total.toLocaleString()}`;
+      const priceStr=job.custom?`$${total}/${job.unit}`:`${fmt(total,{short:true})}`;
       const safeJob=escHtml(JSON.stringify(job));
       return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));_geiRenderCartBar()" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:var(--text3)">${priceStr}</span></button>`;
     };
@@ -7786,7 +7791,7 @@ function renderGeiLines(){
   }
   el.innerHTML=_geiLines.map((l,i)=>{
     const total=((l.qty||1)*(l.rate||0));
-    const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const totalFmt=fmt(total,{whole:true});
     const isLabor=l._tmLabor;
     return `<div style="background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);padding:13px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">
@@ -8030,7 +8035,6 @@ function calcGeiTotal(){
   const salesTax=_st.tax,_stRate=_st.rate;
 
   const total=sub+markup+salesTax;
-  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('gei-subtotal',fmt(sub));set('gei-tax-amt',fmt(markup));set('gei-total',fmt(total));
 
@@ -8142,15 +8146,10 @@ function saveGenericEstimate(draft,opts){
       _deposit=Math.round(_depMax*100)/100;
       if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
       if(typeof showToast==='function'&&typeof _depositCapNote==='function'){
-        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+', '+_depositCapNote(_depState),'⚠️',6000);
+        showToast('Deposit capped to '+fmt(_deposit)+', '+_depositCapNote(_depState),'⚠️',6000);
       }
     }
   }
-  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':_tradeProposalLabel(trade);
-  // Extract BYO field values before object literals, Safari fails to parse ?.?? inside spread conditionals
-  const _byoTermsEl=document.getElementById('byo-custom-terms');
-  const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
-  const _byoSecsSave=[..._byoCustomSections];
   // What went out, against what Tim made (js/tim-log.js timLogKept). Only a
   // real save: a draft is still being fixed, and the fixing is the lesson.
   if(!draft&&_geiEditBidId!=null&&typeof timLogKept==='function'){
@@ -8168,23 +8167,12 @@ function saveGenericEstimate(draft,opts){
       // mutating: the transition from stub to real content is the "wrote a
       // proposal" moment the "new bid" branch's lcProposalSaved can never fire.
       const _wasEmpty=_geiDraftIsEmpty(b);
-      b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';b.descUserSet=!!_geiDescUserSet;
+      Object.assign(b,_geiContentFields());
+      b.amount=total;
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
-      b.scopeChips=[..._geiScopeChips];if(_geiIsTM)b.scopeItems=_tmSaved();
-      b.scopeNoScope=_geiScopeNoScope||false;
-      // The promise, stamped on the deliberate save too, not only on autosave
-      // (_byoAutosave). Relying on an autosave having happened first is how a
-      // bid reaches a job with nothing to measure it against.
-      b.estHours=_estLaborHours();
-      b.estCrew=[..._estCrew];
-  b.estCrewRates=Object.assign({},_estCrewRates);
-      b.estCrewSize=_estCrew.length||1;
-      b.exclusions=[..._geiExclusions];
-      if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
-      if(_geiIsFreeForm){b.byoCustomSections=_byoSecsSave;b.byoCustomTerms=_byoTermsSave;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
@@ -8199,18 +8187,12 @@ function saveGenericEstimate(draft,opts){
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
       amount:total,deposit:_deposit,
-      type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',descUserSet:!!_geiDescUserSet,
+      ..._geiContentFields(),
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiScanId?{scanId:_geiScanId}:{}),
-      ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
-      ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
-      scopeChips:[..._geiScopeChips],scopeItems:_geiIsTM?_tmSaved():undefined,
-      scopeNoScope:_geiScopeNoScope||false,
-      estHours:_estLaborHours(),estCrew:[..._estCrew],estCrewSize:_estCrew.length||1,
-      exclusions:[..._geiExclusions],
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
@@ -8295,10 +8277,10 @@ function _geiBuildTermsHtml(){
   // across a state line cannot arrive with a required term missing.
   const _tmRateClause=_tmShowRateOnDoc()?[['Rate',
     (_tmCrewOn()&&_crewHourlyBill()>0
-      ?`Labor is billed at $${_crewHourlyBill().toLocaleString()} per hour for the crew on site, ${_estCrew.length} tech${_estCrew.length>1?'s':''}, for time worked on this project. Crew size may change with Buyer&apos;s knowledge; each tech added or removed changes the hourly figure by that tech&apos;s rate.`
-      :`Labor is billed at $${(Number(_tmRatePerMan)||0).toLocaleString()} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.`)+`${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
+      ?`Labor is billed at ${fmt(_crewHourlyBill(),{short:true})} per hour for the crew on site, ${_estCrew.length} tech${_estCrew.length>1?'s':''}, for time worked on this project. Crew size may change with Buyer&apos;s knowledge; each tech added or removed changes the hourly figure by that tech&apos;s rate.`
+      :`Labor is billed at ${fmt((Number(_tmRatePerMan)||0),{short:true})} per hour, per worker, for time worked on this project. ${_tmCrewCount} worker${_tmCrewCount>1?'s are':' is'} scheduled; crew size may change with Buyer&apos;s knowledge and is billed at the same rate.`)+`${_tmRateOnly?` No total contract price is stated or implied${_tmNteCap?', other than the not-to-exceed amount above':''}.`:' Any total shown is an estimate of that billing, not a fixed price.'}`]]:[];
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed ${fmt(_tmNteCap,{short:true})}. This amount may be exceeded only by a written change order signed by Buyer, and only for (a) hidden damage or conditions that could not be seen before work began, (b) work Buyer adds or changes, or (c) Buyer&apos;s request to finish sooner than scheduled, where that takes a larger crew or overtime`:' (T&amp;M)'}`],
     ..._tmRateClause,
     ['Cancellation &amp; Deposits',_cancelClause],
     // Time sheets, not receipts: receipts never go on a bill (owner,
@@ -8868,14 +8850,14 @@ async function sendGenericProposal(previewOnly,opts){
     :((_bidForValid&&_bidForValid.validUntil)||addDays(todayKey(),_estValidDays()));
   if(!previewOnly&&_bidForValid&&(_geiValidDays>0||!_bidForValid.validUntil))_bidForValid.validUntil=_validUntilKey;
   const _geiExpD=_fmtValidUntil(_validUntilKey);
-  const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const totalFmt=fmt(total);
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
   // T&M: the flat figure or nothing (_tmDepositState), never a percent.
   const _tmDepAmt=_geiIsTM?_tmDeposit():Math.round(total*_tmDepPct)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
-  const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const depositFmt=fmt(_tmDepAmt);
   // MUST be declared before the template literals below that use it, TDZ if declared after
   // Use the client's job address state, not the contractor's home state
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
@@ -8919,7 +8901,7 @@ async function sendGenericProposal(previewOnly,opts){
   // rush that takes more crew, raise it too, by the same signed change order.
   const _tmCapFineTxt='Only a change order you sign can raise it: for hidden damage found once work starts, work you add or change, or a rush that needs a bigger crew.';
   const _tmCapFine='<div style="font-size:12px;font-weight:400;line-height:1.45;opacity:.85;letter-spacing:0;margin-top:3px">'+_tmCapFineTxt+'</div>';
-  const _rsMoney=n=>'$'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+  const _rsMoney=n=>fmt(Number(n||0),{whole:true});
   const _rsRow=(lbl,val,bg,fg)=>`<tr style="background:${bg==='#f8fafc'?'#fff':bg};color:${fg}"><td style="padding:15px 24px;font-size:14px;font-weight:500;border-top:1px solid #eceef2">${lbl}</td><td style="padding:15px 24px;text-align:right;font-size:14.5px;font-weight:700;white-space:nowrap;border-top:1px solid #eceef2">${val}</td></tr>`;
   const _rsCadence={weekly:'Billed weekly',biweekly:'Billed every two weeks',milestone:'Billed at each agreed milestone',completion:'Billed on completion'}[_tmBillingCycle]||'Billing not picked yet';
   const _rsFlatDep=_tmDeposit();
@@ -9108,7 +9090,7 @@ async function sendGenericProposal(previewOnly,opts){
               <div style="font-size:12px;font-weight:800;color:${_me?_pAccent:'#4a5568'}">${escHtml(_nm)}${_me?' <span style="font-weight:700;font-size:10px;color:#718096">, this one</span>':(_u?' <span style="font-weight:700;font-size:10px;color:'+_pAccent+'">, read it →</span>':'')}</div>
               ${_hd?`<div style="font-size:10.5px;color:#718096;margin-top:1px;overflow-wrap:anywhere">${escHtml(_hd)}</div>`:''}
             </div>
-            <div style="font-size:14px;font-weight:800;color:#111;white-space:nowrap">${'$'+_amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            <div style="font-size:14px;font-weight:800;color:#111;white-space:nowrap">${fmt(_amt)}</div>
           </div>`;
         const _box=`display:flex;padding:9px 12px;border-radius:8px;margin-bottom:6px;background:${_me?'#EBF2FB':'#f8fafc'};border:1.5px solid ${_me?_pAccent:'#e2e8f0'}`;
         return _u
@@ -9158,7 +9140,7 @@ async function sendGenericProposal(previewOnly,opts){
         // into an evening of back and forth: the answer has to be a tap that
         // lands them on that option's own document, where they can sign it.
         const _u=_geiSignUrlFor(x);
-        const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${'$'+_amt.toLocaleString('en-US',{maximumFractionDigits:0})})</span>`:''} also includes`;
+        const _hd=`${escHtml(_nm)}${_amt?` <span style="font-weight:700;color:#718096">(${fmt(_amt,{whole:true})})</span>`:''} also includes`;
         return `<div style="margin-bottom:10px"><div style="font-size:11.5px;font-weight:800;color:${_pAccent};margin-bottom:4px">${_hd}</div><ul style="margin:0 0 6px;padding-left:18px">${_li}</ul>${_u?`<a href="${escHtml(_u)}" target="_top" style="display:inline-block;font-size:11.5px;font-weight:800;color:${_pAccent};text-decoration:none;border:1.5px solid ${_pAccent};border-radius:6px;padding:6px 12px">Switch to ${escHtml(_nm)} &rarr;</a>`:''}</div>`;
       }).filter(Boolean).join('');
       if(_blocks)_optDiffSection=`<div style="margin:0 24px;padding:20px 0;border-top:1px solid #e2e8f0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-bottom:10px">Not in this option</div>${_blocks}<div style="font-size:10.5px;color:#718096">Nothing to sign twice: signing another option replaces this one.</div></div>`;
@@ -9248,7 +9230,7 @@ async function sendGenericProposal(previewOnly,opts){
       if(!rl.length||!r.label)return;
       const col=_pal[_legend.length%_pal.length];
       _fills[gi]=col;
-      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · $'+Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)).toLocaleString('en-US')+'</span>');
+      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · '+fmt(Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)),{short:true})+'</span>');
     });
     const _sts=(typeof _scanStories==='function')?_scanStories(_sc):[1];
     const _plans=_sts.map(st=>
@@ -9335,7 +9317,7 @@ async function sendGenericProposal(previewOnly,opts){
     baddr:S.baddr||'',
     poweredBy:S.poweredBy!==false,
   };
-  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
+  const _uploadRes=await _tdStoreDoc(proposalKey,proposalData);
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed, check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
@@ -9659,9 +9641,9 @@ async function _sendIndProposal(){
   const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const estNum=String(_indBidId).slice(-6);
   const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
-  const totalFmt='$'+midPrice.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const depositFmt='$'+Math.round(midPrice*0.25).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const rangeStr='$'+r.totalLow.toLocaleString()+' – $'+r.totalHigh.toLocaleString();
+  const totalFmt=fmt(midPrice);
+  const depositFmt=fmt(Math.round(midPrice*0.25));
+  const rangeStr=fmt(r.totalLow,{short:true})+' – '+fmt(r.totalHigh,{short:true});
   const crewLabel=r.crew===1?'Solo':r.crew===2?'2-Person':r.crew===3?'3-Person':'4-Person';
   const resolvedPrimer=primerColor||(tier.products.split('→')[0]?.trim()||'Per spec');
   const resolvedTopcoat=color||(tier.products.split('→')[1]?.trim()||'Per spec');
@@ -9696,7 +9678,7 @@ async function _sendIndProposal(){
     poweredBy:S.poweredBy!==false,
   };
   showToast('Uploading proposal…','⏳');
-  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));
+  {const _r=await _tdStoreDoc(proposalKey,proposalData);if(_r.error)console.error('[ind proposal upload]',_r.error);}
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();
@@ -9857,7 +9839,6 @@ function _geiSignInPerson(){
   // of a total that does not exist, exactly as sendGenericProposal does it.
   const depAmt=_geiIsTM?_tmDeposit():Math.round(total*depPct/100*100)/100;
   const bal=_ipRateOnly?0:Math.max(0,Math.round((total-depAmt)*100)/100);
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const depLabel=_geiIsTM?'Up front, before work begins':'Deposit ('+depPct+'%)';
   document.getElementById('_gei-ip-ov')?.remove();
   const ov=document.createElement('div');
@@ -9971,7 +9952,6 @@ async function _geiConfirmInPerson(){
   try{if(typeof _presentClose==='function')_presentClose();}catch(_e){}
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');
-  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   if(ov){
     ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+

@@ -273,3 +273,26 @@ function esignSigBlockHTML(o){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' + grid + '</div>' +
   '</div>';
 }
+
+// A saved document by its link key (a proposal, the client hub, an invoice),
+// for the pages a customer opens. One copy for client.html and sign.html
+// (audit 2026-10-01: each had its own, and only one had the timeout).
+async function _fetchStorageJson(key){
+  try{
+    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
+    if(!pub)throw new Error('no public url');
+    // 10s abort, a hung request on a weak connection must fall through to the
+    // download() path instead of freezing the boot screen forever.
+    const ac=new AbortController();
+    const tm=setTimeout(()=>ac.abort(),10000);
+    let res;
+    try{res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store',signal:ac.signal});}
+    finally{clearTimeout(tm);}
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return{data:await res.json(),error:null};
+  }catch(e){
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)return{data:null,error:error||e};
+    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
+  }
+}

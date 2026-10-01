@@ -758,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.11';
+const APP_VERSION='10.01.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -5063,7 +5063,7 @@ async function _saveEmployee(idx){
             notifyEmail:_supaUser.email||'',
             status:'sent',signedAt:null,signerName:null,sigData:null,
             createdAt:agRecord.createdAt,inviteUrl};
-          await _supa.storage.from('proposals').upload(agKey,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+          await _tdStoreDoc(agKey,snapshot);
           saveAll();
           const _base=_clientBaseUrl?_clientBaseUrl():(window.location.origin+window.location.pathname.split('index.html')[0]);
           signUrl=_base+'contract-sign.html?t='+agToken+'&u='+cid+'&a='+agId;
@@ -8716,7 +8716,7 @@ function editSentBid(bidId){
     _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
       if(!data)return;
       data.text().then(txt=>{
-        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true,cacheControl:'0'});}catch(e){}
+        try{const p=JSON.parse(txt);_tdStoreDoc(b.signingKey,{...p,status:'voided'});}catch(e){}
       });
     });
   }
@@ -8740,7 +8740,7 @@ async function _extendBidPrice(bidId,days){
       if(dl&&dl.data){
         const j=JSON.parse(await dl.data.text());
         j.validUntil=b.validUntil;
-        await _supa.storage.from('proposals').upload(b.proposalKey,JSON.stringify(j),{contentType:'application/json',upsert:true,cacheControl:'0'});
+        await _tdStoreDoc(b.proposalKey,j);
       }
     }
     if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});

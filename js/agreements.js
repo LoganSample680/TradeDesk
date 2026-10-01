@@ -293,7 +293,7 @@ async function _agUpload(a){
     createdAt:a.createdAt
   };
   try{
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _tdStoreDoc(key,snapshot);
     return{error};
   }catch(e){return{error:e};}
 }

@@ -401,7 +401,9 @@ test.describe('presentation mode', () => {
       nul: _presentName(null),
       blank: _presentName({ type: '   ' }),
       lbl: _presentName({ optionLabel: 'C', type: 'Whatever' }),
-      m0: _presentMoney(0), mNul: _presentMoney(null), mStr: _presentMoney('abc'), mNum: _presentMoney(13440.49)
+      // The presentation's money is the app's one format now (fmt, whole
+      // dollars; audit 2026-10-01), and its own copy is gone.
+      m0: fmt(0, { whole: true }), mNul: fmt(null, { whole: true }), mStr: fmt('abc', { whole: true }), mNum: fmt(13440.49, { whole: true }), old: typeof _presentMoney
     }));
     expect(r.nul).toBe('Proposal');
     expect(r.blank).toBe('Proposal');
@@ -410,6 +412,7 @@ test.describe('presentation mode', () => {
     expect(r.mNul).toBe('$0');
     expect(r.mStr).toBe('$0');
     expect(r.mNum).toBe('$13,440');
+    expect(r.old).toBe('undefined');
   });
 
   // ── The difference, said out loud ──────────────────────────────────────────

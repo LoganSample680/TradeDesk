@@ -641,7 +641,7 @@ function openQuickInvoice(cid,addr){
     off:new Set(),open:new Set(),addOpen:false,added:[],crew:[],due:null,
     // The number it will be sent under, from the moment it opens (owner
     // 2026-09-29: "No. Draft doesn't show a number"). A saved draft keeps its.
-    id:(d&&d.id)||_newBidId(),dayNote:{},fixed:null,rates:{},showRate:null,partsMode:null,photos:{on:true,before:null,after:null},
+    id:(d&&d.id)||_newBidId(),dayNote:{},fixed:null,rates:{},showRate:null,showHours:null,partsMode:null,photos:{on:true,before:null,after:null},
     base:un.lines,dropped:new Set(),xOn:new Set(),xOff:new Set(),xOpen:null,ctx:null,workRecs:[],missed:[]};
   if(d)_qiDraftApply(d);
   _qiRebuild();
@@ -1258,29 +1258,92 @@ function _qiMatDesc(m){
 }
 function _qiDropWork(i){if(!_qi)return;_qiWorkArr().splice(i,1);_qiWorkCommit();}
 
+// THE INVOICE DOCUMENT, ONE FOR EVERY BILL (audit 2026-10-01). The quick
+// invoice he is writing, a Build Your Own or T&M job's final bill, and the
+// copy the customer opens all come out of _invoiceDocHtml, in the proposal's
+// own shell. o: {num, client:{name,addr,phone}, rows:[{text,amount,head,sub}],
+// total, due (words), work:[scope records], workTitle, photosHtml, note,
+// live:{paid:[{date,label,amount}], balance}} (live only on his print, where
+// what is paid so far belongs on the page).
+function _invoiceRowsHtml(rows){
+  const td='padding:12px 18px;border-top:1px solid #eef1f5;font-size:15px;line-height:1.4;color:#0b1220';
+  const sub='font-size:13px;color:#5b6475';
+  return (rows||[]).map(r=>r.sub
+    ?`<tr><td style="${td};border-top:0;padding-top:0"><span style="${sub}">${escHtml(r.text)}</span></td><td style="${td};border-top:0;padding-top:0;text-align:right;${sub}">${r.amount!=null?fmt(r.amount):''}</td></tr>`
+    :`<tr><td style="${td}">${r.head?'<b>'+escHtml(String(r.text).split(' · ')[0])+'</b>'+(String(r.text).includes(' · ')?' · '+escHtml(String(r.text).split(' · ').slice(1).join(' · ')):''):escHtml(r.text)}</td><td style="${td};text-align:right;white-space:nowrap">${r.amount!=null?(r.head?'<b>'+fmt(r.amount)+'</b>':fmt(r.amount)):''}</td></tr>`
+  ).join('');
+}
+function _invoiceDocHtml(o){
+  o=o||{};
+  const c=o.client||{};
+  const pb=_propBrand();_propTheme(pb.a,pb.rgb);
+  const bname=(typeof S!=='undefined'&&S.bname)||'';
+  const total=Number(o.total)||0;
+  const live=o.live||null;
+  const liveRows=live?(live.paid||[]).map(p=>`<tr><td style="padding:10px 18px;font-size:14px;color:#3B8C2A">${escHtml(p.label||'Payment')}${p.date?' · '+escHtml(p.date):''}</td><td style="padding:10px 18px;font-size:14px;color:#3B8C2A;text-align:right;white-space:nowrap">(${fmt(p.amount)})</td></tr>`).join('')+
+    `<tr><td style="padding:14px 18px;border-top:2px solid #e2e8f0;font-size:16px;font-weight:800">${Number(live.balance)<0.01?'Paid in full':'Balance due'}</td><td style="padding:14px 18px;border-top:2px solid #e2e8f0;font-size:18px;font-weight:800;text-align:right;white-space:nowrap">${fmt(live.balance)}</td></tr>`:'';
+  const table=`<div style="margin:0;border-radius:18px;overflow:hidden;border:1px solid #e8eaef">`+
+    `<table style="width:100%;border-collapse:collapse"><tbody>${_invoiceRowsHtml(o.rows)}</tbody>`+
+    `<tfoot><tr><td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:17px;font-weight:800">Total due</td>`+
+    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${fmt(total)}</td></tr>`+
+    (o.due?`<tr><td colspan="2" style="padding:0 18px 16px;font-size:14px;font-weight:600;color:#475569">${escHtml(o.due)}</td></tr>`:'')+
+    liveRows+`</tfoot></table></div>`;
+  const work=(o.work||[]).filter(r=>r&&String(r.label||'').trim()&&r.on!==false);
+  return _propDoc(
+    _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
+      label:'Invoice',num:o.num||'Draft',date:todayKey(),name:escHtml(c.name||''),addr:escHtml(c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
+      project:escHtml(fmt(total))+(o.due?' · '+escHtml(o.due):' due'),until:null,forLabel:'Billed to'})+
+    _propSection('Work performed',escHtml(o.workTitle||''),(work.length?'<div style="margin:0 0 20px">'+_propScopeItemsHtml(work)+'</div>':'')+(o.photosHtml||'')+table,{noRule:true})+
+    // His note, printed the way a proposal prints it, signed (_propNoteHtml).
+    (typeof _propNoteHtml==='function'?_propNoteHtml(o.note||'',''):'')+
+    _propSignoff(bname,'Thank you for choosing'));
+}
 function _qiDocHtml(num){
   if(!_qi)return '';
   const c=getClientById(_qi.cid)||{};
-  const lines=_qiLines().filter(l=>Number(l.amount)>0);
-  const total=_qiTotal();
-  const pb=_propBrand();_propTheme(pb.a,pb.rgb);
-  const bname=(typeof S!=='undefined'&&S.bname)||'';
-  const td='padding:13px 18px;border-top:1px solid #eef1f5;font-size:15px;line-height:1.4;color:#0b1220';
-  const rows=_qiCustomerHtml();
-  const table=`<div style="margin:18px 16px 16px;border-radius:18px;overflow:hidden;border:1px solid #e8eaef">`+
-    `<table style="width:100%;border-collapse:collapse"><tbody>${rows}</tbody>`+
-    `<tfoot><tr><td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:17px;font-weight:800">Total due</td>`+
-    `<td style="padding:16px 18px;border-top:2px solid #e2e8f0;font-size:20px;font-weight:800;text-align:right;white-space:nowrap;color:${pb.a}">${fmt(total)}</td></tr>`+
-    (_qi.due?`<tr><td colspan="2" style="padding:0 18px 16px;font-size:14px;font-weight:600;color:#475569">${escHtml(_qiDueWords(_qi.due))}</td></tr>`:'')+
-    `</tfoot></table></div>`;
-  return _propDoc(
-    _propCover({bname,bphone:(typeof S!=='undefined'&&S.bphone)||'',blic:(typeof S!=='undefined'&&S.blic)||'',accent:pb.a,
-      label:'Invoice',num:num||_qiNum(),date:todayKey(),name:escHtml(c.name||''),addr:escHtml(_qi.addr||c.addr||''),phone:escHtml(typeof _propPhone==='function'?_propPhone(c.phone):(c.phone||'')),
-      project:escHtml(fmt(total))+(_qi.due?' · '+escHtml(_qiDueWords(_qi.due)):' due'),until:null,forLabel:'Billed to'})+
-    _propSection('Work performed',escHtml(_qiWorkTitle()),_qiWorkListHtml()+_qiPhotoDocHtml()+table.replace('margin:18px 16px 16px','margin:0'),{noRule:true})+
-    // His note, printed the way a proposal prints it, signed (_propNoteHtml).
-    (typeof _propNoteHtml==='function'?_propNoteHtml(_qi.note,''):'')+
-    _propSignoff(bname,'Thank you for choosing'));
+  const work=_qiWork().length?_qiWorkArr():[];
+  return _invoiceDocHtml({num:num||_qiNum(),client:{name:c.name,addr:_qi.addr||c.addr,phone:c.phone},
+    rows:_qiCustomerRows(),total:_qiTotal(),due:_qi.due?_qiDueWords(_qi.due):'',
+    work,workTitle:_qiWorkTitle(),photosHtml:_qiPhotoDocHtml(),note:_qi.note});
+}
+// A saved bill, any kind, as its customer copy. A quick invoice keeps the
+// rows it was sent with (qiRows); a proposal's bill is its price, its change
+// orders, any lowered price and the tax it charged, over the proposal's own
+// scope. No hours ever: a fixed price is the price (owner 2026-10-01).
+function _invoiceDocForBid(b,opt){
+  if(!b)return '';
+  opt=opt||{};
+  const c=getClientById(b.client_id)||{};
+  const amount=Math.round((Number(b.amount)||0)*100)/100;
+  let rows=[],work=[];
+  const tax=Number(b.salesTax)>0?Math.round(Number(b.salesTax)*100)/100:0;
+  if(b.kind==='quick_invoice'){
+    rows=Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows.slice():(Array.isArray(b.lineItems)?b.lineItems.map(l=>({text:l.desc,amount:l.amount})):[]);
+    if(tax>0&&!rows.some(r=>/tax/i.test(String(r.text))))rows.push({text:'Sales tax',amount:tax});
+    work=Array.isArray(b.qiWorkItems)?b.qiWorkItems:[];
+  }else{
+    const cos=(b.changeOrders||[]).filter(co=>co&&co.signedAt&&Number(co.delta||co.amount));
+    const adj=(b.adjustments||[]).filter(a=>a&&a.type==='decrease'&&Number(a.amount)>0);
+    const coSum=cos.reduce((t,co)=>t+(Number(co.delta)||Number(co.amount)||0),0);
+    const adjSum=adj.reduce((t,a)=>t+Number(a.amount),0);
+    const base=Math.round((amount-coSum+adjSum-tax)*100)/100;
+    rows.push({text:(typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):b.type)||'Work performed',amount:base});
+    cos.forEach(co=>rows.push({text:'Change order #'+(co.coNum||'')+(co.desc?' · '+co.desc:''),amount:Math.round((Number(co.delta)||Number(co.amount)||0)*100)/100}));
+    adj.forEach(a=>rows.push({text:'Price adjustment'+(a.reason?' · '+a.reason:''),amount:-Math.round(Number(a.amount)*100)/100}));
+    if(tax>0)rows.push({text:'Sales tax',amount:tax});
+    work=Array.isArray(b.scopeItems)&&b.scopeItems.length?b.scopeItems
+      :Array.isArray(b.byoItems)&&b.byoItems.length?b.byoItems.filter(it=>it&&it.on!==false&&!it._supply&&!it._rrp).map(it=>({label:it.label,section:it.section||'',on:true}))
+      :(typeof _bidScopeLines==='function'?_bidScopeLines(b):[]).map(l=>({label:l,section:'',on:true}));
+  }
+  let live=null;
+  if(opt.live){
+    const tl={deposit:'Deposit',final:'Final payment',payment:'Payment',refund:'Refund'};
+    const paid=(typeof payments!=='undefined'?payments:[]).filter(p=>p&&String(p.bid_id)===String(b.id)&&Number(p.amount));
+    live={paid:paid.map(p=>({label:(tl[p.type]||'Payment')+(p.method?' · '+p.method:''),date:p.date||'',amount:Number(p.amount)})),balance:typeof getBidBalance==='function'?getBidBalance(b):0};
+  }
+  const due=b.qiDue&&typeof _qiDueWords==='function'?_qiDueWords(b.qiDue):'';
+  return _invoiceDocHtml({num:'INV-'+String(b.id).slice(-6),client:{name:c.name||b.client_name,addr:b.qiAddr||b.addr||c.addr,phone:c.phone||b.phone},
+    rows,total:amount,due,work,workTitle:'',note:b.qiNote||'',live});
 }
 // What he said he did, as a plain list above the charges. Hourly only.
 // The invoice number, the same one printInvoice prints (INV- and the id).
@@ -1351,12 +1414,6 @@ function _qiCustomerItems(){
 // What he did, printed the way a proposal prints its scope (_propStepsHtml,
 // js/generic-estimate.js): his steps as bullets, in stages when there are
 // enough of them, above the charges.
-function _qiWorkListHtml(){
-  if(!_qiWork().length)return '';
-  // Printed through the proposal's scope section, rooms and all.
-  const items=_qiWorkArr().filter(r=>String(r.label||'').trim()&&r.on!==false);
-  return '<div style="margin:0 0 20px">'+_propScopeItemsHtml(items)+'</div>';
-}
 function _qiWork(){return (_qi&&_qi.mode==='hourly'&&Array.isArray(_qi.work))?_qi.work.filter(x=>String(x||'').trim()):[];}
 // The heading over it, named from his own steps the way a proposal names its
 // project ("Water heater replacement"); otherwise plainly what it is.
@@ -1367,11 +1424,11 @@ function _qiWorkTitle(){
 }
 // What the customer will get, before anything is saved or sent: the same
 // full-screen preview a proposal opens in.
-// Saves the invoice document for the client hub. Sending waits for it
-// (_sendPaidInvoice) so the link never opens before the copy is there; with no
-// signal it simply is not saved and the hub draws the invoice itself.
-const _qiDocUploads={};
-function _qiDocUpload(bid,html){
+// Saves an invoice document for the client hub, for any bill. Sending waits
+// for it (_sendPaidInvoice) so the link never opens before the copy is there;
+// with no signal it simply is not saved and the hub draws the invoice itself.
+const _invoiceDocUploads={};
+function _invoiceDocUpload(bid,html){
   if(!bid||!html)return Promise.resolve(false);
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return Promise.resolve(false);
   const uid=typeof _effectiveUid==='function'?_effectiveUid():_supaUser.id;
@@ -1379,14 +1436,14 @@ function _qiDocUpload(bid,html){
   // token nobody can guess, the way a proposal link does.
   const tok=Math.random().toString(36).slice(2,12)+Date.now().toString(36);
   const key='invoice-doc/'+uid+'/'+bid.id+'_'+tok+'.json';
-  const p=_supa.storage.from('proposals').upload(key,JSON.stringify({v:1,bidId:bid.id,invoiceHtml:html}),{contentType:'application/json',upsert:true,cacheControl:'0'})
+  const p=_tdStoreDoc(key,{v:1,bidId:bid.id,invoiceHtml:html})
     .then(r=>{
       if(r&&r.error)return false;
       const live=(bids||[]).find(b=>String(b.id)===String(bid.id));
       if(live){live.invoiceDocKey=key;if(typeof saveAll==='function')saveAll();}
       return true;
     }).catch(()=>false);
-  _qiDocUploads[bid.id]=p;
+  _invoiceDocUploads[bid.id]=p;
   return p;
 }
 function qiSeeIt(){
@@ -1410,7 +1467,7 @@ function _qiSave(){
     // Materials switch (total, items, items and prices) reaches the customer.
     // The tax stays out: their copy prints it in the totals.
     qiRows:_qiCustomerRows().filter(r=>!r.tax).map(r=>({text:r.text,amount:r.amount,head:!!r.head,sub:!!r.sub})),
-    qiShowRate:hourly?_qiShowRate():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
+    qiShowRate:hourly?_qiShowRate():null,qiShowHours:hourly?_qiShowHours():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
     qiWork:hourly?_qi.work.slice():[],
     qiWorkItems:hourly?_qiWorkSaved():[],
@@ -1428,7 +1485,7 @@ function _qiSave(){
   // The customer's copy IS this document (audit 2026-10-01): the page "See
   // what they get" showed him, saved where the proposals save theirs, so the
   // client hub shows it instead of drawing its own.
-  try{_qiDocUpload(bid,_qiDocHtml('INV-'+String(bid.id).slice(-6)));}catch(_e){}
+  try{_invoiceDocUpload(bid,_qiDocHtml('INV-'+String(bid.id).slice(-6)));}catch(_e){}
   // Billing it is finishing it (owner 2026-10-01): this customer's job that
   // is due and has no proposal of its own is done the moment its bill goes
   // out, so nobody has to remember to Mark done as well. A job a proposal
@@ -1575,7 +1632,21 @@ function _qiRateLocked(){
 function _qiShowRate(){
   if(!_qi)return false;
   if(_qiRateLocked())return true;
+  // No hours on the bill means no rate either: a rate with no hours is a
+  // number with nothing to multiply.
+  if(!_qiShowHours())return false;
   return _qi.showRate!=null?!!_qi.showRate:copyShows('invoice','rate');
+}
+// SHOW THE HOURS (owner 2026-10-01: "8 hours on the job, $800 job, $100 an
+// hour"). Hours next to a day's money let a customer work out the rate even
+// with the rate hidden. Off, their copy lists what was done and the day's
+// total, no hours; his own records keep every minute. Only a bill by the hour
+// has hours to show (a flat price, like a Build Your Own job, never does). A
+// state that wants the rate on the bill wants the hours with it: locked on.
+function _qiShowHours(){
+  if(!_qi||_qi.mode!=='hourly')return false;
+  if(_qiRateLocked())return true;
+  return _qi.showHours!=null?!!_qi.showHours:copyShows('invoice','hours');
 }
 function _qiPartsMode(){
   if(!_qi)return 'total';
@@ -1602,7 +1673,8 @@ function _qiSetShow(k,on){
 // The switch this bill uses, made the default for every bill.
 function _qiShowAlways(k){
   if(!_qi)return;
-  setCopyShows('invoice','rate',_qiShowRate());
+  if(k==='showHours')setCopyShows('invoice','hours',_qiShowHours());
+  else setCopyShows('invoice','rate',_qiShowRate());
   _qi[k]=null;
   if(typeof showToast==='function')showToast('Every invoice does this now','✓');
   renderQuickInvoice();
@@ -1655,7 +1727,8 @@ function _qiCustomerRows(){
       // only the day's total carries money, so nothing separates the parts.
       const split=mode==='priced'&&d.parts>0;
       rows.push({text:_qiDayLabel(d.day)+(d.note?' · '+d.note:''),amount:d.total,head:true,split});
-      if(d.mins>0)rows.push({text:'Labor · '+_qiHrs(d.mins)+' on site'+crew+r,amount:split?d.labor:null,sub:true,money:split});
+      const hrs=_qiShowHours();
+      if(d.mins>0)rows.push({text:'Labor'+(hrs?' · '+_qiHrs(d.mins)+' on site':'')+crew+r,amount:split?d.labor:null,sub:true,money:split});
       if(d.parts>0&&mode!=='total')rows.push({text:word+(mode==='priced'?'':' included'),amount:split?d.parts:null,sub:true,money:split});
     });
   }
@@ -1675,21 +1748,16 @@ function _qiCustomerRows(){
   if(tx.tax>0)rows.push({text:tx.label,amount:tx.tax,tax:true});
   return rows;
 }
-function _qiCustomerHtml(){
-  const td='padding:12px 18px;border-top:1px solid #eef1f5;font-size:15px;line-height:1.4;color:#0b1220';
-  const sub='font-size:13px;color:#5b6475';
-  return _qiCustomerRows().map(r=>r.sub
-    ?`<tr><td style="${td};border-top:0;padding-top:0"><span style="${sub}">${escHtml(r.text)}</span></td><td style="${td};border-top:0;padding-top:0;text-align:right;${sub}">${r.amount!=null?fmt(r.amount):''}</td></tr>`
-    :`<tr><td style="${td}">${r.head?'<b>'+escHtml(r.text.split(' · ')[0])+'</b>'+(r.text.includes(' · ')?' · '+escHtml(r.text.split(' · ').slice(1).join(' · ')):''):escHtml(r.text)}</td><td style="${td};text-align:right;white-space:nowrap">${r.amount!=null?(r.head?'<b>'+fmt(r.amount)+'</b>':fmt(r.amount)):''}</td></tr>`
-  ).join('');
-}
 // What the customer's copy shows, as switches on this bill. A switch set
 // differently from his default offers to become the default.
 function _qiCopyHtml(){
   const locked=_qiRateLocked(),rate=_qiShowRate(),pm=_qiPartsMode(),word=_qiPartsWord();
   const always=(k,now,def)=>now!==def?'<button type="button" class="qi-always" onclick="_qiShowAlways(\''+k+'\')">Always</button>':'';
-  return '<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state says it has to be on the bill.':(rate?'They see your rate per hour.':'They see the hours and the total, not your rate.'))+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
-      '<input type="checkbox" class="ios-switch" id="qi-show-rate" '+(rate?'checked':'')+(locked?' disabled':'')+' onchange="_qiSetShow(\'showRate\',this.checked)"></label>'+
+  const hrs=_qiShowHours(),hourly=_qi.mode==='hourly';
+  return (hourly?'<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show the hours<small>'+(locked?'Your state says it has to be on the bill.':(hrs?'They see the hours on site each day.':'They see the work and each day\'s total, not the hours.'))+' '+(locked?'':always('showHours',hrs,copyShows('invoice','hours')))+'</small></span>'+
+      '<input type="checkbox" class="ios-switch" id="qi-show-hours" '+(hrs?'checked':'')+(locked?' disabled':'')+' onchange="_qiSetShow(\'showHours\',this.checked)"></label>':'')+
+    (hourly&&!hrs?'':'<label class="ios-row" style="cursor:pointer"><span class="ios-lbl">Show my hourly rate<small>'+(locked?'Your state says it has to be on the bill.':(rate?'They see your rate per hour.':'They see the hours and the total, not your rate.'))+' '+(locked?'':always('showRate',rate,copyShows('invoice','rate')))+'</small></span>'+
+      '<input type="checkbox" class="ios-switch" id="qi-show-rate" '+(rate?'checked':'')+(locked?' disabled':'')+' onchange="_qiSetShow(\'showRate\',this.checked)"></label>')+
     // Three ways, the default first (owner 2026-09-29).
     '<div class="ios-row qi-parts-row"><span class="ios-lbl">'+word+' on their invoice<small>'+
       (pm==='total'?'Only in the total. Items are not listed.':pm==='items'?'Each item and how many, no prices.':'Each item, how many and the price.')+
@@ -1766,7 +1834,7 @@ function _qiDraftApply(d){
   _qiWorkSync();
   _qi.typed=Array.isArray(d.typed)&&d.typed.length?d.typed.map(l=>Object.assign({},l)):_qi.typed;
   _qi.fixed=d.fixed!=null?Number(d.fixed):null;_qi.rates=Object.assign({},d.rates||{});
-  _qi.showRate=d.showRate!=null?!!d.showRate:null;_qi.partsMode=d.partsMode||null;
+  _qi.showRate=d.showRate!=null?!!d.showRate:null;_qi.showHours=d.showHours!=null?!!d.showHours:null;_qi.partsMode=d.partsMode||null;
   _qi.added=Array.isArray(d.added)?d.added.slice():[];
   _qi.crew=Array.isArray(d.crew)?d.crew.slice():[];
   _qi.due=_QI_DUE[d.due]?d.due:null;
@@ -1778,7 +1846,7 @@ function _qiDraftApply(d){
 // so an invoice he never sent can go back to being a draft.
 function _qiDraftSnap(){
   return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_qiWorkSaved(true),note:_qi.note||'',
-    typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
+    typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,showHours:_qi.showHours,partsMode:_qi.partsMode,
     added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
 }
