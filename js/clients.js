@@ -4326,10 +4326,18 @@ async function _lookupPropertyData(clientId,addrParts){
     // applied; everything else leaves the address exactly as it was, to be
     // retried the next time it is saved or the button is tapped.
     if(!d)return false;
+    // THE RECORD IS LOOKED UP AGAIN AFTER THE WAIT. A sync or realtime update
+    // landing while the county answers swaps the client for a new object
+    // (_applyRealtimeRecord), and writing into the one captured before the
+    // wait put the answer on an object nobody holds any more: the county
+    // record was saved, the card stayed blank (Jack's 5713 SW 14th St,
+    // 2026-10-01).
+    const cur=clients.find(x=>x&&x.id===clientId);
+    if(!cur)return true;
     // {found:false} is the county answering that it has no such address, which
     // _propApplyMatch records as a miss so the card can say so and nothing asks
     // again. A null above is the opposite: we never got to ask.
-    if(_propApplyMatch(c,keyAddr,d.found===false?null:d)){
+    if(_propApplyMatch(cur,keyAddr,d.found===false?null:d)){
       saveAll();
       if(currentClientId===clientId)renderClientDetail();
     }

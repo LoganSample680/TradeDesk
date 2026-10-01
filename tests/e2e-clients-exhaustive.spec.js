@@ -4751,6 +4751,38 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.props.propDataSource).toBe('county');
     });
 
+    // Jack's 5713 SW 14th St (2026-10-01): the county answered and saved the
+    // parcel, but a sync swapped the client for a new object during the wait
+    // and the answer went onto the old one, so the card stayed blank.
+    test('an answer that lands after the client was swapped for a new copy reaches the copy on screen', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = clients.slice();
+        const savedSave = window.saveAll;
+        const savedFetch = window.fetch;
+        window.saveAll = () => {};
+        clients.length = 0;
+        const first = { id: 9032, addr: '32 Real St', street: '32 Real St', city: 'Topeka', state: 'KS', zip: '66604' };
+        clients.push(first);
+        window.fetch = async () => {
+          clients[0] = Object.assign({}, first, { notes: 'from another device' });
+          return new Response(JSON.stringify({ year_built: 1954, assessed_value: 120420 }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        };
+        try {
+          await _lookupPropertyData(9032, { street: '32 Real St', city: 'Topeka', state: 'KS', zip: '66604' });
+          const now = clients.find((x) => x.id === 9032);
+          return { swapped: now !== first, year: getProperty(now, '32 Real St').yearBuilt || null, notes: now.notes };
+        } finally {
+          clients.length = 0; saved.forEach((x) => clients.push(x));
+          window.saveAll = savedSave; window.fetch = savedFetch;
+        }
+      });
+      expect(r.swapped).toBe(true);
+      expect(r.year).toBe(1954);
+      expect(r.notes).toBe('from another device');
+    });
+
     test('concurrent calls do not double-apply (§11.2 guard)', async () => {
       const r = await page.evaluate(async () => {
         const saved = clients.slice();
