@@ -274,6 +274,15 @@ function esignSigBlockHTML(o){
   '</div>';
 }
 
+// THE ONE CENTS ROUNDING, for the app and every customer page (audit 2026-10-01: the estimate, the supply list and
+// a dozen inline Math.round(x*100)/100 each had their own). Round half UP at
+// the cent, the way money rounds. Math.round alone does not: 2.5 x 3.33 is
+// 8.325, which floats to 832.4999999999999 and rounds DOWN to $8.32, a penny
+// off on the client's line for no reason a human could explain. Junk is 0.
+function _cents(n){
+  const v=Number(n)||0;
+  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
+}
 // A saved document by its link key (a proposal, the client hub, an invoice),
 // for the pages a customer opens. One copy for client.html and sign.html
 // (audit 2026-10-01: each had its own, and only one had the timeout).

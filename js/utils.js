@@ -104,15 +104,8 @@ const IRS=(when)=>{
   if(!y||typeof _getIrsRateForYear!=='function')return S.irsRate||.725;
   return _getIrsRateForYear(y);
 };
-// THE ONE CENTS ROUNDING (audit 2026-10-01: the estimate, the supply list and
-// a dozen inline Math.round(x*100)/100 each had their own). Round half UP at
-// the cent, the way money rounds. Math.round alone does not: 2.5 x 3.33 is
-// 8.325, which floats to 832.4999999999999 and rounds DOWN to $8.32, a penny
-// off on the client's line for no reason a human could explain. Junk is 0.
-function _cents(n){
-  const v=Number(n)||0;
-  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
-}
+// _cents (rounding money to the cent) lives in js/esign.js, which the app
+// and every customer page load, so the signing page shares it too.
 // THE MIDDLE VALUE (audit 2026-10-01: the price book and the scope history
 // each had a copy). Anything that is not a finite number is skipped; an even
 // count averages the middle two. Nothing to go on is null.

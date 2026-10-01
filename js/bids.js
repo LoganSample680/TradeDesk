@@ -676,7 +676,7 @@ function getBidBalance(bid){return Math.max(0,(bid.amount||0)-getBidPaid(bid.id)
 function _bidDepositDue(bid,balance){
   if(!bid||bid.kind==='quick_invoice')return 0;
   const stored=Number(bid.deposit)||0;
-  const dep=stored>0?stored:(Number(bid.amount)||0)*.25;
+  const dep=stored>0?stored:(Number(bid.amount)||0)*.25; // dup-ok: the one place the no-deposit-saved default lives
   return _cents(balance==null?dep:Math.min(dep,balance));
 }
 function _calcFinanceCharge(bid){

@@ -693,8 +693,8 @@ setTimeout(()=>_dismissSignBoot(true),5000);
 function _portfolioPrices(){
   const pct=_prop.portfolioPct||15;
   const fullP=_prop.fullPrice||_prop.amount;
-  const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
-  return {pct,fullP,discP,savings:Math.round((fullP-discP)*100)/100};
+  const discP=_prop.discountedPrice||_cents(fullP*(1-pct/100));
+  return {pct,fullP,discP,savings:_cents(fullP-discP)};
 }
 function _showPortfolioOffer(){
   const {pct,fullP,discP,savings}=_portfolioPrices();
@@ -1355,7 +1355,7 @@ function _signPayAmts(){
   const frac=_signDepFrac();
   const disc=window._portfolioAccepted&&_prop?.discountedPrice;
   return {frac,
-    dep:disc?Math.round(_prop.discountedPrice*frac*100)/100:_prop?.deposit||0,
+    dep:disc?_cents(_prop.discountedPrice*frac):_prop?.deposit||0,
     full:disc?_prop.discountedPrice:_prop?.amount||0};
 }
 function _selectPayTile(choice){
