@@ -4261,6 +4261,33 @@ function _geiTaxLineType(l){
   if(sec&&sec!=='add-ons'&&!/^rrp\b/.test(sec))return 'labor';
   return null;
 }
+// SALES TAX, ONE ANSWER FOR EVERY DOCUMENT (owner 2026-10-01: "tax logic from
+// proposal carry over"). Build Your Own, T&M and the invoice all ask this.
+// lines: [{desc,total,lineType}] with lineType from _geiTaxLineType (or
+// 'labor' / 'materials' / 'taxpaid' where the caller already knows). rateObj
+// is the customer's address lookup (lookupSalesTaxRate), or null to fall back
+// to his own rate in Settings. label is what the totals say, '' for no row.
+function _docSalesTax(o){
+  o=o||{};
+  const addr=String(o.addr||'');
+  const state=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)||(typeof S!=='undefined'&&S&&S.state)||'KS';
+  const rate=(o.rateObj!=null)?(Number(o.rateObj.rate)||0):(parseFloat(typeof S!=='undefined'&&S&&S.salesTaxRate)||0);
+  const scope=o.scope||'repair';
+  const out={tax:0,rate,scope,treatment:null,label:''};
+  if(!(rate>0)||typeof calcSalesTax!=='function')return out;
+  const r=calcSalesTax({state,tradeType:o.trade||'general',scope,propertyType:o.commercial?'commercial':'residential',taxRate:rate,lineItems:o.lines||[]});
+  out.tax=Math.round((Number(r.taxAmount)||0)*100)/100;
+  out.treatment=r.treatment||null;
+  const t=out.treatment;
+  if(out.tax>0){
+    const isGR=t&&t.type==='gross_receipts';
+    const isFull=t&&(t.type==='service'||t.laborTaxable);
+    out.label=(isGR?(t.label||'Tax'):(isFull?'Sales tax':'Materials tax'))+' ('+rate+'%)';
+  }else if(t&&!t.customerTax){
+    out.label=scope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
+  }
+  return out;
+}
 // The job price rides on the first work line as whatever the priced lines
 // (the supply house list, anything he did price) leave over, so the total is
 // his number and the tax still sees which part is parts. The carrier is
@@ -4301,36 +4328,19 @@ function _byoUpdateRail(){
   _byoApplyJobPrice(_geiLines);
   const sub=_geiLines.reduce((s,l)=>s+(Number(l.total)||0),0);
 
-  // Sales tax
-  let salesTax=0;
-  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
-  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
+  // Sales tax: the one shared answer (_docSalesTax).
   const taxRow=document.getElementById('byo-rail-tax-row');
   const taxAmt=document.getElementById('byo-rail-tax-amt');
   const taxLbl=document.getElementById('byo-rail-tax-lbl');
-  if(_stRate>0&&typeof calcSalesTax==='function'&&sub>0){
-    const _stScope=_geiJobScope||'repair';
-    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
-        return {desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)};
-      })});
-    salesTax=_stResult.taxAmount||0;
-    if(taxRow&&taxAmt&&taxLbl){
-      if(salesTax>0){
-        const isFull=_stResult.treatment?.type==='service'||_stResult.treatment?.laborTaxable;
-        taxLbl.textContent=isFull?'Sales tax ('+_stRate+'%)':'Materials tax ('+_stRate+'%)';
-        taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-        taxRow.style.display='';
-      } else if(_stResult.treatment&&!_stResult.treatment.customerTax){
-        taxLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
-        taxAmt.textContent='$0.00';
-        taxRow.style.display='';
-      } else {
-        if(taxRow)taxRow.style.display='none';
-      }
-    }
-  } else {
-    if(taxRow)taxRow.style.display='none';
+  const _st=sub>0?_docSalesTax({addr:document.getElementById('gei-addr')?.value||'',rateObj:_geiClientTaxRate,trade:_geiTrade||'general',
+    scope:_geiJobScope||'repair',commercial:_geiIsCommercial,lines:_geiLines.map(l=>({desc:l.desc,total:l.total,lineType:_geiTaxLineType(l)}))}):{tax:0,label:''};
+  const salesTax=_st.tax;
+  if(taxRow&&taxAmt&&taxLbl){
+    if(_st.label){
+      taxLbl.textContent=_st.label;
+      taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      taxRow.style.display='';
+    }else taxRow.style.display='none';
   }
 
   const total=sub+salesTax;
@@ -7937,22 +7947,12 @@ function calcGeiTotal(){
   // 2026-09-23).
   const markup=_geiIsTM?0:sub*pct/100;
 
-  // Sales tax, separate from markup, based on state rules and job scope
-  let salesTax=0,salesTaxTreatment=null;
-  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+  // Sales tax, separate from markup, based on state rules and job scope: the
+  // one shared answer (_docSalesTax).
   const _stScope=_geiJobScope||(_geiIsTM?'tm':'repair');
-  // Rate: always use client address ZIP/state lookup; fall back to contractor setting only when no address yet
-  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
-  if(typeof calcSalesTax==='function'&&_stRate>0){
-    const _liItems=_geiLines.map(l=>{
-      if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
-      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:_geiTaxLineType(l)};
-    });
-    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_liItems});
-    salesTax=_stResult.taxAmount||0;
-    salesTaxTreatment=_stResult.treatment;
-  }
+  const _st=_docSalesTax({addr:document.getElementById('gei-addr')?.value||'',rateObj:_geiClientTaxRate,trade:_geiTrade||'general',
+    scope:_stScope,commercial:_geiIsCommercial,lines:_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':_geiTaxLineType(l)}))});
+  const salesTax=_st.tax,_stRate=_st.rate;
 
   const total=sub+markup+salesTax;
   const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -7964,23 +7964,12 @@ function calcGeiTotal(){
   const stAmt=document.getElementById('gei-sales-tax-amt');
   const stLbl=document.getElementById('gei-sales-tax-lbl');
   if(stRow&&stAmt&&stLbl){
-    if(!_stRate){
-      stRow.style.display='none';
-    } else if(salesTaxTreatment&&!salesTaxTreatment.customerTax){
-      stRow.style.display='flex';
-      stAmt.textContent='$0.00';
-      stLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
-      stAmt.style.color='var(--text3)';
-    } else if(salesTax>0){
+    if(!_st.label)stRow.style.display='none';
+    else{
       stRow.style.display='flex';
       stAmt.textContent=fmt(salesTax);
-      stAmt.style.color='var(--text2)';
-      const isGR=salesTaxTreatment?.type==='gross_receipts';
-      const isFull=salesTaxTreatment?.type==='service'||salesTaxTreatment?.laborTaxable;
-      stLbl.textContent=(isGR?(salesTaxTreatment.label||'Tax'):(isFull?'Sales tax':'Materials tax'))
-        +' ('+_stRate+'%)';
-    } else {
-      stRow.style.display='none';
+      stAmt.style.color=salesTax>0?'var(--text2)':'var(--text3)';
+      stLbl.textContent=_st.label;
     }
   }
 

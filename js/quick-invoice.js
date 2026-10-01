@@ -637,6 +637,7 @@ function openQuickInvoice(cid,addr){
   _qiRebuild();
   goPg('pg-qi');
   renderQuickInvoice();
+  _qiLookupTax(_qi);
   // The visits load once, then the screen paints once more (the shimmer in
   // the tracked rows until then, never a "Loading" line: CLAUDE.md 8.4).
   const me=_qi;
@@ -660,7 +661,7 @@ function _qiLines(){
   // The supply house list is on the bill once it has a price, never as $0.
   const typed=_qi.typed.filter(l=>l._supply?Number(l.amount)>0:(String(l.desc||'').trim()||Number(l.amount)>0)).map(l=>{
     const qty=_qiQty(l);
-    return {kind:'line',part:!!l.part,qty,unit:l.unit||'',desc:l.part?_qiPartLabel(l):String(l.desc||'').trim(),amount:Math.round(qty*(Number(l.amount)||0)*100)/100};
+    return {kind:'line',part:!!l.part,supply:!!l._supply,taxPaid:!!l._taxPaid,qty,unit:l.unit||'',desc:l.part?_qiPartLabel(l):String(l.desc||'').trim(),amount:Math.round(qty*(Number(l.amount)||0)*100)/100};
   });
   if(_qi.mode==='hourly'&&_qi.fixed!=null)return [{kind:'fixed',desc:'Work performed',amount:Number(_qi.fixed)||0}].concat(typed);
   return (_qi.mode==='hourly'?_qiOnLines():[]).concat(typed);
@@ -768,7 +769,39 @@ function _qiPeopleHtml(){
     :'')+
   '</div>';
 }
-function _qiTotal(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
+function _qiSub(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
+// SALES TAX, THE PROPOSAL'S OWN (owner 2026-10-01: "tax logic from proposal
+// carry over"). The same _docSalesTax Build Your Own and T&M ask, fed the
+// same kinds of line: hours and charges are labor, parts are materials, and
+// store receipts were taxed at the counter so they are not taxed twice.
+function _qiTaxLines(){
+  return _qiLines().filter(l=>Number(l.amount)>0).map(l=>({desc:l.desc,total:Number(l.amount)||0,
+    lineType:l.kind==='receipt'?'taxpaid':(l.kind==='line'&&(l.part||l.supply))?(l.taxPaid?'taxpaid':'materials'):'labor'}));
+}
+function _qiTax(){
+  if(!_qi||typeof _docSalesTax!=='function')return {tax:0,label:'',rate:0};
+  const c=getClientById(_qi.cid)||{};
+  const pt=String(c.ptype||'').toLowerCase();
+  return _docSalesTax({addr:_qi.addr||c.addr||'',rateObj:_qi.taxRate||null,
+    trade:(typeof getActiveTrade==='function'&&getActiveTrade())||'general',
+    scope:pt==='new construction'?'improvement':'repair',commercial:pt==='commercial',lines:_qiTaxLines()});
+}
+// The customer's own rate, from the house's address, the way a proposal looks
+// it up (_geiLookupClientTaxRate). Until it lands, his rate in Settings.
+function _qiLookupTax(me){
+  if(!me||typeof lookupSalesTaxRate!=='function')return;
+  const c=getClientById(me.cid)||{};
+  const addr=me.addr||c.addr||'';
+  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
+  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
+  if(!zip&&!state)return;
+  Promise.resolve(lookupSalesTaxRate(zip||'',state||(typeof S!=='undefined'&&S&&S.state)||'KS')).then(r=>{
+    if(_qi!==me)return;
+    me.taxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
+    renderQuickInvoice();
+  }).catch(()=>{});
+}
+function _qiTotal(){return Math.round((_qiSub()+_qiTax().tax)*100)/100;}
 
 function renderQuickInvoice(){
   const host=document.getElementById('qi-page');if(!host||!_qi)return;
@@ -982,7 +1015,11 @@ function _qiTotalsPaint(){
     e.textContent=_qiMoney(_qi.tracked.filter(l=>l.kind==='time'&&l.day===d&&l.who===w).reduce((s2,l)=>s2+(Number(l.amount)||0),0));
   });
   const M=_qiMath();
-  [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
+  const T=_qiTax();
+  [['qi-m-labor',M.labor],['qi-m-mat',M.mat],['qi-m-extra',M.extra],['qi-m-tax',T.tax]].forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=_qiMoney(v);});
+  const tr=document.getElementById('qi-m-tax-row'),tl=document.getElementById('qi-m-tax-lbl');
+  if(tr)tr.style.display=T.label?'':'none';
+  if(tl)tl.textContent=T.label;
 }
 // THE MATH, SPELLED OUT (owner 2026-09-29: "can they trust the numbers").
 // Labor hours and dollars, materials, parts and charges, and the total, from
@@ -1005,6 +1042,9 @@ function _qiMathHtml(total){
       (M.mins>0?r('qi-m-labor','Labor',_qiMins(M.mins)+(M.people>1?' across '+M.people+' people':''),M.labor):''))+
     (M.mat>0?r('qi-m-mat','Materials','From store receipts',M.mat):'')+
     (M.extra>0?r('qi-m-extra','Parts and charges','',M.extra):'')+
+    // Always drawn, shown only with something to say, so typing a price can
+    // bring it in without redrawing the screen (_qiTotalsPaint).
+    (()=>{const t=_qiTax();return '<div class="ios-row" id="qi-m-tax-row"'+(t.label?'':' style="display:none"')+'><span class="ios-lbl" id="qi-m-tax-lbl">'+escHtml(t.label)+'</span><span class="ios-fact" id="qi-m-tax">'+_qiMoney(t.tax)+'</span></div>';})()+
     '<div class="ios-row qi-total-row"><span class="ios-lbl"><b>Total</b></span><span class="ios-fact qi-total" id="qi-total">'+_qiMoney(total)+'</span></div>'+
   '</div></div>';
 }
@@ -1294,6 +1334,7 @@ function _qiSave(){
     qiAddr:_qi.addr||c.addr||'',
     type:'Invoice',kind:'quick_invoice',status:'Closed Won',draft:false,
     bid_date:todayKey(),completion_date:todayKey(),amount:total,deposit:0,
+    salesTax:_qiTax().tax,salesTaxRate:_qiTax().rate,
     desc:(hourly?_qi.work:[]).concat(_qiCustomerItems().map(l=>l.desc)).join('\n'),lineItems:_qiCustomerItems(),
     qiShowRate:hourly?_qiShowRate():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
@@ -1530,6 +1571,9 @@ function _qiCustomerRows(){
     }
   }
   charges.forEach(l=>rows.push({text:l.desc,amount:l.amount}));
+  // The tax is its own line, so what they see adds up to what they pay.
+  const tx=_qiTax();
+  if(tx.tax>0)rows.push({text:tx.label,amount:tx.tax});
   return rows;
 }
 function _qiCustomerHtml(){

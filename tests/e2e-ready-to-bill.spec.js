@@ -446,7 +446,7 @@ test.describe('Ready to bill', () => {
     await open(page, 701);
     const r = await page.evaluate(() => ({
       steps: [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent),
-      math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
+      math: [...document.querySelectorAll('#qi-page .qi-math-box .ios-row')].filter(x => x.style.display !== 'none').map(x => x.querySelector('.ios-lbl').firstChild.textContent + '=' + x.querySelector('.ios-fact').textContent),
       send: document.getElementById('qi-send-total').textContent,
       // Each setting sits in the step it is about, out in the open (owner
       // 2026-09-29: "why is drive time in options and not with time?").
@@ -1337,4 +1337,67 @@ test('Home > Ready to bill > the invoice > sent: 8 taps and what he typed, the w
   console.log('[invoice start to finish] ' + taps + ' taps, ' + keys + ' keys, ' + ms + 'ms');
   assertNoErrors(page, 'invoice start to finish');
 });
+});
+
+// Owner 2026-10-01: "tax logic from proposal carry over". The invoice asks the
+// same _docSalesTax the proposals do: in Kansas a home repair taxes the parts
+// and not the hours, store receipts were taxed at the counter, and a new
+// build charges none.
+test.describe('Invoice sales tax, the proposal rule', () => {
+  const setup = (page, o) => page.evaluate(async (o) => {
+    const c = getClientById(701);
+    c.addr = '2210 Birch Ln, Topeka, KS 66603'; c.ptype = o.ptype || '';
+    _activeTrade = o.trade || 'plumbing';
+    S.salesTaxRate = 9.15;
+    window.lookupSalesTaxRate = async () => ({ rate: 9.15, source: 'hardcoded' });
+    openQuickInvoice(701);
+    await new Promise(r => setTimeout(r, 40));
+    if (o.part) { _qi.typed.push({ part: true, desc: 'Wax ring', qty: 1, amount: o.part }); renderQuickInvoice(); }
+    const t = _qiTax();
+    const rows = _qiCustomerRows();
+    return { tax: t.tax, label: t.label, sub: _qiSub(), total: _qiTotal(),
+      rowSum: Math.round(rows.filter(r => r.amount != null && !r.sub).reduce((s, r) => s + r.amount, 0) * 100) / 100,
+      taxRow: rows.find(r => /tax/i.test(r.text)) || null,
+      shown: getComputedStyle(document.getElementById('qi-m-tax-row')).display !== 'none' ? document.getElementById('qi-m-tax-lbl').textContent : null };
+  }, o || {});
+
+  test('a Kansas home repair: parts are taxed, hours and store receipts are not', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, { part: 100 });
+    expect(r.tax, '9.15% of the $100 part only').toBe(9.15);
+    expect(r.label).toBe('Materials tax (9.15%)');
+    expect(r.total).toBe(Math.round((r.sub + 9.15) * 100) / 100);
+    expect(r.taxRow, 'the customer sees the tax as its own line').toEqual({ text: 'Materials tax (9.15%)', amount: 9.15 });
+    expect(r.rowSum, 'what they see adds up to what they pay').toBe(r.total);
+    expect(r.shown).toBe('Materials tax (9.15%)');
+    const saved = await page.evaluate(() => { const b = _qiSave(); return { amount: b.amount, tax: b.salesTax, rate: b.salesTaxRate }; });
+    expect(saved).toEqual({ amount: r.total, tax: 9.15, rate: 9.15 });
+    await assertNoErrors(page);
+  });
+
+  test('hours and receipts alone: no tax, no tax line on their copy', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, {});
+    expect(r.tax).toBe(0);
+    expect(r.taxRow).toBe(null);
+    expect(r.total).toBe(r.sub);
+  });
+
+  test('a new build is a capital improvement: nothing charged, and he is told why', async ({ page }) => {
+    await boot(page);
+    const r = await setup(page, { part: 100, ptype: 'new construction' });
+    expect(r.tax).toBe(0);
+    expect(r.shown).toBe('Sales tax, capital improvement');
+    expect(r.taxRow).toBe(null);
+  });
+
+  test('Build Your Own and the invoice give the same tax on the same part', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const lines = [{ desc: 'Wax ring', total: 100, lineType: 'materials' }, { desc: 'Labor', total: 300, lineType: 'labor' }];
+      S.salesTaxRate = 9.15;
+      return _docSalesTax({ addr: '1 A St, Topeka, KS 66603', rateObj: null, trade: 'plumbing', scope: 'repair', commercial: false, lines }).tax;
+    });
+    expect(r).toBe(9.15);
+  });
 });
