@@ -207,6 +207,13 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-personal.sql
 
+      # The live drive row goes up the second a drive starts; a commute home
+      # closes into no row, so nothing used to close the live one (20261060).
+      - name: A live row the day no longer carries has ended
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-live-ends.sql
+
       # A late tape changes a drive's key, and ingest never sweeps, so the
       # fuller answer used to land BESIDE the old one and the day counted twice
       # (Jack, 2026-09-23). 20261038 retires the older rows a write overlaps;

@@ -4244,17 +4244,31 @@ function geoDeriveRows(result, ids) {
   // the closed drive row gets (segKey above: a segment is keyed by the flip
   // that started it), so the finished drive lands on this same row instead of
   // beside it. Only the TIME row: the mileage leg still needs both ends
-  // (rule 6), and the house is still never on the clock (rule 20), so a drive
-  // out of his own driveway waits to be judged as a whole.
+  // (rule 6).
+  //
+  // ── A DRIVE OUT OF THE DRIVEWAY IS ON THE ROAD TOO (owner 2026-10-01) ─────
+  // This used to write nothing when the drive left the house, because rule 20
+  // may make it a commute and a commute bills nothing. So Jack's 8:02 drive
+  // from home reached the timesheet at 8:12, when he stopped, and as a paid
+  // drive after all: the commute question cannot be answered until he
+  // arrives, and the row was waiting on an answer nobody had yet.
+  //
+  // So the row goes up the second the drive starts, HELD: on the timesheet as
+  // "On the road", out of every money total (a -held source, the same as any
+  // drive the day cannot vouch for yet), until the arrival decides. If it is
+  // paid, the closed drive lands on this key as 'drive'. If it is the commute,
+  // or a run to a Personal place, it closes into no row, and geo_replace_day
+  // ends the live one (20261060, step 5c). Time off without a clock is held
+  // for the same reason.
   const _dv = result && result.driving;
-  if (!open.length && _dv && _dv.counts !== false && Number(_dv.startTs) > 0 && _dv.id) {
+  if (!open.length && _dv && Number(_dv.startTs) > 0 && _dv.id) {
     const _dClaim = geoSpanClaim({ startTs: Number(_dv.startTs), endTs: Number(_dv.startTs) + 1, from: _dv.from, to: null }, claimCtx);
     if (_dClaim.claim) {
       open.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(Number(_dv.startTs)), departed_at: null, minutes: null,
         client_key: String(_dv.id), dest_place: null,
         origin_place: (_dv.from && _dv.from.name) || null,
-        source: 'drive', _table: 'job_time_entries' });
+        source: _dv.counts === false ? 'drive-held' : 'drive', _table: 'job_time_entries' });
     }
   }
 
