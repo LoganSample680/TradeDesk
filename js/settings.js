@@ -1198,22 +1198,50 @@ function _logoEnsureMeta(){
     img.src=src;
   });
 }
+// THE BRAND IN THE TOP CORNER (owner 2026-10-01: "still got a TradeDesk logo
+// and a tiny logo for the business with no business name"). It is his app:
+// once he has a logo or a name, TradeDesk's own tile steps out of the header
+// and the corner is his, laid out by the shape of what he gave us:
+//   a square logo (an emblem, a badge)  -> the logo as a tile + his name
+//   a wide logo (a wordmark, the name in it) -> the logo alone, full height
+//   no logo, a name                      -> his initials on his colour + name
+//   neither                              -> TradeDesk, as before
+function _brandInitials(n){
+  const w=String(n||'').replace(/[^A-Za-z0-9 &]/g,' ').split(/\s+/).filter(x=>x&&!/^(by|the|and|of|&|llc|inc|co)$/i.test(x));
+  return (w.slice(0,2).map(x=>x[0]).join('')||'?').toUpperCase();
+}
+function _brandShape(){
+  const logo=(typeof S!=='undefined'&&S&&(S.logoData||S.logoUrl))||'';
+  const name=String((typeof S!=='undefined'&&S&&S.bname)||'').trim();
+  if(logo){
+    const m=S.logoMeta;
+    // Not measured yet: a square is the safe guess (the name still shows).
+    const wide=!!(m&&Number(m.ratio)>1.6);
+    return {kind:wide?'wide':'square',logo,name};
+  }
+  return {kind:name?'initials':'none',logo:'',name};
+}
 function applyBrandLogo(){
-  // Measure the logo once; the first time it lands, paint again so a square
-  // emblem gets its badge without waiting for the next render.
+  // Measure the logo once; the first time it lands, paint again so the
+  // shape decides the layout without waiting for the next render.
   try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
-  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
+  const b=_brandShape();
+  const nm='<span class="brand-name" style="min-width:0;font-weight:800;letter-spacing:-.02em;line-height:1.12;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+escHtml(b.name)+'</span>';
+  const brand=(S.brandColor&&/^#[0-9a-f]{6}$/i.test(S.brandColor))?S.brandColor:'#2d5da8';
+  let html='';
+  if(b.kind==='square')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
+      '<img class="brand-tile" src="'+escHtml(b.logo)+'" style="height:40px;width:40px;object-fit:cover;border-radius:10px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.16)" alt="">'+
+      (b.name?nm:'')+'</span>';
+  else if(b.kind==='wide')html='<img class="brand-wide" src="'+escHtml(b.logo)+'" style="height:40px;max-width:min(60vw,240px);object-fit:contain;object-position:left center;display:block" alt="'+escHtml(b.name||'Logo')+'">';
+  else if(b.kind==='initials')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
+      '<span class="brand-tile brand-initials" style="height:40px;width:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:'+brand+';color:#fff;font-weight:900;font-size:15px;letter-spacing:-.3px;box-shadow:0 0 0 1px rgba(255,255,255,.16)">'+escHtml(_brandInitials(b.name))+'</span>'+
+      nm+'</span>';
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData&&tile){
-      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
-        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
-        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
-    } else if(S.logoData){
-      el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
-    } else {
-      el.textContent=S.bname||'TradeDesk';
-    }
+    if(b.kind==='none')el.textContent='TradeDesk';else el.innerHTML=html;
   });
+  // TradeDesk's own tile leaves the header once the corner is his.
+  const bar=document.getElementById('mobile-topbar-brand');
+  if(bar)bar.classList.toggle('is-branded',b.kind!=='none');
 }
 function _updateBootPreview(){
   // A thumbnail of the real boot screen (tdBootFill, js/brand-look.js): the
