@@ -973,10 +973,10 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
    share of its y) and a delay that phase-locks every bar to one clock. The
    td-skel-sweep and td-data-in keyframes live in js/brand-look.js (shared with
    the client hub). */
-#pg-dash .td-boot-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
+#pg-dash .td-boot-skel .td-skel,#dash-nearby .td-nb-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
 /* Data lands: each card's real content comes into focus where its shimmer was. */
 #pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
-@media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
+@media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel,#dash-nearby .td-nb-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
 /* Team: what each person bills an hour, on their own row (owner 2026-09-29) */
 #team-page-list .td-rate-row{margin-top:8px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 #team-page-list .td-rate-chips{display:flex;flex-wrap:wrap;gap:8px}

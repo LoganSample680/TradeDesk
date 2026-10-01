@@ -1535,61 +1535,35 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.restored).toBe(true);
   });
 
-  // The geo card waits seconds for the first GPS fix; the dashboard now shows
-  // the LAST session's card instantly (fresh + same user only) and lets the
-  // first real fix confirm or remove it (owner 2026-08-10: "comes in 3
-  // seconds late... load all this in instantly").
-  test('geo card snapshot: shows instantly pre-fix, first no-state fix clears it, stale never shows', async () => {
+  // The geo card used to paint the LAST session's card HTML instantly
+  // (owner 2026-08-10), but that frozen picture was often a kind that was no
+  // longer true (DRIVING after he had parked), which is the "lags in and
+  // switches" flash (owner 2026-10-01). Retired: the card now shimmers until
+  // its own answer lands (tests/e2e-onsite-card-smooth.spec.js). Only the
+  // height is kept, so the shimmer holds the right space.
+  test('geo card snapshot HTML is retired: a stored copy never paints, only its height is kept', async () => {
     const r = await page.evaluate(async () => {
       const el = document.getElementById('dash-nearby');
-      const savedFix = window._geoFixSeen, savedLive = window._nearbyLiveRendered;
+      const savedLive = window._nearbyLiveRendered;
       try {
-        window._geoFixSeen = false;
-        window._nearbyLiveRendered = false; // simulate a fresh boot: no live card yet this page load
-        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
-        const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
-        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe">ON SITE</div>', ts: Date.now(), uid }));
-        renderDash();
-        const shown = el.style.display === 'block' && !!document.getElementById('snap-probe');
-        window._geoFixSeen = true; // GPS truth arrives and finds no live state
-        renderDash();
-        await new Promise(res => setTimeout(res, 350));
-        // Old contract: no live state -> the card faded to display:none and
-        // the stored snapshot was cleared. New contract (owner 2026-08-19,
-        // "nothing dependent on anything"): the card never goes blank, GPS
-        // truth confirming "nothing rich" resolves to the plain manual clock
-        // card instead, and THAT becomes the freshly-persisted snapshot
-        // (overwritten with real content, not cleared to nothing).
-        const resolvedToManual = el.style.display === 'block' && el.innerHTML.includes('Not clocked in');
-        const stored = JSON.parse(localStorage.getItem('zp3_nearby_snap') || 'null');
-        const snapshotReplaced = !!stored && stored.html.includes('Not clocked in');
-        window._geoFixSeen = false;
         window._nearbyLiveRendered = false;
-        // Past the 45-minute freshness window (was 10 min; owner's 26-minute
-        // gap made the card miss the waterfall, 2026-08-11).
-        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 2760000, uid }));
+        el.style.display = 'none'; el.innerHTML = ''; el.dataset.kind = '';
+        const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe">ON SITE</div>', ts: Date.now(), uid, h: 140 }));
         renderDash();
-        const staleShown = !!document.getElementById('snap-probe2');
-        // Once any live card has rendered this page load, the restore is done
-        // for good, a later hidden state must never resurrect the snapshot.
-        window._nearbyLiveRendered = true;
-        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe3">x</div>', ts: Date.now(), uid }));
-        renderDash();
-        const postLiveShown = !!document.getElementById('snap-probe3');
-        return { shown, resolvedToManual, snapshotReplaced, staleShown, postLiveShown };
+        const shown = !!document.getElementById('snap-probe');
+        const stored = JSON.parse(localStorage.getItem('zp3_nearby_snap') || 'null');
+        return { shown, manual: el.innerHTML.includes('Not clocked in'), hasHtml: !!stored && 'html' in stored, h: stored && stored.h };
       } finally {
-        window._geoFixSeen = savedFix;
         window._nearbyLiveRendered = savedLive;
         localStorage.removeItem('zp3_nearby_snap');
-        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
         renderDash();
       }
     });
-    expect(r.shown, 'fresh same-user snapshot renders before any fix').toBe(true);
-    expect(r.resolvedToManual, 'the first no-state fix resolves to the manual clock card, never hidden').toBe(true);
-    expect(r.snapshotReplaced, 'the stored copy is overwritten with the manual card, not cleared').toBe(true);
-    expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
-    expect(r.postLiveShown, 'after a live render this page load, no resurrection').toBe(false);
+    expect(r.shown, 'a stored snapshot never paints').toBe(false);
+    expect(r.manual, 'the live answer paints instead').toBe(true);
+    expect(r.hasHtml, 'the stored copy no longer carries card HTML').toBe(false);
+    expect(r.h, 'its height is kept for the shimmer').toBeGreaterThan(0);
   });
 
   // Same-page goPg must not strip and re-add .active: that restarts the

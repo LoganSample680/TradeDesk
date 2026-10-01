@@ -1432,7 +1432,13 @@ function renderDash(){
         '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
         '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
         '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
-        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
+        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}'+
+        // The kind-change cross-fade (_nearbyPaint): the new card fades up in
+        // place while the old one, lifted out of flow, fades away on top.
+        '@keyframes tdNbIn{from{opacity:0}to{opacity:1}}@keyframes tdNbOut{from{opacity:1}to{opacity:0}}'+
+        '#dash-nearby.td-nb-xf>*:not(.td-nb-ghost){animation:tdNbIn .18s ease both}'+
+        '#dash-nearby>.td-nb-ghost{position:absolute;left:0;right:0;top:0;pointer-events:none;animation:tdNbOut .18s ease both}'+
+        '@media (prefers-reduced-motion:reduce){#dash-nearby.td-nb-xf>*,#dash-nearby>.td-nb-ghost{animation-duration:1ms}}';
       document.head.appendChild(_s);
     }
     // Always renders SOMETHING now (owner 2026-08-19: "ability for somebody
@@ -1446,7 +1452,7 @@ function renderDash(){
       const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
-      let _usedSnap=false; // set true only by the no-rich-state branch below, when it painted a boot snapshot instead of the manual card
+      let _nbOut='',_nbKind=''; // what this render decided to show; painted once at the end (_nearbyPaint)
       // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
       // used to slide this card open while the cards below were still pouring
       // in: two animations fighting over the same layout, which is exactly the
@@ -1559,7 +1565,7 @@ function renderDash(){
         // "Still working" on the left, the clock-out on the right (owner 2026-09-03).
         const _deBtns='<button id="dash-dayend-no" onclick="_dayEndDismiss()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center">'+escHtml(_dt.no)+'</button>'+
           '<button id="dash-dayend-yes" onclick="_dayEndConfirm()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+escHtml(_dt.yes)+'</button>';
-        _nearbyEl.innerHTML=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
+        _nbKind='dayend';_nbOut=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
       } else if(typeof onLunch==='function'&&onLunch()){
         // ON LUNCH: the clock is stopped and there is exactly one thing to do.
         // This card is the way back; without it the lunch has no end and the
@@ -1567,7 +1573,7 @@ function renderDash(){
         const _l=_lunchRead()||{startedIso:new Date().toISOString(),jobName:''};
         const _lSince=Date.parse(_l.startedIso);
         const _lExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8a6d3b;font-weight:700;margin-top:3px"><span style="flex-shrink:0">'+_svgClk('#8a6d3b')+'</span>Since '+_fmtClk(_l.startedIso)+' <span style="color:#c7b299;font-weight:700">·</span> <span data-onsite-since="'+_lSince+'">'+_fmtDur(_lSince)+'</span></div>';
-        _nearbyEl.innerHTML=_cardShell(
+        _nbKind='lunch';_nbOut=_cardShell(
           _cardHead('On lunch',_l.jobName||'',_lExtra,'ON LUNCH')+
           '<div style="display:flex;gap:9px;padding:4px 14px 15px">'+
             '<button onclick="endLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+_svgClk('#fff')+'Back to work</button>'+
@@ -1594,7 +1600,7 @@ function renderDash(){
         // dressed as the lesser.
         ocBtns.push('<button onclick="startLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px">🍽 Lunch</button>');
         const _ocProp=_cid?'<div style="display:flex;gap:9px;padding:0 14px 15px"><button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
+        _nbKind='clock';_nbOut=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
       } else if(_openDwell){
         const _od=_openDwell,_f=_od.fence||{};
         const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
@@ -1614,7 +1620,7 @@ function renderDash(){
         // No buttons at all (a dwell with no client, e.g. the shop) closes
         // the card at the head rather than leaving an empty padded strip.
         const _odBtnRow=_odBtns.length?'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>':'<div style="height:14px"></div>';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+_odBtnRow);
+        _nbKind='dwell';_nbOut=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+_odBtnRow);
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in
@@ -1629,7 +1635,7 @@ function renderDash(){
         const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
           '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
           '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
-        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
+        _nbKind='driving';_nbOut='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
           '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
             '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
               '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
@@ -1672,7 +1678,7 @@ function renderDash(){
           '</button>';
         }).join('');
         const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
+        _nbKind='place';_nbOut=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
           '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
       } else if(_nearbyJob){
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
@@ -1688,47 +1694,44 @@ function renderDash(){
         nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+        _nbKind='nearby';_nbOut=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+      } else if(_nearbyGeoPending()){
+        // WAITING ON THE DAY'S GEO ANSWER (owner 2026-10-01: the card "lags in
+        // and switches"). With tracking on, "Not clocked in" is only true once
+        // the deriver has said nobody is on site; painting it before that is
+        // the flash that turned into ON SITE a second later. So the card holds
+        // its own shimmer, in the space the real card took last time, until
+        // the answer lands (_geoDayAnsweredMark, js/geo-track.js) or the cap
+        // in _nearbyGeoPending runs out, then paints once.
+        _nbKind='skel';_nbOut=_dashNearbySkelHTML();
       } else {
-        // No rich state (not on the clock, not driving, no nearby/known-place
-        // prompt). Before falling back to the plain manual card, give an
-        // already-fresh same-session-boot snapshot one chance to paint
-        // instead, exactly the pre-existing "shows instantly pre-fix"
-        // optimization (owner 2026-08-10: "comes in 3 seconds late"): a real
-        // ON SITE/DRIVING card from seconds ago must not flash to "Not
-        // clocked in" and back while the first GPS fix of this session is
-        // still in flight. Once a fix HAS been seen (or this session already
-        // painted live truth once), that truth wins outright, manual card,
-        // no snapshot.
-        if(!window._geoFixSeen&&!window._nearbyLiveRendered&&!_nearbyEl.dataset.snap){
-          try{
-            const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-            if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
-              _nearbyEl.dataset.snap='1';
-              _nearbyEl.innerHTML=_sn.html;
-              _usedSnap=true;
-            }
-          }catch(_e){}
-        }
-        if(!_usedSnap){
-          delete _nearbyEl.dataset.snap;
-          const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
-          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
-            '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
-              '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
-                '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
-                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
-                '</span>'+
-              '</div>'+
-              '<div style="flex:1;min-width:0">'+
-                '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
-                '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
-              '</div>'+
-              _btn+
+        // No rich state and nothing still on its way: the plain manual card.
+        // (The old frozen HTML snapshot of last session's card is gone: it
+        // painted a card kind that was often no longer true, which is the
+        // same flash in another order.)
+        const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
+        _nbKind='manual';_nbOut='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
+          '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
+            '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+              '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
+              '</span>'+
             '</div>'+
-          '</div>';
-        }
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
+              '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
+            '</div>'+
+            _btn+
+          '</div>'+
+        '</div>';
       }
+      // ONE paint per render, and only as much of one as changed (owner
+      // 2026-10-01: "one shimmer, then one clean swap"). Same kind: the text
+      // moves and the nodes stay (the ticking figures and the ping rings keep
+      // running). A new kind: a short cross-fade with the height carried
+      // across. Under the boot shimmer, or on the card's first showing, there
+      // is nothing on screen to fade from, so it just lands.
+      _nearbyPaint(_nearbyEl,_nbOut,_nbKind,_underShimmer||_wasHidden);
       // Never hidden anymore (display='block' already handled up top,
       // _holdReveal and all), so the old collapse/fade-out machinery has
       // nothing left to do; a stray in-flight one from before this render
@@ -1739,23 +1742,15 @@ function renderDash(){
       // the CSS transition finishes, clearing it here would undo that
       // reveal animation before it ever gets to run.
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;}
-      if(!_usedSnap){
-        // Snapshot the rendered card: the next page load shows it INSTANTLY at
-        // the settle pour instead of waiting seconds for the first GPS fix
-        // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces
-        // it the moment a fix arrives (_geoFixSeen, js/geo-track.js). Skipped
-        // when THIS render itself painted from a snapshot, re-persisting that
-        // same stale copy under a fresh timestamp would just make it look
-        // newer than it is.
-        delete _nearbyEl.dataset.snap;
-        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
-        // h: its height, so the next boot's shimmer holds the same space
-        // (_dashNearbySkelH). 0 while hidden under the shimmer; the last
-        // measured height is kept then.
+      if(_nbKind!=='skel'){
+        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing")
+        // h: the card's height, so the next boot's shimmer holds the same
+        // space (_dashNearbySkelH). 0 while hidden under the shimmer; the
+        // last measured height is kept then.
         try{
           const _prev=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-          const _h=_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
-          localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
+          const _h=_nearbyEl._nbH||_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
+          localStorage.setItem('zp3_nearby_snap',JSON.stringify({ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
         }catch(_e){}
       }
     }
@@ -1825,8 +1820,7 @@ function _tdSkelShape(kind,h){
     // Not clocked in), which always renders. Its shimmer card is sized to the
     // banner's last height, so nothing below moves when the data lands.
     case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>'+
-      '<div style="margin-top:16px;height:'+_dashNearbySkelH()+'px;border:1px solid var(--border);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 16px">'+
-        band(34,'34px','border-radius:50%;flex:none;margin-left:9px')+'<div style="flex:1">'+band(14,'52%','margin-bottom:8px')+band(10,'66%')+'</div>'+band(40,'86px','border-radius:12px;flex:none')+'</div>';
+      '<div style="margin-top:16px">'+_dashNearbySkelHTML()+'</div>';
     case 'feed':return band(13,'42%','margin:2px 0 12px')+
       [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
     case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
@@ -1850,6 +1844,139 @@ function _dashNearbySkelH(){
     if(h>=60&&h<=400)return Math.round(h);
   }catch(_e){}
   return 86;
+}
+// The geo banner's shimmer, shaped like the banner (pin, two lines, a
+// button) and holding its last height. One definition, two places: inside
+// the KPI widget's boot skeleton, and in the banner itself while it waits on
+// the day's geo answer (_nearbyGeoPending).
+function _dashNearbySkelHTML(){
+  const band=(ht,w,extra)=>'<div class="td-skel" style="height:'+ht+'px;width:'+w+';'+(extra||'')+'"></div>';
+  return '<div class="td-nb-skel" style="box-sizing:border-box;height:'+_dashNearbySkelH()+'px;border:1px solid var(--border);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 16px">'+
+    band(34,'34px','border-radius:50%;flex:none;margin-left:9px')+'<div style="flex:1">'+band(14,'52%','margin-bottom:8px')+band(10,'66%')+'</div>'+band(40,'86px','border-radius:12px;flex:none')+'</div>';
+}
+// Is the answer that decides the banner still on its way? With tracking on,
+// the deriver's verdict for today (js/geo-track.js _geoDayAnsweredMark) is
+// what tells "on site" from "not clocked in", and it lands a few seconds
+// after the boot sync. Capped, so a deriver that never answers (no network,
+// tracking blocked) costs a few seconds of shimmer and never the card.
+// The cap counts from the first wait the person can SEE: time under the
+// boot shimmer is not spent waiting on this card.
+// Two more rules keep it to the one swap the owner asked for:
+//   - It only waits when an answer is actually coming: a signed-in boot
+//     (the page shimmer was up), the native tracker, or a rebuild already
+//     scheduled or running. A plain browser session with none of those paints
+//     straight away.
+//   - Once a real card has painted this load (_nearbyLiveRendered) it never
+//     goes back to the shimmer. Shimmer, card, card: never card, shimmer.
+const _NB_GEO_WAIT_MS=6000;
+function _nearbyGeoPending(){
+  if(window._geoDayAnswered||window._nearbyLiveRendered)return false;
+  if(typeof S==='undefined'||!S||!S.teamTracking)return false;
+  if(typeof _supaUser==='undefined'||!_supaUser)return false;
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return false;
+  if(typeof _dashSkelMode==='function'&&_dashSkelMode()){window._nbBootWait=true;return true;}
+  const coming=!!window._nbBootWait||
+    (typeof _geoDeriveRebuildT!=='undefined'&&!!_geoDeriveRebuildT)||
+    (typeof _geoDeriveRebuildP!=='undefined'&&!!_geoDeriveRebuildP)||
+    (typeof _geoTdPlugin==='function'&&!!_geoTdPlugin());
+  if(!coming)return false;
+  if(!window._nbWaitT0){
+    window._nbWaitT0=Date.now();
+    // When the cap runs out, paint whatever is known. One timer per wait.
+    setTimeout(()=>{
+      if(window._geoDayAnswered)return;
+      try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+    },_NB_GEO_WAIT_MS+30);
+  }
+  return Date.now()-window._nbWaitT0<_NB_GEO_WAIT_MS;
+}
+// Same-kind update: walk the live nodes against the new markup and change
+// only what differs (text, attributes). Nodes keep their identity, so a
+// running animation never restarts and a ticking figure is never swapped
+// out from under its timer. A subtree whose SHAPE changed (a field note
+// appearing, a third button) is replaced on its own, never the whole card.
+function _nearbyMorph(cur,next){
+  if(cur.nodeType===1&&next.nodeType===1){ // the root call passes a fragment: the host's own attributes are not ours to touch
+    for(const a of [...cur.attributes])if(!next.hasAttribute(a.name))cur.removeAttribute(a.name);
+    for(const a of [...next.attributes])if(cur.getAttribute(a.name)!==a.value)cur.setAttribute(a.name,a.value);
+  }
+  const cs=[...cur.childNodes],ns=[...next.childNodes];
+  if(cs.length!==ns.length){
+    while(cur.firstChild)cur.removeChild(cur.firstChild);
+    ns.forEach(n=>cur.appendChild(n.cloneNode(true)));
+    return;
+  }
+  for(let i=0;i<cs.length;i++){
+    const c=cs[i],n=ns[i];
+    if(c.nodeType!==n.nodeType||(c.nodeType===1&&c.tagName!==n.tagName)){cur.replaceChild(n.cloneNode(true),c);continue;}
+    if(c.nodeType===1)_nearbyMorph(c,n);
+    else if(c.nodeValue!==n.nodeValue)c.nodeValue=n.nodeValue;
+  }
+}
+// A cross-fade still running when the next one starts finishes at once, so
+// two never stack and the height lock never outlives its fade.
+function _nearbyXfadeEnd(el){
+  if(!el)return;
+  if(el._nbXfT){clearTimeout(el._nbXfT);el._nbXfT=null;}
+  el.querySelectorAll(':scope>.td-nb-ghost').forEach(g=>g.remove());
+  if(el.classList.contains('td-nb-xf')){
+    el.classList.remove('td-nb-xf');
+    el.style.height='';el.style.position='';el.style.transition='';
+  }
+}
+// The banner's one writer. Returns what it did: 'same' (nothing changed),
+// 'morph' (same kind, text updated in place), 'set' (painted with nothing on
+// screen to fade from) or 'fade' (kind changed while visible).
+function _nearbyPaint(el,html,kind,instant){
+  if(!el)return 'same';
+  if(el._nbHtml===html&&el.dataset.kind===kind)return 'same';
+  const prev=el.dataset.kind||'';
+  el._nbHtml=html;
+  const tpl=document.createElement('template');
+  tpl.innerHTML=html;
+  if(prev===kind&&el.childNodes.length){
+    // Mid-fade the ghost is a child too: set it aside, morph the live card
+    // only, put it back, and let the fade finish on its own clock.
+    const g=el.querySelector(':scope>.td-nb-ghost');
+    if(g)g.remove();
+    _nearbyMorph(el,tpl.content);
+    if(g)el.appendChild(g);
+    if(!el._nbXfT)el._nbH=el.offsetHeight||el._nbH||0;
+    return 'morph';
+  }
+  el.dataset.kind=kind;
+  const oldH=el.offsetHeight;
+  _nearbyXfadeEnd(el);
+  if(instant||!prev||!oldH){
+    el.innerHTML='';
+    el.appendChild(tpl.content);
+    el._nbH=el.offsetHeight||el._nbH||0;
+    if(kind==='skel'&&typeof tdSkelSweep==='function')tdSkelSweep(el);
+    return 'set';
+  }
+  // Kind change on screen: the old card is lifted out of flow and fades on
+  // top while the new one fades up beneath it, and the box eases from the
+  // old height to the new one over the same 180ms, so nothing below jumps.
+  const ghost=document.createElement('div');
+  ghost.className='td-nb-ghost';ghost.setAttribute('aria-hidden','true');
+  while(el.firstChild)ghost.appendChild(el.firstChild);
+  // The ghost is a picture of the old card, not the card: no ids, so for its
+  // 180ms a lookup by id (#dash-dayend-yes, #dash-onsite-time) can only ever
+  // find the live card, never a dead copy fading out.
+  ghost.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+  el.appendChild(tpl.content);
+  const newH=el.offsetHeight;
+  el._nbH=newH;
+  el.appendChild(ghost);
+  el.classList.add('td-nb-xf');
+  el.style.position='relative';
+  el.style.height=oldH+'px';
+  void el.offsetHeight;
+  el.style.transition='height .18s cubic-bezier(.22,1,.36,1)';
+  el.style.height=newH+'px';
+  if(kind==='skel'&&typeof tdSkelSweep==='function')tdSkelSweep(el);
+  el._nbXfT=setTimeout(()=>_nearbyXfadeEnd(el),200);
+  return 'fade';
 }
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;

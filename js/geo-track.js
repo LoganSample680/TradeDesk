@@ -714,8 +714,8 @@ function _geoClearOpen(){try{localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}
 // and the card fell through to "Not clocked in" until the boot rebuild
 // finished, seconds later at best.
 //
-// The card already had a rescue for this, zp3_nearby_snap, but it is a frozen
-// copy of the card's HTML and it is skipped the moment a fix has been seen
+// The card had a rescue for this, zp3_nearby_snap, but it was a frozen
+// copy of the card's HTML (retired 2026-10-01) and it was skipped the moment a fix had been seen
 // (js/dashboard.js). A parked phone gets a fix from the significant-change
 // wake almost immediately on boot, so on exactly the reboot the owner is
 // describing the snapshot is cancelled and the rebuild is not done yet.
@@ -8994,7 +8994,9 @@ function _geoDeriveRebuildDays(){
 let _geoDeriveRebuildP=null;
 function _geoDeriveRebuild(){
   if(_geoDeriveRebuildP)return _geoDeriveRebuildP;
-  _geoDeriveRebuildP=_geoDeriveRebuildRun().finally(()=>{_geoDeriveRebuildP=null;});
+  // However it ends, the day has had its answer: a rebuild that found
+  // nothing to publish still means nobody is on site (_geoDayAnsweredMark).
+  _geoDeriveRebuildP=_geoDeriveRebuildRun().finally(()=>{_geoDeriveRebuildP=null;if(_geoDayAnsweredMark())_geoDashRepaint();});
   return _geoDeriveRebuildP;
 }
 async function _geoDeriveRebuildRun(){
@@ -9032,6 +9034,20 @@ function _geoDeriveRebuildIfStale(){
   }catch(_e){return false;}
 }
 
+// ── Has today been answered yet? ───────────────────────────────────────────
+// The home screen's on-site card holds a shimmer until the deriver has said
+// where the person is today (js/dashboard.js _nearbyGeoPending), so it paints
+// once with the right card instead of "Not clocked in" first and ON SITE a
+// second later (owner 2026-10-01). True the FIRST time only, so the caller
+// knows to repaint even when the answer itself did not change.
+function _geoDayAnsweredMark(){
+  if(window._geoDayAnswered)return false;
+  window._geoDayAnswered=true;
+  return true;
+}
+function _geoDashRepaint(){
+  try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+}
 // ── The open dwell, for the screens ────────────────────────────────────────
 // The deriver reports where the person is right now (a dwell with an arrival
 // and no departure yet) and never writes it, so the dashboard card and the
@@ -9051,6 +9067,7 @@ function _geoOpenDwellPublish(dayKey,res){
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
     _geoPersistDwell(next);
+    const firstAnswer=_geoDayAnsweredMark();
     // Report the DERIVER'S VERDICT, not just what the card did with it.
     // Standing inside a fence with no on-site card and no Live Activity, the
     // liveact_* events said only that nothing asked for a card; they could not
@@ -9105,7 +9122,7 @@ function _geoOpenDwellPublish(dayKey,res){
       :null;
     try{if(typeof _liveActRail==='function')_liveActRail(next,window._geoOpenPending);}catch(_e){}
     if(same){
-      if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
+      if(deNew||firstAnswer)_geoDashRepaint();
       return;
     }
     try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
