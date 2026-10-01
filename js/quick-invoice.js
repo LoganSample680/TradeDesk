@@ -167,14 +167,25 @@ function _qiPropBid(j){
 }
 function _qiPropJobs(cid){
   const seen=new Set(),out=[];
-  (jobs||[]).forEach(j=>{
-    if(!j||String(j.client_id)!==String(cid))return;
-    const b=_qiPropBid(j);if(!b||seen.has(b.id))return;
-    seen.add(b.id);
+  const add=(b,job)=>{
+    if(!b||seen.has(String(b.id)))return;
+    seen.add(String(b.id));
     const paid=typeof getBidPaid==='function'?getBidPaid(b.id):0;
     const owed=typeof getBidBalance==='function'?getBidBalance(b):0;
     if(owed<0.01&&paid>0)return;               // paid in full: settled, nothing to say
-    out.push({id:b.id,name:(typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):b.type)||'Job',paid});
+    out.push({id:b.id,name:(typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):b.type)||'Job',paid,owed,amount:Number(b.amount)||0,
+      jobId:job?job.id:null,done:!!(b.completion_date||(job&&(job.completion_date||job.status==='done')))});
+  };
+  (jobs||[]).forEach(j=>{
+    if(!j||String(j.client_id)!==String(cid))return;
+    add(_qiPropBid(j),j);
+  });
+  // A signed proposal with no day on the calendar yet is still his to settle
+  // (owner 2026-10-01): it is caught here, not only once it is scheduled.
+  (bids||[]).forEach(b=>{
+    if(!b||String(b.client_id)!==String(cid)||b.status!=='Closed Won')return;
+    if(b.kind==='quick_invoice'||b.kind==='diagnostic'||!(Number(b.amount)>0))return;
+    add(b,null);
   });
   return out;
 }
@@ -918,8 +929,9 @@ function renderQuickInvoice(){
         '<button type="button" role="tab" class="'+(hourly?'on':'')+'" onclick="_qiSetMode(\'hourly\')">By the hour</button>'+
         '<button type="button" role="tab" class="'+(hourly?'':'on')+'" onclick="_qiSetMode(\'set\')">Flat price</button></div>'+
       _qiPropJobs(_qi.cid).map(p=>'<button type="button" class="qi-note" onclick="qiOpenJob(\''+escHtml(String(p.id))+'\')">'+
-        escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
-        '. Bill that one from the job, not here. <b>Open it</b></button>').join('')+
+        escHtml(String(c.name||'').split(' ')[0])+' has a '+escHtml(p.name)+' job'+(p.amount>0?': '+_qiMoney(p.amount).replace('.00',''):'')+
+        (p.paid>0&&p.amount>0?', '+_qiMoney(p.paid).replace('.00','')+' paid, '+_qiMoney(p.owed).replace('.00','')+' left':p.paid>0?' with '+_qiMoney(p.paid).replace('.00','')+' paid':'')+
+        '. <b>Settle it up</b></button>').join('')+
       // FOUR STEPS (owner 2026-09-29: "stupid simple for a complex thing").
       // Each thing sits in the step it is about (owner: "why is drive time
       // in options and not with time?"): drive time in Time; what they see
@@ -1127,10 +1139,13 @@ function _qiAddPb(i){
 }
 function qiCancel(){_qi=null;goPg('pg-dash');}
 
+// The banner's Settle it up: a job not marked done goes through Mark done,
+// which ends on the settle-up block; one already done opens it directly.
 function qiOpenJob(bidId){
-  _qi=null;
-  const b=(bids||[]).find(x=>String(x.id)===String(bidId));
-  if(b&&typeof openFinalInvoice==='function')openFinalInvoice(b.id);
+  const b=(bids||[]).find(x=>String(x.id)===String(bidId));if(!b)return;
+  const job=(jobs||[]).find(j=>j&&String(j.bid_id)===String(b.id));
+  if(job&&!b.completion_date&&!job.completion_date&&job.status!=='done'&&typeof markJobDone==='function'){markJobDone(job.id);return;}
+  if(typeof openSettleUp==='function')openSettleUp(b.id);
 }
 // THE INVOICE DOCUMENT, built from the proposal's own shell (js/generic-
 // estimate.js: _propBrand, _propDoc, _propCover, _propSection, _propSignoff),

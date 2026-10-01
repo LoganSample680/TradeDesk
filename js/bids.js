@@ -191,14 +191,98 @@ function showJobScorecard(jobId,collectBidId){
           scopeRows+
         '</div>':'';
     })()+
-    '<div style="display:grid;grid-template-columns:1fr'+(balance>0.01?' 1.5fr':'')+';gap:8px">'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
-        'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
-      (balance>0.01?'<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+collectBidId+',\'final\')" '+
-        'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💳',{size:14})+' Collect '+fmt(balance)+' →</button>':'')+
-    '</div>';
+    // SETTLE UP where the job ends (owner 2026-10-01): what it cost, what
+    // they already paid, what is left, and the one tap that closes it out.
+    (collectBid&&(collectBid.amount||0)>0
+      ?_settleSumHtml(collectBid)+_settleActionsHtml(collectBid,j.client_id)
+      :'<div style="display:grid;grid-template-columns:1fr;gap:8px">'+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
+          'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
+      '</div>');
   ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+// ── SETTLE UP (owner 2026-10-01) ─────────────────────────────────────────────
+// "If you got a contractor going in they may not know that somebody paid.
+// They mark a job done ... it pulls whatever they paid and it settled up.
+// Awesome, you're good to go ... I'll text you a paid invoice." One block
+// says the price, what is already paid (a deposit, a card payment on their
+// page, cash he logged) and what is left; the actions under it close it out
+// with the panel and the receipt text that already exist (openPayPanel,
+// _sendPaidInvoice). Shared by Mark done, the job scorecard and the invoice
+// screen's proposal banner, so all three say the same numbers.
+function _settleNums(bid){
+  const total=Math.round((Number(bid&&bid.amount)||0)*100)/100;
+  const paid=Math.round(getBidPaid(bid.id)*100)/100;
+  return {total,paid,balance:Math.max(0,Math.round((total-paid)*100)/100)};
+}
+// Payments booked away from this phone (a card payment on the customer's page,
+// another device) reach it on the next sync. Settling up asks for this bid's
+// payments right now so nobody is billed for what they already paid.
+async function _settleFetch(bid){
+  try{
+    if(!bid||!(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa))return false;
+    const uid=typeof _effectiveUid==='function'?_effectiveUid():_supaUser.id;
+    const q=_supa.from('td_payments').select('id,data').eq('user_id',uid).eq('data->>bid_id',String(bid.id)).is('deleted_at',null);
+    const r=await Promise.race([q,new Promise(res=>setTimeout(()=>res(null),2500))]);
+    if(!r||r.error||!Array.isArray(r.data))return false;
+    const ids=new Set(payments.map(p=>String(p.id))),refs=new Set(payments.map(p=>p.ref).filter(Boolean).map(String));
+    let added=0;
+    r.data.forEach(row=>{
+      const d=row&&row.data;if(!d)return;
+      const id=d.id!=null?d.id:row.id;
+      if(ids.has(String(id))||(d.ref&&refs.has(String(d.ref))))return;
+      payments.push(Object.assign({},d,{id,bid_id:bid.id}));ids.add(String(id));added++;
+    });
+    if(added&&typeof saveAll==='function')saveAll();
+    return added>0;
+  }catch(_e){return false;}
+}
+function _settleSumHtml(bid){
+  const n=_settleNums(bid);
+  const row=(l,v,st)=>'<div style="display:flex;justify-content:space-between;padding:7px 0;'+(st||'')+'"><span style="font-size:13px;color:var(--text2)">'+l+'</span><span style="font-size:14px;font-weight:700">'+v+'</span></div>';
+  return '<div class="settle-sum" id="settle-sum-'+escHtml(String(bid.id))+'" style="background:var(--bg2);border-radius:var(--r);padding:8px 14px;margin-bottom:12px">'+
+    row('Job price',fmt(n.total),'border-bottom:1px solid var(--border)')+
+    row('Already paid',n.paid>0.004?'−'+fmt(n.paid):fmt(0),'border-bottom:1px solid var(--border)')+
+    '<div style="display:flex;justify-content:space-between;padding:9px 0 5px"><span style="font-size:14px;font-weight:800">'+(n.balance<0.01?'Paid in full':'Balance')+'</span>'+
+      '<span class="settle-bal" style="font-size:17px;font-weight:800;color:'+(n.balance<0.01?'var(--green-mid)':'var(--text)')+'">'+fmt(n.balance)+'</span></div>'+
+  '</div>';
+}
+function _settleActionsHtml(bid,clientId){
+  const n=_settleNums(bid),id=JSON.stringify(bid.id).replace(/"/g,'&quot;');
+  const close='this.closest(\'.zmodal-overlay\').remove();';
+  const btn='padding:12px;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit';
+  if(n.balance<0.01)return '<div class="settle-acts" style="display:grid;grid-template-columns:1fr 1.5fr;gap:8px">'+
+      '<button type="button" onclick="'+close+'" style="'+btn+';border:1px solid var(--border2);background:var(--bg2);font-weight:600">Done</button>'+
+      '<button type="button" data-settle="receipt" onclick="'+close+'_sendPaidInvoice('+id+')" style="'+btn+';border:none;background:var(--green);color:#fff">Text their receipt</button>'+
+    '</div>';
+  return '<div class="settle-acts" style="display:grid;gap:8px">'+
+      '<button type="button" data-settle="pay" onclick="'+close+'openPayPanel('+id+',\'final\')" style="'+btn+';border:none;background:var(--green);color:#fff;font-size:15px">They\'re paying now · '+fmt(n.balance)+'</button>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<button type="button" data-settle="later" onclick="'+close+(clientId!=null?'openClientDetail('+JSON.stringify(clientId).replace(/"/g,'&quot;')+')':'')+'" style="'+btn+';border:1px solid var(--border2);background:var(--bg2);font-weight:600">Later</button>'+
+        '<button type="button" data-settle="bill" onclick="'+close+'_sendPaidInvoice('+id+')" style="'+btn+';border:1px solid var(--border2);background:var(--bg2)">Send the bill</button>'+
+      '</div>'+
+    '</div>';
+}
+// Settle up on its own: the invoice screen's proposal banner, for a job that
+// is already marked done (one that is not goes through Mark done, which ends
+// here). It shows the proposal's own lines, so what is being settled is plain.
+function openSettleUp(bidId){
+  const bid=bids.find(b=>String(b.id)===String(bidId));if(!bid)return;
+  document.querySelectorAll('.settle-overlay').forEach(e=>e.remove());
+  const c=getClientById(bid.client_id)||{};
+  const lines=(typeof _bidScopeLines==='function'?_bidScopeLines(bid):[]).slice(0,8);
+  const ov=document.createElement('div');ov.className='zmodal-overlay settle-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const paint=()=>{box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Settle up</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:12px">'+escHtml(c.name||bid.client_name||'')+' · '+escHtml((typeof _estimateTypeLabel==='function'?_estimateTypeLabel(bid):bid.type)||'Job')+'</div>'+
+    (lines.length?'<ul class="settle-lines" style="margin:0 0 12px;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.5">'+lines.map(l=>'<li>'+escHtml(l)+'</li>').join('')+'</ul>':'')+
+    _settleSumHtml(bid)+_settleActionsHtml(bid,bid.client_id);};
+  paint();
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _settleFetch(bid).then(ch=>{if(ch&&box.isConnected)paint();});
 }
 function cleanRoomName(room){
   const raw=(room||'').split(', ')[0].replace('[Ext] ','').trim();
