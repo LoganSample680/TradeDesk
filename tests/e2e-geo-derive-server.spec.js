@@ -609,6 +609,53 @@ test.describe('the deriver on the server', () => {
     expect(centralDayKey(centralDayBounds(DAY).start)).toBe(DAY);
     expect(centralDayKey(centralDayBounds(DAY).end - 1)).toBe(DAY);
   });
+
+  // Owner 2026-10-01: home at 12:19, still at 12:25, and the lock screen said
+  // "On the road" until the 13:00 push-ping, because the 12:39 heartbeat was
+  // not a trigger. It is now a backstop trigger, and still never READ.
+  test('a heartbeat re-derives the day, and is still never read as evidence', async () => {
+    const { daysToDerive } = await import(SHARED);
+    expect(daysToDerive([{ type: 'heartbeat', ts: T0 + 3600000 }], at(23, 0))).toEqual([DAY]);
+    // The trigger is the cheap half; the read list is unchanged (see the
+    // ledger block above), so a day's heartbeats never ride into a derive.
+    const src = require('fs').readFileSync(path.join(ROOT, 'supabase/functions/_shared/derive-day.mjs'), 'utf8');
+    const set = src.slice(src.indexOf('const TRIGGER_TYPES'), src.indexOf(']);', src.indexOf('const TRIGGER_TYPES')));
+    expect(set).not.toContain('"heartbeat"');
+  });
+});
+
+// ── THE LOCK SCREEN ENDS AT THE CROSSING HOME (owner 2026-10-01) ──────────
+// His real day, through the generated server deriver and the server's own card
+// rule (live-card.mjs), shaped exactly as ingest-geo hands them over. Before
+// rule 21b this was {DRIVING, "On the road", "From John Doe"} at 12:30.
+test.describe('the server card after rule 21b', () => {
+  test('home at 12:19:47 and still at 12:25:52: the 12:30 derive ends the card', async () => {
+    const { geoDeriveDay } = await import('file://' + path.join(ROOT, 'supabase/functions/_shared/geo-derive.mjs'));
+    const { railCardFor } = await import('file://' + path.join(ROOT, 'supabase/functions/_shared/live-card.mjs'));
+    const OCT1 = Date.parse('2026-10-01T05:00:00Z');
+    const O = (h, m, sec) => OCT1 + h * 3600000 + m * 60000 + (sec || 0) * 1000;
+    const SHOPF = { id: 'place-1788212754002055', kind: 'shop', name: 'TradeDesk shop', lat: 39.0307066, lng: -95.7112082 };
+    const HOMEF = { id: 'place-1787436272279016', kind: 'home_office', name: '2015 SW Randolph Ave', lat: 39.0307378, lng: -95.7112674 };
+    const DOEF = { id: 'client-1788214075432', kind: 'client', name: 'John Doe', lat: 39.0123292, lng: -95.7464936 };
+    const fx = (ts, p) => ({ ts, lat: p.lat, lng: p.lng, acc: 8 });
+    const res = geoDeriveDay({
+      day: '2026-10-01', dayStart: OCT1, dayEnd: OCT1 + 86400000, personId: 'logan', crew: false,
+      fences: [SHOPF, HOMEF, DOEF],
+      tape: [{ ts: O(11, 0), kind: 'walking' }, { ts: O(12, 4, 55), kind: 'automotive' }, { ts: O(12, 25, 52), kind: 'still' }],
+      fixes: [fx(O(11, 0), DOEF), fx(O(12, 4, 55), DOEF), fx(O(12, 12, 30), { lat: 39.025, lng: -95.72 }),
+        fx(O(12, 20, 24), HOMEF), fx(O(12, 21, 16), HOMEF)],
+      regions: [{ ts: O(11, 0), id: DOEF.id, enter: true }, { ts: O(12, 11, 41), id: DOEF.id, enter: false },
+        { ts: O(12, 19, 47), id: HOMEF.id, enter: true }],
+      nowMs: O(12, 30),
+    });
+    // The two shapes derive-day.mjs builds (openCard, drivingCard).
+    const open = res.open ? { name: res.open.name, kind: res.open.kind, sinceTs: res.open.sinceTs,
+      atHome: !!res.open.atHome, counts: res.open.counts !== false, fence: null } : null;
+    const pending = res.pending ? { startTs: res.pending.startTs, origin: { name: String(res.pending.origin && res.pending.origin.name || '') } } : null;
+    expect(pending, 'no drive left to show').toBeNull();
+    expect(open && open.atHome, 'he is home').toBe(true);
+    expect(railCardFor({ open, pending }, {}).event).toBe('end');
+  });
 });
 
 // The ops portal explains an un-swept rebuild, and until 2026-09-18 there was

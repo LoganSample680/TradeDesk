@@ -1829,6 +1829,163 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 21b: AN OPEN DRIVE ENDS AT THE CROSSING HOME (owner 2026-10-01) ──
+  // His 1 October: the lock screen said "On the road, From John Doe" for forty
+  // minutes after he got home. The drive stayed open because nothing closes a
+  // journey before ten minutes of still measured to the derive's own clock,
+  // and rule 21 skipped every open journey, so the 12:19:47 crossing into his
+  // own fence could not end it. These are his real times.
+  test.describe('rule 21b: an open drive ends at the fence he stopped in', () => {
+    const OCT1 = Date.parse('2026-10-01T05:00:00Z');   // CDT midnight
+    const O = (h, m, s) => OCT1 + h * 3600000 + m * 60000 + (s || 0) * 1000;
+    const ROAD = { lat: 39.0250, lng: -95.7200 };       // between the two, no fence
+    const tapeL = [mo(O(11, 0), 'walking'), mo(O(12, 4, 55), 'automotive'), mo(O(12, 25, 52), 'still')];
+    const fixesL = [fix(O(11, 0), DOE), fix(O(11, 45), DOE), fix(O(12, 4, 55), DOE),
+      // Only two readings inside before the 12:30 derive (a fix and the iOS
+      // visit), under parkedStillMs apart, which is why nothing else closed it.
+      fix(O(12, 12, 30), ROAD), fix(O(12, 20, 24), HOME), fix(O(12, 21, 16), HOME)];
+    const regionsL = [
+      { ts: O(11, 0), id: DOE.id, enter: true },
+      { ts: O(12, 11, 41), id: DOE.id, enter: false },
+      // Entered and never left: he was home.
+      { ts: O(12, 19, 47), id: HOME.id, enter: true },
+    ];
+    const baseL = (over) => base(Object.assign({
+      day: '2026-10-01', dayStart: OCT1, dayEnd: OCT1 + 86400000,
+      tape: tapeL, fixes: fixesL, regions: regionsL, nowMs: O(12, 30), crew: false,
+    }, over));
+    const runL = (over) => run(page, baseL(over));
+    const HOMEISH = [SHOP.id, SHOP2.id, HOME.id];
+
+    test('his 12:30 derive: the drive is closed at 12:19:47, both ends saved, nothing on the road', async () => {
+      const r = await runL();
+      expect(r.journeys.filter(j => j.open), 'no open journey').toHaveLength(0);
+      expect(r.driving, 'the lock screen has no drive to show').toBeNull();
+      expect(r.pending, 'and no chain left waiting').toBeNull();
+      const leg = r.legs.find(l => l.from && l.from.id === DOE.id);
+      expect(leg, 'the leg from John Doe is written').toBeTruthy();
+      expect(hm(leg.startTs)).toBe(hm(O(12, 4, 55)));
+      expect(leg.endTs, 'ends at the crossing, not at the derive').toBe(O(12, 19, 47));
+      expect(HOMEISH, 'and lands at his house').toContain(leg.to.id);
+      expect(leg.unsavedTo, 'both ends saved').toBeFalsy();
+      expect(leg.unsavedFrom).toBeFalsy();
+      expect(r.open, 'he is home').toBeTruthy();
+      expect(r.open.atHome).toBe(true);
+      expect(r.open.sinceTs).toBe(O(12, 19, 47));
+    });
+
+    test('same journey id and the same keys as the 13:00 derive that closed it on stillness', async () => {
+      // geo_replace_day replaces by key: a 12:30 row and a 13:00 row for the
+      // same drive must be ONE row, never two.
+      const rows = (nowMs) => page.evaluate((inp) => {
+        const res = geoDeriveDay(inp);
+        const out = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+        const pick = t => ({ key: t.client_key, a: t.arrived_at || t.start_time || null, b: t.departed_at || t.end_time || null });
+        return JSON.parse(JSON.stringify({
+          legs: res.legs.map(l => [l.id, l.startTs, l.endTs, l.to && l.to.id]),
+          miles: out.td_mileage.map(pick).sort((x, y) => String(x.key).localeCompare(String(y.key))),
+          time: out.job_time_entries.map(pick).sort((x, y) => String(x.key).localeCompare(String(y.key))),
+        }));
+      }, baseL({ nowMs }));
+      const early = await rows(O(12, 30));
+      const late = await rows(O(13, 0, 1));
+      expect(early.legs.length).toBeGreaterThan(0);
+      expect(early.legs).toEqual(late.legs);
+      expect(early.miles).toEqual(late.miles);
+      expect(early.time).toEqual(late.time);
+    });
+
+    test('arriving with no motion word after the entry yet: still open until one comes', async () => {
+      const r = await runL({ tape: tapeL.slice(0, 2), fixes: fixesL.slice(0, 5), nowMs: O(12, 21) });
+      expect(r.journeys.some(j => j.open), 'not a stop yet').toBe(true);
+      expect(r.driving).toBeTruthy();
+      // And the moment the still lands, it closes at the crossing.
+      const r2 = await runL({ fixes: fixesL.slice(0, 6), nowMs: O(12, 26) });
+      expect(r2.journeys.some(j => j.open)).toBe(false);
+      expect(r2.driving).toBeNull();
+      expect(r2.legs.find(l => l.from && l.from.id === DOE.id).endTs).toBe(O(12, 19, 47));
+    });
+
+    test('walking after the entry closes it the same as still', async () => {
+      const r = await runL({ tape: tapeL.slice(0, 2).concat([mo(O(12, 21), 'walking')]), nowMs: O(12, 23) });
+      // A foot flip already closes a journey; the crossing still ends it.
+      expect(r.journeys.some(j => j.open)).toBe(false);
+      expect(r.legs.find(l => l.from && l.from.id === DOE.id).endTs).toBe(O(12, 19, 47));
+    });
+
+    test('a gas stop inside no fence stays open (only stillness can close that one)', async () => {
+      const r = await runL({
+        regions: regionsL.slice(0, 2),
+        // Two minutes of fixes at the pump: under parkedStillMs, so nothing
+        // else in the file has a reason to close it either.
+        fixes: fixesL.slice(0, 4).concat([fix(O(12, 24), GAS), fix(O(12, 26), GAS)]),
+        nowMs: O(12, 27),
+      });
+      expect(r.journeys.some(j => j.open), 'a minute still at a pump is not parked yet').toBe(true);
+      expect(r.driving).toBeTruthy();
+    });
+
+    test('driving THROUGH a fence with a lost exit stays open while the tape is automotive', async () => {
+      // The Home Depot fence fires, a fix lands inside it, and the exit never
+      // arrives. A red light inside the fence, then on the road again.
+      const r = await runL({
+        regions: regionsL.slice(0, 2).concat([{ ts: O(12, 15), id: HD.id, enter: true }]),
+        tape: [mo(O(11, 0), 'walking'), mo(O(12, 4, 55), 'automotive'), mo(O(12, 16), 'still'), mo(O(12, 17), 'automotive')],
+        fixes: fixesL.slice(0, 4).concat([fix(O(12, 15, 30), HD), fix(O(12, 16, 30), HD)]),
+        nowMs: O(12, 20),
+      });
+      expect(r.journeys.some(j => j.open), 'still driving').toBe(true);
+      expect(r.driving).toBeTruthy();
+    });
+
+    test('driving through a fence, then stopping somewhere else, does not end it at the fence', async () => {
+      const r = await runL({
+        regions: regionsL.slice(0, 2).concat([{ ts: O(12, 15), id: HD.id, enter: true }]),
+        tape: [mo(O(11, 0), 'walking'), mo(O(12, 4, 55), 'automotive'), mo(O(12, 22), 'still')],
+        fixes: fixesL.slice(0, 4).concat([fix(O(12, 15, 30), HD), fix(O(12, 23), GAS), fix(O(12, 25), GAS)]),
+        nowMs: O(12, 26),
+      });
+      expect(r.journeys.some(j => j.open), 'the last fix is at the pump, not the store').toBe(true);
+      expect(r.legs.some(l => l.to && l.to.id === HD.id)).toBe(false);
+    });
+
+    test('in, out, and driving again: the next journey starts cleanly at the exit', async () => {
+      const r = await runL({
+        tape: [mo(O(11, 0), 'walking'), mo(O(12, 4, 55), 'automotive'), mo(O(12, 28), 'still'), mo(O(12, 36), 'automotive')],
+        regions: regionsL.concat([{ ts: O(12, 35), id: HOME.id, enter: false }]),
+        fixes: fixesL.concat([fix(O(12, 38), ROAD)]),
+        nowMs: O(12, 40),
+      });
+      const leg = r.legs.find(l => l.from && l.from.id === DOE.id);
+      expect(leg.endTs, 'the first drive still ends at the crossing in').toBe(O(12, 19, 47));
+      const open = r.journeys.filter(j => j.open);
+      expect(open, 'one drive under way').toHaveLength(1);
+      // The exit at 12:35 or the flip at 12:36, whichever the file trusts:
+      // never back at the crossing in, never a second open drive.
+      expect(open[0].startTs).toBeGreaterThanOrEqual(O(12, 35));
+      expect(open[0].startTs).toBeLessThanOrEqual(O(12, 36));
+      expect(open[0].id).not.toBe(r.journeys[0].id);
+      expect(r.driving && r.driving.id).toBe(open[0].id);
+      expect(HOMEISH, 'leaving from his house').toContain(r.driving.from && r.driving.from.id);
+    });
+
+    test('an entry before the drive began never closes it', async () => {
+      const r = await runL({
+        regions: [{ ts: O(10, 0), id: HD.id, enter: true }],
+        fixes: fixesL.slice(0, 4).concat([fix(O(12, 20), HD)]),
+        tape: [mo(O(11, 0), 'walking'), mo(O(12, 4, 55), 'automotive'), mo(O(12, 22), 'still')],
+        nowMs: O(12, 26),
+      });
+      expect(r.journeys.some(j => j.open)).toBe(true);
+    });
+
+    test('same input, same output', async () => {
+      expect(await runL()).toEqual(await runL());
+    });
+
+    test('no console errors', async () => { await assertNoErrors(page); });
+  });
+
   test.describe('rule 20: the commute', () => {
     const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
     // No flag on it. The shop IS the place you report to (owner 2026-09-15:

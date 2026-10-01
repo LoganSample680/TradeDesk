@@ -67,10 +67,28 @@ const TRIGGER_TYPES = new Set([
   "motion", "regionEnter", "regionExit", "visit", "push-ping",
   "clock-in", "clock-out", "app-active", "app-background", "app-terminate", "app-relaunch",
 ]);
+// ── THE HEARTBEAT IS A BACKSTOP TRIGGER, NOT EVIDENCE (owner 2026-10-01) ──
+// His lock screen said "On the road" for forty minutes after he got home: the
+// truck went still at 12:25:52, and the next thing that re-derived the day was
+// the 13:00 push-ping, because the 12:31 fix and the 12:39 heartbeat are not
+// triggers. Rule 21b (js/geo-derive.js) closes most of these at the fence
+// crossing now; this is for the drive that ends somewhere no fence covers,
+// where only the ten minutes of stillness can close it and something has to
+// re-derive once they have passed.
+//
+// What it costs: the shift heartbeat lands about every 30 minutes during a
+// shift (js/geo-track.js startHeartbeat, intervalMs 30 min), so at most one
+// extra derive per person per half hour, the same order as the push-ping.
+//
+// It TRIGGERS a derive and is never READ by one. A heartbeat is a ledger row
+// (see below: the deriver reads evidence, never the ledger), so it stays out
+// of TRIGGER_TYPES, which READ_TYPES is built from. Adding it there would
+// pull every heartbeat row of the day into each derive for nothing.
+const BACKSTOP_TYPES = new Set(["heartbeat"]);
 export function daysToDerive(evs, nowMs) {
   const days = new Set();
   for (const e of evs) {
-    if (!e || !TRIGGER_TYPES.has(e.type)) continue;
+    if (!e || !(TRIGGER_TYPES.has(e.type) || BACKSTOP_TYPES.has(e.type))) continue;
     if (!(e.ts > 0) || e.ts > nowMs + TWO_HOURS) continue;
     days.add(centralDayKey(e.ts));
   }
