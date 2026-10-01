@@ -120,6 +120,29 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     await assertNoErrors(page);
   });
 
+  // Owner 2026-10-01: "it should all look the exact same". A BYO line is the
+  // step row T&M and the invoice draw, with its price on the right; on or off
+  // the proposal is a switch in the line's sheet, not a tick on the row.
+  test('a BYO line is the shared step row; Off is set in its sheet and dims the row', async () => {
+    await open();
+    await say('Pull the old water heater and set a tankless');
+    const r = await page.evaluate(() => {
+      const w = document.querySelector('#byo-sections .ios-swipe[data-kind="line"]');
+      const d = document.createElement('div');
+      const it = _byoItems.find(x => x.label === w.querySelector('.ios-lbl').textContent);
+      d.innerHTML = _scopeStepRowHtml('byo', it.label, _byoItems.indexOf(it), { kind: 'line', idx: _byoItems.indexOf(it), num: 1, off: false, tap: '_byoEditItem(' + _byoItems.indexOf(it) + ')',
+        fact: '<span class="ios-fact ask">Add price</span>', note: it.notes || '', del: '_byoDelLine(' + _byoItems.indexOf(it) + ')' });
+      return { same: w.outerHTML === d.firstElementChild.outerHTML, num: w.querySelector('.ios-num').textContent, tick: !!w.querySelector('.ios-check') };
+    });
+    expect(r).toEqual({ same: true, num: '1', tick: false });
+    await page.locator('#byo-sections .ios-swipe[data-kind="line"] .ios-row').first().click();
+    await page.locator('#_bya-on').uncheck();
+    await page.locator('#_byo-add-modal .btn-p').click();
+    const after = await page.evaluate(() => ({ on: _byoItems[0].on, off: document.querySelector('#byo-sections .step-line').classList.contains('off'),
+      fact: document.querySelector('#byo-sections .step-line .ios-fact').textContent }));
+    expect(after).toEqual({ on: false, off: true, fact: 'Off' });
+  });
+
   test('T&M has the same pencil', async () => {
     const r = await page.evaluate(() => {
       bids.length = 0; openTMEstimate(getClientById(96001));
@@ -140,7 +163,7 @@ test.describe('Build Your Own, as an iPhone editor', () => {
     await say('pull the old water heater, set a 50 gallon power vent');
     const r = await page.evaluate(() => _byoItems.map(it => [it.label, it.price]));
     expect(r).toEqual([['Pull the old water heater', 450], ['Set a 50 gallon power vent', 0]]);
-    const rows = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .byo-line .ios-fact')].map(e => e.textContent));
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#byo-sections .step-line .ios-fact')].map(e => e.textContent));
     expect(rows).toEqual(['$450', 'Add price']);
   });
 
@@ -232,6 +255,22 @@ test.describe('Build Your Own, as an iPhone editor', () => {
       } finally { window._settingsChanged = o; S.depositPct = 25; }
     });
     expect(r).toEqual({ never: 0, learned: 0, next: 0, shown: '0' });
+  });
+
+  // Owner 2026-10-01: an email signed "Thanks," then "John" put "John" in as
+  // a step on all three screens. A closing line counts as the end of the
+  // letter, so the name under it is the signature; a bare "Thanks," is not a
+  // note. A list that ends on work still keeps its last line.
+  test('"Thanks," then a name is a signature, not a step; a bare closing is not the note', async () => {
+    const r = await page.evaluate(() => {
+      const b = timScopeBuild("Hi Tagen,\n\nHere's my estimate of $2,800 for the following work:\n\n- Secure the tub spout\n- Install 3 hose bibs with piping\n\nThanks,\nJohn", { rejected: [], trade: 'plumbing' });
+      const g = timScopeBuild("Here's my estimate $900:\n- Replace the outlet\n- Install GFCI", { rejected: [], trade: 'electrical' });
+      return { steps: b.steps.map(x => x.text), note: b.note, by: b.noteBy, guard: g.steps.map(x => x.text) };
+    });
+    expect(r.steps).toEqual(['Secure the tub spout', 'Install 3 hose bibs with piping']);
+    expect(r.note).toBe('');
+    expect(r.by).toBe('John');
+    expect(r.guard[r.guard.length - 1]).toMatch(/GFCI/);
   });
 
   test('a pasted estimate letter: price and days filled in, courtesy and signature left out (Jack 2026-09-30)', async () => {
@@ -398,8 +437,8 @@ test.describe('Build Your Own, as an iPhone editor', () => {
   test('rooms: hold a line and drag it into another room', async () => {
     await open();
     await page.evaluate((t) => { document.getElementById('byo-say').value = t; _byoSayBuild(); }, EMAIL);
-    const row = page.locator('#byo-sections .byo-line', { hasText: 'Secure the tub spout' });
-    const target = page.locator('#byo-sections .byo-line', { hasText: 'Seal the ductwork' });
+    const row = page.locator('#byo-sections .step-line', { hasText: 'Secure the tub spout' });
+    const target = page.locator('#byo-sections .step-line', { hasText: 'Seal the ductwork' });
     // Both mid-screen, clear of the edges where a held line scrolls the page.
     // A "Set $2,800 ..." toast lands at the bottom a moment after a build;
     // clear it so the finger presses the row, not the toast.

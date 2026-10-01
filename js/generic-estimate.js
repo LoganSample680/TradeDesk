@@ -1999,13 +1999,20 @@ function _geiScopeSayDone(){
 // changes the words. list is the _ROOM_LISTS name; del is the call that
 // removes it.
 function _scopeStepRowHtml(list,label,i,o){
+  // i is the line's place in its list; the number shown is i+1 unless o.num
+  // says otherwise. Build Your Own adds the line's price on the right (fact), its description
+  // under it (note), dims a line left off the proposal (off), and opens its own
+  // sheet on a tap (tap). Everything else is the same row on all three.
   o=o||{};
-  return '<div class="ios-swipe" data-kind="step" data-room-key="'+i+'">'+
-    '<div class="ios-row" onclick="_scopeEditStep('+escHtml(JSON.stringify(String(list)))+','+i+')">'+
-      (o.ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(label)+'" onclick="event.stopPropagation();'+o.del+'">−</button>':'')+
-      '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl" data-room-text>'+escHtml(label)+'</span>'+
+  const tap=o.tap||('_scopeEditStep('+escHtml(JSON.stringify(String(list)))+','+i+')');
+  return '<div class="ios-swipe" data-kind="'+(o.kind||'step')+'" data-room-key="'+i+'"'+(o.idx!=null?' data-idx="'+o.idx+'"':'')+'>'+
+    '<div class="ios-row step-line'+(o.off?' off':'')+'" onclick="'+tap+'">'+
+      (o.ed&&o.del?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(label)+'" onclick="event.stopPropagation();'+o.del+'">−</button>':'')+
+      '<span class="ios-num">'+(o.num!=null?o.num:i+1)+'</span><span class="ios-lbl" data-room-text>'+escHtml(label)+'</span>'+
+      (o.fact||'')+
+      (o.note?'<small class="step-note">'+escHtml(o.note)+'</small>':'')+
     '</div>'+
-    '<button type="button" class="ios-del" tabindex="-1" onclick="'+o.del+'">Delete</button>'+
+    (o.del?'<button type="button" class="ios-del" tabindex="-1" onclick="'+o.del+'">Delete</button>':'')+
   '</div>';
 }
 // Tap a step to change its words (owner 2026-09-29: "I want the ability to
@@ -3159,22 +3166,17 @@ function _byoRenderSections(){
   const lines=!_byoItems.length?'':_roomStackHtml('byo',used.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec&&!it._supply);
     const isCustom=!_defSecs.includes(sec);
+    // The step row T&M and the invoice draw (_scopeStepRowHtml), numbered
+    // down the page, with the price on the right and the description under it.
     const rowHtml=rows.map(it=>{
       const idx=_byoItems.indexOf(it);
+      const n=_byoItems.filter(x=>x&&!x._supply&&x.section!==_MAT_SEC).indexOf(it);
       const priced=Number(it.price)>0;
-      const note=(it.notes&&!it._rrp)?it.notes:'';
-      return '<div class="ios-swipe" data-kind="line" data-idx="'+idx+'" data-room-key="'+idx+'"><div class="ios-row byo-line'+(it.on?'':' off')+'" onclick="_byoEditItem('+idx+')">'+
-          '<button type="button" class="ios-check'+(it.on?' on':'')+'" aria-label="'+(it.on?'On the proposal':'Off the proposal')+'" '+
-            (it.required?'disabled ':'')+'onclick="event.stopPropagation();_byoToggle('+idx+')">'+(it.on?_TM_TICK:'')+'</button>'+
-          // A small grid: check, title and price on one line, the description
-          // full width under them (an earlier owner report: notes squeezed
-          // into a narrow middle column left grey space under the price).
-          '<span class="byo-title" data-room-text>'+escHtml(it.label)+'</span>'+
-          (priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>')+
-          (note?'<small class="byo-note">'+escHtml(note)+'</small>':'')+
-        '</div>'+
-        (it.required?'':'<button type="button" class="ios-del" tabindex="-1" onclick="_byoDelLine('+idx+')">Delete</button>')+
-      '</div>';
+      // i is the line's place in _byoItems (drag and edit use it); num is the
+      // number he reads, counting work lines only.
+      return _scopeStepRowHtml('byo',it.label,idx,{kind:'line',idx,num:(n<0?idx:n)+1,off:!it.on,tap:'_byoEditItem('+idx+')',
+        fact:!it.on?'<span class="ios-fact">Off</span>':priced?'<span class="ios-fact">'+_byoMoney(it.price)+'</span>':'<span class="ios-fact ask">Add price</span>',
+        note:(it.notes&&!it._rrp)?it.notes:'',del:it.required?'':'_byoDelLine('+idx+')'});
     }).join('');
     return {room:sec,
       extra:isCustom?'<button type="button" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)">Remove</button>':'',
@@ -3367,9 +3369,6 @@ function _byoRenderDock(st){
     ?'<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady()){'+nx.fn+'}">'+escHtml(nx.label)+'</button>'
     :'<button type="button" class="ios-btn ios-btn-tint" id="byo-dock-sign" onclick="if(_tmDockReady())_geiSignInPerson()">Sign here</button>'+
      '<button type="button" class="ios-btn ios-btn-fill" id="byo-dock-go" onclick="if(_tmDockReady())sendGenericProposal()">Send it</button>');
-}
-function _byoToggle(idx){
-  if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
 }
 function _byoAutosave(){
   if(!_geiEditBidId)return;
@@ -4697,6 +4696,11 @@ function _byoEditItem(idx){
       ?_byaQtyRateHTML(1,it.unit,(Number(it.price)>0?it.price:(Number(it.rate)||0)),true)
       :_byaQtyRateHTML(it.qty,it.unit,(Number(it.rate)>0?it.rate:it.price)))+
     _byaDescFieldHTML(it.notes||'')+
+    // On or off the proposal, here rather than a tick on the row, so the row
+    // is the same one T&M and the invoice draw. A required line stays on.
+    (_byaOnOffable(idx)?'<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 16px;font-size:15px;cursor:pointer">'+
+      '<span>On the proposal<small style="display:block;font-size:12px;color:var(--text3)">Off keeps it here without showing it to the customer.</small></span>'+
+      '<input type="checkbox" class="ios-switch" id="_bya-on" '+(_byoItems[idx].on!==false?'checked':'')+'></label>':'')+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
@@ -4716,6 +4720,10 @@ function _byoEditItem(idx){
     // Enter makes a newline in the notes textarea, Save changes button submits.
   },50);
 }
+// A Build Your Own line (not a T&M material row) that is not required.
+function _byaOnOffable(idx){
+  return typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm&&!!_byoItems[idx]&&!_byoItems[idx].required&&!_byoItems[idx]._supply;
+}
 function _byaEditConfirm(idx){
   if(!_matView(idx))return;
   const label=_tradeSpellFix((document.getElementById('_bya-label')?.value||'').trim());
@@ -4723,6 +4731,8 @@ function _byaEditConfirm(idx){
   const qty=_byaQtyValue(),unit=_byaUnitValue();
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
+  const onEl=document.getElementById('_bya-on');
+  if(onEl&&_byaOnOffable(idx))_byoItems[idx].on=!!onEl.checked;
   _matWrite(idx,{label,qty,unit,rate,notes});
   // Editing an item is the other moment he writes the words. Teach the book
   // here too, or a description added on the second pass is lost to the next job.

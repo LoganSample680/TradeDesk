@@ -1714,13 +1714,16 @@ div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #gei-byo-page .ios-check.on::before{background:var(--ios-tint);border-color:var(--ios-tint)}
 #gei-byo-page .ios-check svg{position:relative;width:14px;height:14px;z-index:1}
 #gei-byo-page .ios-check:disabled{cursor:default}
-#gei-byo-page .byo-line.off .ios-lbl,#gei-byo-page .byo-line.off .ios-fact{opacity:.45}
-#gei-byo-page .ios-row.byo-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
-#gei-byo-page .byo-line .byo-title{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
-#gei-byo-page .byo-line .ios-fact{line-height:22px;text-align:right}
-#gei-byo-page .byo-line .ios-check{margin:-11px 0 -11px -12px;align-self:start}
-#gei-byo-page .byo-line .byo-note{grid-column:2/4;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
-#gei-byo-page .byo-line.off .byo-title,#gei-byo-page .byo-line.off .byo-note{opacity:.45}
+/* ONE STEP ROW on all three screens (_scopeStepRowHtml): the number, the
+   words, BYO's price on the right, the description full width under them.
+   Everything sits on the first line of the words, however tall the row. */
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-row.step-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-num,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-minus{line-height:22px;align-self:start}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line:has(.ios-minus){grid-template-columns:auto auto minmax(0,1fr) auto}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-lbl{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-fact{line-height:22px;text-align:right}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .step-note{grid-column:2/-1;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .ios-lbl,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .ios-fact,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .step-note{opacity:.45}
 #gei-byo-page .ios-fact{flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:500;color:var(--text)}
 #gei-byo-page .ios-fact.ask{color:var(--ios-tint);font-weight:600}
 #gei-byo-page .byo-total .ios-fact{font-size:24px;font-weight:700;letter-spacing:-.4px}
