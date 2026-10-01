@@ -2602,8 +2602,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 /* Edit is pinned to its own top-right corner (position:absolute, out of
    flow); the stats group (.mil-trip-stats) is the only thing left in flow,
    so justify-content:center centers IT alone against the card's full
-   stretched height, independent of where Edit sits. */
-.mil-trip-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;align-self:stretch;min-width:60px}
+   stretched height, independent of where Edit sits. The top padding is
+   Edit's own height plus a gap, so a tall stats group (a receipt or "It was
+   work" button under the numbers) centers in the space BELOW Edit instead
+   of riding up under it (Jack's log, 2026-09-30: "4.5 mi" hidden by Edit). */
+.mil-trip-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;align-self:stretch;min-width:60px;padding-top:32px}
 .mil-trip-stats{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .mil-trip-stats .mil-trip-meta{margin-top:-2px}
 .mil-trip-mi{font-size:13px;font-weight:800;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
