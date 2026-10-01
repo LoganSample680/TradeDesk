@@ -2003,12 +2003,18 @@ test.describe('jobs.js: exhaustive coverage', () => {
     // the saved open rows behind, and clockIn now adopts a saved open row
     // before starting a new one (one clock at a time, 2026-09-30), so a row a
     // previous test left open would be picked up instead of a fresh clock.
-    test.beforeEach(async () => {
-      await page.evaluate(() => { _activeTimer = null; timeEntries = timeEntries.filter(e => !e.open); });
+    // Closed IN PLACE as well as filtered out, before and after each test: a
+    // copy of the list saved while a row was open can come back on a later
+    // load and be adopted, which is how the golden path below picked up the
+    // General clock the test before it opened (CI shard 5, 2026-10-01).
+    const noClock = () => page.evaluate(() => {
+      if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+      _activeTimer = null;
+      (timeEntries || []).forEach(e => { if (e && e.open) { e.open = false; if (!e.end_time) e.end_time = e.start_time; } });
+      timeEntries = timeEntries.filter(e => !e.open);
     });
-    test.afterEach(async () => {
-      await page.evaluate(() => { _activeTimer = null; });
-    });
+    test.beforeEach(noClock);
+    test.afterEach(noClock);
 
     // Old contract: null was just another invalid id, jobs.find() found
     // nothing, clockIn() bailed. New contract (owner 2026-08-19, "ability
