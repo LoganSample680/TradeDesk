@@ -258,3 +258,55 @@ function tdBootFill(ov,o){
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
 if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdSkelSweep};
+
+// ── Shared by the app and the client hub (audit 2026-10-01) ─────────────────
+// Each page kept its own copy of these; both pages load this file first.
+
+// WCAG clamp for the contractor's brand color. The brand color renders both as
+// colored TEXT on white surfaces (proposal section labels, hub links) and as a
+// BACKGROUND under white text (proposal header, TOTAL row, hub buttons), both
+// are the same white↔color pair, so one clamp covers both directions: darken
+// the pick toward black (hue preserved) until it clears AA 4.5:1 against
+// white, with a small margin for the near-white (#f8fafc) document surfaces.
+// Invalid/empty input passes through untouched so callers' fallbacks still run.
+function adaBrand(hex){
+  const h=String(hex||'').trim().replace('#','');
+  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
+  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
+  const ratioVsWhite=c=>1.05/(lum(c)+0.05);
+  let guard=0;
+  while(ratioVsWhite(rgb)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
+  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+// Egress fix: route public gallery images through the Cloudflare edge cache
+// (/img/<path>) when served from Cloudflare, so repeat views hit Cloudflare,
+// not Supabase. Localhost/dev, data: URLs and non-gallery URLs pass through.
+function _cdnPhoto(u){
+  try{
+    if(!u||u.startsWith('data:'))return u;
+    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
+    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
+    return m?'/img/'+m[1]:u;
+  }catch(_e){return u;}
+}
+
+// A change order's itemized lines, when he broke it out, on his copy and the
+// customer's. Rows carry the sign of the change itself, so a removal reads as
+// money coming off, not as a second charge. esc and money are the page's own
+// escaper and money format.
+function tdCoLinesHTML(lines,color,type,esc,money){
+  if(!Array.isArray(lines)||!lines.length)return '';
+  const sign=type==='sub'?'-':'+';
+  return '<div style="margin-bottom:10px">'+
+    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc((l&&l.desc)||'')+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+money((l&&l.amt)||0)+'</span>'+
+    '</div>').join('')+
+    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
+      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
+      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+money(lines.reduce((s,l)=>s+(Number(l&&l.amt)||0),0))+'</span>'+
+    '</div>'+
+  '</div>';
+}

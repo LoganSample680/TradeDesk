@@ -874,11 +874,7 @@ function _previewClientHub(url,clientName,clientId){
   if(_supaUser&&clientId){
     const _pvBids=bids.filter(b=>b.client_id===clientId&&b.signingToken);
     _pvBids.forEach(b=>{
-      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'})
-      }).catch(()=>{});
+      _logProposalView({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'});
     });
   }
   const previewUrl=url+(url.includes('?')?'&':'?')+'preview=1';

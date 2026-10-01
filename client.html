@@ -696,7 +696,7 @@ function _hubBootPaint(logo,name,brand){
   _bootShown={logo:logo||'',name:name||''};
   tdBootFill(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
     // A hub whose contractor never picked a colour takes it from the logo.
-    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',_adaBrand(lk.accent));}});
+    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',adaBrand(lk.accent));}});
 }
 (function(){
   try{
@@ -710,17 +710,7 @@ let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(lo
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-// Egress fix: route public gallery images through the Cloudflare edge cache
-// (/img/<path>) when served from Cloudflare, repeat hub views hit Cloudflare,
-// not Supabase. Localhost/dev and non-storage URLs pass through untouched.
-function _cdnPhoto(u){
-  try{
-    if(!u||u.startsWith('data:'))return u;
-    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
-    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
-    return m?'/img/'+m[1]:u;
-  }catch(_e){return u;}
-}
+// _cdnPhoto (the edge-cached gallery address) is shared from js/brand-look.js.
 // Image fallback: retry the direct URL once before hiding, an undeployed /img
 // route or edge failure degrades to the pre-fix direct load, never a blank tile.
 function _imgFallback(el,mode){
@@ -779,15 +769,6 @@ async function _hubSigRows(u,bidIds){
     if(error||!Array.isArray(data))return [];
     return data.filter(r=>r&&typeof r==='object');
   }catch(_){return [];}
-}
-// Every write the hub makes to a signed proposal goes through proposal-sign
-// (20261049), which checks the hub link before touching the row.
-async function _hubSignCall(body){
-  const p=new URLSearchParams(location.search);
-  const{data,error}=await _supa.functions.invoke('proposal-sign',{body:Object.assign({u:p.get('u'),c:p.get('c'),t:p.get('t')},body)});
-  if(error)throw error;
-  if(data&&data.error)throw new Error(data.error);
-  return data||{};
 }
 // Merge authoritative signing state from signed_proposals over a hub snapshot.
 // Single merge path, used by init() and the live refresher (_refreshHub).
@@ -993,11 +974,7 @@ async function init(){
         const{data:{session}}=await _supaAuth.auth.getSession();
         if(!session||session?.user?.id!==u){
           (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
-            fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-              method:'POST',
-              headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-              body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
-            }).catch(()=>{});
+            _logProposalView({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'});
           });
         }
       }catch(_){}
@@ -1272,17 +1249,8 @@ function showState(s){
 // darken toward black, hue preserved, until ≥4.6:1 vs white so no brand pick
 // can ever produce illegible text. Snapshots are clamped at upload too, this
 // covers legacy snapshots that stored a light color before the clamp existed.
-function _adaBrand(hex){
-  const h=String(hex||'').trim().replace('#','');
-  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
-  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
-  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
-  let guard=0;
-  while(1.05/(lum(rgb)+0.05)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
-  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-}
 function applyBranding(h){
-  if(h.brandColor)document.documentElement.style.setProperty('--denim',_adaBrand(h.brandColor));
+  if(h.brandColor)document.documentElement.style.setProperty('--denim',adaBrand(h.brandColor));
   document.title=(h.contractorName||'Project Hub')+', Your Hub';
   // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
   const _cnName=(h.contractorName||'').trim();
@@ -2317,19 +2285,6 @@ function _hubCOHistoryHTML(bid,thisCO){
   return '<div style="font-size:12px;color:#6b7280;line-height:1.7;margin-top:6px">Signed '+fmt(first)+
     prior.map(c=>' · CO #'+c.coNum+' '+((c.delta||0)<0?'-':'+')+fmt(Math.abs(c.delta||0))).join('')+'</div>';
 }
-function _hubCOLinesHTML(lines,color,type){
-  if(!lines||!lines.length)return '';
-  const sign=type==='sub'?'-':'+';
-  return '<div style="margin-bottom:10px">'+
-    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
-      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc(l.desc||'')+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt||0)+'</span>'+
-    '</div>').join('')+
-    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
-      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
-      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
-    '</div></div>';
-}
 function _hubCOPhotosHTML(urls){
   if(!urls||!urls.length)return '';
   return '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">'+
@@ -2393,7 +2348,7 @@ function _showCODoc(bidId,coNum){
   h+='<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+esc(co.desc||'')+'</div>';
   // Itemized when the contractor broke it out. A lump sum is what a homeowner
   // argues with; lines are what they read and accept.
-  h+=_hubCOLinesHTML(co.lines,deltaColor,co.type);
+  h+=tdCoLinesHTML(co.lines,deltaColor,co.type,esc,fmt);
   if(!(co.lines&&co.lines.length)){
     h+='<div style="display:flex;align-items:center;gap:8px">';
     h+='<span style="font-size:13px;color:#6b7280">Adjustment:</span>';
@@ -2461,7 +2416,7 @@ async function _declineCOHub(bidId,coNum){
   try{
     // proposal-sign re-reads the row, marks this change order declined and
     // writes it back, after checking the hub link.
-    try{await _hubSignCall({action:'co',decision:'decline',bidId:String(bidId),coNum,note});}
+    try{await _proposalSign({action:'co',decision:'decline',bidId:String(bidId),coNum,note},{hub:true});}
     catch(_e2){console.warn('CO decline DB write deferred:',_e2&&_e2.message);}
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum,declined:true}));}catch(_){}
     _hubNudgePeers();
@@ -2486,7 +2441,7 @@ async function _submitCOHubSign(bidId,coNum){
     // The DB row is authoritative: proposal-sign re-reads it (falling back to
     // this hub's CO list), signs the matching entry and writes it back, after
     // checking the hub link. Local state below updates either way.
-    try{await _hubSignCall({action:'co',decision:'sign',bidId:String(bidId),coNum,signerName:name,signatureData:sigData});}
+    try{await _proposalSign({action:'co',decision:'sign',bidId:String(bidId),coNum,signerName:name,signatureData:sigData},{hub:true});}
     catch(_e2){console.warn('CO sign DB write deferred:',_e2&&_e2.message);}
     // Instant contractor-tab refresh (same-browser): cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
@@ -2845,34 +2800,10 @@ async function _launchCheckout(bidId,amount,label){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    // Direct charge: PaymentIntent lives on the contractor's connected account, so
-    // Stripe.js must be initialised with that account or the client_secret won't resolve.
-    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
-    _stripeCheckoutInstance=stripeObj;
-    document.getElementById('checkout-embed-container').innerHTML='';
-    // cs_ = Checkout Session → initEmbeddedCheckout (deployed backend)
-    // pi_ = PaymentIntent   → Payment Element accordion (updated backend)
-    if(d.clientSecret.startsWith('cs_')){
-      const inst=await stripeObj.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);}
-      });
-      inst.mount('#checkout-embed-container');
-      _stripeCheckoutInstance={confirmPayment:null,destroy:()=>inst.destroy()};
-      _stripeCheckoutElements=null;
-      if(submitBtn)submitBtn.style.display='none';
-    }else{
-      _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-      const payEl=_stripeCheckoutElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      });
-      payEl.mount('#checkout-embed-container');
-      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
-      payEl.on('loaderror',()=>{
-        closePaymentModal();
-        alert('Could not load payment options. Please try again.');
-      });
-    }
+    const m=await _tdMountStripe(d,{container:'checkout-embed-container',submitBtn,
+      onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);},
+      onLoadError:()=>{closePaymentModal();alert('Could not load payment options. Please try again.');}});
+    _stripeCheckoutInstance=m.inst;_stripeCheckoutElements=m.elements;
   }catch(e){
     console.error('[_launchCheckout]',e);
     closePaymentModal();

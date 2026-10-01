@@ -200,7 +200,7 @@ test.describe('number-only fields', () => {
   test('every converted field carries data-num', () => {
     const idx = read('index.html');
     const want = {
-      'index.html': ['cf-year-built', 'pay-amount', 'tm-rate', 'tm-hours', 'tm-dep-pct', 'tm-nte-cap', 'gei-tax-pct', 's-value', 's-days',
+      'index.html': ['cf-year-built', 'pay-amount', 'tm-rate', 'tm-hours', 'tm-nte-cap', 'gei-tax-pct', 's-value', 's-days',
         'tx-spouse', 'tx-paid', 'tx-prior-yr', 'tx-prior-yr-agi', 'set-since-year', 'set-sales-tax-rate', 'set-labor-burden', 'set-owner-pay-rate',
         'set-goal-monthly', 'set-margin', 'set-deposit-pct', 'set-est-valid-days', 'set-cov', 'set-mm', 'set-supplies-rate', 'set-labor-rate-generic',
         'set-finance-charge-pct', 'tr-tm-area', 'tr-tm-roof', 'tr-tm-dist', 'tr-scan-wall', 'set-scan-price', 'set-scan-rate', 'set-irs', 'cf-zip', 'set-bzip'],

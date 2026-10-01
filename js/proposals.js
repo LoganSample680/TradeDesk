@@ -1,14 +1,7 @@
 // ── RRP compliance ────────────────────────────────────────────────────────────
 let _rrpPaintAnswer=''; // 'yes' | 'no' | '' (unanswered)
 
-function _cdnPhoto(u){
-  try{
-    if(!u||u.startsWith('data:'))return u;
-    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
-    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
-    return m?'/img/'+m[1]:u;
-  }catch(_e){return u;}
-}
+// _cdnPhoto (the edge-cached gallery address) lives in js/brand-look.js.
 // onerror handler for CDN-routed images: retry the direct URL once (covers an
 // undeployed /img route or edge miss failure), THEN hide, never a broken tile.
 function _imgFallback(el){
@@ -53,6 +46,15 @@ function _bidWorkItems(b,o){
 }
 // The same work as plain lines, for the places that print a list.
 function _bidScopeLines(b){return _bidWorkItems(b).map(x=>x.label);}
+// HIS LEAD-PAINT (EPA RRP) CERTIFICATES, as the proposal and the hub print
+// them (audit 2026-10-01: three copies). A certificate past its expiry date is
+// not one; blank when he has none on file.
+function _rrpCerts(){
+  const list=(typeof licenses!=='undefined'&&Array.isArray(licenses))?licenses:[];
+  const live=id=>list.find(x=>x&&x.typeId===id&&(!x.expiryDate||x.expiryDate>=todayKey()))||null;
+  const firm=live('epa_firm'),ren=live('epa_renovator');
+  return {rrpFirmCertNum:(firm&&firm.licenseNumber)||'',rrpRenovatorName:(ren&&ren.holderName)||'',rrpRenovatorCertNum:(ren&&ren.licenseNumber)||''};
+}
 function _buildClientHubSnapshot(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
   const cbids=bids.filter(b=>b.client_id===clientId);
@@ -182,8 +184,8 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  // stateFromAddr (js/legal.js): the state, not the first state-shaped word.
-  const _snapState=(typeof stateFromAddr==='function'?stateFromAddr(c.addr||''):null)||S.state||'KS';
+  // _stateOf (js/legal.js): the state, not the first state-shaped word.
+  const _snapState=_stateOf(c.addr);
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
   // Cal. Civ. Code §1689.6: five business days when the buyer is 65 or older.
   const _snapSeniorDays=(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorDays)||0;
@@ -254,9 +256,7 @@ function _buildClientHubSnapshot(clientId){
     stripeEnabled:_snapStripeOn,
     yearBuilt:c.yearBuilt||null,
     epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&(c.rrpDisturb==='yes'||_rrpPaintAnswer==='yes')),
-    rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
-    rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
-    rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    ..._rrpCerts(),
     epaAck:c.epaAck||false,
     trade:getActiveTrade(),
     state:_snapState,
@@ -1634,22 +1634,6 @@ function _coHistoryHTML(h){
     h.cos.map(c=>' · CO #'+c.coNum+' '+(c.delta<0?'-':'+')+fmt(Math.abs(c.delta))).join('')+
   '</div>';
 }
-// Itemized change, when he broke it out. Rows carry the sign of the change
-// itself, so a removal reads as money coming off, not as a second charge.
-function _coLinesHTML(lines,color,type){
-  if(!lines||!lines.length)return '';
-  const sign=type==='sub'?'-':'+';
-  return '<div style="margin-bottom:10px">'+
-    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
-      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+escHtml(l.desc)+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt)+'</span>'+
-    '</div>').join('')+
-    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
-      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
-      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
-    '</div>'+
-  '</div>';
-}
 function _coPhotosHTML(urls){
   if(!urls||!urls.length)return '';
   return '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
@@ -1730,7 +1714,7 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+escHtml(desc)+'</div>'+
         // The breakdown, when he gave one. A lump sum is what a homeowner
         // argues with; itemized lines are what they read and accept.
-        _coLinesHTML(lines,deltaColor,type)+
+        tdCoLinesHTML(lines,deltaColor,type,escHtml,fmt)+
         (lines&&lines.length?'':
           '<div style="display:flex;align-items:center;gap:8px">'+
             '<span style="font-size:13px;color:#6b7280">Adjustment:</span>'+

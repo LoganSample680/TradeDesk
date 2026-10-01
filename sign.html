@@ -753,15 +753,6 @@ async function _sigStatus(key){
   }catch(_){return null;}
 }
 function _sigIsDecline(r){return !!r&&(r.payment_status==='declined'||r.payment_method==='declined');}
-// Every write this page makes goes through proposal-sign (20261049), which
-// proves the link, takes the amount from the stored proposal and writes the
-// row and the proposal file together.
-async function _signCall(body){
-  const{data,error}=await _supa.functions.invoke('proposal-sign',{body});
-  if(error)throw error;
-  if(data&&data.error)throw new Error(data.error);
-  return data||{};
-}
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
   const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -877,11 +868,7 @@ async function init(){
           if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
         }catch(_){}
         window._viewerIsContractor=(_viewerType==='contractor');
-        fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-          body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
-        }).catch(()=>{});
+        _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType});
       }).catch(()=>{});},1600);
     }
     const _biz=_prop.businessName||'Your Contractor';
@@ -1223,11 +1210,7 @@ function _logStep(step){
   if(_isPreview||window._viewerIsContractor||!_prop?.contractorUserId||!_prop?.id)return;
   if(_stepsSent.has(step))return;
   _stepsSent.add(step);
-  fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-    body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step})
-  }).catch(()=>{});
+  _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step});
 }
 function approveAndSign(){
   _logStep('approved');
@@ -1455,7 +1438,7 @@ async function _saveSignature(method){
   const ts=new Date().toISOString();
   // The function takes the amount and deposit from the stored proposal, never
   // from this page, and writes the row and the signed proposal file together.
-  await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
+  await _proposalSign({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
     portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
     buyerSenior:!!window._buyerSenior});
   // Signal the contractor's open TradeDesk tab to refresh immediately
@@ -1584,7 +1567,7 @@ async function _confirmDecline(){
   try{
     // proposal-sign writes the declined row (the contractor app reads it as
     // Closed Lost) and marks the stored proposal declined, after proving the link.
-    await _signCall({action:'decline',key,reason:declineReason||null});
+    await _proposalSign({action:'decline',key,reason:declineReason||null});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
@@ -1718,34 +1701,10 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
-    // Stripe.js MUST be initialised with that account or the client_secret won't resolve.
-    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
-    _stripeInst=stripeObj;
-    document.getElementById('sign-embed-container').innerHTML='';
-    // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout
-    // pi_                = PaymentIntent   → use Payment Element (accordion)
-    if(d.clientSecret.startsWith('cs_')){
-      const inst=await stripeObj.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');}
-      });
-      inst.mount('#sign-embed-container');
-      _stripeInst={destroy:()=>inst.destroy()};
-      _stripeElements=null;
-      if(submitBtn){submitBtn.style.display='none';}// Stripe's own UI has submit built in
-    }else{
-      _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-      const payEl=_stripeElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      });
-      payEl.mount('#sign-embed-container');
-      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
-      payEl.on('loaderror',()=>{
-        _closeStripeModal();
-        document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
-      });
-    }
+    const m=await _tdMountStripe(d,{container:'sign-embed-container',submitBtn,
+      onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');},
+      onLoadError:()=>{_closeStripeModal();document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';}});
+    _stripeInst=m.inst;_stripeElements=m.elements;
   }catch(e){
     console.error('[_launchEmbedded]',e);
     _closeStripeModal();

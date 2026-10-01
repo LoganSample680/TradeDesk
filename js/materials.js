@@ -41,13 +41,13 @@ function _matView(i){
     const l=(_qi.typed||[])[i];if(!l||!l.part)return null;
     const qty=Number(l.qty)>0?Number(l.qty):1;
     const rate=Number(l.amount)||0;
-    return {label:l.desc||'',notes:l.notes||'',qty,unit:l.unit||'ea',rate,price:Math.round(qty*rate*100)/100,on:true};
+    return {label:l.desc||'',notes:l.notes||'',qty,unit:l.unit||'ea',rate,price:_cents(qty*rate),on:true};
   }
   if(_matIsTM()){
     const l=(_geiLines||[])[i];if(!l||l._tmLabor)return null;
     const qty=Number(l.qty)>0?Number(l.qty):1;
     const rate=Number(l.rate)||0;
-    const price=(l.total!=null&&l.total!=='')?Number(l.total)||0:_geiCents(qty*rate);
+    const price=(l.total!=null&&l.total!=='')?Number(l.total)||0:_cents(qty*rate);
     return {label:l.desc||'',notes:l.notes||'',qty,unit:l.unit||'ea',rate:rate||price,price,on:true};
   }
   const it=(_byoItems||[])[i];if(!it)return null;
@@ -63,7 +63,7 @@ function _matPut(sec,v){
     return;
   }
   if(_matIsTM()){
-    _geiLines.push({desc:v.label,notes:v.notes||'',qty:v.qty,unit:v.unit,rate:v.rate,total:_geiCents(v.qty*v.rate)});
+    _geiLines.push({desc:v.label,notes:v.notes||'',qty:v.qty,unit:v.unit,rate:v.rate,total:_cents(v.qty*v.rate)});
     return;
   }
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
@@ -77,7 +77,7 @@ function _matWrite(i,v){
   }
   if(_matIsTM()){
     const l=_geiLines[i];if(!l||l._tmLabor)return;
-    l.desc=v.label;l.notes=v.notes||'';l.qty=v.qty;l.unit=v.unit;l.rate=v.rate;l.total=_geiCents(v.qty*v.rate);
+    l.desc=v.label;l.notes=v.notes||'';l.qty=v.qty;l.unit=v.unit;l.rate=v.rate;l.total=_cents(v.qty*v.rate);
     return;
   }
   const it=_byoItems[i];if(!it)return;

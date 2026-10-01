@@ -1620,7 +1620,7 @@ function _tmAddToEstimate(){
   const m=_tmMeasure();
   window._trueMeasureSeed={
     clientId:c.id,
-    lines:[{desc,qty,unit:m.unit,rate,total:Math.round(qty*rate*100)/100,notes:'Measured with TrueMeasure',_byoSection:'Exterior'}]
+    lines:[{desc,qty,unit:m.unit,rate,total:_cents(qty*rate),notes:'Measured with TrueMeasure',_byoSection:'Exterior'}]
   };
   document.getElementById('_tm-confirm-ov')?.remove();
   _tmClose();

@@ -3983,47 +3983,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Step 3: Review & Send -->
   <div id="gei-s3" style="display:none;padding:10px 14px 80px">
-    <!-- Contract terms (T&M mode only) -->
-    <div id="gei-tm-terms" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:12px">Contract Terms</div>
-      <!-- Billing cycle -->
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Billing cycle</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="tmc-weekly"     onclick="_tmSetCycle('weekly')"     class="btn btn-sm" style="font-size:12px">Weekly</button>
-          <button id="tmc-biweekly"   onclick="_tmSetCycle('biweekly')"   class="btn btn-sm" style="font-size:12px">Bi-weekly</button>
-          <button id="tmc-milestone"  onclick="_tmSetCycle('milestone')"  class="btn btn-sm" style="font-size:12px">Milestone</button>
-          <button id="tmc-completion" onclick="_tmSetCycle('completion')" class="btn btn-sm" style="font-size:12px">At completion</button>
-        </div>
-      </div>
-      <!-- Deposit -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div class="f">
-          <label>Mobilization deposit %
-            <span style="font-weight:400;color:var(--text3);font-size:10px;display:block">Standard: 20% commercial</span>
-          </label>
-          <input type="text" data-num="pct" inputmode="decimal" id="tm-dep-pct" value="20" oninput="_tmCalcDeposit()">
-        </div>
-        <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Deposit amount</div>
-          <div id="tm-dep-amt" style="font-size:22px;font-weight:800;color:var(--green-mid)">-</div>
-        </div>
-      </div>
-      <!-- NTE cap -->
-      <div>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" id="tm-nte-on" checked onchange="_tmCalcNte()" style="width:16px;height:16px;accent-color:var(--blue)">
-          <span style="font-size:13px;font-weight:600">Most it can cost</span>
-        </label>
-        <div id="tm-nte-wrap" style="margin-left:24px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-            <span style="font-size:14px;color:var(--text2);font-weight:600">$</span>
-            <input type="text" data-num="money" inputmode="decimal" id="tm-nte-cap" oninput="_byoAutosave()" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1.5px solid var(--blue);font-size:16px;font-weight:700;color:var(--blue);background:var(--blue-lt)">
-          </div>
-          <div style="font-size:11px;color:var(--text3)">Client pays actual T&amp;M only, up to this cap</div>
-        </div>
-      </div>
-    </div>
+    <!-- T&M "most it can cost": the save and the proposal read these two, and
+         opening a bid writes them. Never shown; the T&M screen has its own field. -->
+    <input type="text" data-num="money" inputmode="decimal" id="tm-nte-cap" hidden>
+    <input type="checkbox" id="tm-nte-on" checked hidden>
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)" id="gei-lines-label">Line items</div>

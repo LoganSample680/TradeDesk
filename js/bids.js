@@ -1995,7 +1995,7 @@ function riskBadge(cid){
 function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
-  const stateCode=(typeof stateFromAddr==='function'?stateFromAddr(addr):null)||S.state||'KS';
+  const stateCode=_stateOf(addr);
   let county=null;
   // The county record for this property is the best answer (propDataCounty,
   // e.g. "Shawnee, KS", written by the county lookup). The city table below is

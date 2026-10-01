@@ -104,6 +104,24 @@ const IRS=(when)=>{
   if(!y||typeof _getIrsRateForYear!=='function')return S.irsRate||.725;
   return _getIrsRateForYear(y);
 };
+// THE ONE CENTS ROUNDING (audit 2026-10-01: the estimate, the supply list and
+// a dozen inline Math.round(x*100)/100 each had their own). Round half UP at
+// the cent, the way money rounds. Math.round alone does not: 2.5 x 3.33 is
+// 8.325, which floats to 832.4999999999999 and rounds DOWN to $8.32, a penny
+// off on the client's line for no reason a human could explain. Junk is 0.
+function _cents(n){
+  const v=Number(n)||0;
+  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
+}
+// THE MIDDLE VALUE (audit 2026-10-01: the price book and the scope history
+// each had a copy). Anything that is not a finite number is skipped; an even
+// count averages the middle two. Nothing to go on is null.
+function _median(vals){
+  const v=(Array.isArray(vals)?vals:[]).filter(x=>typeof x==='number'&&isFinite(x)).sort((a,b)=>a-b);
+  if(!v.length)return null;
+  const m=Math.floor(v.length/2);
+  return v.length%2?v[m]:(v[m-1]+v[m])/2;
+}
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
@@ -130,23 +148,8 @@ function stageAvatar(stage){
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
 function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
-// WCAG clamp for the contractor's brand color. The brand color renders both as
-// colored TEXT on white surfaces (proposal section labels, hub links) and as a
-// BACKGROUND under white text (proposal header, TOTAL row, hub buttons), both
-// are the same white↔color pair, so one clamp covers both directions: darken
-// the pick toward black (hue preserved) until it clears AA 4.5:1 against
-// white, with a small margin for the near-white (#f8fafc) document surfaces.
-// Invalid/empty input passes through untouched so callers' fallbacks still run.
-function adaBrand(hex){
-  const h=String(hex||'').trim().replace('#','');
-  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
-  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
-  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
-  const ratioVsWhite=c=>1.05/(lum(c)+0.05);
-  let guard=0;
-  while(ratioVsWhite(rgb)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
-  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-}
+// adaBrand (the WCAG clamp for his brand colour) lives in js/brand-look.js,
+// shared with the client hub.
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
 // Canonical date stamp for the whole app: MM/DD/YYYY (e.g. 01/01/1900), zero-padded.

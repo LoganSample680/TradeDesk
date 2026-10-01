@@ -151,7 +151,7 @@ function _qiRememberRate(name,rate){
 function _qiRiderLine(day,rider,lead,mins){
   const rate=_qiRateFor(rider);
   const detail=_qiMins(mins)+', rode with '+String(lead).split(' ')[0];
-  return {kind:'time',day,who:rider,mins,rate,rider:lead,detail,desc:rider+': '+detail,amount:Math.round(mins/60*rate*100)/100};
+  return {kind:'time',day,who:rider,mins,rate,rider:lead,detail,desc:rider+': '+detail,amount:_cents(mins/60*rate)};
 }
 function _qiMins(m){const h=Math.floor(m/60),mm=Math.round(m%60);return ((h?h+'h ':'')+(mm||!h?mm+'m':'')).trim();}
 function _qiDay(d){const t=Date.parse(String(d||'')+'T12:00:00');return isNaN(t)?'':new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
@@ -308,7 +308,7 @@ function _qiRiderHours(lines){
     const ex=lines.filter(x=>x.kind==='time'&&x.extra&&x.day===l.day&&x.who===l.who).reduce((s2,x)=>s2+x.mins,0);
     if(t===l.mins+ex)return;
     const m=Math.max(0,t-ex);
-    l.mins=m;l.amount=Math.round(m/60*l.rate*100)/100;
+    l.mins=m;l.amount=_cents(m/60*l.rate);
     l.detail=_qiMins(m)+', with '+String(l.rider).split(' ')[0];l.desc=l.who+': '+l.detail;l.riderSet=true;
   });
   return lines.filter(l=>!(l.kind==='time'&&l.rider&&!(l.mins>0)));
@@ -329,7 +329,7 @@ function _qiFixHours(lines){
     const t=H[l.day+'|'+l.who];
     if(!(t>=0)||t===l.mins+ex)return;
     const m=Math.max(0,t-ex);
-    l.orig=l.mins;l.origTotal=l.mins+ex;l.mins=m;l.edited=true;l.amount=Math.round(m/60*l.rate*100)/100;
+    l.orig=l.mins;l.origTotal=l.mins+ex;l.mins=m;l.edited=true;l.amount=_cents(m/60*l.rate);
     l.detail=_qiMins(m)+' (tracked '+_qiMins(l.orig)+')';l.desc=l.who+': '+_qiMins(m);
   });
   return lines.filter(l=>!(l.kind==='time'&&l.edited&&!(l.mins>0)));
@@ -459,7 +459,7 @@ function _qiWithExtras(lines){
       const add=(who,rider)=>{
         const rate=_qiRateFor(who);
         const detail=x.label+' · '+_qiMins(x.mins)+why;
-        lines.push({kind:'time',day,who,mins:x.mins,rate,extra:x.key,rider:rider||undefined,detail,desc:who+': '+detail,amount:Math.round(x.mins/60*rate*100)/100});
+        lines.push({kind:'time',day,who,mins:x.mins,rate,extra:x.key,rider:rider||undefined,detail,desc:who+': '+detail,amount:_cents(x.mins/60*rate)});
       };
       add(x.who);
       // Whoever rides with him rode there too.
@@ -507,7 +507,7 @@ function _qiWithAdded(lines){
     lines.push(_qiRiderLine(day,rider,L.who,L.mins));
     const rate=_qiRateFor(rider);
     lines.filter(x=>x.kind==='time'&&x.extra&&!x.rider&&x.day===day&&x.who===L.who).forEach(x=>
-      lines.push(Object.assign({},x,{who:rider,rate,rider:L.who,desc:rider+': '+x.detail,amount:Math.round(x.mins/60*rate*100)/100})));
+      lines.push(Object.assign({},x,{who:rider,rate,rider:L.who,desc:rider+': '+x.detail,amount:_cents(x.mins/60*rate)})));
   };
   (_qi&&_qi.crew||[]).forEach(name=>{
     [...new Set(lines.filter(l=>l.kind==='time').map(l=>l.day))].forEach(day=>{
@@ -526,7 +526,7 @@ function _qiWithAdded(lines){
 // A rate he typed on screen stays when the lines are rebuilt.
 function _qiKeepRates(lines){
   const rates=Object.assign({},(_qi&&_qi.rates)||{});(_qi&&_qi.tracked||[]).forEach(l=>{if(l.kind==='time'&&l.rateSet)rates[l.who]=l.rate;});
-  lines.forEach(l=>{if(l.kind==='time'&&rates[l.who]!=null){l.rate=rates[l.who];l.rateSet=true;l.amount=Math.round(l.mins/60*l.rate*100)/100;}});
+  lines.forEach(l=>{if(l.kind==='time'&&rates[l.who]!=null){l.rate=rates[l.who];l.rateSet=true;l.amount=_cents(l.mins/60*l.rate);}});
   return lines;
 }
 function _qiBizUid(){return (typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';}
@@ -605,11 +605,11 @@ function _qiUnbilled(cid,visits,addr){
       if(!(mins>0))return;
       const rate=_qiRateFor(who);
       const detail=[p.site>0&&_qiMins(Math.round(p.site))+' on site',p.drive>=1&&_qiMins(Math.round(p.drive))+' driving'].filter(Boolean).join(', ');
-      lines.push({kind:'time',day,who,mins,rate,detail,desc:who+': '+detail,amount:Math.round(mins/60*rate*100)/100});
+      lines.push({kind:'time',day,who,mins,rate,detail,desc:who+': '+detail,amount:_cents(mins/60*rate)});
     });
     const r=rec[day];
     if(r){
-      const amt=Math.round(r.reduce((s,e)=>s+Number(e.amount),0)*100)/100;
+      const amt=_cents(r.reduce((s,e)=>s+Number(e.amount),0));
       lines.push({kind:'receipt',day,expId:r[0].id,expIds:r.map(e=>e.id),desc:'Materials',
         vendors:r.map(e=>(e.vendor||'Receipt')+' '+fmt(e.amount)).join(', '),date:_qiDay(day),amount:amt});
     }
@@ -671,7 +671,7 @@ function _qiLines(){
   // The supply house list is on the bill once it has a price, never as $0.
   const typed=_qi.typed.filter(l=>l._supply?Number(l.amount)>0:(String(l.desc||'').trim()||Number(l.amount)>0)).map(l=>{
     const qty=_qiQty(l);
-    return {kind:'line',part:!!l.part,supply:!!l._supply,taxPaid:!!l._taxPaid,qty,unit:l.unit||'',desc:l.part?_qiPartLabel(l):String(l.desc||'').trim(),amount:Math.round(qty*(Number(l.amount)||0)*100)/100};
+    return {kind:'line',part:!!l.part,supply:!!l._supply,taxPaid:!!l._taxPaid,qty,unit:l.unit||'',desc:l.part?_qiPartLabel(l):String(l.desc||'').trim(),amount:_cents(qty*(Number(l.amount)||0))};
   });
   if(_qi.mode==='hourly'&&_qi.fixed!=null)return [{kind:'fixed',desc:'Work performed',amount:Number(_qi.fixed)||0}].concat(typed);
   return (_qi.mode==='hourly'?_qiOnLines():[]).concat(typed);
@@ -684,7 +684,7 @@ function _qiOnLines(){
   const multi=_qiDays(on).length>1;
   return on.map(l=>multi&&l.day?Object.assign({},l,{desc:_qiDay(l.day)+' · '+l.desc}):l);
 }
-function _qiDayTotal(day){return Math.round(((_qi&&_qi.tracked)||[]).filter(l=>l.day===day).reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
+function _qiDayTotal(day){return _cents(((_qi&&_qi.tracked)||[]).filter(l=>l.day===day).reduce((s,l)=>s+(Number(l.amount)||0),0));}
 function _qiDayOpen(day){
   if(!_qi)return;
   if(_qi.off.has(day)){_qi.off.delete(day);_qi.open.add(day);}   // opening an unchecked day checks it back in
@@ -779,7 +779,7 @@ function _qiPeopleHtml(){
     :'')+
   '</div>';
 }
-function _qiSub(){return Math.round(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;}
+function _qiSub(){return _cents(_qiLines().reduce((s,l)=>s+(Number(l.amount)||0),0));}
 // SALES TAX, THE PROPOSAL'S OWN (owner 2026-10-01: "tax logic from proposal
 // carry over"). The same _docSalesTax Build Your Own and T&M ask, fed the
 // same kinds of line: hours and charges are labor, parts are materials, and
@@ -796,22 +796,18 @@ function _qiTax(){
     trade:(typeof getActiveTrade==='function'&&getActiveTrade())||'general',
     scope:pt==='new construction'?'improvement':'repair',commercial:pt==='commercial',lines:_qiTaxLines()});
 }
-// The customer's own rate, from the house's address, the way a proposal looks
-// it up (_geiLookupClientTaxRate). Until it lands, his rate in Settings.
+// The customer's own rate, from the house's address, the same lookup a
+// proposal uses (_docTaxRateFor). Until it lands, his rate in Settings.
 function _qiLookupTax(me){
-  if(!me||typeof lookupSalesTaxRate!=='function')return;
+  if(!me)return;
   const c=getClientById(me.cid)||{};
-  const addr=me.addr||c.addr||'';
-  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
-  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
-  if(!zip&&!state)return;
-  Promise.resolve(lookupSalesTaxRate(zip||'',state||(typeof S!=='undefined'&&S&&S.state)||'KS')).then(r=>{
-    if(_qi!==me)return;
-    me.taxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
+  _docTaxRateFor(me.addr||c.addr||'').then(r=>{
+    if(_qi!==me||(!r&&!me.taxRate))return;
+    me.taxRate=r;
     renderQuickInvoice();
-  }).catch(()=>{});
+  });
 }
-function _qiTotal(){return Math.round((_qiSub()+_qiTax().tax)*100)/100;}
+function _qiTotal(){return _cents(_qiSub()+_qiTax().tax);}
 
 function renderQuickInvoice(){
   const host=document.getElementById('qi-page');if(!host||!_qi)return;
@@ -832,7 +828,7 @@ function renderQuickInvoice(){
     const l=base.l,i=base.i;
     const qk=escHtml(l.who||'').replace(/'/g,'&#39;');
     const mins=items.reduce((s2,x)=>s2+x.l.mins,0);
-    const amount=Math.round(items.reduce((s2,x)=>s2+(Number(x.l.amount)||0),0)*100)/100;
+    const amount=_cents(items.reduce((s2,x)=>s2+(Number(x.l.amount)||0),0));
     const ex=items.filter(x=>x.l.extra);
     const exMins=ex.reduce((s2,x)=>s2+x.l.mins,0);
     const need=!(Number(l.rate)>0);
@@ -988,7 +984,7 @@ function _qiRate(i,v){
   const rate=parseFloat(String(v).replace(/[^0-9.]/g,''))||0;
   _qi.tracked.forEach((x,j)=>{
     if(x.kind!=='time'||x.who!==l.who)return;
-    x.rate=rate;x.rateSet=true;x.amount=Math.round(x.mins/60*rate*100)/100;
+    x.rate=rate;x.rateSet=true;x.amount=_cents(x.mins/60*rate);
     const a=document.getElementById('qi-amt-'+j);if(a)a.textContent=fmt(x.amount);
     const pill=a&&a.parentElement&&a.parentElement.querySelector('.qi-rate');
     if(pill){pill.classList.toggle('need',!(rate>0));pill.classList.remove('guess');}
@@ -1036,7 +1032,7 @@ function _qiTotalsPaint(){
 // the same lines the invoice sends, so the review cannot disagree with it.
 function _qiMath(){
   const L=_qiLines();
-  const sum=f=>Math.round(L.filter(f).reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;
+  const sum=f=>_cents(L.filter(f).reduce((s,l)=>s+(Number(l.amount)||0),0));
   return {
     mins:L.filter(l=>l.kind==='time').reduce((s,l)=>s+(Number(l.mins)||0),0),
     people:new Set(L.filter(l=>l.kind==='time').map(l=>l.who)).size,
@@ -1201,10 +1197,6 @@ function _qiWorkArr(){
   if(!_qi.workRecs.length&&Array.isArray(_qi.work)&&_qi.work.length)_qi.workRecs=_qi.work.map(w=>_tmRec(w));
   return _qi.workRecs;
 }
-// The records as saved: on the invoice, and (with what Tim wrote) on a draft.
-function _qiWorkSaved(draft){
-  return _qiWorkArr().filter(r=>String(r.label||'').trim()).map(r=>{const o={label:r.label,section:r.section,notes:r.notes||'',on:r.on!==false};if(r._written)o._written=true;if(draft&&r._tim)o._tim=r._tim;return o;});
-}
 function _qiWorkSync(){if(_qi)_qi.work=_qiWorkArr().map(r=>r.label);}
 function _qiWorkCommit(){_qiWorkSync();renderQuickInvoice();}
 function _qiWorkMove(from,toRoom,before){
@@ -1314,9 +1306,9 @@ function _invoiceDocForBid(b,opt){
   if(!b)return '';
   opt=opt||{};
   const c=getClientById(b.client_id)||{};
-  const amount=Math.round((Number(b.amount)||0)*100)/100;
+  const amount=_cents(Number(b.amount)||0);
   let rows=[],work=[];
-  const tax=Number(b.salesTax)>0?Math.round(Number(b.salesTax)*100)/100:0;
+  const tax=Number(b.salesTax)>0?_cents(Number(b.salesTax)):0;
   if(b.kind==='quick_invoice'){
     rows=Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows.slice():(Array.isArray(b.lineItems)?b.lineItems.map(l=>({text:l.desc,amount:l.amount})):[]);
     if(tax>0&&!rows.some(r=>/tax/i.test(String(r.text))))rows.push({text:'Sales tax',amount:tax});
@@ -1326,10 +1318,10 @@ function _invoiceDocForBid(b,opt){
     const adj=(b.adjustments||[]).filter(a=>a&&a.type==='decrease'&&Number(a.amount)>0);
     const coSum=cos.reduce((t,co)=>t+(Number(co.delta)||Number(co.amount)||0),0);
     const adjSum=adj.reduce((t,a)=>t+Number(a.amount),0);
-    const base=Math.round((amount-coSum+adjSum-tax)*100)/100;
+    const base=_cents(amount-coSum+adjSum-tax);
     rows.push({text:(typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):b.type)||'Work performed',amount:base});
-    cos.forEach(co=>rows.push({text:'Change order #'+(co.coNum||'')+(co.desc?' · '+co.desc:''),amount:Math.round((Number(co.delta)||Number(co.amount)||0)*100)/100}));
-    adj.forEach(a=>rows.push({text:'Price adjustment'+(a.reason?' · '+a.reason:''),amount:-Math.round(Number(a.amount)*100)/100}));
+    cos.forEach(co=>rows.push({text:'Change order #'+(co.coNum||'')+(co.desc?' · '+co.desc:''),amount:_cents(Number(co.delta)||Number(co.amount)||0)}));
+    adj.forEach(a=>rows.push({text:'Price adjustment'+(a.reason?' · '+a.reason:''),amount:-_cents(Number(a.amount))}));
     if(tax>0)rows.push({text:'Sales tax',amount:tax});
     work=_bidWorkItems(b).map(x=>({label:x.label,section:x.section||'Work',on:true}));
   }
@@ -1468,7 +1460,7 @@ function _qiSave(){
     qiShowRate:hourly?_qiShowRate():null,qiShowHours:hourly?_qiShowHours():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
     qiWork:hourly?_qi.work.slice():[],
-    qiWorkItems:hourly?_qiWorkSaved():[],
+    qiWorkItems:hourly?_scopeRowsSaved(_qiWorkArr(),{named:true}):[],
     qiNote:String(_qi.note||'').trim()||null,
     qiMode:_qi.mode,
     // The days it carries, never a through-mark (see _qiBilled).
@@ -1692,13 +1684,13 @@ function _qiCustomerDays(){
     const per={},rid={};
     time.forEach(l=>{per[l.who]=(per[l.who]||0)+l.mins;if(l.rider)rid[l.who]=true;});
     const lead=Math.max(0,...Object.keys(per).filter(w=>!rid[w]).map(w=>per[w]))||Math.max(0,...Object.values(per));
-    const labor=Math.round(time.reduce((s2,l)=>s2+l.amount,0)*100)/100;
-    const parts=Math.round(L.filter(l=>l.kind==='receipt').reduce((s2,l)=>s2+l.amount,0)*100)/100;
+    const labor=_cents(time.reduce((s2,l)=>s2+l.amount,0));
+    const parts=_cents(L.filter(l=>l.kind==='receipt').reduce((s2,l)=>s2+l.amount,0));
     const rates=time.map(l=>Number(l.rate)||0).filter((r,i,a)=>r>0&&a.indexOf(r)===i).sort((a,b)=>a-b);
     // What he did is its own list above the days now, the way a proposal
     // prints its scope; a day carries only what he wrote for that day.
     const note=String(_qi.dayNote[day]||'').trim();
-    return {day,note,mins:lead,techs:Object.keys(per).length,labor,parts,rates,total:Math.round((labor+parts)*100)/100};
+    return {day,note,mins:lead,techs:Object.keys(per).length,labor,parts,rates,total:_cents(labor+parts)};
   });
 }
 // ONE PICTURE OF THE CUSTOMER'S COPY, rows of {text, amount, sub}, that the
@@ -1711,7 +1703,7 @@ function _qiCustomerRows(){
   const rate=_qiShowRate(),mode=_qiPartsMode(),word=_qiPartsWord();
   const typed=_qiLines().filter(l=>l.kind==='line'&&Number(l.amount)>0);
   const parts=typed.filter(l=>l.part),charges=typed.filter(l=>!l.part);
-  const partSum=Math.round(parts.reduce((s2,l)=>s2+l.amount,0)*100)/100;
+  const partSum=_cents(parts.reduce((s2,l)=>s2+l.amount,0));
   const rows=[];
   const days=_qi.mode==='hourly'?_qiCustomerDays():[];
   if(_qi.mode==='hourly'&&_qi.fixed!=null){
@@ -1736,7 +1728,7 @@ function _qiCustomerRows(){
       // Not priced: the parts money rides on the last day, or on one line.
       const lastHead=[...rows].reverse().find(r=>r.head&&r.amount!=null);
       const list=mode==='items'?parts.map(l=>l.desc).join(', '):'';
-      if(lastHead){lastHead.amount=Math.round((lastHead.amount+partSum)*100)/100;if(list)rows.push({text:word+': '+list,amount:null,sub:true});}
+      if(lastHead){lastHead.amount=_cents(lastHead.amount+partSum);if(list)rows.push({text:word+': '+list,amount:null,sub:true});}
       else rows.push({text:mode==='items'?word+': '+list:'Parts and labor',amount:partSum});
     }
   }
@@ -1843,7 +1835,7 @@ function _qiDraftApply(d){
 // Everything on the screen, as a draft. qiSaveDraft keeps it; qiSend holds it
 // so an invoice he never sent can go back to being a draft.
 function _qiDraftSnap(){
-  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_qiWorkSaved(true),note:_qi.note||'',
+  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_scopeRowsSaved(_qiWorkArr(),{named:true,tim:true}),note:_qi.note||'',
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,showHours:_qi.showHours,partsMode:_qi.partsMode,
     added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
@@ -1869,7 +1861,7 @@ function _qiDraftDrop(cid,addr){
 // recorded and billed as days, the customer sees one number.
 function _qiSetFixed(on){
   if(!_qi)return;
-  _qi.fixed=on?Math.round(_qiOnLines().reduce((s2,l)=>s2+(Number(l.amount)||0),0)*100)/100:null;
+  _qi.fixed=on?_cents(_qiOnLines().reduce((s2,l)=>s2+(Number(l.amount)||0),0)):null;
   renderQuickInvoice();
 }
 function _qiFixedTyped(v){
@@ -1945,7 +1937,7 @@ function _tbRows(lab){
     if(!lines.some(l=>l.kind==='time'))return;   // receipts alone are not a visit
     const days=_qiDays(lines);
     const mins=lines.filter(l=>l.kind==='time'&&!l.rider).reduce((s,l)=>s+l.mins,0);
-    const total=Math.round(lines.reduce((s,l)=>s+(Number(l.amount)||0),0)*100)/100;
+    const total=_cents(lines.reduce((s,l)=>s+(Number(l.amount)||0),0));
     const dr=_qiDraftGet(c,addr);
     rows.push({cid:c.id,name:c.name,addr:addr||c.addr||'',pick:addr,days,mins,total:dr&&Number(dr.total)>0?Number(dr.total):total,oldest:days[0],draft:!!dr});
   });
