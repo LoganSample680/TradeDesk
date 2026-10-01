@@ -193,6 +193,64 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
 .back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;padding:0;margin-bottom:12px}
 .back:hover{color:var(--accent)}
 .biz-title{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px}
+/* ── One person's phone: a row per day, its hours behind a tap ───────────
+   One card, one header, one line per day: the column names are said once
+   instead of under every number. A tapped day opens in place to its hour
+   chart and a flat grid of every Phones metric. */
+.phone{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
+.phone-cols{display:grid;grid-template-columns:78px repeat(4,minmax(0,1fr)) 16px;gap:10px;align-items:end;padding:10px 16px 8px;border-bottom:1px solid var(--line);font-size:11px;font-weight:600;color:var(--text3);line-height:1.25}
+.phone-cols span{min-width:0;overflow-wrap:anywhere}
+.phone-cols span:not(:first-child){text-align:right}
+.pday + .pday{border-top:1px solid var(--line)}
+.pday-head{display:grid;grid-template-columns:78px repeat(4,minmax(0,1fr)) 16px;gap:10px;align-items:center;width:100%;padding:13px 16px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease}
+.pday-head:hover{background:var(--panel2)}
+.pday-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.pday-d{font-size:13px;font-weight:700;white-space:nowrap;color:var(--text2)}
+.pday-v{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pday-v.none{color:var(--text3);font-weight:500}
+.pday-chev{display:flex;align-items:center;justify-content:flex-end;color:var(--text3)}
+.pday-chev svg{width:12px;height:12px;transition:transform .18s cubic-bezier(.22,1,.36,1)}
+.pday-head[aria-expanded="true"] .pday-chev svg{transform:rotate(90deg)}
+.pday-head[aria-expanded="true"]{background:var(--panel2)}
+.pday-body{background:var(--panel2);padding:4px 16px 16px;animation:pday-in .18s cubic-bezier(.22,1,.36,1) both}
+@keyframes pday-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.pday-body{animation:none}}
+.hours{display:block;width:100%;height:auto;margin-top:8px}
+.hours .grid{stroke:var(--line);stroke-width:1}
+.hours .gps{fill:var(--accent);opacity:.22}
+.hours .area{fill:var(--ok);opacity:.10}
+.hours .batt{fill:none;stroke:var(--ok);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.hours .kill{fill:var(--live-off)}
+.hours text{fill:var(--text3);font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
+.hours-key{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:11.5px;color:var(--text3);margin:2px 0 14px}
+.hours-key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:0}
+.pstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:0;border-top:1px solid var(--line)}
+@media (min-width:700px){.pstats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.pstat{padding:10px 12px 10px 0;border-bottom:1px solid var(--line);min-width:0}
+.pstat dt{font-size:11.5px;color:var(--text3);line-height:1.3}
+.pstat dd{margin:3px 0 0;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pstat dd.none{color:var(--text3);font-weight:500}
+.pstat dd::first-letter{text-transform:uppercase}
+.hot{color:var(--warn)}
+.phone-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;min-width:0}
+.pseg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px;flex-shrink:0}
+.pseg-b{border:0;background:none;color:var(--text2);font:inherit;font-size:12px;font-weight:700;padding:6px 12px;border-radius:7px;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.pseg-b.on{background:var(--accent);color:var(--on-accent)}
+.pseg-b:focus-visible,.pback:focus-visible,.pdrill:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.pback{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--accent);font:inherit;font-size:13px;font-weight:700;padding:4px 0;cursor:pointer}
+.pback svg{width:12px;height:12px}
+.pcrumb{font-size:13px;font-weight:700;color:var(--text);margin-left:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.phone-bar .pback + .pcrumb{flex:1}
+.pday-n{display:block;font-size:11px;font-weight:500;color:var(--text3);margin-top:2px}
+.pdrill{margin-top:12px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font:inherit;font-size:13px;font-weight:700;padding:9px 14px;border-radius:9px;cursor:pointer}
+.pdrill:hover{border-color:var(--accent)}
+.ptrend{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px 8px;margin-bottom:10px}
+.ptrend-k{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px}
+.hours .dot{fill:var(--panel);stroke:var(--ok);stroke-width:2}
+.hours .batt.live{stroke-dasharray:4 4;opacity:.7}
+.hours .dot.live{stroke-dasharray:2 2}
+.hours text.tv{fill:var(--text);font-weight:700}
+@media (max-width:420px){.phone-cols,.pday-head{grid-template-columns:64px repeat(4,minmax(0,1fr)) 12px;gap:8px;padding-left:12px;padding-right:12px}.pday-body{padding:4px 12px 14px}.pday-v{font-size:13.5px}}
 
 /* ── The embedded support view ───────────────────────────────────────────── */
 #view{position:fixed;inset:0;z-index:9000;background:var(--bg);display:none;flex-direction:column}
@@ -332,6 +390,14 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
       <!-- Every metric section, drawn from what ops_metric_defs names. Adding a
            metric is a row in that function, not an edit here. -->
       <div id="biz-sections"></div>
+
+      <!-- ONE PERSON'S PHONE (owner 2026-10-01: "click into Jack and see how
+           his phone is performing and batteries degrading without polling
+           you"). Whoever is picked in the chips above, a row per day. Tap a
+           day for its hours. The labels and formats are the registry's
+           (ops_metric_defs, section device), never this page's. -->
+      <div class="section-title" id="phone-title">Phone</div>
+      <div class="rows" id="biz-phone"></div>
 
       <div class="section-title">How long each step takes <span class="hint">median</span></div>
       <div class="card" id="biz-timing"></div>
@@ -641,6 +707,7 @@ function show(id){
 function openBiz(b){
   OPEN=b;
   WHO=null;                          // a new business picks its own owner again
+  phoneReset(true);
   // Today, in the BUSINESS's day, not this browser's: the deriver works in
   // Central and an ops screen open in another zone would otherwise offer to
   // rebuild the wrong date for most of the evening.
@@ -684,6 +751,13 @@ function dur(m){
   if(!h)return rem+'m';
   return rem?h+'h '+rem+'m':h+'h';
 }
+function durH(m){
+  const n=Math.round(Number(m));
+  if(!isFinite(n))return null;
+  if(n<60)return Math.max(0,n)+'m';
+  const h=Math.floor(n/60),rem=n%60;
+  return (h>=1000?h.toLocaleString('en-US'):h)+'h'+(rem?' '+rem+'m':'');
+}
 const pct=v=>v==null?'—':num(v)+'%';
 const usd=v=>v==null?'—':'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
 
@@ -715,6 +789,7 @@ function renderBiz(b){
   </button>`).join('');
 
   loadBrief(b);
+  loadPhone(b);
   // No live call here: the lights are already in hand from boot, and the tick
   // keeps them fresh. Opening a business is a repaint.
   paintLive();
@@ -724,6 +799,7 @@ $('biz-chips').addEventListener('click',e=>{
   const el=e.target.closest('[data-who]');
   if(!el)return;
   WHO=el.dataset.who;
+  phoneReset(false);                 // a new person starts with everything shut
   if(OPEN)renderBiz(OPEN);
 });
 $('biz-open').addEventListener('click',()=>{
@@ -993,8 +1069,12 @@ const FMT = {
   num:  v => num(v),
   pct:  v => v==null?null:num(v)+'%',
   usd:  v => v==null?null:'$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}),
-  hours:v => v==null?null:dur(v),
-  mins: v => v==null?null:dur(v),
+  // A metric's time is a total of work, so it stays in hours however big it
+  // gets: a month of GPS is "163h 12m", not "6.8 days". dur()'s days tier is
+  // for how long something sat waiting (the timing section), not this.
+  hours:v => v==null?null:durH(v),
+  mins: v => v==null?null:durH(v),
+  mb:   v => v==null?null:num(v)+' MB',
   text: v => v==null||v===''?null:String(v),
   ago:  v => v==null?null:relDay(String(v).slice(0,10)).replace(/^(last )?active /,''),
 };
@@ -1002,8 +1082,11 @@ const FMT = {
 // Sections come from the answer, not from this file. A metric added to
 // ops_metric_defs appears here with no change on this page (owner 2026-09-13:
 // new RPCs and analytics have to land globally).
+// The Phones section is read per person by the Phone card below, so the
+// business-wide tiles would only repeat it.
+const PHONE_SECTION='device';
 function paintBrief(d){
-  const secs=Array.isArray(d.sections)?d.sections:[];
+  const secs=(Array.isArray(d.sections)?d.sections:[]).filter(sec=>sec.key!==PHONE_SECTION);
   $('biz-sections').innerHTML=secs.map(sec=>{
     const tiles=(sec.metrics||[]).map(m=>{
       const f=FMT[m.fmt]||FMT.text;
@@ -1030,6 +1113,248 @@ function paintTiming(rows){
       <div class="stage-n">${esc(String(r.n))} ${Number(r.n)===1?'time':'times'} · middle half ${esc(dur(r.p25_min))} to ${esc(dur(r.p75_min))}</div>
     </div>`;
   }).join('');
+}
+
+/* ── One person's phone ─────────────────────────────────────────────────── */
+// Whoever the chips have picked, a row per day from ops_device_days, newest
+// first. Every column is a row of ops_metric_defs' Phones section, labelled and
+// formatted the way the registry says (CLAUDE.md 18): the first four are the
+// row, all of them are behind the tap. iOS gives an app no battery temperature,
+// battery health or clock speed, so none is shown and none is pretended.
+let DEV_DEFS=null;                   // the registry's Phones rows, asked once
+const PHONE_CACHE=new Map();         // person|grain|from|to -> rows
+const HOURS_CACHE=new Map();         // person|day  -> hour rows
+// What the card is showing. grain: day, month or year. scope: a narrower
+// range than the default when somebody drilled in (a year's months, a
+// month's days), with the way back on the stack. open: the row tapped open.
+const PHONE={grain:'day',scope:null,stack:[],open:null};
+const GRAIN_WORD={day:'Day',month:'Month',year:'Year'};
+
+function phoneReset(all){
+  // Inside a drill-down the grain is the drilled one; the grouping the person
+  // actually chose is at the bottom of the stack.
+  if(PHONE.stack.length)PHONE.grain=PHONE.stack[0].grain;
+  PHONE.open=null; PHONE.scope=null; PHONE.stack=[];
+  if(all)PHONE.grain='day';
+}
+
+async function devDefs(){
+  if(DEV_DEFS)return DEV_DEFS;
+  const {data,error}=await sb.rpc('ops_metric_defs');
+  if(error||!Array.isArray(data))return null;
+  DEV_DEFS=data.filter(d=>d.section===PHONE_SECTION).sort((x,y)=>x.sort-y.sort);
+  return DEV_DEFS;
+}
+
+function devVal(d,v){
+  const f=FMT[d.fmt]||FMT.text;
+  let out=null;
+  try{ out=f(v); }catch(_){ out=null; }
+  return out==null?'—':out;
+}
+
+const isoDay=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+// The range a view reads. Days follow the 7/30/90 picker; months show the
+// last twelve; years the last five. A drilled-in view reads its own scope.
+function phoneRange(){
+  if(PHONE.scope)return {from:PHONE.scope.from,to:PHONE.scope.to};
+  const {from,to}=rangeIso();
+  if(PHONE.grain==='day')return {from,to};
+  const now=new Date();
+  if(PHONE.grain==='month')return {from:isoDay(new Date(now.getFullYear(),now.getMonth()-11,1)),to};
+  return {from:(now.getFullYear()-4)+'-01-01',to};
+}
+const rowKey=r=>PHONE.grain==='day'?r.day:r.period;
+
+async function loadPhone(b){
+  const who=WHO, person=b.people.find(p=>p.person_user_id===who);
+  const first=person?String(person.person_name||person.person_email||'').split(/[ @]/)[0]:'';
+  $('phone-title').textContent=first?first+"'s phone":'Phone';
+  if(!who){ $('biz-phone').innerHTML=''; return; }
+  const grain=PHONE.grain, {from,to}=phoneRange();
+  const key=[who,grain,from,to].join('|');
+  const seen=PHONE_CACHE.get(key);
+  if(seen)paintPhone(seen,await devDefs());
+  else $('biz-phone').innerHTML=phoneShell('<div class="skel" style="margin:12px 16px;height:44px"></div>'.repeat(3));
+  const call=grain==='day'
+    ? sb.rpc('ops_device_days',{p_person:who,p_from:from,p_to:to})
+    : sb.rpc('ops_device_periods',{p_person:who,p_from:from,p_to:to,p_grain:grain});
+  const [defs,res]=await Promise.all([devDefs(),call]);
+  // They moved on while it was in flight.
+  if(!OPEN||OPEN.id!==b.id||WHO!==who||PHONE.grain!==grain||phoneRange().from!==from)return;
+  if(res.error||!Array.isArray(res.data)||!defs){
+    if(seen)return;
+    $('biz-phone').innerHTML='<div class="muted">Could not load: '+esc(res.error?res.error.message:'no answer')+'</div>';
+    return;
+  }
+  PHONE_CACHE.set(key,res.data);
+  paintPhone(res.data,defs);
+}
+
+function dayLabel(iso){
+  const d=new Date(iso+'T12:00:00');
+  return d.toLocaleDateString('en-US',{weekday:'short'})+' '+(d.getMonth()+1)+'/'+d.getDate();
+}
+function periodLabel(iso,grain){
+  if(grain==='day')return dayLabel(iso);
+  const d=new Date(iso+'T12:00:00');
+  return grain==='year'?String(d.getFullYear()):d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+
+// The switch and, inside a drilled view, the way back. Wraps whatever the
+// card is showing so the controls never move between states.
+function phoneShell(inner){
+  const seg=['day','month','year'].map(g=>`<button class="pseg-b${PHONE.grain===g&&!PHONE.scope?' on':''}" data-grain="${g}" aria-pressed="${PHONE.grain===g&&!PHONE.scope}">${GRAIN_WORD[g]}s</button>`).join('');
+  const back=PHONE.scope?`<button class="pback" data-back="1"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5"/></svg>${esc(GRAIN_WORD[PHONE.stack[PHONE.stack.length-1].grain])}s</button><span class="pcrumb">${esc(PHONE.scope.label)}</span>`:'';
+  return `<div class="phone-bar">${back||'<span></span>'}<div class="pseg" role="group" aria-label="Group by">${seg}</div></div>${inner}`;
+}
+
+function paintPhone(rows,defs){
+  if(!defs)return;
+  const grain=PHONE.grain;
+  if(!rows.length){ $('biz-phone').innerHTML=phoneShell('<div class="phone"><div class="muted" style="padding:14px 16px">No phone reports in this range.</div></div>'); return; }
+  const top=defs.slice(0,4);
+  // A row cell is narrow: ten hours and up reads in whole hours there, and
+  // the exact minutes are one tap away in the open row.
+  const cell=(d,v)=>{
+    const big=(d.fmt==='mins'||d.fmt==='hours')&&Number(v)>=600;
+    const t=big?durH(Math.round(Number(v)/60)*60):devVal(d,v);
+    return `<span class="pday-v${t==='—'?' none':''}">${esc(t)}</span>`;
+  };
+  const chev='<span class="pday-chev" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg></span>';
+  const trend=grain==='day'?'':trendChart(rows,defs,grain,$('biz-phone').clientWidth-34);
+  $('biz-phone').innerHTML=phoneShell(`${trend}<div class="phone">
+    <div class="phone-cols" aria-hidden="true"><span>${GRAIN_WORD[grain]}</span>${top.map(d=>`<span>${esc(d.label)}</span>`).join('')}<span></span></div>
+    ${rows.map(r=>{
+      const k=rowKey(r), open=PHONE.open===k, label=periodLabel(k,grain);
+      const sub=grain==='day'?'':`<span class="pday-n">${r.days} ${r.days===1?'day':'days'}</span>`;
+      const body=grain==='day'
+        ? `<div class="hours-wrap" data-hours="${esc(k)}"><div class="skel" style="margin:12px 0;height:130px"></div></div>${phoneDetail(r,defs)}`
+        : `${phoneDetail(r,defs)}<button class="pdrill" data-drill="${esc(k)}">See ${esc(label)} by ${grain==='year'?'month':'day'}</button>`;
+      return `<div class="pday" data-day="${esc(k)}">
+        <button class="pday-head" aria-expanded="${open}" aria-label="${esc(label)}">
+          <span class="pday-d">${esc(label)}${sub}</span>${top.map(d=>cell(d,r[d.key])).join('')}${chev}
+        </button>
+        ${open?`<div class="pday-body">${body}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`);
+  if(grain==='day'&&PHONE.open&&rows.some(r=>r.day===PHONE.open))loadHours(WHO,PHONE.open);
+}
+
+// Every Phones metric for the row, flat: a label over its value, in the
+// registry's order.
+function phoneDetail(r,defs){
+  return '<dl class="pstats">'+defs.map(d=>{
+    const v=devVal(d,r[d.key]);
+    const hot=d.key==='heat'&&(v==='serious'||v==='critical');
+    return `<div class="pstat"><dt>${esc(d.label)}</dt><dd class="${v==='—'?'none':''}${hot?' hot':''}">${esc(v)}</dd></div>`;
+  }).join('')+'</dl>';
+}
+
+// THE WEAR LINE. Battery health is not readable on iOS; drain per hour for
+// the same routine creeping up month over month is the next best thing, so a
+// month or year view leads with it. The first registry metric is the one
+// plotted, labelled as the registry names it.
+function trendChart(rows,defs,grain,width){
+  const d=defs[0];
+  const pts=rows.slice().reverse().filter(r=>r[d.key]!=null);
+  if(pts.length<2)return '';
+  const W=Math.max(280,Math.round(width||600)),H=120,L=24,R=40,T=20,B=22;
+  const vals=pts.map(r=>Number(r[d.key])), hi=Math.max(...vals)*1.15||1;
+  const x=i=>L+(pts.length===1?0:i*(W-L-R)/(pts.length-1)), y=v=>T+(H-T-B)-(v/hi)*(H-T-B);
+  // The period still running is only part of one, so its point hangs off a
+  // dashed segment and says "so far" instead of pretending to be a month.
+  const now=new Date(), cur=grain==='year'?now.getFullYear()+'-01-01':isoDay(new Date(now.getFullYear(),now.getMonth(),1));
+  const live=pts[pts.length-1].period===cur;
+  const solid=live?pts.slice(0,-1):pts;
+  let g=`<line class="grid" x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}"/>`;
+  if(solid.length>1)g+=`<polyline class="batt" points="${solid.map((r,i)=>x(i).toFixed(1)+','+y(vals[i]).toFixed(1)).join(' ')}"/>`;
+  if(live){ const i=pts.length-1; g+=`<line class="batt live" x1="${x(i-1).toFixed(1)}" y1="${y(vals[i-1]).toFixed(1)}" x2="${x(i).toFixed(1)}" y2="${y(vals[i]).toFixed(1)}"/>`; }
+  pts.forEach((r,i)=>{
+    g+=`<circle class="dot${live&&i===pts.length-1?' live':''}" cx="${x(i).toFixed(1)}" cy="${y(vals[i]).toFixed(1)}" r="3"/>`;
+    g+=`<text x="${x(i).toFixed(1)}" y="${(y(vals[i])-7).toFixed(1)}" text-anchor="middle" class="tv">${esc(devVal(d,vals[i]))}</text>`;
+    const nm=grain==='year'?periodLabel(r.period,grain):new Date(r.period+'T12:00:00').toLocaleDateString('en-US',{month:'short'});
+    g+=`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="middle">${esc(live&&i===pts.length-1?nm+' so far':nm)}</text>`;
+  });
+  return `<div class="ptrend"><div class="ptrend-k">${esc(d.label)}, by ${grain}</div><svg class="hours trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(d.label)} by ${grain}">${g}</svg></div>`;
+}
+
+$('biz-phone').addEventListener('click',e=>{
+  const seg=e.target.closest('[data-grain]');
+  if(seg){ PHONE.grain=seg.dataset.grain; phoneReset(false); if(OPEN)loadPhone(OPEN); return; }
+  if(e.target.closest('[data-back]')){
+    const prev=PHONE.stack.pop();
+    PHONE.grain=prev.grain; PHONE.scope=prev.scope; PHONE.open=prev.open;
+    if(OPEN)loadPhone(OPEN);
+    return;
+  }
+  const drill=e.target.closest('[data-drill]');
+  if(drill){
+    const start=drill.dataset.drill, d=new Date(start+'T12:00:00');
+    const end=PHONE.grain==='year'?new Date(d.getFullYear(),11,31):new Date(d.getFullYear(),d.getMonth()+1,0);
+    const today=rangeIso().to;
+    PHONE.stack.push({grain:PHONE.grain,scope:PHONE.scope,open:PHONE.open});
+    PHONE.scope={from:start,to:isoDay(end)<today?isoDay(end):today,label:periodLabel(start,PHONE.grain)};
+    PHONE.grain=PHONE.grain==='year'?'month':'day';
+    PHONE.open=null;
+    if(OPEN)loadPhone(OPEN);
+    return;
+  }
+  const h=e.target.closest('.pday-head');
+  if(!h)return;
+  const k=h.parentElement.dataset.day;
+  PHONE.open=PHONE.open===k?null:k;
+  const {from,to}=phoneRange();
+  const rows=PHONE_CACHE.get([WHO,PHONE.grain,from,to].join('|'));
+  if(rows)paintPhone(rows,DEV_DEFS);
+});
+
+async function loadHours(who,day){
+  const key=who+'|'+day;
+  let rows=HOURS_CACHE.get(key);
+  if(!rows){
+    const {data,error}=await sb.rpc('ops_device_hours',{p_person:who,p_day:day});
+    if(error||!Array.isArray(data)){
+      const el=document.querySelector(`[data-hours="${CSS.escape(day)}"]`);
+      if(el)el.innerHTML='<div class="muted" style="margin-top:12px">Could not load the hours.</div>';
+      return;
+    }
+    rows=data;
+    // Today is still being written, so only finished days are kept.
+    if(day<rangeIso().to)HOURS_CACHE.set(key,rows);
+  }
+  if(WHO!==who||PHONE.grain!=='day'||PHONE.open!==day)return;
+  const el=document.querySelector(`[data-hours="${CSS.escape(day)}"]`);
+  if(el)el.innerHTML=hoursChart(rows,el.clientWidth);
+}
+
+// Battery as a line on a 0 to 100 scale, full GPS minutes per hour as bars on
+// 0 to 60, and a red mark in any hour iOS closed the app. 5am to 9pm: the
+// hours a work phone is worth reading.
+// Drawn at the width it is shown, so its text is the same size on a phone
+// and on a desktop instead of scaling with the card.
+function hoursChart(rows,width){
+  const hrs=rows.filter(r=>r.hour>=5&&r.hour<=21);
+  const W=Math.max(300,Math.round(width||480)),H=Math.round(Math.min(220,Math.max(150,W*0.22))),L=4,R=34,T=10,B=20,cw=(W-L-R)/hrs.length,ph=H-T-B;
+  const y=v=>T+ph-(v/100)*ph;
+  const lbl=k=>{ const d=(DEV_DEFS||[]).find(x=>x.key===k); return d?d.label:k; };
+  let g='';
+  [0,50,100].forEach(v=>{ g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${W-R+6}" y="${y(v)+3.5}">${v}%</text>`; });
+  hrs.forEach((r,i)=>{
+    const x=L+i*cw, gm=Math.min(60,Number(r.gps_min)||0);
+    const bw=Math.max(2,Math.min(18,cw-6));
+    if(gm>0)g+=`<rect class="gps" x="${x+(cw-bw)/2}" width="${bw}" y="${T+ph-(gm/60)*ph}" height="${(gm/60)*ph}" rx="2"/>`;
+    if(Number(r.kills)>0)g+=`<circle class="kill" cx="${x+cw/2}" cy="${T+ph}" r="3.5"/>`;
+    if(r.hour%3===0){ const h=r.hour%12||12; g+=`<text x="${x+cw/2}" y="${H-5}" text-anchor="middle">${h}${r.hour<12?'a':'p'}</text>`; }
+  });
+  const pts=hrs.map((r,i)=>r.batt==null?null:[L+i*cw+cw/2,y(Number(r.batt))]).filter(Boolean);
+  if(pts.length>1){
+    const line=pts.map(p=>p.join(',')).join(' ');
+    g+=`<polygon class="area" points="${pts[0][0]},${T+ph} ${line} ${pts[pts.length-1][0]},${T+ph}"/><polyline class="batt" points="${line}"/>`;
+  }
+  return `<svg class="hours" viewBox="0 0 ${W} ${H}" role="img" aria-label="Battery and GPS by hour">${g}</svg>
+    <div class="hours-key"><span><i style="background:var(--ok)"></i>Battery</span><span><i style="background:var(--accent);opacity:.45"></i>${esc(lbl('gps_min'))}</span><span><i style="background:var(--live-off);border-radius:50%"></i>${esc(lbl('kills'))}</span></div>`;
 }
 
 // The same JSON an agent gets, on the clipboard, so a question can be handed to

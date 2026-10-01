@@ -150,6 +150,14 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/call-ops-rollups.sql
 
+      # The Phones card (20261061): one phone's day, worked by hand, against
+      # every number the card shows. A truck charger, a killed app with GPS
+      # on, an after-hours reading and a stranger asking are the cases.
+      - name: The Phones card reads a day right
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/device-health.sql
+
       # ONE fixture, TWO implementations. geoDeriveDay is pure and portable, so
       # it can run off the phone unchanged; the FENCE LIST cannot, because
       # _geoDeriveFences reads S, places, clients and jobs off the window. That
