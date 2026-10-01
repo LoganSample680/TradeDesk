@@ -2809,11 +2809,44 @@ function _pkgSuggestions(trade){
 function _pkgApply(key){
   const pick=_pkgSuggestions().find(x=>x.key===key);
   if(!pick)return;
+  // THROUGH TIM, LIKE ANYTHING TYPED (owner 2026-09-30: "if we add what we
+  // did last time it doesn't break the steps down like Tim does today"). His
+  // old lines were copied word for word, so a bid from before Tim knew rooms,
+  // or one that was a pasted letter in a single line, came back exactly as
+  // lumped as it went out. The same words through the same build give today's
+  // steps, rooms and what he left out; his own price on a line still wins.
+  if(typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm&&_pkgThroughTim(pick))return;
   // _geiAddRememberedLine is the one path (book price, book words, never a
   // double-up), shared with the attach suggestions below.
   pick.lines.forEach(l=>{_geiAddRememberedLine(l);});
   _geiRefreshLines();
   if(typeof showToast==='function')showToast(pick.label+' added, adjust the counts','⚡');
+}
+// The words of a package, as he would have typed them: one line each, and a
+// line that is really a pasted letter (an address for a title, the whole
+// estimate in its description) read as the letter.
+function _pkgSaid(lines){
+  return lines.map(l=>{
+    const n=String(l.notes||'').trim();
+    return (n.length>120&&(n.match(/[.!?](\s|$)/g)||[]).length>=2)?n:String(l.label||'').trim();
+  }).filter(Boolean).join('\n');
+}
+function _pkgThroughTim(pick){
+  const before=new Set(_byoItems);
+  if(!_byoTakeSaid(_pkgSaid(pick.lines),false))return false;
+  // A price he set on a line last time carries onto the same line now, unless
+  // his book already priced it.
+  // His description on it carries the same way.
+  const was=new Map(pick.lines.map(l=>[_pbKey(l.label),l]));
+  _byoItems.forEach(it=>{
+    if(!it||before.has(it))return;
+    const l=was.get(_pbKey(it.label));if(!l)return;
+    if(!(Number(it.price)>0)&&Number(l.rate)>0){it.rate=Number(l.rate);it.price=Number(l.rate);}
+    if(!String(it.notes||'').trim()&&l.notes&&String(l.notes).length<=120)it.notes=l.notes;
+  });
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
+  if(typeof showToast==='function')showToast(pick.label+' added, adjust the counts','⚡');
+  return true;
 }
 function _pkgCardHTML(){
   if(_byoItems.some(x=>x&&!x._rrp))return '';   // only on an empty estimate
@@ -3051,13 +3084,19 @@ function _byoAddLine(text,sec,said){_byoItems.push(_byoLineRec(text,sec,said));}
 function _byoSayBuild(){
   const said=timSaid('byo-say','Type or say the job in the box first');
   if(!said)return;
-  if(typeof timScopeBuild!=='function')return;
+  _byoTakeSaid(said,true);
+}
+// Words into lines, the one way: typed in Tim's box, or a package of his own
+// past lines (_pkgApply). Returns false when Tim found nothing to make.
+function _byoTakeSaid(said,heard){
+  if(typeof timScopeBuild!=='function')return false;
   const built=timScopeBuild(said,{rejected:[],trade:_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'')});
-  if(typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
+  // Only what he typed or said is logged: a copied package is not his words today.
+  if(heard&&typeof timLogScope==='function')timLogScope(said,built.steps,'byo',_geiEditBidId);
   const matsIn=(typeof timAddMaterials==='function')?timAddMaterials(built.materials):{rows:0,listed:0};
   if(!built.steps.length){
-    if(matsIn.rows+matsIn.listed){_byoSayOpen=false;_byoRenderSections();_byoUpdateRail();_byoAutosave();if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return;}
-    if(typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return;
+    if(matsIn.rows+matsIn.listed){_byoSayOpen=false;_byoRenderSections();_byoUpdateRail();_byoAutosave();if(typeof showToast==='function')showToast('Added '+(matsIn.rows+matsIn.listed)+' to Materials','🧰',2400);return true;}
+    if(heard&&typeof showToast==='function')showToast('I could not find a line in that','🔧',2600);return false;
   }
   // The same build T&M runs (_scopeTakeBuilt): steps, rooms, what he left out.
   _byoMissed=_scopeTakeBuilt('byo',built);
@@ -3070,6 +3109,7 @@ function _byoSayBuild(){
   _byoSayOpen=false;
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
+  return true;
 }
 function _byoTakeMissed(id){_scopeTakeMissed('byo',id);}
 function _byoTakeAllMissed(){_scopeTakeAllMissed('byo');}

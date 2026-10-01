@@ -978,3 +978,45 @@ test.describe('Receipt-gated supply runs', () => {
 
   test('no console errors', async () => { await assertNoErrors(page); });
 });
+
+// Jack's log, 2026-09-30: on a trip with a button under its numbers (Add
+// receipt, It was work) the stats group was taller than the card's middle,
+// so centering rode it up under Edit and "4.5 mi" was hidden. Edit has its
+// own space at the top now; nothing on the trip may sit under it.
+test.describe('the trip card: nothing hides under Edit', () => {
+  for (const W of [320, 390]) {
+    test('a short trip with a button under its numbers at ' + W + 'px', async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: W, height: 844 }, bypassCSP: true });
+      const page = await ctx.newPage();
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+      const hits = await page.evaluate(() => {
+        document.querySelectorAll('.zmodal-overlay,.toast').forEach(e => e.remove());
+        const trip = (id, o) => Object.assign({ id, date: '2026-09-14', vehicle: 'F150', purpose: 'Business', mins: 14, miles: 4.5,
+          from: 'JS Solutions shop', from_name: 'JS Solutions shop', to: '3210 S Kansas Ave, Topeka, KS 66611', to_name: 'Neenans Co',
+          startedIso: '2026-09-14T14:55:40.454Z', endedIso: '2026-09-14T15:10:09.800Z' }, o);
+        mileage = [
+          trip('t-rec', { noReceipt: true, supplyRunKey: '2026-09-14|Neenans Co' }),
+          trip('t-per', { date: '2026-09-11', purpose: 'Personal', personal: true, supplyRunKey: 'k2' }),
+          trip('t-plain', { date: '2026-09-10' }),
+        ];
+        goPg('pg-tracker'); setTrTab('mileage', document.getElementById('tr-t-mileage')); renderAllMileage();
+        ['2026-09-14', '2026-09-11', '2026-09-10'].forEach(d => { const el = document.getElementById('mil-day-' + d); if (el && !el.classList.contains('open')) _milTogDay(d); });
+        const out = [];
+        document.querySelectorAll('.mil-day-trip').forEach(t => {
+          const e = t.querySelector('.mil-trip-edit'); const eb = e.getBoundingClientRect();
+          t.querySelectorAll('.mil-trip-stats > *, .mil-route-addrs > *').forEach(c => {
+            const b = c.getBoundingClientRect();
+            if (b.width && b.left < eb.right && b.right > eb.left && b.top < eb.bottom && b.bottom > eb.top) out.push(t.dataset.lpId + ': ' + c.textContent.trim());
+          });
+        });
+        return { cards: document.querySelectorAll('.mil-day-trip').length, out };
+      });
+      expect(hits.cards).toBe(3);
+      expect(hits.out).toEqual([]);
+      await assertNoErrors(page);
+      await ctx.close();
+    });
+  }
+});
