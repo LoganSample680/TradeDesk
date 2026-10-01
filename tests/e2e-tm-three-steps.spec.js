@@ -57,14 +57,15 @@ test.describe('T&M in three steps', () => {
       title: document.getElementById('tm-step-2').textContent,
     }));
     expect(r.chips).toEqual(['Logan', 'Jack', 'John']);
-    expect(r.title).toContain("Who's going");
+    // One set of steps on every document (owner 2026-09-29, js/doc-steps.js).
+    expect(r.title).toContain('Time');
   });
 
   test('a man working alone gets no chips, just his rate', async () => {
     await open({ solo: true });
     expect(await page.evaluate(() => document.getElementById('tm-who').innerHTML)).toBe('');
     expect(await shown('#tm-rate-row')).toBe(true);
-    expect(await page.evaluate(() => document.getElementById('tm-step-2').textContent)).toContain('Your rate');
+    expect(await page.evaluate(() => document.getElementById('tm-step-2').textContent)).toContain('Time');
   });
 
   test('picking the crew sets the head count and the hour, and hides both old fields', async () => {
@@ -155,9 +156,10 @@ test.describe('T&M in three steps', () => {
   // ── 3 Getting paid ────────────────────────────────────────────────────────
   test('Getting paid is one filled-in line until he taps it', async () => {
     await open();
-    expect(await page.evaluate(() => document.getElementById('tm-step-3').textContent)).toContain('Getting paid');
+    expect(await page.evaluate(() => document.getElementById('tm-step-4').textContent)).toContain('Review');
     const sum = await page.evaluate(() => document.getElementById('tm-pay-sum').textContent);
-    expect(sum).toContain('No deposit, bills weekly');
+    // Nothing is picked for him (owner 2026-09-29: "that can't default").
+    expect(sum).toContain('No deposit, billing not picked');
     expect(await shown('#tm-dep-row')).toBe(false);
     await page.locator('#tm-pay-btn').tap();
     expect(await shown('#tm-dep-row')).toBe(true);
@@ -174,11 +176,26 @@ test.describe('T&M in three steps', () => {
     expect(await page.evaluate(() => document.getElementById('tm-pay-sum').textContent)).toContain('$500 deposit, bills at the end');
   });
 
-  test('a new T&M bills the way his last one did', async () => {
-    await open({ bids: [{ id: 1, isTM: true, tmBillingCycle: 'milestone' }, { id: 2, isTM: false, tmBillingCycle: 'completion' }] });
-    expect(await page.evaluate(() => _tmBillingCycle)).toBe('milestone');
-    await open({ bids: [] });
-    expect(await page.evaluate(() => _tmBillingCycle)).toBe('weekly');
+  // CHANGED (§10.4). It used to start from his last T&M's cadence. Owner
+  // 2026-09-29: "add in when you will bill, is it due on completion?
+  // Remember that can't default." A pick carried over is a default.
+  test('a new T&M starts with when-you-bill unpicked, whatever the last one used; a saved one keeps its pick', async () => {
+    await open({ bids: [{ id: 1, isTM: true, tmBillingCycle: 'milestone' }] });
+    const r = await page.evaluate(() => ({ cyc: _tmBillingCycle, lit: document.querySelectorAll('#tm-cad-main .ios-seg button.on').length,
+      kept: _tmSavedCadence({ tmBillingCycle: 'completion' }), old: _tmSavedCadence({}), unpicked: _tmSavedCadence({ tmBillingCycle: '' }), junk: _tmSavedCadence({ tmBillingCycle: 'daily' }) }));
+    expect(r).toEqual({ cyc: '', lit: 0, kept: 'completion', old: 'weekly', unpicked: '', junk: '' });
+    expect(await page.evaluate(() => typeof _tmLastCadence)).toBe('undefined');
+  });
+
+  test('the contract never prints a billing schedule he did not pick', async () => {
+    await open({ say: 'Set a tankless' });
+    const r = await page.evaluate(async () => {
+      let d = ''; const real = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = h => { d = h; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = real; }
+      return d;
+    });
+    expect(r).not.toMatch(/Billed weekly|Weekly invoices/);
   });
 
   test('a state that requires the limit opens Getting paid on its own', async () => {
@@ -218,6 +235,210 @@ test.describe('T&M in three steps', () => {
       right: Math.max(...[...document.querySelectorAll('#tm-who .tm-who-chip, #tm-who .qi-rate')].map(e => e.getBoundingClientRect().right)) }));
     expect(r.sw).toBeLessThanOrEqual(r.w + 1);
     expect(r.right).toBeLessThanOrEqual(r.w);
+  });
+
+  test('one set of steps on every document: T&M, Build Your Own and the invoice read the same names from one place', async () => {
+    await open({ say: 'Set a tankless' });
+    const r = await page.evaluate(async () => {
+      const tm = [1, 2, 3, 4].map(n => document.querySelector('#tm-step-' + n + ' .t').textContent);
+      clients.push({ id: 92002, name: 'Dana Pell', addr: '9 Oak St, Topeka, KS 66603' });
+      openQuickInvoice(92002); await new Promise(r => setTimeout(r, 40));
+      const qi = [...document.querySelectorAll('#qi-page .ios-stephead .t')].map(t => t.textContent);
+      return { tm, qi, names: Object.values(DOC_STEP), shared: typeof docStepHead === 'function' && typeof docStepHtml === 'function' };
+    });
+    expect(r.tm).toEqual(['The work', 'Time', 'Materials', 'Review']);
+    expect(r.names).toEqual(['The work', 'Time', 'Materials', 'Review']);
+    expect(r.shared).toBe(true);
+    // An invoice with nothing tracked is a set price: The work, What you did, Review.
+    expect(r.qi[0]).toBe('The work');
+    expect(r.qi[r.qi.length - 1]).toBe('Review');
+  });
+
+  // Owner 2026-09-29: "they all should be the same except BYO doesn't get
+  // time; it gets scope and materials if applicable".
+  test('Build Your Own: The work, Materials, Review, with no Time step', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay,#_style-pick-ov').forEach(e => e.remove());
+      openGenericEstimate(getClientById(92001), null, null, { mode: 'byo' }); _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+      _byoRenderSections(); _byoUpdateRail();
+      return {
+        steps: [1, 2, 3].map(n => (document.querySelector('#byo-step-' + n + ' .t') || {}).textContent),
+        matState: document.getElementById('byo-step-2').getAttribute('data-state'),
+        matInStep: !!document.querySelector('#byo-mat-wrap #mat-card'),
+        oneCard: document.querySelectorAll('#gei-byo-page #mat-card').length,
+      };
+    });
+    expect(r.steps).toEqual(['The work', 'Materials', 'Review']);
+    expect(r.matState, 'optional, so never the step to do').toBe('todo');
+    expect(r.matInStep).toBe(true);
+    expect(r.oneCard).toBe(1);
+  });
+
+  test('Materials is optional on T&M: a row turns it on, then the row goes away', async () => {
+    await open({ say: 'Set a tankless' });
+    const before = await shown('#tm-mat-add');
+    await page.locator('#tm-mat-add button').click();
+    const r = await page.evaluate(() => ({ on: _tmLayers.has('mat'), state: document.getElementById('tm-step-3').getAttribute('data-state') }));
+    expect(before).toBe(true);
+    expect(r).toEqual({ on: true, state: 'done' });
+    expect(await shown('#tm-mat-add')).toBe(false);
+  });
+
+  // ── Rooms on T&M: the same module Build Your Own uses (owner 2026-09-30) ──
+  const TM_EMAIL = "Hi Tagen,\n\nHere's my estimate for the following work:\n\n- Rough in a surface-mounted washer box, including drain, water, and vent\n- Install 3 hose bibs with piping\n- Cap the gas line to the gas light out front and the existing washer lines\n- Seal ductwork, leaving enough open to keep the crawl space from freezing\n- Secure the tub spout\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+  const tmRooms = () => page.evaluate(() => {
+    const out = {};
+    _tmItems().forEach(x => { (out[x.section] = out[x.section] || []).push(x.label); });
+    return out;
+  });
+
+  test('rooms: a T&M walk that spans rooms is grouped by room on screen and on the customer copy', async () => {
+    await open({ say: TM_EMAIL });
+    const r = await tmRooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    expect(r['Laundry room']).toEqual(['Rough in a surface-mounted washer box: drain, water lines and vent', 'Cap the existing washer lines']);
+    const ui = await page.evaluate(() => ({
+      titles: [...document.querySelectorAll('#tm-scope-wrap .room-name')].map(b => b.textContent.trim()),
+      nums: [...document.querySelectorAll('#tm-scope-wrap .ios-num')].map(n => n.textContent),
+      sort: [...document.querySelectorAll('#tm-scope-wrap button')].some(b => /work order/.test(b.textContent)),
+    }));
+    expect(ui.titles).toEqual(['Laundry room', 'Outside', 'Crawlspace', 'Bathroom']);
+    expect(ui.nums).toEqual(['1', '2', '3', '4', '5', '6']);
+    // One stack of rooms for both screens (owner 2026-09-30: "merge the room
+    // stacking code too"): T&M and Build Your Own draw through _roomStackHtml.
+    const shared = await page.evaluate(() => {
+      let n = 0; const o = window._roomStackHtml;
+      window._roomStackHtml = function (...a) { n++; return o.apply(this, a); };
+      try { _renderScopeChips('tm-scope-wrap'); return { n, hint: document.querySelector('#tm-scope-wrap .ios-foot')?.textContent || '' }; }
+      finally { window._roomStackHtml = o; }
+    });
+    expect(shared.n).toBe(1);
+    expect(shared.hint).toContain('Hold a step');
+    expect(ui.sort).toBe(false);
+    const d = await page.evaluate(async () => {
+      let h = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = x => { h = x; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return h;
+    });
+    expect(d.indexOf('Laundry room')).toBeGreaterThan(-1);
+    expect(d.indexOf('Laundry room')).toBeLessThan(d.indexOf('Outside'));
+    expect(d.indexOf('Crawlspace')).toBeLessThan(d.indexOf('Bathroom'));
+    // Saved with the bid, so the rooms come back on the next open.
+    const saved = await page.evaluate(() => _tmSaved().find(x => x.label === 'Secure the tub spout').section);
+    expect(saved).toBe('Bathroom');
+  });
+
+  test('rooms: rename a room and drag a step into another, on T&M', async () => {
+    await open({ say: TM_EMAIL });
+    await page.locator('#tm-scope-wrap .room-name', { hasText: 'Crawlspace' }).click();
+    await page.fill('#zprompt-inp', 'Basement');
+    await page.click('#zprompt-ok');
+    let r = await tmRooms();
+    expect(Object.keys(r)).toEqual(['Laundry room', 'Outside', 'Basement', 'Bathroom']);
+    const row = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Secure the tub spout' });
+    const target = page.locator('#tm-scope-wrap .ios-swipe', { hasText: 'Seal the ductwork' });
+    // A "Set $2,800 ..." toast lands at the bottom a moment after a build;
+    // clear it so the finger presses the row, not the toast.
+    await page.waitForTimeout(450);
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+    await target.evaluate(e => e.scrollIntoView({ block: 'center' }));
+    const a = await row.boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    // The hold is 380ms; wait for the lift itself, not a guess at the clock.
+    await page.waitForFunction(() => !!document.getElementById('room-drag-ghost'), null, { timeout: 6000 });
+    const b = await target.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + 4, { steps: 8 });
+    await page.mouse.up();
+    r = await tmRooms();
+    expect(r['Basement'][0]).toBe('Secure the tub spout');
+    expect(r['Bathroom']).toBeUndefined();
+    // Numbers follow the new order, one count down the page.
+    const nums = await page.evaluate(() => [...document.querySelectorAll('#tm-scope-wrap .ios-num')].map(n => n.textContent));
+    expect(nums).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  test('one scope, two estimate types: the same words give the same lines, rooms, offers and customer copy on T&M and BYO (owner 2026-09-30)', async () => {
+    const walks = [TM_EMAIL, 'Tear out the old water heater, set the new 50 gallon, run new gas line and haul the old one away'];
+    for (const say of walks) {
+      await open({ say });
+      const tm = await page.evaluate(() => ({
+        lines: _tmItems().map(x => x.section + ' | ' + x.label),
+        offers: _geiScopeMissed.map(m => m.id).sort(),
+        copy: _propScopeItemsHtml(_tmItems()),
+      }));
+      const byo = await page.evaluate((t) => {
+        openGenericEstimate(getClientById(92001), null, null, { mode: 'byo' });
+        _geiIsFreeForm = true; _geiIsTM = false; goGeiStep(2);
+        document.getElementById('byo-say').value = t; _byoSayBuild();
+        const work = _byoItems.filter(x => !x._supply && !x._rrp && x.label !== 'Materials');
+        return {
+          lines: work.map(x => x.section + ' | ' + x.label),
+          offers: _byoMissed.map(m => m.id).sort(),
+          copy: _propScopeItemsHtml(work),
+        };
+      }, say);
+      expect(byo.lines).toEqual(tm.lines);
+      expect(byo.offers).toEqual(tm.offers);
+      expect(byo.copy).toEqual(tm.copy);
+      expect(tm.lines.length).toBeGreaterThan(2);
+    }
+  });
+
+  test('a T&M step taken from "you left out" lands where BYO puts it, and old T&M bids open with their rooms', async () => {
+    await open({ say: 'Tear out the old water heater, set the new 50 gallon and run new gas line' });
+    const r = await page.evaluate(() => {
+      const im = _geiScopeMissed.find(m => m.step && !m.ask);
+      if (!im) return { none: true };
+      _geiScopeTakeMissed(im.id);
+      const at = _tmItems().findIndex(x => x.label === im.step);
+      return { at, n: _tmItems().length, names: _geiScopeChips.slice(), recs: _tmItems().map(x => x.label) };
+    });
+    if (!r.none) {
+      expect(r.at).toBeGreaterThan(-1);
+      expect(r.names).toEqual(r.recs);           // the name list and the records agree
+    }
+    // A bid saved before this change: names plus the room map.
+    const old = await page.evaluate(() => {
+      _geiScopeChips = ['Secure the tub spout', 'Install 3 hose bibs'];
+      _tmLoad({ scopeChips: _geiScopeChips.slice(), scopeRooms: { 'Secure the tub spout': 'Bathroom', 'Install 3 hose bibs': 'Outside' } });
+      return _tmItems().map(x => x.section);
+    });
+    expect(old).toEqual(['Bathroom', 'Outside']);
+    // A writer that only knows names (the pick-from-a-list sheet, Tim's job
+    // reorder) still works: the records follow, keeping each step's room.
+    const byName = await page.evaluate(() => {
+      _geiScopeChips.reverse();
+      return _tmItems().map(x => x.label + ' | ' + x.section);
+    });
+    expect(byName).toEqual(['Install 3 hose bibs | Outside', 'Secure the tub spout | Bathroom']);
+  });
+
+  test('a pasted letter on T&M sets the days and his signed note, and T&M has the same note row BYO has', async () => {
+    const letter = "Hi Tagen,\n\n- Secure the tub spout\n- Install 3 hose bibs with piping\n\nThis estimate is good for 14 days.\n\nI appreciate your faith and trust in our plumbing services.\n\nJohn Schonfeldt\nPlumbing Solutions by JS";
+    await open({ say: letter });
+    const r = await page.evaluate(async () => {
+      const row = document.querySelector('#tm-sec-note .ios-row')?.textContent || '';
+      let h = ''; const o = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = x => { h = x; };
+      try { await sendGenericProposal(true); } finally { window._showProposalPreviewOverlay = o; }
+      return { days: _geiValidDays, note: _geiNote, by: _geiNoteBy, row, doc: /A note from John/.test(h) && /faith and trust/.test(h) };
+    });
+    expect(r.days).toBe(14);
+    expect(r.note).toMatch(/faith and trust/);
+    expect(r.by).toBe('John Schonfeldt');
+    expect(r.row).toContain('Your note to them');
+    expect(r.doc).toBe(true);
+    // Tap the row, the box opens with his words in it.
+    await page.locator('#tm-sec-note .ios-row').click();
+    expect(await page.locator('#tm-note').inputValue()).toMatch(/faith and trust/);
+  });
+
+  test('rooms: a one-room walk on T&M stays one numbered list', async () => {
+    await open({ say: 'Replace the toilet, reset the vanity and caulk the tub' });
+    const r = await page.evaluate(() => ({ on: _tmRoomsOn(), titles: document.querySelectorAll('#tm-scope-wrap .room-name').length }));
+    expect(r).toEqual({ on: false, titles: 0 });
   });
 
   test('no console errors, T&M three steps', async () => {

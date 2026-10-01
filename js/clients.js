@@ -749,7 +749,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     const lines=_getTradeLines();
     if(lines.length>1){
       _showTradePicker('Which trade is this job for?',t=>{
-        _activeTrade=t;_renderNavTradeSwitcher();
+        _activeTrade=t;if(typeof _rememberTrade==='function')_rememberTrade(t);_renderNavTradeSwitcher();
         _showEstimateStylePicker(c,_overrideAddr);
       });
       return;
@@ -1807,7 +1807,7 @@ function renderClientDetail(){
   const _ltv=_wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
   const _tier=getClientTier(c);
   const _lastContactStr=(()=>{
-    const d=c.last_contact_date;if(!d)return '-';
+    const d=c.last_contact_date;if(!d)return 'never';
     const days=Math.floor((Date.now()-new Date(d+'T12:00').getTime())/86400000);
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
@@ -1859,7 +1859,7 @@ function renderClientDetail(){
       '</div>';
     const _div='<div style="width:1px;background:var(--border2);margin:3px 0;flex:0 0 auto"></div>';
     _heroMets.innerHTML='<div style="display:flex;align-items:stretch;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:12px 4px">'+
-      _cell('Lifetime value',_ltv>0?fmt(_ltv):'-')+_div+
+      _cell('Spent with you',_ltv>0?fmt(_ltv):'-')+_div+
       _cell('Jobs',_wonBids.length?String(_wonBids.length):'-')+_div+
       _cell('Last contact',_lastContactStr)+
     '</div>';
@@ -3597,7 +3597,7 @@ function _cdPropCardHtml(c,a,idx,total){
     const openHtml=
       (attnRows?_secHdr('Needs attention')+attnRows:'')+
       (openJobs.length?_secHdr('On the calendar')+openJobs.map(jobRow).join(''):'')+
-      (pipeline.length?_secHdr('In the pipeline')+pipeline.map(pipeRow).join(''):'');
+      (pipeline.length?_secHdr('Not signed yet')+pipeline.map(pipeRow).join(''):'');
     const items={length:needsAttention.length+openJobs.length+pipeline.length}; // section count for the layout decisions below
     const workBlock=items.length?`<div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">

@@ -1185,41 +1185,46 @@ function showVenmoQr(bidId,amount){
     wrap.innerHTML='<div style="font-size:11px;word-break:break-all;max-width:240px;color:var(--text2)">'+escHtml(url)+'</div>';
   }
 }
-async function _sendPaidInvoice(bidId){
+// opts.onUnsent runs when he closes this without texting, emailing or
+// copying the link: the quick invoice uses it to go back to a draft.
+async function _sendPaidInvoice(bidId,opts){
+  const unsent=()=>{if(opts&&typeof opts.onUnsent==='function')opts.onUnsent();};
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);
-  if(!c){showToast('No client on this job.','⚠');return;}
+  if(!c){showToast('No client on this job.','⚠');unsent();return;}
   document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
   try{
     if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
   }catch(_e){}
-  if(!c.clientToken||!_supaUser){zAlert('This client has no hub link yet. Send them a proposal or a payment link first and the invoice will ride along.');return;}
+  if(!c.clientToken||!_supaUser){zAlert('This client has no hub link yet. Send them a proposal or a payment link first and the invoice will ride along.');unsent();return;}
   const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id+'#invoice-'+bidId;
   const paid=getBidBalance(bid)<0.01;
   const first=(c.name||'').split(' ')[0]||'there';
+  // Signed the way a proposal's text is (_smsSignOff: "- John, Plumbing
+  // Solutions By JS", never TradeDesk), with the link after it so iMessage
+  // draws the logo card; Venmo, when he takes it, stays the very last line.
+  const _sig=(typeof _smsSignOff==='function')?_smsSignOff({bname:(typeof S!=='undefined'&&S.bname)||''}):'';
+  const _sigLn=_sig?'\n\n'+_sig+'\n\n':' ';
   const body=paid
-    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
-    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+': '+url:'Hi '+first+', here is your updated invoice: '+url)+
+    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+'.'+_sigLn+url
+    :(bid.kind==='quick_invoice'?'Hi '+first+', here is your invoice for '+fmt(bid.amount)+'.'+_sigLn+url:'Hi '+first+', here is your updated invoice.'+_sigLn+url)+
       // Venmo last: a link at the end of a text is the one a phone makes tappable.
       (()=>{const v=_venmoPayUrl(getBidBalance(bid),_venmoNote(bid));return v?'\n\nOr pay with Venmo: '+v:'';})();
-  const ov=document.createElement('div');ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📄')+(paid?' Paid invoice ready':' Invoice ready')+'</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' &middot; '+(paid?'marked paid in full':fmt(getBidBalance(bid))+' still owed')+'</div>'+
-    '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+escHtml(url)+'</div>'+
-    // Wired below with listeners, not inline: the message and the link both
-    // carry quotes, and JSON inside onclick="..." closed the attribute early,
-    // so both buttons were dead on tap (found 2026-09-26).
-    (c.phone?'<button type="button" data-inv-text style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Text it to them</button>':'')+
-    '<button type="button" data-inv-copy style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-  const tb=box.querySelector('[data-inv-text]');
-  if(tb){tb.dataset.body=body;tb.addEventListener('click',()=>{ov.remove();window.location.href='sms:'+String(c.phone).replace(/\D/g,'')+'?body='+encodeURIComponent(body);});}
-  const cb=box.querySelector('[data-inv-copy]');
-  if(cb)cb.addEventListener('click',()=>{try{navigator.clipboard.writeText(url).then(()=>showToast('Copied!','📋')).catch(()=>{});}catch(_e){}cb.textContent='✓ Copied';});
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  // The one send screen (tdSendSheet, js/proposals.js), the same as proposals
+  // and change orders. It counts as sent when it leaves by text, email, another
+  // app or a copied link; closed with nothing sent, opts.onUnsent runs.
+  const sent=()=>{if(!bid.sentAt){bid.sentAt=new Date().toISOString();saveAll();}};
+  const d={url,cname:c.name||'Client',bname:(typeof S!=='undefined'&&S.bname)||'',cphone:String(c.phone||'').replace(/\D/g,''),cemail:c.email||''};
+  tdSendSheet({id:'_inv-send-ov',url,who:c.name||'',amount:fmt(paid?bid.amount:getBidBalance(bid)),
+    sub:paid?'Paid in full. This sends their receipt.':'How do you want to send it?',
+    phone:d.cphone,email:d.cemail,textBody:body,
+    onText:()=>{sent();window.location.href='sms:'+d.cphone+'?body='+encodeURIComponent(body);},
+    onEmail:()=>_showEmailComposeModal(d,{title:svgIcon('✉')+(paid?' Email receipt':' Email invoice'),kind:'invoice',
+      subject:(paid?'Paid invoice':'Invoice')+(d.bname?' from '+d.bname:''),body,clientId:c.id,
+      onSent:()=>{sent();showToast((paid?'Receipt':'Invoice')+' emailed to '+d.cname,'✉️');},onCancel:unsent}),
+    onOther:()=>{sent();pwaShare({title:(d.bname||'Invoice'),text:body,url});},
+    onCopy:()=>{sent();tdCopyLink(url);},
+    onClose:unsent});
 }
 function closePayPanel(){if(document.querySelector('.pay-modal-overlay')&&typeof _armPayTapGuard==='function')_armPayTapGuard();document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){

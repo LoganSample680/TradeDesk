@@ -556,18 +556,23 @@ test.describe('GEI send overlay, _showGeiSendOverlay creates centered fixed moda
     const overlay = page.locator('#_gei-send-overlay');
     await expect(overlay, '#_gei-send-overlay must exist after _showGeiSendOverlay').toHaveCount(1);
 
-    const styles = await overlay.evaluate(el => ({
-      position: el.style.position,
-      alignItems: el.style.alignItems,
-      justifyContent: el.style.justifyContent,
-    }));
+    // The one send screen (tdSendSheet) is the app's centered modal
+    // (.zmodal-overlay, CLAUDE.md 7.3). That overlay centers its box with
+    // margin:auto, not align-items, so what is checked is where the box sits.
+    const styles = await overlay.evaluate(el => { const cs = getComputedStyle(el); const b = el.querySelector('.zmodal').getBoundingClientRect(); return {
+      position: cs.position,
+      vGap: Math.abs(b.top - (innerHeight - b.bottom)),
+      hGap: Math.abs(b.left - (innerWidth - b.right)),
+    }; });
     expect(styles.position, 'send overlay must be fixed-position').toBe('fixed');
-    expect(styles.alignItems, 'send overlay must center content vertically').toBe('center');
-    expect(styles.justifyContent, 'send overlay must center content horizontally').toBe('center');
+    expect(styles.vGap, 'send overlay must center content vertically').toBeLessThanOrEqual(40);
+    expect(styles.hGap, 'send overlay must center content horizontally').toBeLessThanOrEqual(2);
   });
 
   test('send overlay has 📱 Text and ✉️ Email and ⬆️ Other buttons', async () => {
     await page.evaluate(() => {
+      // Text is offered only with a phone to text (tdSendSheet).
+      _pendingShareData = { url: 'https://x/sign.html?t=1', cname: 'Pat Client', bname: 'Biz', cphone: '5555550101', cemail: '' };
       if (typeof _showGeiSendOverlay === 'function') _showGeiSendOverlay();
     });
     await page.waitForTimeout(300);

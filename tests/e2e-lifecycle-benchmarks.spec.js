@@ -733,13 +733,23 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
 
     test('an RPC failure degrades to a message, never a broken card', async () => {
       const html = await page.evaluate(async () => {
-        window.__supaSave = window._supa;
-        window._supa = { rpc: async () => ({ data: null, error: { message: 'nope' } }),
-                         from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }) };
-        await renderLifecycleFunnel('lc-funnel-mine');
-        return document.getElementById('lc-funnel-mine').innerHTML;
+        // Fail only the card's own two calls. A bare stub here also answered
+        // the app's background save, which has no .eq on it, and that
+        // TypeError failed "no console errors" on a slow WebKit run
+        // (2026-09-29). Everything else goes to the real shim, and the shim
+        // comes back afterwards.
+        const real = window._supa;
+        window._supa = { ...real,
+          rpc: (name, args) => (name === 'lifecycle_funnel' ? Promise.resolve({ data: null, error: { message: 'nope' } }) : real.rpc(name, args)),
+          from: (t) => (t === 'analytics_metrics_daily'
+            ? { select: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }
+            : real.from(t)) };
+        try {
+          await renderLifecycleFunnel('lc-funnel-mine');
+          return document.getElementById('lc-funnel-mine').innerHTML;
+        } finally { window._supa = real; }
       });
-      expect(html).toContain('unavailable');
+      expect(html).toContain('Your numbers did not load');
     });
 
     test('a missing mount element is a no-op, not a throw', async () => {

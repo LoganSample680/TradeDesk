@@ -645,6 +645,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .mmi{display:flex;align-items:center;gap:14px;padding:13px 18px;color:var(--text-cream-2);font-size:13px;font-weight:600;cursor:pointer;border:none;background:none;width:100%;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:left;transition:background .1s;border-bottom:1px solid rgba(255,255,255,.07)}
 .mmi:last-child{border-bottom:none}
 .mmi:active{background:var(--ink-line)}
+.mmi.tim-point{background:rgba(255,255,255,.14);box-shadow:inset 3px 0 0 var(--accent,#3B82F6)}
 .mmi svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.7}
 .mmi.active-pg{color:var(--text-cream)}.mmi.active-pg svg{opacity:1}
 
@@ -1604,7 +1605,9 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-day{margin-bottom:14px}
 #qi-page .qi-day-hd{padding:0 12px 0 4px;gap:0}
 #qi-page .ios-swipe>.ios-del.qi-billed{background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;padding:0 6px}
-#qi-page .ios-swipe:not(.open):not(.dragging)>.qi-billed{visibility:hidden}
+/* The delete button sits behind the row; only a swipe shows it (a sliver of
+   red showed at the rounded right edge on all three screens). */
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-swipe:not(.open):not(.dragging)>.ios-del{visibility:hidden}
 #qi-page .qi-chk-btn{flex-shrink:0;width:48px;height:56px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
 #qi-page .qi-day-open-btn{flex:1;min-width:0;display:flex;align-items:center;gap:10px;min-height:56px;border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 #qi-page .qi-day-chev{transition:transform .18s cubic-bezier(.22,1,.36,1)}
@@ -1617,12 +1620,32 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 :is(#qi-page,#gei-tm-page) .qi-rate.need input{width:5ch}
 :is(#qi-page,#gei-tm-page) .qi-rate.guess{background:#FFF7ED;color:#B45309}
 :is(#qi-page,#gei-tm-page) .qi-need-lbl{color:#B45309;font-weight:600}
-#qi-page .qi-ask{margin-bottom:12px;box-shadow:inset 0 0 0 1.5px var(--ios-tint)}
-#qi-page .qi-ask .ios-lbl b{font-weight:700}
-#qi-page .qi-ask .qi-pb{padding:0 12px 12px}
-#qi-page .qi-ask .qi-ask-no{background:none;box-shadow:inset 0 0 0 1px var(--ios-sep);color:var(--ios-2)}
-#qi-page .qi-hrs{display:inline-flex;align-items:center;padding:2px 6px;border-radius:8px;background:var(--bg2);box-shadow:inset 0 0 0 1px var(--ios-sep)}
-#qi-page .qi-hrs input{width:3.4ch;border:0;background:none;font:inherit;color:var(--text);text-align:right;padding:0;outline:none}
+#qi-page .qi-people{margin-bottom:12px}
+#qi-page .qi-people-row{width:100%;border:0;background:none;font:inherit;text-align:left;cursor:pointer}
+#qi-page .qi-people.open .qi-person-row,#qi-page .qi-people.open .qi-new{background:var(--ios-grp)}
+#qi-page .qi-new{gap:8px}
+#qi-page .qi-new .qi-desc{flex:1;min-width:0}
+#qi-page .qi-new .ios-val input{width:4ch;text-align:right}
+#qi-page .qi-math{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:4px;font-size:15px;color:var(--ios-2)}
+#qi-page .qi-hrs-fixed{font-weight:600;color:var(--text)}
+#qi-page .qi-from{display:block;margin-top:3px}
+#qi-page .ios-row.qi-time{display:block}
+#qi-page .qi-p-top{display:flex;align-items:center;gap:8px}
+#qi-page .qi-p-name{flex:1;min-width:0;font-size:17px;color:var(--text)}
+#qi-page .qi-time .qi-x{margin-left:0;min-height:36px}
+#qi-page .qi-time .qi-from{font-size:14px;color:var(--ios-2);line-height:1.35}
+#qi-page .qi-total-row .ios-fact{font-size:20px;font-weight:800;color:var(--text)}
+#qi-page #qi-go{display:contents}
+#qi-page .qi-due-ask{outline:1.5px solid #F59E0B;outline-offset:-1.5px}
+#qi-page .qi-due-ask small{color:#B45309}
+#qi-page .qi-due-ask.asking{outline-width:3px;outline-offset:-3px}
+#qi-page .qi-fix{border:0;background:none;padding:0 0 0 4px;font:inherit;font-weight:600;color:var(--ios-tint);cursor:pointer}
+#qi-page .qi-edited{color:#B45309;font-weight:600}
+#qi-page .qi-set-rate{border:0;background:none;padding:0 0 0 6px;font:inherit;font-weight:700;color:#B45309;cursor:pointer}
+/* Hours and rate are the same kind of box (owner 2026-09-29: "the white and blue things ... why can't it be universal"): the rate pill's look. */
+#qi-page .qi-hrs{display:inline-flex;align-items:center;gap:1px;margin:2px 0;padding:4px 8px;border-radius:8px;background:var(--blue-lt);color:var(--ios-tint);font-weight:600}
+#qi-page .qi-math .qi-rate input{width:3.2ch;text-align:left}
+#qi-page .qi-hrs input{width:3.4ch;border:0;background:none;font:inherit;color:inherit;text-align:right;padding:0;outline:none}
 #qi-page .qi-x{margin-left:8px;min-width:44px;min-height:44px}
 /* Send and Take card stay on screen (Earl): pinned above the tab bar. */
 @media(min-width:768px){#qi-page .qi-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;margin:14px 0 0;padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg2);box-shadow:0 -1px 0 var(--line)}
@@ -1637,11 +1660,6 @@ body.dark #qi-page .qi-st-now{background:rgba(34,197,94,.18);color:#86EFAC}
 #qi-page .qi-x-row{background:transparent;cursor:pointer}
 #qi-page .qi-x-row .qi-chk{margin-right:2px}
 /* A part's count (Jack 2026-09-29): minus, the number, plus. */
-#qi-page .qi-part{gap:8px}
-#qi-page .qi-qty{display:inline-flex;align-items:center;flex-shrink:0;border-radius:10px;background:var(--bg2)}
-#qi-page .qi-qty button{width:36px;height:36px;border:0;background:none;font:inherit;font-size:20px;line-height:1;color:var(--ios-tint);cursor:pointer}
-#qi-page .qi-qty b{min-width:22px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
-#qi-page .qi-part .ios-val input{width:5ch}
 #qi-page .qi-parts-row{padding-bottom:0}
 #qi-page .qi-parts-row::after{display:none}
 #qi-page .qi-parts-seg{padding-top:8px}
@@ -1696,19 +1714,42 @@ div#dash-to-bill .tb-dot.old{background:#F59E0B}
 #gei-byo-page .ios-check.on::before{background:var(--ios-tint);border-color:var(--ios-tint)}
 #gei-byo-page .ios-check svg{position:relative;width:14px;height:14px;z-index:1}
 #gei-byo-page .ios-check:disabled{cursor:default}
-#gei-byo-page .byo-line.off .ios-lbl,#gei-byo-page .byo-line.off .ios-fact{opacity:.45}
-#gei-byo-page .ios-row.byo-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
-#gei-byo-page .byo-line .byo-title{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
-#gei-byo-page .byo-line .ios-fact{line-height:22px;text-align:right}
-#gei-byo-page .byo-line .ios-check{margin:-11px 0 -11px -12px;align-self:start}
-#gei-byo-page .byo-line .byo-note{grid-column:2/4;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
-#gei-byo-page .byo-line.off .byo-title,#gei-byo-page .byo-line.off .byo-note{opacity:.45}
+/* ONE STEP ROW on all three screens (_scopeStepRowHtml): the number, the
+   words, BYO's price on the right, the description full width under them.
+   Everything sits on the first line of the words, however tall the row. */
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .ios-row.step-line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-items:start}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-num,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-minus{line-height:22px;align-self:start}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line:has(.ios-minus){grid-template-columns:auto auto minmax(0,1fr) auto}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-lbl{font-size:17px;line-height:22px;overflow-wrap:anywhere;min-width:0}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .ios-fact{line-height:22px;text-align:right}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line .step-note{grid-column:2/-1;font-size:14px;line-height:1.35;color:var(--ios-2);margin-top:2px;overflow-wrap:anywhere;min-width:0}
+:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .ios-lbl,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .ios-fact,:is(#gei-tm-page,#gei-byo-page,#qi-page) .step-line.off .step-note{opacity:.45}
 #gei-byo-page .ios-fact{flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:500;color:var(--text)}
 #gei-byo-page .ios-fact.ask{color:var(--ios-tint);font-weight:600}
 #gei-byo-page .byo-total .ios-fact{font-size:24px;font-weight:700;letter-spacing:-.4px}
 #gei-byo-page .ios-val input#byo-dep-in{width:44px}
+/* The price boxes look like boxes (owner 2026-09-30: "should all look like I
+   can click into them and edit"): Their price, Your cost, Deposit, Good for. */
+#gei-byo-page #byo-price-group .ios-val input,#gei-byo-page #byo-price-group .ios-val select{border:1px solid var(--border2)!important;background:var(--bg)!important;border-radius:10px!important;padding:8px 10px!important;margin:-2px 0 -2px 4px!important;min-height:44px!important;box-sizing:border-box;font-size:17px;color:var(--text)}
+#gei-byo-page #byo-price-group .ios-val input{width:112px;text-align:right}
+#gei-byo-page #byo-price-group .ios-val input#byo-dep-in{width:62px}
+#gei-byo-page #byo-price-group .ios-val input:focus,#gei-byo-page #byo-price-group .ios-val select:focus{border-color:var(--denim,#2d5da8)!important;box-shadow:0 0 0 3px rgba(45,93,168,.16)!important;outline:none}
+/* Rooms (owner 2026-09-30), one set for Build Your Own and T&M: the title is
+   a button, tap to rename; hold a line to drag it to another room. */
+.room-name{background:none;border:0;padding:12px 0;margin:-12px 0;font:inherit;color:var(--text)!important;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:left;min-height:44px}
+.ios-swipe[data-room-key] .ios-row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.ios-swipe.room-lifted{opacity:.35}
+[data-room]{transition:background-color .15s ease;border-radius:14px}
+[data-room].room-drop{background-color:rgba(45,93,168,.08)}
+.ios-swipe.room-drop-before{box-shadow:inset 0 3px 0 var(--denim,#2d5da8)}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-8px 0 -8px -6px;color:var(--ios-tint);flex-shrink:0}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-rename svg{width:20px;height:20px}
+:is(#gei-tm-page,#gei-byo-page) .ios-title{cursor:default}
+:is(#gei-tm-page,#gei-byo-page) .ios-pname{display:flex;align-items:center;gap:2px;margin-top:4px;font-size:16px;font-weight:500;color:var(--text);cursor:pointer;min-width:0}
+:is(#gei-tm-page,#gei-byo-page) .ios-pname>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+:is(#gei-tm-page,#gei-byo-page) .ios-pname>span:first-child:has(input){flex:1 1 auto}
+:is(#gei-tm-page,#gei-byo-page) .ios-pname .ios-rename{margin:-12px 0 -12px -4px}
+:is(#gei-tm-page,#gei-byo-page) .ios-pname .ios-rename svg{width:17px;height:17px}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub{font-size:15px;color:var(--ios-2);margin-top:5px;line-height:1.4}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub b{color:var(--text);font-weight:600}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-sub button{border:0;background:none;padding:0 0 0 4px;color:var(--ios-tint);font:inherit;cursor:pointer}
@@ -1874,7 +1915,7 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-stephead[d
      editor on an iPhone has one bar at the top and its own at the bottom.
      :has() rather than a class a script must remember to take off: the moment
      the T&M page is not the one showing, the app's bars are back. */
-  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim){display:none!important}
+  body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) :is(#mobile-topbar,#mobile-tabbar,#mtb-tim,#clock-banner,.drive-banner){display:none!important}
   body:has(:is(#pg-est-generic,#pg-qi).active :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill):not([style*="none"])) #app{padding-top:0;padding-bottom:0}
   /* No enter animation here: a transform animation, even finished and held,
      makes the page the box a fixed bar is pinned to, and the bar rode 1,000px
@@ -1926,6 +1967,10 @@ body.dark :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-group{box-
 #gei-tm-page .tm-who-chips{display:flex;flex-wrap:wrap;gap:8px;padding:14px 16px}
 #gei-tm-page .tm-who-chip{height:34px;padding:0 15px;border-radius:17px;border:0;background:var(--bg2);box-shadow:inset 0 0 0 1px var(--ios-sep);color:var(--text);font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
 #gei-tm-page .tm-who-chip.on{background:var(--ios-tint);color:#fff;box-shadow:none}
+#gei-tm-page .tm-cad-seg .ios-seg{width:100%;display:flex}
+#gei-tm-page .tm-cad-seg .ios-seg button{flex:1;min-width:0}
+#gei-tm-page #tm-cad-main.ask{outline:2.5px solid #F59E0B;outline-offset:-2px;border-radius:10px}
+#gei-tm-page .tm-cad-ask .ios-lbl small{color:#B45309}
 #gei-tm-page .tm-who-sum .ios-val{font-weight:700;color:var(--text)}
 #gei-tm-page #tm-pay-group:not(.open) #tm-pay-body{display:none}
 :is(#gei-tm-page,#gei-byo-page,#qi-page,#dash-to-bill) .ios-pill{flex-shrink:0;border:0;border-radius:999px;background:var(--ios-tint);color:#fff;font-family:inherit;font-size:15px;font-weight:600;padding:7px 15px;cursor:pointer}
@@ -2244,6 +2289,19 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .zmodal-overlay>*{margin:auto}
 .zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
+/* The one send screen (js/proposals.js tdSendSheet): proposals, change orders, invoices. */
+.td-send{text-align:center}
+.td-send-who{font-size:15px;font-weight:600;color:var(--text2)}
+.td-send-amt{font-size:34px;font-weight:800;letter-spacing:-.5px;color:var(--text);margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.td-send-sub{font-size:14px;color:var(--text3);margin-bottom:18px}
+.td-send-btn{display:flex;align-items:center;justify-content:center;width:100%;height:52px;border-radius:14px;border:0;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.td-send-btn+.td-send-btn{margin-top:10px}
+.td-send-btn.fill{background:var(--blue);color:#fff}
+.td-send-btn.tint{background:var(--blue-lt);color:var(--blue)}
+.td-send-note{font-weight:400;font-size:14px;opacity:.75;margin-left:4px}
+.td-send-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 20px;margin-top:14px}
+.td-send-links button{border:0;background:none;padding:8px 4px;font-family:inherit;font-size:15px;font-weight:600;color:var(--blue);cursor:pointer}
+.td-send-links button[data-send="close"]{color:var(--text3);font-weight:500}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 /* Shared-to-TradeDesk sheet. One list, one visual language: the two big solid
    slabs it used to stack read as two competing primary buttons and pushed the
@@ -2377,7 +2435,11 @@ body.dark .cal-cell.other{background:var(--cream)}
   .drive-active .pg{padding-top:60px}
   .clock-active .pg{padding-top:60px}
   .drive-active.clock-active .pg{padding-top:110px}
-  .drive-active #clock-banner{top:98px}
+  /* Clock bar on a phone (owner 2026-09-30, photo of Jack's screen): the
+     tablet rule above left it starting 180px in, pinned under the status bar.
+     Full width, under the top bar, the same place the drive bar sits. */
+  #clock-banner{left:0;top:calc(56px + env(safe-area-inset-top,0px))}
+  .drive-active #clock-banner{top:calc(98px + env(safe-area-inset-top,0px))}
   .tbar-title{font-size:22px;letter-spacing:-.5px}
   .tbar{margin-bottom:14px}
   .card{padding:14px;border-radius:12px}
@@ -2543,8 +2605,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 /* Edit is pinned to its own top-right corner (position:absolute, out of
    flow); the stats group (.mil-trip-stats) is the only thing left in flow,
    so justify-content:center centers IT alone against the card's full
-   stretched height, independent of where Edit sits. */
-.mil-trip-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;align-self:stretch;min-width:60px}
+   stretched height, independent of where Edit sits. The top padding is
+   Edit's own height plus a gap, so a tall stats group (a receipt or "It was
+   work" button under the numbers) centers in the space BELOW Edit instead
+   of riding up under it (Jack's log, 2026-09-30: "4.5 mi" hidden by Edit). */
+.mil-trip-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;align-self:stretch;min-width:60px;padding-top:32px}
 .mil-trip-stats{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .mil-trip-stats .mil-trip-meta{margin-top:-2px}
 .mil-trip-mi{font-size:13px;font-weight:800;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -2635,6 +2700,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .sup-row .byo-check.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .sup-qty{flex:0 0 58px;font-size:12px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
 .sup-desc{flex:1 1 auto;min-width:0;font-size:13px;color:var(--text);overflow-wrap:anywhere}
+.sup-edit{border:0;background:none;padding:0;margin:0;text-align:left;font-family:inherit;cursor:pointer}
 .sup-cost{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;background:none;border:none;padding:0 2px;cursor:pointer;font-family:inherit}
 .sup-cost-add{font-size:11px;font-weight:600;color:var(--blue)}
 .sup-del{flex:0 0 auto;background:none;border:none;color:var(--text3);padding:2px 4px;cursor:pointer}
@@ -3223,7 +3289,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="card-hd" style="cursor:pointer" onclick="window._leadSrcOpen=!window._leadSrcOpen;this.querySelector('.lead-src-chevron').textContent=window._leadSrcOpen?'▲':'▼';document.getElementById('dash-sources').style.display=window._leadSrcOpen?'block':'none'">
           <div>
             <div class="card-hd-title">Lead sources</div>
-            <div class="card-hd-sub">Year to date · close rate &amp; revenue</div>
+            <div class="card-hd-sub">This year: how many you win and what they paid</div>
           </div>
           <span class="lead-src-chevron" style="font-size:11px;color:var(--text3)">▼</span>
         </div>
@@ -3614,7 +3680,18 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- GETTING PAID (owner 2026-09-29): one summary line, filled in, tap
              to change. The limit, up front, how often it bills: all of it was
              open at once and he went back and forth down the page. _tmRenderPay. -->
+        <!-- 3 MATERIALS (owner 2026-09-29: the same four steps on every
+             document, js/doc-steps.js). Optional on T&M: a row turns it on. -->
         <div class="ios-stephead" id="tm-step-3"></div>
+        <div class="ios-sec" id="tm-mat-add"><div class="ios-group">
+          <button type="button" class="ios-row ios-link" onclick="_tmStepAct('mat')">Add materials</button></div></div>
+        <!-- Materials: the same card BYO draws (js/materials.js). -->
+        <div id="tm-blk-mat" style="display:none"><div id="tm-mat-list"></div></div>
+
+        <!-- 4 REVIEW: how they pay, then the bar sends it. -->
+        <div class="ios-stephead" id="tm-step-4"></div>
+        <!-- His note, the same row Build Your Own has (_tmRenderNote). -->
+        <div class="ios-sec" id="tm-sec-note"></div>
         <div class="ios-sec" id="tm-sec-pay">
           <div class="ios-group" id="tm-pay-group">
             <div id="tm-pay-sum"></div>
@@ -3649,8 +3726,6 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="ios-foot" id="tm-nte-sub"></div>
         </div>
 
-        <!-- Materials: the same card BYO draws (js/materials.js). -->
-        <div id="tm-blk-mat" style="display:none"><div id="tm-mat-list"></div></div>
 
         <!-- Same rule as BYO: exclusions come after the work. -->
         <div id="tm-blk-excl" style="display:none"><div id="tm-excl-wrap"></div></div>
@@ -3740,7 +3815,14 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div id="byo-sections"></div>
         <div id="byo-sitenote-wrap"></div>
 
+        <!-- 2 MATERIALS (owner 2026-09-29: "they all should be the same except
+             BYO doesn't get time; it gets scope and materials if applicable").
+             The one shared card (js/materials.js), drawn by _byoRenderSections. -->
         <div class="ios-stephead" id="byo-step-2" data-tim-step="2"></div>
+        <div id="byo-mat-wrap"></div>
+
+        <!-- 3 REVIEW: the price, the deposit, then the bar sends it. -->
+        <div class="ios-stephead" id="byo-step-3" data-tim-step="3"></div>
         <!-- The price: rows drawn by _byoRenderPrice; the rail's own fields
              (deposit, cost, profit) are moved in here so each keeps its id. -->
         <div class="ios-sec" id="byo-price-sec">
@@ -4250,7 +4332,7 @@ body.dark .cal-cell.other{background:var(--cream)}
          (owner asked for one, 2026-08-30). Describes what the tracker did,
          not what the contractor has to do, and names the one thing on the
          page that needs a person: the hours nobody has accounted for. -->
-    <div class="tbar-sub">Every hour your phone recorded, sorted into driving, on site, shop and loading. Anything it could not place is flagged for you to answer.</div>
+    <div class="tbar-sub">Every hour your phone logged: driving, on site, shop and loading. Anything it could not figure out is flagged for you.</div>
   </div>
   <!-- ── Tim, at the point of the work ──────────────────────────────────────
        The bar is his global door. This is a door at the work, and the two do
@@ -4265,7 +4347,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button type="button" class="tim-atwork" hidden
     onclick="_timAskFrom('what do I invoice for last week')">
     <span class="tim-atwork-mark" aria-hidden="true"></span>
-    <span class="tim-atwork-say"><b>Turn last week into an invoice worksheet</b><i>By job site, with the address and who was on it</i></span>
+    <span class="tim-atwork-say"><b>Last week's hours, ready to bill</b><i>By house, with who was there</i></span>
     <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
   </button>
   <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
@@ -4291,7 +4373,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <button class="btn btn-sm" onclick="openExportPanel()" style="flex-shrink:0;margin-top:6px">⬇ Export</button>
     </div>
-    <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
+    <div class="tbar-sub">Every payment, receipt and mile, sorted the way the IRS wants it.</div>
     <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
   <div class="fbar">
@@ -4445,11 +4527,11 @@ body.dark .cal-cell.other{background:var(--cream)}
         <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
       <div class="f">
-        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return, unlocks safe harbor</span></label>
+        <label>Last year's total tax ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From last year's return. Keeps you clear of penalties</span></label>
         <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0: enter from last year's return">
       </div>
       <div class="f">
-        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold, leave 0 if unknown</span></label>
+        <label>Last year's adjusted gross income ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Line 11 of your 1040. Leave 0 if you don't know</span></label>
         <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0: from last year's return line 11">
       </div>
     </div>
@@ -4523,7 +4605,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-icon"><span data-ico="🎨" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Branding</div>
-            <div class="set-idx-sub">Logo, brand color, white-label client hub</div>
+            <div class="set-idx-sub">Logo, color, what your customers see</div>
           </div>
           <div class="set-idx-meta" id="set-meta-branding"></div>
           <div class="set-idx-chev">›</div>
@@ -4634,7 +4716,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-icon"><span data-ico="📦" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Data &amp; export</div>
-            <div class="set-idx-sub">Download data, factory reset</div>
+            <div class="set-idx-sub">Download your data, or wipe the app</div>
           </div>
           <div class="set-idx-chev">›</div>
         </div>
@@ -4724,6 +4806,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">License #</div><div class="set-form-hint">State contractor license. Shown in your client hub footer.</div></div>
           <div class="set-form-ctrl"><input id="set-blic" placeholder="KS-PNT-2024-08812"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Proposals signed by</div><div class="set-form-hint">Whose name your proposals and notes come from, when that is not you. Blank uses your own name.</div></div>
+          <div class="set-form-ctrl"><input id="set-signas" placeholder="Your name" autocomplete="off"></div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year, no need to update it.</div></div>
@@ -5481,11 +5567,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="money-tbar-eyebrow">Collect</div>
       <div class="tbar-title">Collect</div>
-      <div class="tbar-sub" id="money-lien-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under applicable state law.</div>
+      <div class="tbar-sub" id="money-lien-sub">Ready-to-send texts for each reminder. Lien deadlines follow your state's law.</div>
     </div>
     <div class="tbar-r">
       <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none"><span data-ico="📤" data-ico-size="14"></span> Send all reminders</button>
-      <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
+      <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ New invoice</button>
     </div>
   </div>
   <!-- ── Tim, at the point of the work ──────────────────────────────────────
@@ -5501,15 +5587,15 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button type="button" class="tim-atwork" hidden
     onclick="_timAskFrom('what do I invoice for last week')">
     <span class="tim-atwork-mark" aria-hidden="true"></span>
-    <span class="tim-atwork-say"><b>What have I worked and not billed</b><i>Last week's hours, by customer and address</i></span>
+    <span class="tim-atwork-say"><b>Work not billed yet</b><i>Last week's hours, by customer and address</i></span>
     <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
   </button>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
-    <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
+    <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All</button>
     <button type="button" class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
-    <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
-    <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
+    <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Part paid</button>
+    <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Not sent</button>
     <button type="button" class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
   </div>
   <div id="money-list"></div>
@@ -5534,7 +5620,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="proposals-eyebrow">Proposals</div>
       <div class="tbar-title">Proposals</div>
-      <div class="tbar-sub">Everything you've sent for signature. Tap any row to open the client's portal.</div>
+      <div class="tbar-sub">Everything you've sent to sign. Tap one to see what they see.</div>
     </div>
     <div class="tbar-r">
       <button class="btn btn-p btn-sm" onclick="goPg('pg-clients')">+ New proposal</button>
@@ -5544,7 +5630,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
     <button type="button" class="fb active" id="pft-all"          onclick="setProposalFilter('all',this)">All<span class="fb-count" id="pft-c-all"></span></button>
     <button type="button" class="fb"        id="pft-draft"        onclick="setProposalFilter('draft',this)">Drafts<span class="fb-count" id="pft-c-draft"></span></button>
-    <button type="button" class="fb"        id="pft-awaiting_sig" onclick="setProposalFilter('awaiting_sig',this)">Awaiting sig<span class="fb-count" id="pft-c-awaiting_sig"></span></button>
+    <button type="button" class="fb"        id="pft-awaiting_sig" onclick="setProposalFilter('awaiting_sig',this)">Waiting to sign<span class="fb-count" id="pft-c-awaiting_sig"></span></button>
     <button type="button" class="fb"        id="pft-signed"       onclick="setProposalFilter('signed',this)">Signed<span class="fb-count" id="pft-c-signed"></span></button>
     <button type="button" class="fb"        id="pft-declined"     onclick="setProposalFilter('declined',this)">Declined<span class="fb-count" id="pft-c-declined"></span></button>
   </div>
@@ -5916,6 +6002,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/timelog.js"></script>
 <script src="js/lifecycle.js"></script>
 <script src="js/payroll-summary.js"></script>
+<script src="js/doc-steps.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/materials.js"></script>
 <script src="js/supply-list.js"></script>

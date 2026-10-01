@@ -1922,16 +1922,11 @@ test.describe('Generic estimate, trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoToggle: toggles BYO item state without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _byoToggle !== 'function') return { skip: true };
-      try {
-        if (!window._byoItems) window._byoItems = [{ id: 1, label: 'Test Item', price: 100, on: false, required: false }];
-        _byoToggle(0);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // The tick on a BYO row is gone (owner 2026-10-01: the three lists draw one
+  // row); on or off the proposal is a switch in the line's own sheet now.
+  test('_byoToggle is gone; the edit sheet carries On the proposal', async () => {
+    const r = await page.evaluate(() => ({ gone: typeof _byoToggle === 'undefined', sheet: typeof _byaOnOffable === 'function' }));
+    expect(r).toEqual({ gone: true, sheet: true });
   });
 
   test('_geiRenderTemplates: renders service templates without throwing', async () => {

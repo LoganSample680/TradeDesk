@@ -4388,7 +4388,7 @@ function renderSummary(){
     '<div class="met"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">'+fmt(tEx)+'</div></div>'+
     '<div class="met"><div class="met-l">Mileage</div><div class="met-v">'+fmt(_mileDedS)+'</div><div class="met-s">'+(_vdS?_vdS.deductedMiles:tMi).toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
     '<div class="met"><div class="met-l">Est. tax</div><div class="met-v" style="color:var(--amber)">'+fmt(tax)+'</div></div>'+
-    '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">Income less expenses and tax. The mileage deduction lowers the tax, not this.</div></div>'+
+    '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">What is left after expenses and tax. Miles lower your tax, not this number.</div></div>'+
     '</div>';
   // Readable names, never the stored key ("materials" read as a raw key).
   const byType={};
@@ -4412,7 +4412,7 @@ function setMoneyFilter(f,btn){
 function renderMoneyPage(){
   const el=document.getElementById('money-list');if(!el)return;
   const _lienSub=document.getElementById('money-lien-sub');
-  if(_lienSub){const _ls=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[S?.state])?STATE_LIEN[S.state].statute:'applicable state law';_lienSub.textContent='Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under '+_ls+'.';}
+  if(_lienSub){const _ls=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[S?.state])?STATE_LIEN[S.state].statute:'applicable state law';_lienSub.textContent='Ready-to-send texts for each reminder. Lien deadlines follow '+_ls+'.';}
 
   const summEl=document.getElementById('money-summary');
   const tk=todayKey();
@@ -4466,9 +4466,9 @@ function renderMoneyPage(){
     }).length;
     const avgDaysOut=allItems.filter(x=>x.bucket==='overdue'&&x.daysUnpaid>0).reduce((s,x,_,a)=>s+x.daysUnpaid/a.length,0)||0;
     summEl.innerHTML='<div class="mets">'+
-      '<div class="met"><div class="met-l">Total outstanding</div><div class="met-v" style="color:'+(totalOwed>0?'var(--c-red)':'var(--c-green)')+'">'+fmt(totalOwed)+'</div><div class="met-s">across '+allItems.filter(x=>x.bucket!=='paid').length+' accounts</div></div>'+
-      '<div class="met"><div class="met-l">Avg days out</div><div class="met-v">'+(avgDaysOut?Math.round(avgDaysOut)+'<span class="unit">d</span>':'-')+'</div><div class="met-s">target ≤ 14d</div></div>'+
-      '<div class="met"><div class="met-l">Lien windows open</div><div class="met-v" style="color:'+(lienOpen?'var(--c-amber)':'var(--text-3)')+'">'+lienOpen+'</div><div class="met-s">'+(lienOpen?'act before deadline':'none expiring soon')+'</div></div>'+
+      '<div class="met"><div class="met-l">Total outstanding</div><div class="met-v" style="color:'+(totalOwed>0?'var(--c-red)':'var(--c-green)')+'">'+fmt(totalOwed)+'</div><div class="met-s">from '+allItems.filter(x=>x.bucket!=='paid').length+' customers</div></div>'+
+      '<div class="met"><div class="met-l">Days to get paid</div><div class="met-v">'+(avgDaysOut?Math.round(avgDaysOut)+'<span class="unit">d</span>':'-')+'</div><div class="met-s">average · aim for 14 or less</div></div>'+
+      '<div class="met"><div class="met-l">Lien deadlines</div><div class="met-v" style="color:'+(lienOpen?'var(--c-amber)':'var(--text-3)')+'">'+lienOpen+'</div><div class="met-s">'+(lienOpen?'file before they pass':'none coming up')+'</div></div>'+
       '<div class="met"><div class="met-l">Collected this month</div><div class="met-v" style="color:var(--c-green)">'+fmt(paidThisMonth)+'</div></div>'+
     '</div>';
   }

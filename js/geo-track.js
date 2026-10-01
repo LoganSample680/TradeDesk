@@ -3212,10 +3212,10 @@ async function _geoPermissionBanner(){
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML=_geoBannerHtml('Location is off',
-    'TradeDesk logs your drive time and job hours automatically during work hours, it only works with location on. '+
+    'TradeDesk logs your drives and job hours on its own, but only with location on. '+
     (denied
       ?'Turn it back on in your phone: Settings → TradeDesk → Location → While Using the App.'
-      :'Tap below and choose Allow While Using.'),
+      :'Tap below, then pick Allow While Using.'),
     denied?null:'Turn on location');
 }
 // One banner shell for every state, so the copy is the only thing that varies.

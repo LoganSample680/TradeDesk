@@ -4969,4 +4969,19 @@ test.describe('Photo capture: pending uploads survive and retry', () => {
     expect(r.dup).toBe(1);
     expect(r.url).toBe('https://x/done.jpg');
   });
+
+  // Jack at Treyton's, 2026-09-30: three photos, File here tapped, one filed.
+  // The other two were waiting for signal in the outbox (outboxWait), the
+  // sync dropped them, and they came back from the outbox with no customer.
+  test('a cloud reload keeps an outbox photo, and the filing he tapped', async () => {
+    const r = await page.evaluate((d) => {
+      photos.push({ id: 5500, type: 'after', data: d, outboxWait: true, client_id: null, uploadedAt: new Date().toISOString() });
+      photos.find(p => p.id === 5500).client_id = 501;   // he tapped File here
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      t.set([{ id: 5600, type: 'after', url: 'https://x/a.jpg', storagePath: 'u/a.jpg', client_id: 501, uploadedAt: new Date().toISOString() }]);
+      const kept = photos.find(p => p.id === 5500);
+      return { kept: !!kept, client: kept && kept.client_id, waiting: tdPhotoWaiting(kept) };
+    }, DATA);
+    expect(r).toEqual({ kept: true, client: 501, waiting: true });
+  });
 });

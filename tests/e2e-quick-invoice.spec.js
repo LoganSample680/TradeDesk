@@ -57,6 +57,9 @@ test.describe('Quick invoice', () => {
   test('the picker lists every customer with their street and status, working now first, search on top', async ({ page }) => {
     await boot(page);
     await page.click('#qa-invoice-btn');
+    // A slow WebKit runner can still be painting when evaluate runs: wait for
+    // the sheet itself rather than assuming the tap has already drawn it.
+    await page.waitForSelector('.zmodal', { timeout: 10000 });
     const r = await page.evaluate(() => {
       const box = document.querySelector('.zmodal');
       // Ready to bill houses lead the list (e2e-ready-to-bill.spec.js); this
@@ -123,7 +126,7 @@ test.describe('Quick invoice', () => {
 
   test('Hourly: each person at their own rate, receipts, and the total', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => openQuickInvoice(901));
+    await page.evaluate(() => { openQuickInvoice(901); _qi.due = 'receipt'; renderQuickInvoice(); });
     const r = await page.evaluate(() => ({
       active: document.querySelector('.pg.active').id,
       seg: document.querySelector('#qi-page .qi-seg .on').textContent,
@@ -132,9 +135,9 @@ test.describe('Quick invoice', () => {
       send: document.getElementById('qi-send').textContent,
     }));
     expect(r.active).toBe('pg-qi');
-    expect(r.seg).toBe('Hourly');
+    expect(r.seg).toBe('By the hour');
     expect(r.text).toContain('Jack Sample');
-    expect(r.text).toContain('6h 30m on site at');  // hours at the rate (Earl: "which rate wins?")
+    expect(r.text).toContain('From the phone: 6h 30m on site');  // where the hours came from, in words (owner 2026-09-29)
     expect(r.text).toContain('$552.50');           // 6.5h x $85
     expect(r.text).toContain('$455.00');           // owner at the labor rate, 6.5h x $70
     expect(r.text).toContain('Ferguson');
@@ -225,8 +228,8 @@ test.describe('Quick invoice', () => {
       return { off, offText, on, checked, setting, back, saves };
     });
     expect(r.off).toEqual([{ who: 'Mike Sample', mins: 240, detail: '4h on site' }]);
-    expect(r.offText).toContain('Bill drive time');
-    expect(r.offText).toContain('4h on site at');
+    expect(r.offText).toContain('Charge for drive time');   // plain words, in the Time step (owner 2026-09-29)
+    expect(r.offText).toContain('From the phone: 4h on site');
     expect(r.offText).not.toMatch(/shop/i);
     // Only the first drive there counts by itself (owner 2026-09-29: "the
     // first drive there, nothing back"): Shop to John Doe. The leg leaving
@@ -359,6 +362,78 @@ test.describe('Quick invoice', () => {
     expect(r.loading).toBe(false);
   });
 
+  // Owner 2026-09-29: "Tim is only going to get smarter the more he's used".
+  // A line Tim wrote and he retyped goes up as a fix; a line he typed does not.
+  test('retyping a line Tim wrote queues a fix row for the nightly retrain; his own lines are not fixes', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      localStorage.removeItem('td_tim_send');
+      openQuickInvoice(901); _qiSetMode('hourly');
+      document.getElementById('qi-say').value = 'I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe';
+      _qiSayBuild();
+      _ROOM_LISTS.qi.edit(0, 'Walked the job with the homeowner');
+      const q = JSON.parse(localStorage.getItem('td_tim_send') || '[]');
+      return { fix: q.filter(x => x.kind === 'fix').map(x => x.made), scope: q.filter(x => x.kind === 'scope').map(x => !!x.ref) };
+    });
+    expect(r.fix).toEqual([{ field: 'work', tim: 'Did a walk-through here', kept: 'Walked the job with the homeowner' }]);
+    expect(r.scope, 'the scope row carries the invoice id so what went out can be lined up with it').toEqual([true]);
+  });
+
+  // Owner 2026-09-29: "work performed doesn't title and bullet itself out on
+  // the invoice like proposals do today, can we share that code?"
+  test('work performed prints with the proposal code: a heading, then his steps as the same bullets', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX-A pipe']; renderQuickInvoice();
+      const doc = _qiDocHtml();
+      const box = document.createElement('div'); box.innerHTML = doc;
+      const lis = [...box.querySelectorAll('ul li')].map(li => li.textContent.trim());
+      return { lis, same: doc.includes(_propStepsHtml(_qi.work)), title: doc.includes('What we did'),
+        days: _qiCustomerDays().map(d => d.note), dayRow: /Wed|Thu|Fri|Mon|Tue|Sat|Sun/.test(doc) && !/·\s*Did a walk-through/.test(doc) };
+    });
+    expect(r.lis).toEqual(['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.same, 'the exact markup a proposal prints').toBe(true);
+    expect(r.title).toBe(true);
+    expect(r.days.every(n => !/walk-through/.test(n)), 'the day row carries only its own note').toBe(true);
+    expect(r.dayRow).toBe(true);
+  });
+
+  // Owner 2026-09-29: "I want the ability to click into these steps and edit
+  // them, right now they are hard locked if I talk to Tim". Tim heard "PEX-A"
+  // as "PEX a pipe"; he taps the line and fixes the words. Owner 2026-10-01:
+  // the row is the T&M step row, so it looks and works the same in all three.
+  test('what Tim made is his to edit: tap a line, change it, it is on the invoice; swipe Delete takes one off', async ({ page }) => {
+    await boot(page, 390);
+    await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Did a walk-through here', 'Replaced 10 feet of copper pipe with PEX a pipe']; _qi.workRecs = []; renderQuickInvoice();
+    });
+    await page.locator('#qi-page .ios-swipe[data-kind="step"] .ios-row').nth(1).click();
+    await page.locator('#zprompt-inp').fill('Replaced 10 feet of copper pipe with PEX-A pipe');
+    await page.locator('#zprompt-ok').click();
+    await page.evaluate(() => document.querySelector('#qi-page .ios-swipe[data-kind="step"] .ios-del').click());
+    const r = await page.evaluate(() => ({ work: _qi.work.slice(), doc: _qiDocHtml(),
+      rows: [...document.querySelectorAll('#qi-page .ios-swipe[data-kind="step"]')].map(w => w.querySelector('.ios-num').textContent + ' ' + w.querySelector('.ios-lbl').textContent),
+      boxes: document.querySelectorAll('#qi-page textarea.qi-work-in').length }));
+    expect(r.work).toEqual(['Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.doc).toContain('Replaced 10 feet of copper pipe with PEX-A pipe');
+    expect(r.rows).toEqual(['1 Replaced 10 feet of copper pipe with PEX-A pipe']);
+    expect(r.boxes, 'no typing boxes: the step row').toBe(0);
+  });
+
+  test('the invoice draws the same step row as T&M, markup for markup', async ({ page }) => {
+    await boot(page, 390);
+    const r = await page.evaluate(() => {
+      openQuickInvoice(901); _qiSetMode('hourly');
+      _qi.work = ['Secure the tub spout']; _qi.workRecs = []; renderQuickInvoice();
+      const inv = document.querySelector('#qi-page .ios-swipe[data-kind="step"]').outerHTML;
+      const d = document.createElement('div'); d.innerHTML = _scopeStepRowHtml('qi', 'Secure the tub spout', 0, { del: '_qiDropWork(0)' });
+      return { inv, shared: d.firstElementChild.outerHTML };
+    });
+    expect(r.inv).toBe(r.shared);
+  });
+
   // "Do we add in talk to Tim like we do for proposals to speak to what we
   // did?" (owner 2026-09-27). Same box and splitter as Build Your Own.
   test('Talk to Tim, hourly: what he did is listed as work done, on the preview and the saved invoice, never a price', async ({ page }) => {
@@ -476,7 +551,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const r = await page.evaluate(() => {
       openQuickInvoice(901);
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       const again = _qiUnbilled(901);
       return {
         bid: { kind: bid.kind, status: bid.status, amount: bid.amount, lines: bid.lineItems.length, exp: bid.qiExpenseIds, through: !!bid.qiTimeThrough, days: bid.qiDays },
@@ -505,10 +580,10 @@ test.describe('Quick invoice', () => {
       const n = bids.length;
       openQuickInvoice(903);
       const seg = document.querySelector('#qi-page .qi-seg .on').textContent;
-      const out = qiSend();
+      const out = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       return { seg, sent: !!out, grew: bids.length !== n };
     });
-    expect(r.seg).toBe('Set price');
+    expect(r.seg).toBe('Flat price');
     expect(r.sent).toBe(false);
     expect(r.grew).toBe(false);
   });
@@ -600,7 +675,7 @@ test.describe('Quick invoice', () => {
     await boot(page);
     const html = await page.evaluate(() => {
       openQuickInvoice(901);
-      const bid = qiSend();
+      const bid = (_qi && (_qi.due = _qi.due || 'receipt'), qiSend());
       let out = '';
       const orig = window.open;
       window.open = () => ({ document: { write: (s) => { out += s; }, close() {} }, focus() {}, print() {} });
@@ -637,7 +712,12 @@ test.describe('Quick invoice', () => {
         const q = { select: () => q, is: () => q, eq: () => q, gte: () => q, or: (x) => { c.or = x; return q; },
           then: (res, rej) => { open++; peak = Math.max(peak, open); return new Promise(r => setTimeout(r, 30)).then(() => { open--; return { data: [] }; }).then(res, rej); } };
         return q; };
-      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser };
+      const saved = { sp: window._supa, se: window.supaEnabled, su: window._supaUser, tb: window._tbLoad };
+      // Home's Ready to bill card reads the same tables in the background
+      // once supaEnabled is true; on a slow runner its read landed inside
+      // this count (peak 4, WebKit CI 2026-09-29). This test counts only its
+      // own calls.
+      window._tbLoad = () => {};
       window._supa = { from: mk }; window.supaEnabled = () => true; window._supaUser = { id: 'owner-uid' };
       const c = clients.find(x => x.id === 901);
       c.extraAddresses = [{ label: 'Rental', addr: '9 "Quoted" Ln, Springfield, IL' }];
@@ -647,7 +727,7 @@ test.describe('Quick invoice', () => {
       await _fetchCrewLabor('2026-09-01T00:00:00Z');
       const all = { tables: calls.map(x => x.t).sort(), or: calls.find(x => x.t === 'job_time_entries').or, peak };
       const none = await _fetchCrewLabor(null, { only: { jobIds: [], places: [] } });
-      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su });
+      Object.assign(window, { _supa: saved.sp, supaEnabled: saved.se, _supaUser: saved.su, _tbLoad: saved.tb });
       return { one, all, none: none.entries.length, esc: _crewOnlyOr({ jobIds: ['j9', 'x;drop'], places: ['A "B" (C)'] }) };
     });
     expect(r.one.tables).not.toContain('shop_time_entries');

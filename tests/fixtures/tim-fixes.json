@@ -1,0 +1,28 @@
+{
+  "_readme": "Tim's permanent answer key (owner 2026-09-29: 'Tim is only going to get smarter the more he's used'). Every case is a real sentence a contractor said, scrubbed of names, and what Tim must make of it. The nightly retrain ADDS cases from contractors' fixes (td_tim_asks kind 'fix'); a case is never deleted or loosened to make a change pass. steps: lines that must appear in timSaySteps. notSteps: text that must not. materials: exactly the list timSaidMaterials returns, as 'qty unit item'.",
+  "cases": [
+    {
+      "id": "pex-a-replaced-copper",
+      "added": "2026-09-29",
+      "from": "owner: 'no way we can have copper pipe with pex a pipe, pex a is what we used, copper was replaced'",
+      "said": "I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe",
+      "steps": ["Replaced 10 feet of copper pipe with PEX-A pipe"],
+      "materials": ["10 foot PEX-A pipe"]
+    },
+    {
+      "id": "holloway-is-haul-away",
+      "added": "2026-09-29",
+      "from": "owner: 'haul away saying Holloway'",
+      "said": "Tore out the old vanity and Holloway the old vanity and the drywall",
+      "notSteps": ["Holloway"],
+      "stepsContain": ["haul away"]
+    },
+    {
+      "id": "holloway-street-left-alone",
+      "added": "2026-09-29",
+      "from": "guard: a street named Holloway is not haul away",
+      "said": "Met the customer on Holloway Street and looked at the water heater",
+      "stepsContain": ["Holloway"]
+    }
+  ]
+}

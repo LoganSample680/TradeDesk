@@ -65,14 +65,14 @@ test.describe('the scope you say out loud', () => {
       (document.getElementById('tm-scope-wrap') || {}).textContent.replace(/\s+/g, ' ').trim());
     // T&M CHANGED 2026-09-23 (§10.4). The iOS editor names the section once
     // ("1 The job" above the box), and its one button is the bar pinned to
-    // the bottom of the screen, which reads Build the steps until there are
+    // the bottom of the screen, which reads Write it up until there are
     // some. Owner: "does it look like something a pro UX designer would
     // ship? I don't think so." The box still offers itself first.
     // And since "Type it or Talk to Tim" (2026-09-23), the line under it says
     // what Tim does with it, which is the part nobody expects.
     expect(t).toContain('Tim puts it in order and finds what you left out');
     const bar = await page.evaluate(() => (document.getElementById('tm-dock') || {}).textContent || '');
-    expect(bar).toContain('Build the steps');
+    expect(bar).toContain('Write it up');
     // The list is still reachable. Retiring a thing people rely on is a one
     // way door, and this has been live for one afternoon.
     expect(t).toContain('Pick from a list');

@@ -322,6 +322,21 @@
         _track('click', null, null, null, el ? _ctlId(el) : null);
       } catch (_x) { try { _track('click'); } catch (_y) {} }
     }, true);
+    // WHAT HE CHANGED, NOT JUST WHERE HE TAPPED (owner 2026-09-30: "i need
+    // you to confirm he actually typed that"). A field he edits and leaves
+    // is one 'field' row: which box (its id) and, for a number box, the
+    // number. 'change' fires once when he is done, never per keystroke, and
+    // words he types are never sent, only that the box changed.
+    document.addEventListener('change', function (e) {
+      try {
+        var el = e && e.target;
+        if (!el || !el.id || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+        if (/password|email|tel/i.test(el.type || '')) return;
+        var raw = String(el.value == null ? '' : el.value).replace(/[$,%\s]/g, '');
+        var num = (el.tagName !== 'TEXTAREA' && /^-?\d+(\.\d+)?$/.test(raw)) ? Number(raw) : null;
+        _track('field', null, num, null, '#' + el.id);
+      } catch (_x) {}
+    }, true);
     var _lastScroll = 0;
     window.addEventListener('scroll', function () { try { var n = Date.now(); if (n - _lastScroll > 1000) { _lastScroll = n; _track('scroll'); } } catch (_x) {} }, true);
     window.addEventListener('beforeunload', function () { try { _dwellStop(); } catch (_x) {} _flush(); });

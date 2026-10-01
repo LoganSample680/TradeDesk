@@ -86,6 +86,20 @@ test.describe('the T&M screen, as an iPhone app', () => {
     expect(n).toBe(0);
   });
 
+  // Owner 2026-10-01: "it's the same prompt, 3 spots, all should be the
+  // same". A step is tapped to change its words, on T&M as on the invoice.
+  test('tap a step to change its words; a cancelled or empty change leaves it', async () => {
+    await open('Pull the old water heater and set a tankless');
+    await page.locator('#tm-scope-wrap .ios-swipe[data-kind="step"] .ios-row').first().click();
+    await page.locator('#zprompt-inp').fill('Drain and pull the old water heater');
+    await page.locator('#zprompt-ok').click();
+    await page.locator('#tm-scope-wrap .ios-swipe[data-kind="step"] .ios-row').nth(1).click();
+    await page.locator('#zprompt-inp').fill('');
+    await page.locator('#zprompt-ok').click();
+    const r = await page.evaluate(() => _geiScopeChips.slice());
+    expect(r).toEqual(['Drain and pull the old water heater', 'Set a tankless']);
+  });
+
   // For anyone who does not swipe: Edit puts a red minus on every row.
   test('Edit shows a minus on every step, and the minus removes it', async () => {
     await open('Pull the old water heater, run new pex to the manifold and set a tankless');
@@ -124,7 +138,7 @@ test.describe('the T&M screen, as an iPhone app', () => {
     // rate, how much my hourly number was, how many people, Tim's
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmMarkRateChecked(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     const r = await page.evaluate(() => {
       const w = document.getElementById('tm-dock');
       const big = [...w.querySelectorAll('.ios-btn')];
@@ -241,19 +255,20 @@ test.describe('the T&M screen, as an iPhone app', () => {
     const e = document.getElementById('tm-i-rate'); e.value = r; _tmInputChange();
   }, v);
 
-  test('a fresh page: step 1 is on, and the bar says Build the steps', async () => {
+  test('a fresh page: step 1 is on, and the bar says Write it up', async () => {
     await open();
     await setRate('');
     const s = await steps();
     expect(s.map(x => x.state)).toEqual(['now', 'todo', 'todo']);
     // Nothing beside the heading: the box under it already says what to do.
-    expect(s[0].text).toBe('1The job');
-    expect(s[2].buttons).toEqual(['Build the steps']);
+    // Renamed 2026-09-29 (§10.4): every document shares one set of steps (js/doc-steps.js).
+    expect(s[0].text).toBe('1The work');
+    expect(s[2].buttons).toEqual(['Write it up']);
   });
 
   // The bar's button does the thing, not just name it: with words in the box
   // it builds the steps.
-  test('Build the steps in the bar builds them from the box', async () => {
+  test('Write it up in the bar builds them from the box', async () => {
     await open();
     await page.evaluate(() => { document.getElementById('gei-scope-say').value = 'Pull the old water heater and set a tankless'; });
     await page.locator('#tm-dock-go').click();
@@ -285,7 +300,7 @@ test.describe('the T&M screen, as an iPhone app', () => {
     const pre = await steps();
     expect(pre[1].state).toBe('now');
     expect(pre[2].buttons).toEqual(['Check your rate']);
-    await page.evaluate(() => _tmMarkRateChecked());
+    await page.evaluate(() => { /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     const s = await steps();
     expect(s.map(x => x.state)).toEqual(['done', 'done', 'now']);
     expect(s[1].text).toContain('$45/hr');

@@ -345,7 +345,7 @@ async function _verifyCoOwner(boss){
       const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
       if(!a||String(_contractorUserId)!==String(boss))return;
       const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
-      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      _account=a;if(cfg){_config=cfg;_activeTrade=(typeof _tradeStart==='function'?_tradeStart(cfg):cfg.business_type)||_activeTrade||'general';}
       try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
       if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
       applyPermissions();
@@ -469,7 +469,9 @@ async function loadAccountData(){
       if(_account?.phone&&!S.bphone){S.bphone=_account.phone;_seeded.push('bphone');}
       if(_account?.license_info&&!S.blic){S.blic=_account.license_info;_seeded.push('blic');}
       if(_account?.state&&!S.state){S.state=_account.state;_seeded.push('state');}
-      _activeTrade=_config?.business_type||'general';
+      // The trade he last picked, if it is one of his (_tradeStart), not the
+      // signup trade every time the account loads.
+      _activeTrade=(typeof _tradeStart==='function'?_tradeStart(_config):_config?.business_type)||'general';
       _renderNavTradeSwitcher();
       applyPermissions();
       // Cache for offline restore
@@ -756,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.2';
+const APP_VERSION='10.01.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -1625,7 +1627,11 @@ const _TD_TABLES=[
   // row never syncs (tx below needs a url), so the cloud copy of this table
   // never has it, and replacing the list wholesale erased the only copy.
   // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
-  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
+  // Both waiting flags (tdPhotoWaiting, js/photo-capture.js): a camera photo
+  // waits as outboxWait, and keeping only pendingUpload dropped it, so a tap
+  // on File here before it uploaded was lost and it went up unfiled (Jack at
+  // Treyton's, 2026-09-30: 1 of 3 photos filed).
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&(p.pendingUpload||p.outboxWait)&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
@@ -8044,7 +8050,7 @@ async function _reconcilePendingSigStatuses(_attempt){
       for(let attempt=0;attempt<2&&!got;attempt++){
         try{
           const{data,error}=await _supa.from('signed_proposals').select('*')
-            .eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
+            .eq('contractor_user_id',_opsReadUid()).in('bid_id',ids);
           if(error)throw error;
           got=data||[];
         }catch(e){
@@ -8141,7 +8147,7 @@ async function checkNewSignatures(_src){
     // environment; an explicit column list would fail the whole query on drift.
     const _fullPoll=()=>_supa.from('signed_proposals')
       .select('*')
-      .eq('contractor_user_id',_supaUser.id)
+      .eq('contractor_user_id',_opsReadUid())
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
@@ -8152,7 +8158,7 @@ async function checkNewSignatures(_src){
       // is an UPDATE, which the td_touch_updated_at trigger re-surfaces here.
       ({data,error}=await _supa.from('signed_proposals')
         .select('*')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',_opsReadUid())
         .gt('updated_at',_sigPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(100));
@@ -8295,6 +8301,14 @@ function _sigPollTick(){
 // whole re-read still happens at least every PV_FULL_MS, which also drops any
 // row the server deleted.
 let _pvPollWatermark=null;
+// Whose signatures and opens to read. The support view reads the business
+// it is viewing (it has ops_view_read on these tables); everyone else reads
+// their own login's rows, exactly as before (owner 2026-09-30: opening
+// Tagen's link while viewing Jack's app never showed as opened).
+function _opsReadUid(){
+  if(typeof window!=='undefined'&&window._opsView&&window._opsView.target)return window._opsView.target;
+  return _supaUser&&_supaUser.id;
+}
 let _pvKept=null;   // {uid, views: Map id->row, audit: Map id->row, auditMax, fullAt}
 const _PV_FULL_MS=6*60*60*1000;
 function _pvKeyFor(uid){return 'zp3_acct_pv_'+uid;}
@@ -8377,7 +8391,9 @@ function _pvApplyAudit(rows){
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
-    const uid=_supaUser.id;
+    // The support view reads the business it is viewing (_opsReadUid); the
+    // kept copy is keyed by that uid, so it never mixes with the login's own.
+    const uid=_opsReadUid();
     let kept=_pvLoadKept(uid);
     // A kept copy paints the badges on the first tick after a reload, before
     // anything is asked of the server.
@@ -9148,6 +9164,15 @@ async function supaLoadFromCloud({silent=false}={}){
     // to real content exactly once (owner 2026-08-10: no mid-load stutters).
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
+    // Support view (owner 2026-09-30): the boot screen was painted before the
+    // viewed business's settings existed (ops mode hides the local cache), so
+    // it showed the TradeDesk default. Now that their settings are in, repaint
+    // it with THEIR logo. No cacheKey: nothing of theirs is kept on this device.
+    try{
+      const _ov=document.getElementById('supa-boot-overlay');
+      if(window._opsView&&_ov&&!_ov.classList.contains('td-fadeout')&&typeof tdBootFill==='function')
+        tdBootFill(_ov,{logo:S.logoData||S.logoUrl||'',name:S.bname||'',brand:S.brandColor||'',powered:S.poweredBy!==false});
+    }catch(_e){}
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
     // Mileage heal AFTER EVERY completed cloud merge, not only at boot (owner
