@@ -756,8 +756,10 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.30.26.5';
+const APP_VERSION='10.01.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
+// _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
+let _rtPocketT=null,_rtPocketed=false;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
 // and the cloud load resolving (either way). renderDash shows skeleton KPI
@@ -6819,6 +6821,7 @@ function _teardownRealtimeChannels(){
   // joined and answer nobody.
   if(typeof _crewLocateTeardown==='function'){try{_crewLocateTeardown();}catch(_e){}}
   _syncBroadcastChannel=null;
+  _rtPocketed=false;if(_rtPocketT){clearTimeout(_rtPocketT);_rtPocketT=null;} // a pocketed socket belonged to the outgoing account
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
   _tdRealtimeReady=false;    // channels are gone, delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
@@ -9444,6 +9447,10 @@ async function supaLoadFromCloud({silent=false}={}){
       const _RECONCILE_HEARTBEAT_MS=5000;
       // A backgrounded phone asks at most this often (see _heartbeatTick).
       const _HIDDEN_CURSOR_MIN_MS=60000;
+      // And once the realtime socket is closed for the pocket (_rtPocket), every
+      // five minutes: the screen-on reconcile is what catches him up, so this
+      // check only exists to keep a long-hidden page from drifting too far.
+      const _HIDDEN_CURSOR_POCKET_MS=300000;
       // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
@@ -9523,7 +9530,8 @@ async function supaLoadFromCloud({silent=false}={}){
         // from ever sleeping. It is the last CHECK that makes the next one
         // unnecessary, so that is what the minute is measured from now.
         const _hid=document.visibilityState==='hidden';
-        if(!(_hid&&Date.now()-Math.max(window._lastCloudLoadAt||0,window._lastHiddenCursorAt||0)<_HIDDEN_CURSOR_MIN_MS)){
+        const _hidMin=_rtPocketed?_HIDDEN_CURSOR_POCKET_MS:_HIDDEN_CURSOR_MIN_MS;
+        if(!(_hid&&Date.now()-Math.max(window._lastCloudLoadAt||0,window._lastHiddenCursorAt||0)<_hidMin)){
           if(_hid)window._lastHiddenCursorAt=Date.now();
           window._cursorCheckReconcile();
         }
@@ -9817,6 +9825,83 @@ function _initRealtimeSubscriptions(uid){
       .subscribe();
   }catch(_e){}
 }
+// ── IN A POCKET, NOTHING LISTENS (owner 2026-10-01) ─────────────────────────
+// "His phone shouldn't be dying this fast ... low drain until TradeDesk started
+// doing its thing." Measured on Jack's 30 September: 2.5% an hour from 6:34 to
+// 8:32am, then 4 to 10% an hour once the shift keep-awake held the app alive,
+// 10% in an hour standing still in the shop with the GPS parked.
+//
+// Kept alive in a pocket, the page still held its realtime socket open: a
+// heartbeat every 25 seconds, plus a push back to the phone every time the
+// server rewrote one of his rows, which it does on every upload he makes (and
+// each push woke the page to fetch again). The cell radio never got to sleep.
+//
+// None of that carries a row. A drive start goes phone -> ingest-geo natively
+// and the server writes the row there (CLAUDE.md 17.1), so the 10-second goal
+// never touched this socket. It only paints a screen, and a screen in a pocket
+// needs no painting. So after a short grace (an app switch is not a pocket)
+// the data channels close, and the moment the screen is back they reopen and
+// one reconcile catches up whatever the socket would have carried.
+//
+// The one listener that stays: a crew phone keeps the Locate channel
+// (js/crew-locate.js), because a manager asking where the truck is is the
+// whole point of that channel and the crew phone is in a pocket when he asks.
+// An owner's own phone has nobody to answer, so it closes everything.
+const _RT_POCKET_GRACE_MS=30000;
+// Only the native shell. Keep-awake (the thing that holds the page alive in a
+// pocket) exists only there; a browser tab in the background is suspended by
+// the OS already, and closing its socket would only make it reload on return.
+function _rtNativeShell(){
+  try{const c=window.Capacitor;return !!(c&&typeof c.isNativePlatform==='function'&&c.isNativePlatform());}catch(_e){return false;}
+}
+function _rtIsCrewPhone(){
+  try{return typeof _isEmployee!=='undefined'&&!!_isEmployee;}catch(_e){return false;}
+}
+function _rtPocketNote(on,reason){
+  try{if(typeof _geoIngestPost==='function'&&typeof supaEnabled==='function'&&supaEnabled())
+    _geoIngestPost([{type:'radio',ts:Date.now(),session:'realtime',on:!!on,reason:String(reason||''),trigger:'js',source:'js'}]);}catch(_e){}
+}
+function _rtPocket(){
+  _rtPocketT=null;
+  if(document.visibilityState!=='hidden'||_rtPocketed)return false;
+  if(!_rtNativeShell())return false;
+  if(!_supa||!_supaUser||!_realtimeSubscribed)return false;
+  const crew=_rtIsCrewPhone();
+  try{
+    const chans=(typeof _supa.getChannels==='function')?_supa.getChannels():[];
+    chans.forEach(ch=>{
+      const topic=String((ch&&ch.topic)||'');
+      if(crew&&/td-crew-/.test(topic))return;   // Locate stays reachable
+      try{_supa.removeChannel(ch);}catch(_e){}
+    });
+    if(!crew&&_supa.realtime&&typeof _supa.realtime.disconnect==='function')_supa.realtime.disconnect();
+  }catch(_e){}
+  if(!crew&&typeof _crewLocateTeardown==='function'){try{_crewLocateTeardown();}catch(_e){}}
+  _syncBroadcastChannel=null;_tdRealtimeReady=false;
+  _rtPocketed=true;
+  _rtPocketNote(false,crew?'pocket: data channels closed, locate kept':'pocket: socket closed');
+  return true;
+}
+function _rtUnpocket(){
+  if(_rtPocketT){clearTimeout(_rtPocketT);_rtPocketT=null;}
+  if(!_rtPocketed)return false;
+  _rtPocketed=false;
+  if(!_supa||!_supaUser)return false;
+  try{if(_supa.realtime&&typeof _supa.realtime.connect==='function')_supa.realtime.connect();}catch(_e){}
+  _realtimeSubscribed=true;
+  _initRealtimeSubscriptions(_supaUser.id);
+  if(typeof _crewLocateInit==='function'){try{_crewLocateInit();}catch(_e){}}
+  // Realtime is at-most-once: whatever it would have carried while closed is
+  // fetched once, the same catch-up every reconnect already uses.
+  _scheduleReconcile(0);
+  _rtPocketNote(true,'screen on');
+  return true;
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){
+    if(!_rtPocketT&&!_rtPocketed&&_rtNativeShell())_rtPocketT=setTimeout(_rtPocket,_RT_POCKET_GRACE_MS);
+  }else _rtUnpocket();
+});
 function _applyRealtimeRecord(tbl,payload,fromRealtime){
   const desc=_TD_TABLES.find(d=>d.t===tbl);
   if(!desc)return;

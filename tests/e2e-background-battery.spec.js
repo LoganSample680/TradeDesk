@@ -169,5 +169,117 @@ test.describe('a backgrounded page does no screen work', () => {
     expect(r).toEqual({ a: true, b: true });
   });
 
+  // ── IN A POCKET, NOTHING LISTENS (owner 2026-10-01) ─────────────────────
+  // Jack's 30 September: 2.5%/hr before the shift keep-awake, 4 to 10%/hr
+  // after, 10%/hr standing still at the shop. The page held its realtime socket
+  // open in his pocket and every row the server wrote was pushed back to it.
+  // A fake client records what the pocket does to it.
+  const fakeSupa = () => page.evaluate(() => {
+    window.__realSupa = window._supa;
+    window.__realCap = window.Capacitor;
+    window.Capacitor = Object.assign({}, window.__realCap || {}, { isNativePlatform: () => true });
+    window.__keep = { sub: _realtimeSubscribed, emp: typeof _isEmployee !== 'undefined' ? _isEmployee : false, user: window._supaUser };
+    const log = window.__rt = { removed: [], disconnects: 0, connects: 0, joined: [] };
+    const chan = (topic) => { const c = { topic: 'realtime:' + topic, on() { return c; }, subscribe() { log.joined.push(topic); return c; }, send() {} }; return c; };
+    const live = [chan('td-sync-u1'), chan('sig-feed-u1'), chan('user-data-u1'), chan('td-crew-c1')];
+    window._supa = {
+      getChannels: () => live.slice(),
+      removeChannel: (c) => { log.removed.push(c.topic.replace('realtime:', '')); live.splice(live.indexOf(c), 1); },
+      removeAllChannels: () => { live.length = 0; },
+      channel: (t) => chan(t),
+      realtime: { disconnect() { log.disconnects++; }, connect() { log.connects++; } },
+      auth: window.__realSupa && window.__realSupa.auth,
+    };
+    window._supaUser = { id: 'u1' };
+    _realtimeSubscribed = true;
+    window.__reconciles = 0;
+    window.__realReconcile = _scheduleReconcile;
+    _scheduleReconcile = () => { window.__reconciles++; };
+  });
+  const restoreSupa = () => page.evaluate(() => {
+    if (_rtPocketT) { clearTimeout(_rtPocketT); _rtPocketT = null; }
+    _rtPocketed = false;
+    window._supa = window.__realSupa; window._supaUser = window.__keep.user;
+    window.Capacitor = window.__realCap;
+    _realtimeSubscribed = window.__keep.sub; _isEmployee = window.__keep.emp;
+    _scheduleReconcile = window.__realReconcile;
+  });
+
+  test('an owner phone in a pocket closes the socket, and reopens and catches up on screen', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const pocket = await page.evaluate(() => { _isEmployee = false; const did = _rtPocket(); return { did, pocketed: _rtPocketed, rt: JSON.parse(JSON.stringify(window.__rt)) }; });
+      await show();
+      const back = await page.evaluate(() => { const did = _rtUnpocket(); return { did, pocketed: _rtPocketed, rt: window.__rt, reconciles: window.__reconciles }; });
+      expect(pocket.did).toBe(true);
+      expect(pocket.pocketed).toBe(true);
+      expect(pocket.rt.removed.sort(), 'every channel, Locate included: nobody locates the owner').toEqual(['sig-feed-u1', 'td-crew-c1', 'td-sync-u1', 'user-data-u1']);
+      expect(pocket.rt.disconnects).toBe(1);
+      expect(back.did).toBe(true);
+      expect(back.pocketed).toBe(false);
+      expect(back.rt.connects).toBe(1);
+      expect(back.rt.joined, 'the data channels come back').toEqual(expect.arrayContaining(['td-sync-u1', 'sig-feed-u1', 'user-data-u1']));
+      expect(back.reconciles, 'one catch-up for whatever the socket missed').toBe(1);
+    } finally { await restoreSupa(); }
+  });
+
+  test('a crew phone keeps the Locate channel open in the pocket', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const r = await page.evaluate(() => { _isEmployee = true; _rtPocket(); return JSON.parse(JSON.stringify(window.__rt)); });
+      expect(r.removed.sort()).toEqual(['sig-feed-u1', 'td-sync-u1', 'user-data-u1']);
+      expect(r.disconnects, 'the socket stays up for the manager asking where the truck is').toBe(0);
+    } finally { await restoreSupa(); }
+  });
+
+  test('an app switch is not a pocket: nothing closes inside the grace, and a visible screen closes nothing', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const armed = await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); return { timer: !!_rtPocketT, pocketed: _rtPocketed, removed: window.__rt.removed.length, grace: _RT_POCKET_GRACE_MS }; });
+      await show();
+      const back = await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); return { timer: !!_rtPocketT, pocketed: _rtPocketed, removed: window.__rt.removed.length, again: _rtPocket() }; });
+      expect(armed).toEqual({ timer: true, pocketed: false, removed: 0, grace: 30000 });
+      expect(back).toEqual({ timer: false, pocketed: false, removed: 0, again: false });
+    } finally { await restoreSupa(); }
+  });
+
+  test('signing out while pocketed leaves nothing to reopen under the next account', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const r = await page.evaluate(() => { _isEmployee = false; _rtPocket(); _teardownRealtimeChannels(); return { pocketed: _rtPocketed, reopened: _rtUnpocket() }; });
+      expect(r).toEqual({ pocketed: false, reopened: false });
+    } finally { await restoreSupa(); }
+  });
+
+  test('a browser tab never pockets: only the native shell is held awake', async () => {
+    await fakeSupa();
+    try {
+      await hide();
+      const r = await page.evaluate(() => {
+        window.Capacitor = window.__realCap;              // a plain browser
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { timer: !!_rtPocketT, did: _rtPocket(), removed: window.__rt.removed.length };
+      });
+      expect(r).toEqual({ timer: false, did: false, removed: 0 });
+    } finally { await restoreSupa(); }
+  });
+
+  test('pocketed, the background check drops to once every five minutes', async () => {
+    const body = await page.evaluate(async () => (await fetch('/js/cloud.js')).text());
+    expect(body).toMatch(/const _HIDDEN_CURSOR_POCKET_MS=300000;/);
+    expect(body).toContain('const _hidMin=_rtPocketed?_HIDDEN_CURSOR_POCKET_MS:_HIDDEN_CURSOR_MIN_MS;');
+  });
+
+  test('rows never ride the socket: the geo upload is a plain post to ingest-geo', async () => {
+    const src = await page.evaluate(async () => (await fetch('/js/geo-track.js')).text());
+    const fn = src.slice(src.indexOf('function _geoIngestPost('), src.indexOf('function _geoIngestPost(') + 1500);
+    expect(fn).toContain('ingest-geo');
+    expect(fn).not.toMatch(/\.channel\(|realtime/);
+  });
+
   test('no console errors, background battery', async () => { assertNoErrors(page); });
 });

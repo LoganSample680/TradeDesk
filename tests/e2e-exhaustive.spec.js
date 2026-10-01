@@ -14579,6 +14579,23 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
+    // _clockAddTaskConfirm clocks in 60ms AFTER it returns (setTimeout in
+    // js/jobs.js). Left alone, that clock-in landed in whichever test ran
+    // next: on a fast CI runner it fired between the clockIn describe's
+    // beforeEach and its first test, which then found an open row for job
+    // 77702, switched jobs through this file's auto-yes zConfirm stub and
+    // stopped the very clock it had just started (CI red on #134 and #136,
+    // "null jobId, starts General time", timerSet false). Each test here
+    // waits for its own clock-in to land and clears it before the next runs.
+    test.afterEach(async () => {
+      await page.evaluate(async () => {
+        await new Promise(r => setTimeout(r, 150));
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        timeEntries = timeEntries.filter(e => !e.open);
+      });
+    });
+
     test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
