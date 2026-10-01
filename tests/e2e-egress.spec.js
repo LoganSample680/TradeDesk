@@ -58,8 +58,13 @@ test.describe('egress: signature-poll watermark', () => {
       };
       return q;
     };
-    window.__origSupa = _supa;
-    _supa = { ..._supa, from: (tbl) => tbl === 'signed_proposals' ? mkQuery() : window.__origSupa.from(tbl) };
+    // The REAL client, saved once. Saving whatever _supa is now made the second
+    // install keep the first install's stub as "the original", whose from()
+    // then called itself for any other table: a cloud load landing mid-suite
+    // on a slow WebKit run died of "Maximum call stack size exceeded" (CI
+    // shard 1, 2026-10-01).
+    window.__origSupa = window.__origSupa || _supa;
+    _supa = { ...window.__origSupa, from: (tbl) => tbl === 'signed_proposals' ? mkQuery() : window.__origSupa.from(tbl) };
     _sigPollWatermark = null;
     localStorage.setItem('zp3_seen_sigs', '[]');
   }, rowsJson);
@@ -679,8 +684,9 @@ test.describe('egress round 2, proposal_views watermark probe', () => {
       };
       return q;
     };
-    window.__origSupaPv = _supa;
-    _supa = { ..._supa, from: (tbl) => tbl === 'proposal_views' ? mkQuery() : window.__origSupaPv.from(tbl) };
+    // Saved once, for the same reason as __origSupa above.
+    window.__origSupaPv = window.__origSupaPv || _supa;
+    _supa = { ...window.__origSupaPv, from: (tbl) => tbl === 'proposal_views' ? mkQuery() : window.__origSupaPv.from(tbl) };
     _pvPollWatermark = null;
   }, rowsJson);
 
