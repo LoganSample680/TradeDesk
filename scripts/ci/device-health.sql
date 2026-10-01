@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ── How each phone is doing (20261061) ─────────────────────────────────────
+-- ── How each phone is doing (20261061, 20261063) ─────────────────────────
 --
 -- One work day for one phone, written the way the plugin writes it, then
 -- every number the Phones card shows is checked against what a person would
@@ -181,6 +181,34 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', x, 'role', 'authenticated')::text, false);
   select count(*) into n from ops_device_periods(p, date '2026-01-01', date '2026-12-31', 'year');
   if n <> 0 then raise exception 'a stranger read % roll-up(s) of somebody else''s phone', n; end if;
+  -- Naming the person does not get a stranger in either (20261063: the
+  -- filter moved inside the scan, the access check did not move out of it).
+  select count(*) into n from device_days_by_person(dy, dy, p);
+  if n <> 0 then raise exception 'a stranger named the person and read % day(s)', n; end if;
+  select count(*) into n from device_rollup(date '2026-01-01', dy, 'all', 'account', null, p);
+  if n <> 0 then raise exception 'a stranger named the account and read % roll-up(s)', n; end if;
+
+  -- ── Reading one person reads the same rows as reading everyone ──────────
+  -- (20261063) The person and account filters only narrow the scan; a day
+  -- must come out identical either way, or the fast path is a different
+  -- definition.
+  perform set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, false);
+  select count(*) into n from (
+    (select * from device_days_by_person(date '2026-08-01', dy) where person_user_id = p
+     except all select * from device_days_by_person(date '2026-08-01', dy, p))
+    union all
+    (select * from device_days_by_person(date '2026-08-01', dy, p)
+     except all select * from device_days_by_person(date '2026-08-01', dy) where person_user_id = p)) d;
+  if n <> 0 then raise exception 'the person filter changed % day row(s)', n; end if;
+  select count(*) into n from (
+    (select * from device_rollup(date '2026-08-01', dy, 'all', 'account') where contractor_user_id = p
+     except all select * from device_rollup(date '2026-08-01', dy, 'all', 'account', null, p))
+    union all
+    (select * from device_rollup(date '2026-08-01', dy, 'all', 'account', null, p)
+     except all select * from device_rollup(date '2026-08-01', dy, 'all', 'account') where contractor_user_id = p)) d;
+  if n <> 0 then raise exception 'the account filter changed % roll-up row(s)', n; end if;
+  select count(*) into n from device_days_by_person(dy, dy, x);
+  if n <> 0 then raise exception 'naming another person returned % row(s) of this one', n; end if;
 
   raise notice 'Phones card: every number matches the day worked by hand';
 end $$;
@@ -189,8 +217,8 @@ end $$;
 do $$
 declare f text;
 begin
-  foreach f in array array['device_days_by_person(date,date)','ops_device_days(uuid,date,date)','ops_device_hours(uuid,date)','ops_metric_defs()',
-                           'device_rollup(date,date,text,text)','ops_device_periods(uuid,date,date,text)'] loop
+  foreach f in array array['device_days_by_person(date,date,uuid,uuid)','ops_device_days(uuid,date,date)','ops_device_hours(uuid,date)','ops_metric_defs()',
+                           'device_rollup(date,date,text,text,uuid,uuid)','ops_device_periods(uuid,date,date,text)'] loop
     if has_function_privilege('anon', 'public.' || f, 'execute') then
       raise exception 'anon can call %', f;
     end if;
