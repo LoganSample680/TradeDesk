@@ -2007,11 +2007,16 @@ test.describe('jobs.js: exhaustive coverage', () => {
     // copy of the list saved while a row was open can come back on a later
     // load and be adopted, which is how the golden path below picked up the
     // General clock the test before it opened (CI shard 5, 2026-10-01).
+    // Defined on the page so a test can call it in the SAME evaluate as its
+    // clockIn: closing in beforeEach alone left a gap a background load could
+    // fill with the open row again (CI shard 5, twice on 2026-10-01).
     const noClock = () => page.evaluate(() => {
-      if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
-      _activeTimer = null;
-      (timeEntries || []).forEach(e => { if (e && e.open) { e.open = false; if (!e.end_time) e.end_time = e.start_time; } });
-      timeEntries = timeEntries.filter(e => !e.open);
+      window.__noOpenClock = () => {
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        (timeEntries || []).forEach(e => { if (e && e.open) { e.open = false; if (!e.end_time) e.end_time = e.start_time; } });
+      };
+      window.__noOpenClock();
     });
     test.beforeEach(noClock);
     test.afterEach(noClock);
@@ -2063,6 +2068,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           const t = _activeTimer;
           clearInterval(t && t.timerInterval);
@@ -2080,6 +2086,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           const firstTimer = _activeTimer;
           clockIn(77701, 'sand', 'Sanding'); // same job+scope → toast, no change
@@ -2096,6 +2103,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           clockIn(77701, 'prime', 'Primer coat');
           const newScope = _activeTimer && _activeTimer.scopeId;
@@ -2112,6 +2120,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, null, null);
           const sid = _activeTimer && _activeTimer.scopeId;
           clearInterval(_activeTimer && _activeTimer.timerInterval);
@@ -2126,6 +2135,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
     test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
+        window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { clockIn(77701, 'sand', 'Sanding'); ok++; } catch (_) {}
@@ -2144,6 +2154,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
         try {
           _activeTimer = null;
           timeEntries = timeEntries.filter(e => e.job_id !== 77704);
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77704, 'sand', 'Sanding');
           return {
             timerSet: !!_activeTimer,
@@ -2164,6 +2175,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
         try {
           _activeTimer = null;
           timeEntries = timeEntries.filter(e => e.job_id !== 77705);
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77705, 'sand', 'Sanding');
           return { timerSet: !!_activeTimer, entryCreated: timeEntries.some(e => e.job_id === 77705) };
         } finally { window.showToast = origToast; }
