@@ -758,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.4';
+const APP_VERSION='10.01.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -1627,7 +1627,11 @@ const _TD_TABLES=[
   // row never syncs (tx below needs a url), so the cloud copy of this table
   // never has it, and replacing the list wholesale erased the only copy.
   // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
-  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
+  // Both waiting flags (tdPhotoWaiting, js/photo-capture.js): a camera photo
+  // waits as outboxWait, and keeping only pendingUpload dropped it, so a tap
+  // on File here before it uploaded was lost and it went up unfiled (Jack at
+  // Treyton's, 2026-09-30: 1 of 3 photos filed).
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&(p.pendingUpload||p.outboxWait)&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
