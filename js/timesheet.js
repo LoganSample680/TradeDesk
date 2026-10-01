@@ -59,8 +59,7 @@ function _tsRange(wk){
 // submitted is what is on screen. Me scope only: _tlWeekBarsHtml never draws
 // the button inside a crew member's week.
 function _tsWeekRows(wk){
-  return (typeof _tlLastRows!=='undefined'&&Array.isArray(_tlLastRows)?_tlLastRows:[])
-    .filter(r=>r&&_tlWeekKey(r.date)===wk);
+  return typeof _tlWeekRows==='function'?_tlWeekRows(wk):[];
 }
 // What stops a submit: a hole nobody answered, or a visit the day could not
 // vouch for. One entry per day, in calendar order.
