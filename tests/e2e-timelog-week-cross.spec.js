@@ -49,7 +49,10 @@ const CASES = [
 
 async function boot(page, c) {
   await mockAllExternal(page, { clock: 'off' });
-  await page.clock.setFixedTime(new Date(c.now));
+  // install, not setFixedTime: a frozen Date.now leaves the boot overlay up
+  // forever on WebKit (its settle wait measures elapsed time), so it covers
+  // every tap. Installed time starts at the named instant and keeps running.
+  await page.clock.install({ time: new Date(c.now) });
   await page.goto('/index.html');
   await waitForAppBoot(page);
   await page.evaluate((rs) => {
