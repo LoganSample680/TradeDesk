@@ -416,70 +416,11 @@ function _gdSettledAway(fixes, fix, reg, fences, radiusFt) {
   return n >= 3 && (hi - lo) >= 10 * 60000;
 }
 
-// ── RULE 21b: HOME IS HOME BEFORE THE TAPE SAYS SO (owner 2026-10-01) ──
-// His 1 October, the lock screen said "On the road, From John Doe" for forty
-// minutes after he was standing in his own kitchen:
-//
-//   12:04:55  automotive              leaves John Doe
-//   12:19:47  regionEnter home        pulls in at 2015 SW Randolph
-//   12:20:24  fixes inside the fence, from here on
-//   12:25:52  still
-//   12:30:00  push-ping derive        still only 4 minutes old: drive open
-//   13:00:01  push-ping derive        finally 10 minutes still: drive closed
-//
-// A journey only closes on a foot flip or on stillEndMs of stillness measured
-// to the moment the derive RUNS, and the derive only runs on a trigger, so a
-// drive that ends in a still truck stayed open for up to half an hour after
-// the kernel had already said where he was. Rule 21 had the crossing and
-// skipped it, because it only ever trimmed a CLOSED journey.
-//
-// So an OPEN journey ends at an unpaired entry into a saved fence when the
-// evidence after that entry says he stopped there, and only then:
-//   - the entry is after the drive began and nobody saw him leave
-//     (_gdOpenArrivals: no exit, and a fix after it inside the fence);
-//   - the LATEST fix after the entry is still inside that fence: a gas stop
-//     down the road after driving through a fence with a lost exit names
-//     the gas station, not the fence;
-//   - the LATEST motion sample after the entry is still or on foot. A drive
-//     straight through a fence keeps the tape automotive, and an entry with
-//     no motion word after it yet is not a stop yet: it waits for one.
-// Same journey id, same keys: the closed journey is exactly the one the
-// stillEndMs rule would have closed ten minutes later and rule 21 would then
-// have trimmed back to this same crossing. It only arrives sooner.
-function _gdOpenStop(j, spans, tape, fixes, fences, opts, dayEnd) {
-  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
-  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
-  const t = (Array.isArray(tape) ? tape : [])
-    .filter(x => x && typeof x.ts === 'number' && _gdKind(x.kind));
-  const fx = (Array.isArray(fixes) ? fixes : []).filter(f => f && typeof f.ts === 'number' &&
-    f.lat != null && f.lng != null && (f.acc == null || Number(f.acc) <= maxAcc));
-  let best = null;
-  for (const s of spans) {
-    if (!s || s.unpaired !== true || !s.f || !(s.from > j.startTs)) continue;
-    // "The next geo fence you arrive at THAT DAY": an entry after midnight
-    // belongs to tomorrow's derive, and this journey stays open here.
-    if (typeof dayEnd === 'number' && s.from >= dayEnd) continue;
-    let lastMo = null;
-    for (const x of t) if (x.ts >= s.from && (!lastMo || x.ts >= lastMo.ts)) lastMo = x;
-    if (!lastMo || _gdKind(lastMo.kind) === 'auto') continue;
-    let lastFx = null;
-    for (const f of fx) if (f.ts > s.from && (!lastFx || f.ts >= lastFx.ts)) lastFx = f;
-    if (!lastFx || !_gdSameFence(geoFenceAt(lastFx, fences, r), s.f)) continue;
-    if (!best || s.from < best.from) best = s;
-  }
-  return best;
-}
-
 // Rule 21, applied to the journey list before anything reads it, so the leg
 // and the dwell after it move together: one boundary, not two.
-function _gdArrivalTrim(journeys, spans, tape, fixes, fences, opts, dayEnd) {
+function _gdArrivalTrim(journeys, spans) {
   if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
   return journeys.map((j) => {
-    if (j && j.open === true && j.endTs == null && typeof j.startTs === 'number') {
-      // Rule 21b, above. A closed journey never takes this path.
-      const s = _gdOpenStop(j, spans, tape, fixes, fences, opts, dayEnd);
-      return s ? { startTs: j.startTs, id: j.id, endTs: s.from, endFence: s.f } : j;
-    }
     if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
     let arrival = null, fence = null;
     for (const s of spans) {
@@ -1100,8 +1041,7 @@ function geoDeriveDay(input) {
   const journeys = _gdShuffleDrop(_gdArrivalTrim(
     _gdCrossingSplit(_gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes),
       regionSpans, fixes, fences, opts, inp.personId),
-    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes)),
-    inp.tape, fixes, fences, opts, dayEnd),
+    regionSpans.concat(_gdOpenArrivals(inp.regions, fences, opts.radiusFt, fixes))),
     fixes, fences, opts);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
