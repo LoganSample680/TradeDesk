@@ -86,6 +86,20 @@ test.describe('the T&M screen, as an iPhone app', () => {
     expect(n).toBe(0);
   });
 
+  // Owner 2026-10-01: "it's the same prompt, 3 spots, all should be the
+  // same". A step is tapped to change its words, on T&M as on the invoice.
+  test('tap a step to change its words; a cancelled or empty change leaves it', async () => {
+    await open('Pull the old water heater and set a tankless');
+    await page.locator('#tm-scope-wrap .ios-swipe[data-kind="step"] .ios-row').first().click();
+    await page.locator('#zprompt-inp').fill('Drain and pull the old water heater');
+    await page.locator('#zprompt-ok').click();
+    await page.locator('#tm-scope-wrap .ios-swipe[data-kind="step"] .ios-row').nth(1).click();
+    await page.locator('#zprompt-inp').fill('');
+    await page.locator('#zprompt-ok').click();
+    const r = await page.evaluate(() => _geiScopeChips.slice());
+    expect(r).toEqual(['Drain and pull the old water heater', 'Set a tankless']);
+  });
+
   // For anyone who does not swipe: Edit puts a red minus on every row.
   test('Edit shows a minus on every step, and the minus removes it', async () => {
     await open('Pull the old water heater, run new pex to the manifold and set a tankless');

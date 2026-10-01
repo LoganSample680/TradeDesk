@@ -1993,6 +1993,31 @@ function _tmSayExample(){
 function _geiScopeSayDone(){
   _geiScopeBuild((typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm-scope-wrap':'byo-scope-wrap');
 }
+// ONE STEP ROW (owner 2026-10-01: "it's the same prompt, 3 spots, all should
+// be the same"). A T&M step and a line of work on the invoice draw from this:
+// its number, its words, swipe left to Delete, Edit's red minus, and a tap
+// changes the words. list is the _ROOM_LISTS name; del is the call that
+// removes it.
+function _scopeStepRowHtml(list,label,i,o){
+  o=o||{};
+  return '<div class="ios-swipe" data-kind="step" data-room-key="'+i+'">'+
+    '<div class="ios-row" onclick="_scopeEditStep('+escHtml(JSON.stringify(String(list)))+','+i+')">'+
+      (o.ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(label)+'" onclick="event.stopPropagation();'+o.del+'">−</button>':'')+
+      '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl" data-room-text>'+escHtml(label)+'</span>'+
+    '</div>'+
+    '<button type="button" class="ios-del" tabindex="-1" onclick="'+o.del+'">Delete</button>'+
+  '</div>';
+}
+// Tap a step to change its words (owner 2026-09-29: "I want the ability to
+// click into these steps and edit them"). Emptied, it stays as it was: Delete
+// is the way to take a step off.
+function _scopeEditStep(list,i){
+  const now=Date.now();
+  if((window._roomDragJustEnded&&now-window._roomDragJustEnded<400)||(window._swipeJustEnded&&now-window._swipeJustEnded<400))return;
+  const L=_ROOM_LISTS[list];const r=_scopeArr(list)[i];
+  if(!L||!L.edit||!r)return;
+  zPrompt('',val=>{const v=_roomCleanName(val);if(v&&v!==r.label)L.edit(i,v);},{title:'Change this step',value:r.label,okText:'Save'});
+}
 function _tmScopeIosHtml(){
   const cid='tm-scope-wrap';
   const steps=_geiScopeChips||[];
@@ -2016,14 +2041,8 @@ function _tmScopeIosHtml(){
   const rooms=_tmRoomsOn();
   if(rooms)_tmGroup();
   const recs=_tmItems();
-  const row=(l,i)=>
-    '<div class="ios-swipe" data-kind="step" data-room-key="'+i+'">'+
-      '<div class="ios-row">'+
-        (ed?'<button type="button" class="ios-minus" aria-label="Remove '+escHtml(l)+'" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">−</button>':'')+
-        '<span class="ios-num">'+(i+1)+'</span><span class="ios-lbl" data-room-text>'+escHtml(l)+'</span>'+
-      '</div>'+
-      '<button type="button" class="ios-del" tabindex="-1" onclick="_tmDelStep('+escHtml(JSON.stringify(l))+')">Delete</button>'+
-    '</div>';
+  // The one step row (_scopeStepRowHtml), the same on the invoice.
+  const row=(l,i)=>_scopeStepRowHtml('tm',l,i,{ed,del:'_tmDelStep('+escHtml(JSON.stringify(l))+')'});
   const rows=steps.map(row).join('');
   // By room, the steps keep one count down the page (step 5 is still step 5)
   // and "Put these in work order" steps aside: he grouped them himself.
@@ -2049,7 +2068,9 @@ function _tmScopeIosHtml(){
 function _tmWireSwipe(root){
   const OPEN=-88;
   const closeAll=except=>root.querySelectorAll('.ios-swipe.open').forEach(w=>{
-    if(w===except)return;w.classList.remove('open');const r=w.firstElementChild;if(r)r.style.transform='';});
+    if(w===except)return;w.classList.remove('open');const r=w.firstElementChild;if(r)r.style.transform='';
+    // A tap that closes an open row only closes it.
+    window._swipeJustEnded=Date.now();});
   root.querySelectorAll('.ios-swipe').forEach(w=>{
     const row=w.firstElementChild;if(!row)return;
     let x0=null,y0=0,dx=0,live=false;
@@ -2066,6 +2087,8 @@ function _tmWireSwipe(root){
     const end=()=>{
       if(x0===null)return;x0=null;w.classList.remove('dragging');
       if(!live)return;
+      // The click that ends a swipe is not a tap on the row (_scopeEditStep).
+      window._swipeJustEnded=Date.now();
       const open=dx<OPEN/2;
       w.classList.toggle('open',open);row.style.transform=open?('translateX('+OPEN+'px)'):'';
     };
@@ -4802,8 +4825,6 @@ function _roomWireDrag(root){
     w.addEventListener('pointerdown',e=>{
       if(e.button!==undefined&&e.button!==0)return;
       if(e.target.closest('.ios-check,.ios-del,.ios-minus'))return;
-      // Typing in a line (the invoice's work list) is not picking it up.
-      if(e.target===document.activeElement&&e.target.matches('textarea,input'))return;
       x0=e.clientX;y0=e.clientY;cancel();
       t=setTimeout(()=>{t=null;_roomDragStart(w,x0,y0);},380);
     });
@@ -5002,7 +5023,8 @@ function _tmApplyRename(room,val){
   _tmCommit();
   return true;
 }
-_ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename};
+function _tmEditStep(i,val){const r=_tmItems()[i];if(!r)return;r.label=val;_tmCommit();}
+_ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename,edit:_tmEditStep};
 
 // The list open right now, in the one shape both screens answer to.
 function _scopeKey(){return (typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm':'byo';}

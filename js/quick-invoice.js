@@ -963,7 +963,6 @@ function renderQuickInvoice(){
       '</div>'+
     '</div>';
   if(typeof _matClaim==='function')_matClaim(document.getElementById('qi-mat'));
-  host.querySelectorAll('.qi-work-in').forEach(_qiWorkFit);
   if(typeof _tmWireSwipe==='function')_tmWireSwipe(host);
   // Hold a line to drag it to another room, the proposal's own drag.
   if(typeof _roomWireDrag==='function'&&host.querySelector('[data-room-list="qi"] .room-name'))_roomWireDrag(host);
@@ -1212,23 +1211,27 @@ function _qiWorkRename(room,val){
   _qiWorkCommit();
   return true;
 }
-if(typeof _ROOM_LISTS!=='undefined')_ROOM_LISTS.qi={move:_qiWorkMove,rename:_qiWorkRename};
+// A line he changes: what Tim wrote beside it, if he wrote it, goes up as a
+// fix so the nightly retrain learns from it (timLogFix).
+function _qiWorkEditStep(i,val){
+  const r=_qiWorkArr()[i];if(!r)return;
+  const tim=r._tim;
+  r.label=val;
+  if(tim&&tim!==val&&typeof timLogFix==='function')timLogFix('work',tim,val,'qi',_qi.id);
+  _qiWorkCommit();
+}
+if(typeof _ROOM_LISTS!=='undefined')_ROOM_LISTS.qi={move:_qiWorkMove,rename:_qiWorkRename,edit:_qiWorkEditStep};
 function _qiTakeMissed(id){_scopeTakeMissed('qi',id);}
 function _qiTakeAllMissed(){_scopeTakeAllMissed('qi');}
 function _qiDropMissed(id){_scopeDropMissed('qi',id);}
-// The editor: one line a row, by room when the job spans rooms. Each line is
-// his to fix (owner 2026-09-29: "I want the ability to click into these steps
-// and edit them"). Tap the words and type; empty it and it goes.
+// The editor: the T&M step row exactly (_scopeStepRowHtml), by room when the
+// job spans rooms. Tap a line to change its words, swipe it to delete it.
 function _qiWorkHtml(){
   const recs=_qiWorkArr();
   if(!recs.length)return '';
   const rooms=_roomOrder(recs,r=>r.section);
   const titled=rooms.length>1;
-  const row=(r,i)=>'<div class="ios-swipe" data-room-key="'+i+'"><div class="ios-row qi-work">'+
-    '<textarea class="qi-work-in" data-room-text rows="1" autocapitalize="sentences" aria-label="Work done, line '+(i+1)+'" oninput="_qiWorkEdit('+i+',this)" onblur="_qiWorkDone('+i+',this)">'+escHtml(r.label)+'</textarea>'+
-    '<button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>'+
-    // Swipe left to delete, the way a proposal's line goes.
-    '<button type="button" class="ios-del" tabindex="-1" onclick="_qiDropWork('+i+')">Delete</button></div>';
+  const row=(r,i)=>_scopeStepRowHtml('qi',r.label,i,{del:'_qiDropWork('+i+')'});
   return _roomStackHtml('qi',rooms.map(room=>({room,body:recs.map((r,i)=>r.section===room?row(r,i):'').join('')})),
     {titled,noun:'line',lastAfter:'<div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div>'})+
     ((_qi.missed||[]).length&&typeof _timMissCardHtml==='function'?_timMissCardHtml(_qi.missed,'_qiTakeMissed','_qiDropMissed','_qiTakeAllMissed',false):'');
@@ -1246,26 +1249,6 @@ function _qiMatDesc(m){
   return n+unit+' '+item;
 }
 function _qiDropWork(i){if(!_qi)return;_qiWorkArr().splice(i,1);_qiWorkCommit();}
-// Typing into a line changes the line; the box grows with the words.
-function _qiWorkEdit(i,el){
-  const recs=_qiWorkArr();
-  if(!_qi||i<0||i>=recs.length||!el)return;
-  recs[i].label=String(el.value||'');
-  _qiWorkSync();
-  _qiWorkFit(el);
-}
-function _qiWorkFit(el){if(!el)return;el.style.height='auto';el.style.height=el.scrollHeight+'px';}
-// Leaving a line he emptied takes it off, the same as the ×.
-function _qiWorkDone(i,el){
-  const recs=_qiWorkArr();
-  if(!_qi||i<0||i>=recs.length)return;
-  const v=String((el&&el.value)||'').trim();
-  if(!v){_qiDropWork(i);return;}
-  recs[i].label=v;_qiWorkSync();
-  // What Tim wrote for this line, if he wrote it: the pair teaches him.
-  const tim=recs[i]._tim;
-  if(tim&&tim!==v&&typeof timLogFix==='function')timLogFix('work',tim,v,'qi',_qi.id);
-}
 
 function _qiDocHtml(num){
   if(!_qi)return '';
