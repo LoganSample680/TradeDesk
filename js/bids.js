@@ -217,7 +217,7 @@ function showJobScorecard(jobId,collectBidId){
 // _sendPaidInvoice). Shared by Mark done, the job scorecard and the invoice
 // screen's proposal banner, so all three say the same numbers.
 function _settleNums(bid){
-  const total=_cents(Number(bid&&bid.amount)||0);
+  const total=_cents(bid&&bid.amount);
   const paid=_cents(getBidPaid(bid.id));
   return {total,paid,balance:Math.max(0,_cents(total-paid))};
 }
@@ -668,6 +668,17 @@ function schedFromDate(dateKey){
 function getBidPayments(bidId){return payments.filter(p=>p.bid_id===bidId);}
 function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+(p.amount||0),0);}
 function getBidBalance(bid){return Math.max(0,(bid.amount||0)-getBidPaid(bid.id));}
+// THE DEPOSIT DUE (audit 2026-10-01: the pay panel, its amount chips, the
+// badge and the hub snapshot each had their own copy). The deposit this bid
+// stores; with none stored, a quarter of the total, which is what every copy
+// already did. A quick invoice bills work already done, so no deposit. Pass
+// the balance to cap it at what is still owed.
+function _bidDepositDue(bid,balance){
+  if(!bid||bid.kind==='quick_invoice')return 0;
+  const stored=Number(bid.deposit)||0;
+  const dep=stored>0?stored:(Number(bid.amount)||0)*.25;
+  return _cents(balance==null?dep:Math.min(dep,balance));
+}
 function _calcFinanceCharge(bid){
   if(!bid||(!bid.completion_date&&!bid.signedAt))return 0;
   const balance=getBidBalance(bid);
@@ -679,72 +690,6 @@ function _calcFinanceCharge(bid){
   if(daysOverdue===0)return 0;
   const rate=(typeof S!=='undefined'&&S.financeChargePct?parseFloat(S.financeChargePct):1.5)/100/30;
   return Math.round(balance*rate*daysOverdue*100)/100;
-}
-
-function sendBidEmail(bidId){
-  const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const c=b.client_id?getClientById(b.client_id):null;
-  const toEmail=c&&c.email?c.email:'';
-  const firstName=(b.client_name||b.name||'').split(' ')[0]||'there';
-  const bname=S.bname||'TradeDesk';
-  const bphone=S.bphone||'';
-  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-  // Same stamp the document and the portal use, never its own +30 (§ price hold).
-  const expD=(typeof _bidValidUntil==='function'&&typeof _fmtValidUntil==='function')
-    ?(_fmtValidUntil(_bidValidUntil(b))||'30 days from now')
-    :(b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now');
-  const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
-  const paintL=(b.paint?PAINT[b.paint]:null)||'Premium Sherwin-Williams';
-  const surfs=b.surfaces||[];
-  const scope=b.scope?Object.entries(b.scope).filter(([k,v])=>v).map(([k])=>{
-    const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
-  }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
-  const NL='\n';
-  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached proposal';
-  // Use plain ASCII dashes, Unicode box-drawing chars trigger corporate spam filters
-  const SEP='-------------------------------------'+NL;
-  // Build signing link if this bid has already been sent as a proposal
-  const baseUrl=(typeof _clientBaseUrl==='function')?_clientBaseUrl():(window.location.origin+'/');
-  const hubUrl=c?.clientToken?(baseUrl+'client.html?t='+c.clientToken+'&u='+(window._supaUser?.id||'')+'&c='+c.id):null;
-  const sigUrl=b.signingToken?(baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId):null;
-  const proposalLink=hubUrl||sigUrl;
-  let body='Hi '+firstName+','+NL+NL;
-  body+='It was great meeting you'+( b.addr?' at '+b.addr:'')+' and I appreciate the opportunity to earn your business.'+NL+NL;
-  if(proposalLink){
-    body+='Your proposal is ready to view and sign online:'+NL+NL;
-    body+='    '+proposalLink+NL+NL;
-    body+='Tap the link to review everything we went over and sign when you\'re ready. If the link doesn\'t come through, just reply and I\'ll send it via text.'+NL+NL;
-  } else {
-    body+='Here is your painting proposal:'+NL+NL;
-  }
-  body+=SEP;
-  body+='PAINTING PROPOSAL'+NL;
-  body+=bname+(bphone?' | '+bphone:'')+NL;
-  body+=SEP+NL;
-  body+='Property: '+(b.addr||'')+(NL);
-  body+='Date: '+today+NL;
-  body+='Valid until: '+expD+NL+NL;
-  body+='WHAT IS INCLUDED'+NL;
-  body+=scope+NL;
-  body+='Paint: '+paintL+NL+NL;
-  body+='Every surface will be sanded before painting for proper adhesion. All nail holes, cracks, and imperfections will be spackled for a smooth finish that lasts 8-10 years.'+NL+NL;
-  if(surfs.length){body+='SURFACES'+NL+lineItems+NL+NL;}
-  body+=SEP;
-  body+='TOTAL ESTIMATE: '+fmt(b.amount)+NL;
-  body+='  - 25% deposit to start: '+fmt(b.amount*.25)+NL;
-  body+='  - Balance due on completion: '+fmt(b.amount*.75)+NL;
-  body+='  - '+b.days+' day'+(b.days>1?'s':'')+' estimated to complete'+NL+NL;
-  if(proposalLink){
-    body+='To accept, sign the proposal online or reply to this email.'+NL;
-  } else {
-    body+='To accept, simply reply to this email or give me a call at '+bphone+'.'+NL;
-  }
-  body+='I will get you on the schedule right away.'+NL+NL;
-  body+='Looking forward to working with you,'+NL;
-  body+=bname+NL;
-  if(bphone)body+=bphone+NL;
-  const subject=encodeURIComponent('Your painting proposal -- '+fmt(b.amount)+' | '+bname);
-  window.location.href='mailto:'+(toEmail?encodeURIComponent(toEmail):'')+'?subject='+subject+'&body='+encodeURIComponent(body);
 }
 
 function toggleBidSummary(bidId){
@@ -886,7 +831,7 @@ function payStatus(bid){
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
-  const dep=bid.deposit||Math.round(total*0.25*100)/100;
+  const dep=_bidDepositDue(bid);
   if(dep>0&&paid>=dep-0.01)return{label:'Deposit paid',cls:'bdg-deposit',color:'var(--blue)'};
   return{label:'Partial: '+fmt(balance)+' due',cls:'bdg-pending',color:'var(--amber)'};
 }
@@ -914,11 +859,11 @@ function openPayPanel(bidId, autoType){
   // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
   // otherwise the panel silently records the wrong amount.
   // A quick invoice bills work already done: no deposit, only the balance.
-  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositDue=_bidDepositDue(bid,balance);
   const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   // Nothing is "overpaid" on a rate sheet: bills off the clock follow.
-  const overpaidAmt=_rateSheet?0:Math.round((rawPaid-total)*100)/100;
+  const overpaidAmt=_rateSheet?0:_cents(rawPaid-total);
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
     ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
@@ -1407,7 +1352,7 @@ function selectPayType(btn, bidId){
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
   // A quick invoice bills work already done: no deposit, only the balance.
-  const depositDue=bid.kind==='quick_invoice'?0:Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositDue=_bidDepositDue(bid,balance);
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
   const hint=document.getElementById('mpay-max-hint');
@@ -1452,7 +1397,7 @@ function selectPayType(btn, bidId){
   if(hf)hf.style.display='none';
 
   if(kind==='refund'){
-    const refAmt=Math.max(0,Math.round((getBidPaid(bidId)-total)*100)/100);
+    const refAmt=Math.max(0,_cents(getBidPaid(bidId)-total));
     if(tf)tf.value='refund';
     if(amtEl){amtEl.value=refAmt>0?_moneyStr(refAmt):'';amtEl.readOnly=false;}
     if(amtRow)amtRow.style.display='block';

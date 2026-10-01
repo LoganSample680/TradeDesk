@@ -903,20 +903,6 @@ function _clientHubCopy(url,btn){
     if(typeof showToast==='function')showToast('Could not copy link','⚠️');
   });
 }
-function pipelineResendSms(bidId){
-  const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.signingToken)return;
-  const baseUrl=_clientBaseUrl();
-  const signUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
-  const c=getClientById(b.client_id);
-  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
-  const url=hubUrl||signUrl;
-  const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
-  const bname=S.bname||'TradeDesk';
-  const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
-  const msg=_smsApply(S.smsFollowup||_getSmsDefaults().followup,{name:firstName,business:bname,url});
-  window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
-}
 function onClientSearch(inp){
   const q=inp.value.trim();
   if(q){
@@ -2661,7 +2647,10 @@ function renderCDBids(){
     const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     let primaryHtml='',ctxHtml='';const quick=[],more=[];
     if(!isWon){
-      primaryHtml=_pbtn('sendBidEmail('+b.id+')',b.status==='Pending'?'Resend to client →':'Send to client →');
+      // Gone out already: the one resend (resendProposal, js/proposals.js).
+      // Never sent: open it the way Revise does, so it goes through Send.
+      const _wasSent=!!b.signingToken||b.status==='Pending';
+      primaryHtml=_wasSent?_pbtn('resendProposal('+b.id+')','Resend to client →'):_pbtn(_reviseFn,'Send to client →');
       quick.push(_qbtn(_reviseFn,'Revise'));
       quick.push(_qbtn('openBidNotes('+b.id+')','Notes'));
       more.push(_mrow('markBidHandshake('+b.id+')',svgIcon('🤝')+' Handshake deal'));

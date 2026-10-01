@@ -8751,7 +8751,7 @@ async function _extendBidPrice(bidId,days){
 // ── After an in-person signature ────────────────────────────────────────────
 // He signs at the kitchen table and the client used to walk away with nothing
 // in their hand while he was still standing there. Both of these use the hub
-// link the account already mints (same builder as resendProposalLink), so
+// link the account already mints (resendProposal uses this builder too), so
 // there is one client-facing URL in the product, not a second one.
 function _geiHubUrlFor(bid){
   const c=bid&&bid.client_id?getClientById(bid.client_id):null;
@@ -8784,24 +8784,6 @@ function _geiCollectDepositNow(bidId){
   const url=_geiHubUrlFor(b);
   if(!url){if(typeof showToast==='function')showToast('Connect Stripe to collect here','⚠️');return;}
   try{window.open(url,'_blank');}catch(_e){window.location.href=url;}
-}
-function resendProposalLink(bidId){
-  const b=bids.find(x=>x.id===bidId);
-  if(!b)return;
-  const baseUrl=_clientBaseUrl();
-  const c=getClientById(b.client_id);
-  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
-  if(hubUrl&&c?.phone){
-    const firstName=(c.name||b.client_name||'there').split(' ')[0];
-    const biz=S.bname||'your contractor';
-    const msg='Hi '+firstName+', '+biz+' sent you a proposal to review and sign. Open your project hub here: '+hubUrl;
-    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
-  } else if(hubUrl){
-    navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>{});
-  } else if(b.signingToken){
-    const sigUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
-    navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
-  }
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;

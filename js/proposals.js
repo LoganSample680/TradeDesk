@@ -73,14 +73,16 @@ function _buildClientHubSnapshot(clientId){
     const _fcDaysElapsed=typeof window._fcTestDays==="number"?window._fcTestDays:Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
     const _fcDaysOverdue=Math.max(0,_fcDaysElapsed-30);
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
-    const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
+    const financeCharge=balance>0.01&&_fcDaysOverdue>0?_cents(balance*_fcRate*_fcDaysOverdue):0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     // SCOPE for the invoice's "Work performed" list: the estimate's own scope, in
     // the estimate's own words, DESCRIPTIONS ONLY. No qty, no rate, no amount, the
     // same one-price rule the document follows (owner 2026-08-16). Shared with the
     // property card's Past work rows via _bidScopeLines below.
     const _hubScope=_bidScopeLines(b);
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
+    // A stored deposit, even 0 (nothing up front), is what their page shows;
+    // only a bid with none stored takes the shared default (_bidDepositDue).
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:_bidDepositDue(b),status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -632,6 +634,64 @@ function _showGeiSendOverlay(){
     phone:d.cphone,email:d.cemail,
     onText:()=>_doGeiSend('sms'),onEmail:()=>_doGeiSend('email'),onOther:()=>_doGeiSend('other'),
     onCopy:()=>{tdCopyLink(d.url);_commitProposalSent();}});
+}
+// ── RESEND A PROPOSAL THAT ALREADY WENT OUT (audit 2026-10-01) ──────────────
+// The ONE resend. The bid card and the dashboard's sent-proposals row both
+// land here, on the same send sheet Send uses. It used to be three paths: a
+// mailto that described a paint job with sanding and a 25/75 split on every
+// trade, a text-only resend on the dashboard, and an orphan. The link is the
+// client hub, the signing page when there is no hub; the text is his saved
+// follow-up template with the link last (iMessage only draws the preview card
+// when the link ends the message); the email says his trade, his total and
+// the deposit the bid actually stores, nothing invented.
+function _resendProposalUrl(b){
+  const hub=typeof _geiHubUrlFor==='function'?_geiHubUrlFor(b):null;
+  if(hub)return hub;
+  if(!b.signingToken)return null;
+  return _clientBaseUrl()+'sign.html?t='+b.signingToken+'&u='+((typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:'')+'&b='+b.id;
+}
+function _resendProposalText(b,url){
+  const c=b.client_id?getClientById(b.client_id):null;
+  const first=((c&&c.name)||b.client_name||'there').split(/[\s,&]+/)[0];
+  const msg=_smsApply(S.smsFollowup||_getSmsDefaults().followup,{name:first,business:S.bname||'TradeDesk',url});
+  if(msg.trim().endsWith(url))return msg.trim();
+  return (msg.split(url).join('').replace(/\n{3,}/g,'\n\n').trim()+'\n\n'+url);
+}
+function _resendProposalEmail(b,url){
+  const c=b.client_id?getClientById(b.client_id):null;
+  const first=((c&&c.name)||b.client_name||'there').split(/[\s,&]+/)[0];
+  const word=(typeof _tradeProposalLabel==='function'?_tradeProposalLabel(b.trade_type,{lower:true}):'Proposal').toLowerCase();
+  const bname=S.bname||'TradeDesk';
+  const NL='\n';
+  let body='Hi '+first+','+NL+NL+'Just following up on your '+word+'. Everything we went over is at the link below, and you can sign there when you are ready.'+NL+NL;
+  if(Number(b.amount)>0)body+='Total: '+fmt(b.amount)+NL;
+  const dep=Number(b.deposit)>0&&typeof _bidDepositDue==='function'?_bidDepositDue(b):0;
+  if(dep>0)body+='Deposit to start: '+fmt(dep)+NL;
+  body+=NL+url+NL+NL+'Any questions, just reply.'+NL+NL+bname+(S.bphone?NL+S.bphone:'');
+  const subject='Your '+word+' from '+bname;
+  return 'mailto:'+encodeURIComponent((c&&c.email)||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
+function resendProposal(bidId){
+  const b=bids.find(x=>String(x.id)===String(bidId));
+  if(!b)return;
+  const c=b.client_id?getClientById(b.client_id):null;
+  const url=_resendProposalUrl(b);
+  // Nothing has gone out yet, so there is nothing to resend: open it the way
+  // Revise does and let the normal Send take it from there.
+  if(!url){
+    if(typeof openGenericEstimate==='function')openGenericEstimate(c,b.id,b.trade_type||'general');
+    return;
+  }
+  const phone=((c&&c.phone)||b.phone||'').replace(/\D/g,'');
+  const text=_resendProposalText(b,url);
+  const log=()=>{if(b.client_id&&typeof autoLogContact==='function')autoLogContact(b.client_id,'followup_sent');};
+  tdSendSheet({id:'_resend-overlay',url,who:(c&&c.name)||b.client_name||'',amount:Number(b.amount)>0?fmt(b.amount):'',
+    sub:'Send it again. Same link, nothing changes on their copy.',
+    phone,email:(c&&c.email)||'',textBody:text,
+    onText:()=>{window.location.href='sms:'+phone+'?body='+encodeURIComponent(text);setTimeout(log,400);},
+    onEmail:()=>{window.location.href=_resendProposalEmail(b,url);setTimeout(log,400);},
+    onOther:()=>{log();pwaShare({title:(S.bname||'TradeDesk')+' Proposal',text:text.split(url).join('').trim(),url});},
+    onCopy:()=>{tdCopyLink(url);log();}});
 }
 function _doGeiSend(type){
   document.getElementById('_gei-send-overlay')?.remove();

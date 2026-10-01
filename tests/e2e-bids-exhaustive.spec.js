@@ -1394,66 +1394,50 @@ test.describe('bids.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 22. sendBidEmail
+  // 22. resendProposal (replaces sendBidEmail, resendProposalLink, pipelineResendSms)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('sendBidEmail', () => {
-    test('null bidId, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { sendBidEmail(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
+  test.describe('resendProposal', () => {
+    test('the three old resend paths are gone (§7.1)', async () => {
+      const r = await page.evaluate(() => ({
+        sendBidEmail: typeof window.sendBidEmail,
+        resendProposalLink: typeof window.resendProposalLink,
+        pipelineResendSms: typeof window.pipelineResendSms,
+        resendProposal: typeof window.resendProposal,
+      }));
+      expect(r.sendBidEmail).toBe('undefined');
+      expect(r.resendProposalLink).toBe('undefined');
+      expect(r.pipelineResendSms).toBe('undefined');
+      expect(r.resendProposal).toBe('function');
     });
 
-    test('non-existent bidId, returns without side effects', async () => {
+    test('null and nonexistent bidId, do not throw and open nothing', async () => {
       const r = await page.evaluate(() => {
-        let redirected = false;
-        const orig = Object.getOwnPropertyDescriptor(window, 'location');
-        try {
-          sendBidEmail(999999);
-          return { ok: true };
-        } catch (e) {
-          return { ok: false, err: e.message };
+        const out = [];
+        for (const v of [null, undefined, 999999999]) {
+          try { resendProposal(v); out.push(true); } catch (e) { out.push(e.message); }
         }
+        return { out, sheet: !!document.getElementById('_resend-overlay') };
       });
-      expect(r.ok).toBe(true);
+      expect(r.out).toEqual([true, true, true]);
+      expect(r.sheet).toBe(false);
     });
 
-    test('golden path, constructs mailto href without throw', async () => {
+    test('a sent bid opens the shared send sheet with its signing link', async () => {
       const r = await page.evaluate(() => {
-        let hrefSet = '';
-        // Intercept location.href assignment
-        const desc = Object.getOwnPropertyDescriptor(window, 'location');
-        let intercepted = false;
-        try {
-          // Wrap in try, JSDOM may throw on mailto: navigation
-          sendBidEmail(77702);
-          return { ok: true };
-        } catch (e) {
-          // Navigation may throw in test environment, that's acceptable
-          if (e.message && (e.message.includes('Not implemented') || e.message.includes('navigation'))) {
-            return { ok: true, nav: true };
-          }
-          return { ok: false, err: e.message };
-        }
+        const id = 77790;
+        bids.push({ id, client_name: 'Resend Probe', amount: 800, status: 'Pending', signingToken: 'tok-resend', bid_date: '2026-01-01' });
+        let err = '';
+        try { resendProposal(id); } catch (e) { err = e.message; }
+        const ov = document.getElementById('_resend-overlay');
+        const res = { err, open: !!ov, url: ov ? (ov.querySelector('.zmodal').dataset.url || '') : '' };
+        ov?.remove();
+        bids = bids.filter(b => b.id !== id);
+        return res;
       });
-      expect(r.ok).toBe(true);
-    });
-
-    test('bid with no surfaces or scope, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        const bid = { id: 77780, client_id: 88801, client_name: 'Test Client Alpha',
-          amount: 500, bid_date: '2026-01-01', days: 2 };
-        bids.push(bid);
-        try { sendBidEmail(77780); return { ok: true }; }
-        catch (e) {
-          if (e.message && e.message.includes('Not implemented')) return { ok: true };
-          return { ok: false, err: e.message };
-        } finally {
-          bids = bids.filter(b => b.id !== 77780);
-        }
-      });
-      expect(r.ok).toBe(true);
+      expect(r.err).toBe('');
+      expect(r.open).toBe(true);
+      expect(r.url).toContain('sign.html?t=tok-resend');
+      expect(r.url).toContain('&b=77790');
     });
   });
 

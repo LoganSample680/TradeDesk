@@ -2715,7 +2715,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       const card = i >= 0 ? html.slice(Math.max(0, i - 200), i + 1400) : '';
       const res = {
         err, hasCard: i >= 0,
-        hasResend: card.includes('resendProposalLink(' + bidId + ')'),
+        hasResend: card.includes('resendProposal(' + bidId + ')') && !card.includes('resendProposalLink('),
         // The removed button: discardInProgressBid on a sent proposal must be gone.
         hasDeleteBtn: card.includes('discardInProgressBid(' + bidId + ')'),
       };

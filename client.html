@@ -2157,15 +2157,22 @@ function _cancelShowStep2(){
   h+='</div>';
   _cancelSetContent(h);
 }
+// What the Notice of Cancellation says about this bid (audit 2026-10-01: the
+// notice and its submitted copy each worked it out). The window, the law it
+// comes from, the transaction date, the window in words, what is owed back,
+// and whether that refund goes back to a card.
+function _cancelCtx(bid){
+  const cancelDays=_bidCancelDays(bid);
+  return {cancelDays,
+    cancelStatute:_bidCancelStatute(bid),
+    txDate:bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'',
+    daysWord:cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase(),
+    refundDue:_bidRefundDue(bid),
+    isStripe:!!(bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check')};
+}
 function _cancelShowStep3(){
   const bid=_hub&&_hub.bids.find(b=>b.id===_cancelBidId);if(!bid)return;
-  const cancelDays=_bidCancelDays(bid);
-  const cancelStatute=_bidCancelStatute(bid);
-  const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
-  const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
-  const refundDue=_bidRefundDue(bid);
-  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  const {cancelStatute,txDate,daysWord,refundDue,isStripe}=_cancelCtx(bid);
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within <strong>5–7 business days</strong> to your original payment method.';
@@ -2201,12 +2208,7 @@ function _cancelShowStep3(){
 }
 function _cancelShowConfirmed(bid){
   const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const cancelDays=_bidCancelDays(bid);
-  const cancelStatute=_bidCancelStatute(bid);
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
-  const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
-  const refundDue=_bidRefundDue(bid);
-  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  const {cancelStatute,txDate,daysWord,refundDue,isStripe}=_cancelCtx(bid);
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within 5–7 business days to your original payment method.';

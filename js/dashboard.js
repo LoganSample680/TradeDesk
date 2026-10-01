@@ -3308,7 +3308,7 @@ function renderTodayFeed(){
         '</div>'+
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
-          '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
+          '<button onclick="resendProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
           (_showExtend?'<button onclick="_extendBidPrice('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Extend price</button>':'')+
           '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+

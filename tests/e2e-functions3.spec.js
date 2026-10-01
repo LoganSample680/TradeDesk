@@ -2896,15 +2896,6 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('resendProposalLink: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof resendProposalLink !== 'function') return { skip: true };
-      try { resendProposalLink(999); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
   test('no console errors during cloud supabase tests', async () => {
     assertNoErrors(page, 'cloud supabase');
   });
@@ -3156,15 +3147,6 @@ test.describe('Bid schedule and collection functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('sendBidEmail: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof sendBidEmail !== 'function') return { skip: true };
-      try { sendBidEmail(999); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
   test('toggleBidSummary: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof toggleBidSummary !== 'function') return { skip: true };
@@ -3339,15 +3321,6 @@ test.describe('Client form and import functions', () => {
     const result = await page.evaluate(() => {
       if (typeof _previewClientHub !== 'function') return { skip: true };
       try { _previewClientHub('https://example.com/hub/abc', 'Test Client'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('pipelineResendSms: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof pipelineResendSms !== 'function') return { skip: true };
-      try { pipelineResendSms(999); return { ok: true }; }
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
