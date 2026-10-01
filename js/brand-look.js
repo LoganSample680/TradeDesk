@@ -21,11 +21,23 @@ function tdLogoLook(img){
     const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
     const d=x.getImageData(0,0,N,N).data;
     const px=(i,j)=>{const k=(j*N+i)*4;return[d[k],d[k+1],d[k+2],d[k+3]];};
-    // The border ring decides the background.
-    let er=0,eg=0,eb=0,ea=0,en=0;
-    for(let i=0;i<N;i++)for(const j of[0,1,N-2,N-1]){
-      for(const p of[px(i,j),px(j,i)]){er+=p[0];eg+=p[1];eb+=p[2];ea+=p[3];en++;}
+    // The border ring decides the background: the ring just INSIDE the
+    // edge, where a screenshot's hairline or a JPEG's fringe never reaches
+    // (2026-10-01), and every logo's background still is.
+    const RING=[1,2,N-3,N-2];
+    // The background is the ring's MOST COMMON colour, not its average:
+    // artwork that reaches the edge (Jack's flag) tinted an average to
+    // (6,8,10), and the logo's own black showed as a box on that cover.
+    let ea=0,en=0;const rb={};
+    for(let i=0;i<N;i++)for(const j of RING){
+      for(const p of[px(i,j),px(j,i)]){
+        ea+=p[3];en++;
+        const key=(p[0]>>4)+','+(p[1]>>4)+','+(p[2]>>4),e=rb[key]||(rb[key]=[0,0,0,0]);
+        e[0]++;e[1]+=p[0];e[2]+=p[1];e[3]+=p[2];
+      }
     }
+    const mode=Object.values(rb).sort((a,b)=>b[0]-a[0])[0]||[1,0,0,0];
+    const er=mode[1]/mode[0]*en,eg=mode[2]/mode[0]*en,eb=mode[3]/mode[0]*en;
     const lum=(r,g,b)=>(0.299*r+0.587*g+0.114*b)/255;
     let bg,bgRgb;
     if(ea/en<128){
@@ -55,7 +67,16 @@ function tdLogoLook(img){
       :null;
     // The same three facts S.logoMeta records in the app (js/settings.js
     // _logoEnsureMeta), so tdLogoIsTile reads either one.
-    const solid=ea/en>235,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
+    // Solid means an opaque border of one colour, the logo's own square.
+    // Most of the ring, not every pixel: a logo saved as a screenshot carries
+    // a hairline at its edge (the owner's copy of Jack's logo, 2026-10-01),
+    // and four exact corners called that "not solid" while Jack's original of
+    // the same logo was, so the two printed two different proposals.
+    let near=0,ring=0;
+    for(let i=0;i<N;i++)for(const j of RING){
+      for(const p of[px(i,j),px(j,i)]){ring++;if(p[3]>235&&Math.abs(p[0]-bgRgb[0])+Math.abs(p[1]-bgRgb[1])+Math.abs(p[2]-bgRgb[2])<90)near++;}
+    }
+    const solid=ea/en>235&&near/ring>=0.85,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
     return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark,solid,ratio,light:!dark&&lum(bgRgb[0],bgRgb[1],bgRgb[2])>0.92};
   }catch(e){return null;}
 }

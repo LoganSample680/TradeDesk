@@ -67,6 +67,40 @@ test.describe('Brand in the top corner', () => {
     expect(r).toMatchObject({ tdTile: true, text: 'TradeDesk', tile: 0 });
   });
 
+  // Owner 2026-10-01: "I uploaded the same logo that Jack did and our
+  // invoices and proposals look completely different". His copy was a
+  // screenshot (a hairline at the edge) and his saved measurement, made by
+  // the old four-corner check, said not solid; it was never measured again.
+  test('a screenshot of a dark square logo, hairline edge and all, is still its own square', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const draw = (edge) => { const c = document.createElement('canvas'); c.width = 600; c.height = 600; const x = c.getContext('2d');
+        x.fillStyle = '#000'; x.fillRect(0, 0, 600, 600); x.fillStyle = '#1e90ff'; x.fillRect(150, 150, 300, 300);
+        if (edge) { x.fillStyle = '#d0d0d0'; x.fillRect(597, 0, 3, 600); x.fillRect(0, 597, 600, 3); }
+        return c.toDataURL('image/png'); };
+      const meta = async (src) => { S.logoData = src; S.logoUrl = ''; S.logoMeta = null; return await _logoEnsureMeta(); };
+      const a = await meta(draw(false)), b = await meta(draw(true));
+      // Black, give or take a unit of resampling.
+      return { clean: tdLogoIsTile(a), shot: tdLogoIsTile(b), v: b.v, black: (b.bg.match(/\d+/g) || []).every(n => +n < 8) };
+    });
+    expect(r).toEqual({ clean: true, shot: true, v: 2, black: true });
+  });
+
+  test('a measurement saved the old way is made again, so a wrong answer repairs itself', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d');
+      x.fillStyle = '#000'; x.fillRect(0, 0, 200, 200); x.fillStyle = '#e11'; x.fillRect(60, 60, 80, 80);
+      S.logoData = c.toDataURL('image/png'); S.logoUrl = '';
+      const h = String(_hubHash(S.logoData));
+      S.logoMeta = { hash: h, ratio: 1, solid: false, light: false, bg: 'rgb(0,0,0)' };   // the stale answer
+      const m = await _logoEnsureMeta();
+      const again = await _logoEnsureMeta();                                          // now cached
+      return { solid: m.solid, v: m.v, same: again === m };
+    });
+    expect(r).toEqual({ solid: true, v: 2, same: true });
+  });
+
   test('initials skip the little words, and junk never throws', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(() => [
