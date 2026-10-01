@@ -38,19 +38,22 @@ if (!KEY || !KID || !ISS) {
 // That also explains why the two manual attempts did not fix it: registering
 // the App Group (attempt 2) and creating the App ID (attempt 3) are both real,
 // and neither one LINKS them.
-const APP_GROUP = 'group.app.tradedesk.beta';
+// Per channel (ios-beta.yml): the TestFlight beta or the App Store app.
+const BUNDLE = process.env.TD_BUNDLE_ID || 'app.tradedesk.beta';
+const APP_NAME = process.env.TD_APP_NAME || 'TradeDesk Beta';
+const APP_GROUP = `group.${BUNDLE}`;
 
 // What must exist, and which capabilities each id's entitlements demand.
 // Capabilities mirror the entitlements the workflow writes: the app carries
 // applesignin + aps-environment + the share App Group; the extensions carry
 // only what their own entitlement files use.
 const WANT = [
-  { id: 'app.tradedesk.beta', name: 'TradeDesk Beta',
+  { id: BUNDLE, name: APP_NAME,
     caps: ['PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH', 'APP_GROUPS', 'ASSOCIATED_DOMAINS'],
     groups: [APP_GROUP] },
-  { id: 'app.tradedesk.beta.share', name: 'TradeDesk Beta Share',
+  { id: `${BUNDLE}.share`, name: `${APP_NAME} Share`,
     caps: ['APP_GROUPS'], groups: [APP_GROUP] },
-  { id: 'app.tradedesk.beta.live', name: 'TradeDesk Beta Live',
+  { id: `${BUNDLE}.live`, name: `${APP_NAME} Live`,
     caps: [] },
 ];
 
@@ -75,8 +78,8 @@ async function api(method, path, body) {
 
 const MANUAL = `::error::The App Store Connect key cannot manage identifiers (needs the Admin role).
 Manual fallback (2 minutes, one time): developer.apple.com -> Certificates, Identifiers & Profiles -> Identifiers:
-  1. Open app.tradedesk.beta -> enable Push Notifications -> Save
-  2. "+" -> App IDs -> App -> explicit id app.tradedesk.beta.live (TradeDesk Live) -> Register
+  1. Open ${BUNDLE} -> enable Push Notifications -> Save
+  2. "+" -> App IDs -> App -> explicit id ${BUNDLE}.live (${APP_NAME} Live) -> Register
 Or: create a new API key with the Admin role and update the APPSTORE_* secrets.`;
 
 let hardFail = false;

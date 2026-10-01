@@ -12,7 +12,7 @@
 require 'xcodeproj'
 require 'fileutils'
 
-APP_ID   = 'app.tradedesk.beta'
+APP_ID   = ENV['TD_BUNDLE_ID'] || 'app.tradedesk.beta'   # ios-beta.yml sets it per channel
 EXT_NAME = 'LiveExt'
 EXT_ID   = "#{APP_ID}.live"
 # Live Activities are iOS 16.1+. The app itself still targets 15, and the plugin

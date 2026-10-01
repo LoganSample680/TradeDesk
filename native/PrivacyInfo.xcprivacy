@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The App target's privacy manifest (App Store requirement since 2024-05).
+  Added to the target by scripts/ios-add-privacy-manifest.rb every build.
+  Declares the "required reason" APIs our own plugins call. Capacitor and the
+  community plugins carry their own manifests inside their pods.
+  - UserDefaults: TdGeo and TdIntents keep their own small state (CA92.1).
+  - File timestamps: TdShare reads creationDate of files in our App Group
+    container to order the share inbox (C617.1).
+  No tracking, no tracking domains. What the app collects is declared on the
+  App Store Connect privacy page, which is the label customers see.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array><string>CA92.1</string></array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array><string>C617.1</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>

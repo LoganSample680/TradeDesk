@@ -439,6 +439,17 @@ and replay logic are all in `js/geo-track.js`, tunable forever without a
 rebuild. Putting logic in Swift that could live in JS is a rule violation,
 it converts free UAT iterations into paid builds.
 
+**Two apps, one workflow (owner 2026-10-01).** `ios-beta.yml` takes a
+`channel` input: `beta` (default, and what the monthly cron builds) is
+`app.tradedesk.beta` loading UAT for TestFlight; `store` is `app.tradedesk`
+loading production (`tradedeskpro.app`, i.e. `main`) for the App Store, iPhone
+and iPad. Nothing may hardcode the beta bundle where the channel should
+decide: the scripts read `TD_BUNDLE_ID`, the Swift derives its App Group and
+background session from `Bundle.main.bundleIdentifier`, push tries both topics
+(`_shared/apns.ts`), and universal links list both apps. The store shell adds
+`TradeDeskStore` to its user agent (`_tdShellIsStore()` in js/settings.js).
+Firing either channel is still a build under the rule above: owner says go.
+
 **The floor is ~1 build/month:** TestFlight builds expire after 90 days, and
 the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
 Batch pending native changes into the next needed build rather than firing

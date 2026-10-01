@@ -18,6 +18,16 @@ name: iOS Beta (TestFlight)
 
 on:
   workflow_dispatch:
+    inputs:
+      # beta  = TestFlight shell, app.tradedesk.beta, loads UAT (the default,
+      #         and what the monthly keep-alive builds).
+      # store = the App Store app, app.tradedesk, loads production (main).
+      # Same code, same plugins; only the identity and the URL differ.
+      channel:
+        description: 'beta (TestFlight, UAT) or store (App Store, production)'
+        type: choice
+        options: [beta, store]
+        default: beta
   schedule:
     # TestFlight builds hard-expire after 90 days (Apple rule, no opt-out).
     # A fresh build on the 1st of every month keeps the beta permanently
@@ -36,6 +46,8 @@ jobs:
       # share extension at all: no vCard import, no receipt share, and not one
       # line of output saying so. One value, readable by the guard below.
       SKIP_SHARE_EXT: '0'
+      # The schedule has no inputs, so it falls back to beta.
+      TD_CHANNEL: ${{ inputs.channel || 'beta' }}
     defaults:
       run:
         working-directory: native
@@ -48,6 +60,28 @@ jobs:
 
       - name: Install Capacitor
         run: npm install
+
+      - name: Pick the channel (bundle id, name, which site it loads)
+        # Everything below reads TD_BUNDLE_ID / TD_APP_NAME, and the shell's
+        # config is rewritten BEFORE the project is generated so the store
+        # build never carries the beta's id or the UAT URL.
+        run: |
+          if [ "$TD_CHANNEL" = "store" ]; then
+            BUNDLE=app.tradedesk; NAME=TradeDesk; HOST=tradedeskpro.app; UA="TradeDeskShell TradeDeskStore"
+          else
+            BUNDLE=app.tradedesk.beta; NAME="TradeDesk Beta"; HOST=uat.tradedesk-cyp.pages.dev; UA=TradeDeskShell
+          fi
+          { echo "TD_BUNDLE_ID=$BUNDLE"; echo "TD_APP_NAME=$NAME"; echo "TD_SERVER_HOST=$HOST"; } >> "$GITHUB_ENV"
+          BUNDLE="$BUNDLE" NAME="$NAME" HOST="$HOST" UA="$UA" node -e '
+            const fs=require("fs"); const e=process.env;
+            const c=JSON.parse(fs.readFileSync("capacitor.config.json","utf8"));
+            c.appId=e.BUNDLE; c.appName=e.NAME; c.appendUserAgent=e.UA;
+            c.server.url="https://"+e.HOST; c.server.allowNavigation=[e.HOST];
+            fs.writeFileSync("capacitor.config.json",JSON.stringify(c,null,2)+"\n");
+            const w="www/index.html";
+            fs.writeFileSync(w,fs.readFileSync(w,"utf8").replace(/https:\/\/[^\x27"\/]+\//,"https://"+e.HOST+"/"));'
+          cat capacitor.config.json
+          echo "::notice::channel $TD_CHANNEL: $BUNDLE loads https://$HOST"
 
       - name: Generate the iOS project (fresh every build, nothing checked in)
         run: npx cap add ios
@@ -234,6 +268,24 @@ jobs:
           # and it fails silently, so the lock screen just never shows anything.
           /usr/libexec/PlistBuddy -c "Add :NSSupportsLiveActivities bool true" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSSupportsLiveActivities true" "$PLIST"
+          # iPhone AND iPad (owner 2026-10-01). iPad multitasking needs all
+          # four orientations declared, or App Store Connect refuses the upload.
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad array" "$PLIST"
+          for o in UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight; do
+            /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad: string $o" "$PLIST"
+          done
+          # Offline launch (2026-10-01). WKWebView only runs a service worker
+          # for domains the app declares as App-Bound, so without this list the
+          # shell never cached the app and a cold launch with no signal sat on
+          # the launch screen. Must match server.url's host in
+          # native/capacitor.config.json (limitsNavigationsToAppBoundDomains is
+          # on there). localhost is the errorPath page. Max 10 entries.
+          /usr/libexec/PlistBuddy -c "Delete :WKAppBoundDomains" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :WKAppBoundDomains array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :WKAppBoundDomains:0 string uat.tradedesk-cyp.pages.dev" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :WKAppBoundDomains:1 string tradedeskpro.app" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :WKAppBoundDomains:2 string localhost" "$PLIST"
           # Standard HTTPS only: answers TestFlight's export-compliance question
           # permanently so builds never sit in "Missing Compliance".
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" || true
@@ -307,7 +359,7 @@ jobs:
           </dict>
           </plist>
           EOF
-          sed -i '' 's|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' ios/App/App.xcodeproj/project.pbxproj
+          sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = $TD_BUNDLE_ID;|PRODUCT_BUNDLE_IDENTIFIER = $TD_BUNDLE_ID;\\n\\t\\t\\t\\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g" ios/App/App.xcodeproj/project.pbxproj
           grep -n "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj
 
       - name: 'COMPONENT share-extension: build the target'
@@ -416,6 +468,13 @@ jobs:
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-app-intents.rb
 
+      - name: Privacy manifest (App Store requires one on the app)
+        # native/PrivacyInfo.xcprivacy: the required-reason APIs our own
+        # plugins call. Without it App Store Connect flags or rejects the upload.
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-privacy-manifest.rb
+
       - name: App icon from the repo's PWA icon
         # The generated project ships Capacitor's placeholder icon (owner:
         # "where's our TradeDesk logo?"). Refill every slot in the appiconset
@@ -502,6 +561,7 @@ jobs:
             archive \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            TARGETED_DEVICE_FAMILY=1,2 \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_REQUIRED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES
@@ -740,7 +800,7 @@ jobs:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          TD_BUNDLE_ID: app.tradedesk.beta
+          TD_BUNDLE_ID: ${{ inputs.channel == 'store' && 'app.tradedesk' || 'app.tradedesk.beta' }}
           # The build THIS run made. CFBundleVersion is set to github.run_number
           # in the upload job, so this can never pick up a concurrent upload.
           TD_BUILD_VERSION: ${{ github.run_number }}

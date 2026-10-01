@@ -29,8 +29,11 @@ public class TdBgUpPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
         CAPPluginMethod(name: "pending", returnType: CAPPluginReturnPromise)
     ]
 
+    // Per app, so the beta and the store app never share a background session.
+    static let sessionIdentifier = (Bundle.main.bundleIdentifier ?? "app.tradedesk.beta") + ".bgup"
+
     private lazy var session: URLSession = {
-        let cfg = URLSessionConfiguration.background(withIdentifier: "app.tradedesk.beta.bgup")
+        let cfg = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
         cfg.isDiscretionary = false          // the contractor is waiting on this, not the OS
         cfg.sessionSendsLaunchEvents = true  // wake the app to hear the result
         cfg.allowsCellularAccess = true      // a jobsite has no wifi
