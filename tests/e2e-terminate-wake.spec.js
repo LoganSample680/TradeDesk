@@ -154,6 +154,20 @@ test.describe('terminate wake: the wiring, read off the source', () => {
     expect(ping).toContain('sendSilentWake(');
   });
 
+  // A UAT roll wakes every phone once the new build is served (owner
+  // 2026-10-01), on its own gate so it never touches the half-hourly tick.
+  test('a roll wakes every phone once, on its own 3-minute gate', () => {
+    const ping = read('supabase/functions/push-geo-ping/index.ts');
+    expect(ping).toContain('const deploy = reason === "deploy";');
+    expect(ping).toContain('const mark = deploy ? "geo-ping-deploy" : "geo-ping";');
+    expect(ping).toContain('const gateMs = deploy ? 3 * 60000 : 20 * 60000;');
+    expect(ping, 'the tick reads and writes its own watermark, unchanged').toContain('.eq("name", mark)');
+    const wf = read('.github/workflows/uat-wake.yml');
+    expect(wf).toMatch(/push:\s*\n\s*branches: \[uat\]/);
+    expect(wf, 'waits until UAT serves the rolled version').toContain('uat.tradedesk-cyp.pages.dev/version.json');
+    expect(wf).toContain('"reason":"deploy"');
+  });
+
   test('wake-quiet runs every two minutes through the same rules and sender', () => {
     const fn = read('supabase/functions/wake-quiet/index.ts');
     expect(fn).toContain('quietWakeDue(last, now, workHoursFromSettings(');

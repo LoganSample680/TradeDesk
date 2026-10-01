@@ -33,16 +33,30 @@ serve(async (req) => {
     if (!apnsConfigured()) return json({ ok: false, error: "APNs not configured" }, 503);
     const svc = createClient(SUPABASE_URL, SERVICE_KEY);
 
+    // ── A NEW BUILD IS A REASON TO WAKE (owner 2026-10-01) ─────────────────
+    // "How can we get new JS code from a uat roll on a phone that has never
+    // rolled it?" A woken app asks for version.json and reloads into the new
+    // build (_geoBgUpdateCheck, js/geo-track.js), so the roll waking every
+    // phone once is the whole answer: minutes, not the next half-hour tick.
+    // .github/workflows/uat-wake.yml posts {reason:"deploy"} once the new
+    // build is actually being served. It has its own watermark so it neither
+    // waits on nor resets the half-hourly one, and its own gate so a burst of
+    // rolls (or anybody else posting it) costs at most one wake in 3 minutes.
+    let reason = "";
+    try { reason = String((await req.json())?.reason || ""); } catch { reason = ""; }
+    const deploy = reason === "deploy";
+    const mark = deploy ? "geo-ping-deploy" : "geo-ping";
+    const gateMs = deploy ? 3 * 60000 : 20 * 60000;
     // Rate gate: whatever calls this, devices are nudged at most every 20
     // minutes. The read-then-write race window is a few ms against a
     // 30-minute cron; a rare double tick costs one extra silent push.
     const { data: wm } = await svc.from("cron_watermarks")
-      .select("ran_at").eq("name", "geo-ping").maybeSingle();
-    if (wm && Date.now() - Date.parse(wm.ran_at) < 20 * 60000) {
+      .select("ran_at").eq("name", mark).maybeSingle();
+    if (wm && Date.now() - Date.parse(wm.ran_at) < gateMs) {
       return json({ ok: true, skipped: "rate-gated" });
     }
     await svc.from("cron_watermarks")
-      .upsert({ name: "geo-ping", ran_at: new Date().toISOString() });
+      .upsert({ name: mark, ran_at: new Date().toISOString() });
 
     const { data: rows, error: qerr } = await svc.from("device_tokens")
       .select("token").is("invalid_at", null).limit(500);
@@ -51,8 +65,8 @@ serve(async (req) => {
 
     // Expire before the next tick: a nudge delivered 40 minutes late is the
     // next nudge's job.
-    const { sent, pruned } = await sendSilentWake(svc, rows.map((r) => r.token), "geo-ping", 1500);
-    return json({ ok: true, sent, pruned });
+    const { sent, pruned } = await sendSilentWake(svc, rows.map((r) => r.token), "geo-ping", deploy ? 600 : 1500);
+    return json({ ok: true, sent, pruned, reason: deploy ? "deploy" : "tick" });
   } catch (e) {
     console.error(`[push-geo-ping] ${String(e).slice(0, 300)}`);
     return json({ ok: false, error: "failed" }, 500);
