@@ -168,6 +168,22 @@ test.describe('Settle up', () => {
     expect(r.back).toEqual({ status: null, date: null, bill: null });
   });
 
+  test('a signed proposal with no job does not take the customer off Ready to bill; one with a job does', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const kept = jobs.find(j => j.id === 'j7101');
+      jobs.splice(jobs.indexOf(kept), 1);
+      const noJob = _qiPropJobs(901).map(p => p.jobId);
+      jobs.push(kept);
+      const withJob = _qiPropJobs(901).map(p => p.jobId);
+      return { noJob, withJob };
+    });
+    expect(r.noJob).toEqual([null]);
+    expect(r.withJob).toEqual(['j7101']);
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'quick-invoice.js'), 'utf8');
+    expect(src).toContain('if(_qiPropJobs(c.id).some(p=>p.jobId!=null))return;');
+  });
+
   test('null, unknown and junk ids never throw', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {
