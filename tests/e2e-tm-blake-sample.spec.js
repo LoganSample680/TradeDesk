@@ -87,6 +87,20 @@ test.describe('Blake Sample: what he said is what the proposal says', () => {
     expect(r).toEqual(['swap the powered anode rod', 'a powered anode rod', 'protect the floor with drop cloths', 'the power washer']);
   });
 
+  test('the third walk: "Holloway" is haul away, and "need new" starts its own line', async () => {
+    // td_tim_asks, 2026-09-28 22:08 UTC, T&M, Blake Sample's proposal.
+    expect(await split('I am installing a 40 gallon water heater, removing the own the old Need some new copper pipe need new PVC for the vent And clean and Holloway')).toEqual([
+      'Installing a 40 gallon water heater',
+      'Removing the old one',
+      'New copper pipe',
+      'New PVC for the vent',
+      'Clean and haul away',
+    ]);
+    // Holloway the name, and "need new" that belongs to what came before, stay.
+    const same = ['Mrs Holloway wants the deck stained', 'Call Holloway plumbing', "we'll need new flooring in the kitchen", 'they need new gutters'];
+    expect(await page.evaluate((s) => s.map(_timkHeard), same)).toEqual(same);
+  });
+
   test('and nothing that was already right is touched', async () => {
     const same = [
       'The heater, we were testing it',

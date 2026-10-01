@@ -1088,6 +1088,13 @@ const _TIMK_HEARD=[
   [/\b(?:shlooter|schlooter|shluter)\b/gi,'Schluter'],
   [/\b(?:curdy|kurdy|kerdy)\b/gi,'Kerdi'],
   [/\bdetra\b/gi,'Ditra'],
+  // Blake Sample's walk (2026-09-28): "clean and Holloway", "removing the own
+  // the old". Holloway is a surname, so only where haul away is the job: after
+  // clean or and, or in front of what gets hauled.
+  [/\b((?:clean(?:\s+up)?|cleanup)\s+and\s+)holloway\b/gi,'$1haul away'],
+  [/\bholloway(?=\s+(?:the|all|any|old|debris|trash|everything|it|them|scrap)\b)/gi,'haul away'],
+  [/\b(and|then)\s+holloway(?=\s*(?:[,.;!?]|$))/gi,'$1 haul away'],
+  [/\bthe\s+own\s+the\s+old\b/gi,'the old one'],
   [/\b((?:gallons?|quarts?|coats?\s+of)\s+)kills\b/gi,'$1Kilz'],
   [/\ba\s+zeke\b/gi,'Azek'],[/\bwag\s+o\b/gi,'Wago'],[/\bbrad\s+for\s+white\b/gi,'Bradford White'],
   [/\bsticks(?=\s+primer\b)/gi,'Stix'],[/\blieutenant(?=\s+caseta\b)/gi,'Lutron'],[/\bsack\s+(?:treat|crete|reet)\b/gi,'Sakrete'],
@@ -1435,6 +1442,16 @@ function _timkHeard1(seg){
   v=v.replace(/\bin\s+DS\b/g,'NDS');
   v=v.replace(/\b(?:(?:okay|ok|so|alright)[,\s]+)*honey[\s-]+do\s+list(?:\s+here)?[,.]?\s*/gi,'');
   _TIMK_HEARD.forEach(([re,to])=>{v=v.replace(re,to);});
+  // "removing the old one need some new copper pipe need new PVC for the vent":
+  // in a run-on, "need new X" starts the next line, and the line is the new X
+  // (Blake Sample, 2026-09-28). Never after a word that makes "need" part of
+  // what came before: "we'll need new", "don't need new", "going to need new".
+  v=v.replace(/(\S+)(\s+)(?:we\s+|i\s+|you\s+)?needs?\s+(?:some\s+|a\s+|an\s+)?(?=new\s+[a-z])/gi,(m,prev,sp)=>{
+    const p=prev.toLowerCase().replace(/[^a-z']/g,'');
+    if(/^(?:we'll|i'll|you'll|will|gonna|to|also|don't|dont|doesn't|won't|wont|may|might|not|really|probably|definitely|just|they|we|i|you|he|she|it|that|this|which|who|would|could|should|must)$/.test(p))return m;
+    return prev+(/[.!?,;:]$/.test(prev)?'':'.')+sp;
+  });
+  v=v.replace(/(^|[.!?]\s+)(?:we\s+|i\s+)?needs?\s+(?:some\s+|a\s+|an\s+)?(new\s+[a-z])/gi,(m,pre,rest)=>pre+rest.charAt(0).toUpperCase()+rest.slice(1));
   v=v.split(/(\n)/).map(x=>x==='\n'?x:_timkSoundBrands(x)).join('');
   // ", will scrape and repaint the porch floor": "we'll" lost its subject.
   v=v.replace(/,(\s+)(will|well)(\s+)([a-z]+)\b/gi,(m,sp,w,sp2,vb)=>_TIMK_VERBS.has(vb.toLowerCase())?','+sp+"we'll"+sp2+vb:m);

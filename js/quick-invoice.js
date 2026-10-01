@@ -952,7 +952,11 @@ function _qiSayBuild(){
   // Parts he said he used are lines on the bill too: "2 supply lines", "a
   // Fluidmaster fill valve". Priced from his book when it knows them, blank
   // when it does not, the same rule as every other line here.
-  const mats=(typeof timSaidMaterials==='function')?timSaidMaterials(said):[];
+  // Only what he said he USED is its own line. A part named in the work
+  // ("installed a 40 gallon water heater") is that work line's job, and a
+  // second priced line for it bills it twice (owner 2026-09-28: "on invoice,
+  // materials are totaling when they shouldn't").
+  const mats=((typeof timSaidMaterials==='function')?timSaidMaterials(said):[]).filter(m=>m&&m.kind!=='part');
   if(typeof timLogScope==='function')timLogScope(said,steps,'qi',null);
   if(_qi.mode==='hourly'){
     const have=new Set(_qi.work.map(w=>w.toLowerCase()));

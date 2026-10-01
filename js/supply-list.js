@@ -116,6 +116,21 @@ function _supHost(create){
   return null;
 }
 function _supData(){const h=_supHost(false);return h?h._supply:null;}
+const _SUP_CLIENT_LABEL='Materials';
+function _supClientNotes(n){return n?(n+' item'+(n===1?'':'s')):'';}
+// Lines saved before 2026-09-28 carry the supply house in the words the client
+// reads ("Materials (Neenan Co. Topeka)", "per supply house quote S3318549").
+// Every load and save puts them back to what _supSync writes today.
+function _supScrub(list){
+  (Array.isArray(list)?list:[]).forEach(x=>{
+    if(!x||!x._supply||typeof x._supply!=='object')return;
+    const n=(x._supply.items||[]).filter(it=>it&&it.on!==false).length;
+    if('desc' in x)x.desc=_SUP_CLIENT_LABEL;
+    if('label' in x)x.label=_SUP_CLIENT_LABEL;
+    x.notes=_supClientNotes(n);
+  });
+  return list;
+}
 
 // Push the list's numbers onto its host line and let the estimate redraw the
 // way it does for any other edit.
@@ -125,9 +140,12 @@ function _supSync(){
   const d=h._supply;
   const price=_supPrice(d);
   const n=(d.items||[]).filter(it=>it&&it.on!==false).length;
-  const label='Materials'+(d.vendor?' ('+d.vendor+')':'');
-  // What the CLIENT reads under the line: what is in it, never what it cost.
-  const notes=n?(n+' item'+(n===1?'':'s')+' per supply house quote'+(d.quote&&d.quote.number?' '+d.quote.number:'')):'';
+  // What the CLIENT reads: "Materials" and how many items, never what it cost
+  // and never where it came from (owner 2026-09-28: "don't want to show
+  // Neenan's on the proposal a client sees"). The supply house stays on the
+  // card, for him, in d.vendor.
+  const label=_SUP_CLIENT_LABEL;
+  const notes=_supClientNotes(n);
   h._taxPaid=!!(d.quote&&d.quote.taxCharged);
   if(_supMode()==='byo'){
     h.label=label;h.qty=1;h.unit='lot';h.rate=price;h.price=price;h.notes=notes;
