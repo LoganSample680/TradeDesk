@@ -1401,3 +1401,88 @@ test.describe('Invoice sales tax, the proposal rule', () => {
     expect(r).toBe(9.15);
   });
 });
+
+// Owner 2026-10-01: "almost all of it should carry the same code except for
+// the timesheet". The invoice's work list is the proposal's: Tim's build,
+// rooms, rename, drag, what he left out, and the scope section they print.
+test.describe('Invoice work done, the proposal list', () => {
+  const say = (page, t) => page.evaluate((t) => { document.getElementById('qi-say').value = t; _qiSayBuild(); }, t);
+
+  test('a lumped line comes out as steps by room, the same as Build Your Own', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const recs = _qiWorkArr();
+      // The same sentence through Build Your Own's build, for comparison.
+      const built = timScopeBuild('Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.', { rejected: [], trade: getActiveTrade() });
+      return {
+        labels: recs.map(x => x.label), rooms: [...new Set(recs.map(x => x.section))],
+        byo: built.steps.map(s => s.text),
+        work: _qi.work.slice(),
+        titles: [...document.querySelectorAll('#qi-page [data-room-list="qi"] .room-name')].map(b => b.textContent),
+      };
+    });
+    // The same steps; the list keeps each room's lines together, as BYO's does.
+    expect([...r.labels].sort()).toEqual([...r.byo].sort());
+    expect(r.work, 'the words list follows the records').toEqual(r.labels);
+    expect(r.rooms.length).toBeGreaterThan(1);
+    expect(r.titles.length, 'room titles on screen').toBe(r.rooms.length);
+    await assertNoErrors(page);
+  });
+
+  test('rename a room, move a line, and their copy prints it by room', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Cap the gas line to the gas light out front and the existing washer lines. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const recs = _qiWorkArr();
+      const first = recs[0].section;
+      _ROOM_LISTS.qi.rename(first, 'Washer room');
+      const last = recs.length - 1;
+      _ROOM_LISTS.qi.move(last, 'Washer room', null);
+      const doc = _qiDocHtml();
+      return { sections: _qiWorkArr().map(x => x.section), moved: _qiWorkArr().filter(x => x.section === 'Washer room').length, doc };
+    });
+    expect(r.sections).toContain('Washer room');
+    expect(r.moved).toBeGreaterThanOrEqual(2);
+    expect(r.doc).toContain('Washer room');
+  });
+
+  test('the draft keeps the rooms, and the sent invoice saves them', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Rough surface mounted washer box drain and water and vent. Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      _ROOM_LISTS.qi.rename(_qiWorkArr()[0].section, 'Washer room');
+      const snap = _qiDraftSnap();
+      const want = _qiWorkArr().map(x => x.label + '|' + x.section);
+      _qi.workRecs = []; _qi.work = [];
+      _qiDraftApply(snap);
+      const back = _qiWorkArr().map(x => x.label + '|' + x.section);
+      const bid = _qiSave();
+      return { want, back, saved: (bid.qiWorkItems || []).map(x => x.label + '|' + x.section), words: bid.qiWork };
+    });
+    expect(r.back).toEqual(r.want);
+    expect(r.saved).toEqual(r.want);
+    expect(r.words).toEqual(r.want.map(x => x.split('|')[0]));
+  });
+
+  test('a line he retypes is still logged as a fix to what Tim wrote', async ({ page }) => {
+    await boot(page);
+    await open(page, 701);
+    await page.evaluate(() => _qiSetMode('hourly'));
+    await say(page, 'Secure the tub spout.');
+    const r = await page.evaluate(() => {
+      const got = []; const o = window.timLogFix; window.timLogFix = (...a) => got.push(a.slice(0, 3));
+      const el = document.querySelector('#qi-page .qi-work-in');
+      el.value = 'Re-secured the tub spout'; _qiWorkEdit(0, el); _qiWorkDone(0, el);
+      window.timLogFix = o;
+      return got;
+    });
+    expect(r).toEqual([['work', 'Secure the tub spout', 'Re-secured the tub spout']]);
+  });
+});

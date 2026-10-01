@@ -4802,6 +4802,8 @@ function _roomWireDrag(root){
     w.addEventListener('pointerdown',e=>{
       if(e.button!==undefined&&e.button!==0)return;
       if(e.target.closest('.ios-check,.ios-del,.ios-minus'))return;
+      // Typing in a line (the invoice's work list) is not picking it up.
+      if(e.target===document.activeElement&&e.target.matches('textarea,input'))return;
       x0=e.clientX;y0=e.clientY;cancel();
       t=setTimeout(()=>{t=null;_roomDragStart(w,x0,y0);},380);
     });
@@ -5004,11 +5006,13 @@ _ROOM_LISTS.tm={move:_tmMoveStep,rename:_tmApplyRename};
 
 // The list open right now, in the one shape both screens answer to.
 function _scopeKey(){return (typeof _geiIsTM!=='undefined'&&_geiIsTM)?'tm':'byo';}
-function _scopeArr(key){return (key||_scopeKey())==='tm'?_tmItems():_byoItems;}
+// The invoice's work list is a third list of the same records (js/quick-invoice.js).
+function _scopeArr(key){key=key||_scopeKey();return key==='tm'?_tmItems():key==='qi'?_qiWorkArr():_byoItems;}
 function _scopeWork(arr){return (arr||[]).filter(x=>x&&!x._supply&&!x._rrp);}
-function _scopeNewRec(key,text,sec,price){return key==='tm'?_tmRec(text,sec):_byoLineRec(text,sec,price);}
+function _scopeNewRec(key,text,sec,price){return key==='byo'?_byoLineRec(text,sec,price):_tmRec(text,sec);}
 function _scopeCommit(key){
   if(key==='tm'){_tmCommit();return;}
+  if(key==='qi'){_qiWorkCommit();return;}
   _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 // Where a step he took from Tim lands: in the room it names when rooms are
@@ -5032,21 +5036,23 @@ function _scopeTakeBuilt(key,built){
   const inUse=new Set(_scopeWork(arr).map(x=>x.section));
   const have=new Set(arr.map(x=>String(x.label).toLowerCase()));
   (built.steps||[]).forEach(st=>{
-    // T&M has no line price: a price he said stays in the step's words.
-    const text=(key==='tm'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
+    // T&M and the invoice's work list have no line price: a price he said
+    // stays in the step's words.
+    const text=(key!=='byo'&&st.price)?st.text+', $'+Number(st.price).toLocaleString('en-US'):st.text;
     if(have.has(text.toLowerCase()))return;
     have.add(text.toLowerCase());
     // Painting keeps its own two, Interior and Exterior.
     let sec=(st.room&&tr!=='painting')?st.room:undefined;
     if(!sec&&inUse.size>1&&typeof timRoomOf==='function'){const r=timRoomOf(text);if(r&&inUse.has(r))sec=r;}
     if(key==='byo'&&sec&&!_byoSections().includes(sec)&&!_byoCustomSections.includes(sec))_byoCustomSections.push(sec);
-    const rec=_scopeNewRec(key,key==='tm'?text:st.text,sec,st.price);
+    const rec=_scopeNewRec(key,key!=='byo'?text:st.text,sec,st.price);
     // His own written order stands on the customer's copy (no regrouping).
     if(st.written)rec._written=true;
     arr.push(rec);
   });
   _scopeGroupArr(arr);
   if(key==='tm')_tmWrote();
+  if(key==='qi')_qiWorkSync();
   return (built.implied||[]).filter(im=>im&&(im.ask||(im.step&&!have.has(String(im.step).toLowerCase()))));
 }
 // From a pasted letter, on both screens: the days the price holds and his
@@ -5058,8 +5064,8 @@ function _scopeTakeLetter(built){
   if(built.note&&!String(_geiNote||'').trim()){_geiNote=built.note;_geiNoteBy=built.noteBy||'';filled.push('your note');}
   return filled;
 }
-function _scopeMissedOf(key){return key==='tm'?_geiScopeMissed:_byoMissed;}
-function _scopeSetMissed(key,v){if(key==='tm')_geiScopeMissed=v;else _byoMissed=v;}
+function _scopeMissedOf(key){return key==='tm'?_geiScopeMissed:key==='qi'?((typeof _qi!=='undefined'&&_qi&&_qi.missed)||[]):_byoMissed;}
+function _scopeSetMissed(key,v){if(key==='tm')_geiScopeMissed=v;else if(key==='qi'){if(_qi)_qi.missed=v;}else _byoMissed=v;}
 function _scopeTakeMissed(key,id){
   const list=_scopeMissedOf(key);
   const im=list.find(x=>String(x.id)===String(id));if(!im)return;
@@ -5084,7 +5090,7 @@ function _scopeDropMissed(key,id){
   const im=_scopeMissedOf(key).find(x=>String(x.id)===String(id));
   if(im)_timMissLearn(im,false);else if(typeof timLearn==='function')try{timLearn('implied',id,false);}catch(_e){}
   _scopeSetMissed(key,_scopeMissedOf(key).filter(x=>String(x.id)!==String(id)));
-  if(key==='tm')_renderScopeChips('tm-scope-wrap');else _byoRenderSections();
+  if(key==='tm')_renderScopeChips('tm-scope-wrap');else if(key==='qi')renderQuickInvoice();else _byoRenderSections();
 }
 function _byoDeleteSection(sec){
   if(_byoSections().includes(sec))return;

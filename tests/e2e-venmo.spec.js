@@ -82,6 +82,23 @@ test.describe('Venmo', () => {
     expect(withIt.split('\n').pop()).toBe('Or pay with Venmo: https://venmo.com/John-Doe?txn=pay&amount=1250.50&note=Invoice%20from%20Sample%20Plumbing%20%231234');
   });
 
+  // Owner 2026-10-01: the invoice runs on the proposal's code. Its text is
+  // signed like a proposal's (person, business, never TradeDesk) and, with no
+  // Venmo, ends in the link so iMessage draws the logo card.
+  test('the invoice text is signed like a proposal and ends in the hub link', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => { S.venmoUser = ''; S.bname = 'Sample Plumbing'; S.signAs = 'John Schonfeldt'; return _sendPaidInvoice(7001234); });
+    const body = await page.evaluate(() => {
+      const b = document.querySelector('[data-send="text"]').dataset.body;
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      return b;
+    });
+    const lines = body.split('\n');
+    expect(lines).toContain('- John, Sample Plumbing');
+    expect(lines.pop()).toMatch(/client\.html\?t=.*#invoice-7001234$/);
+    expect(body).not.toMatch(/TradeDesk/);
+  });
+
   test('the send sheet: Text it opens Messages with the whole body, Copy link copies (both were dead on tap)', async ({ page }) => {
     await boot(page);
     const r = await page.evaluate(async () => {

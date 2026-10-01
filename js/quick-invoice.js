@@ -632,7 +632,7 @@ function openQuickInvoice(cid,addr){
     // The number it will be sent under, from the moment it opens (owner
     // 2026-09-29: "No. Draft doesn't show a number"). A saved draft keeps its.
     id:(d&&d.id)||_newBidId(),dayNote:{},fixed:null,rates:{},showRate:null,partsMode:null,photos:{on:true,before:null,after:null},
-    base:un.lines,dropped:new Set(),xOn:new Set(),xOff:new Set(),xOpen:null,ctx:null};
+    base:un.lines,dropped:new Set(),xOn:new Set(),xOff:new Set(),xOpen:null,ctx:null,workRecs:[],missed:[]};
   if(d)_qiDraftApply(d);
   _qiRebuild();
   goPg('pg-qi');
@@ -926,12 +926,7 @@ function renderQuickInvoice(){
       // and one set price in Review, out in the open. No Options drawer.
       _qiStep(1,DOC_STEP.work)+
       _qiSayHtml()+
-      (hourly&&_qi.work.length?'<div class="ios-sec"><div class="ios-group">'+
-        // Each line is his to fix (owner 2026-09-29: "I want the ability to click
-        // into these steps and edit them, right now they are hard locked if I
-        // talk to Tim"). Tap the words and type; empty it and it goes.
-        _qi.work.map((w,i)=>'<div class="ios-row qi-work"><textarea class="qi-work-in" rows="1" autocapitalize="sentences" aria-label="Work done, line '+(i+1)+'" oninput="_qiWorkEdit('+i+',this)" onblur="_qiWorkDone('+i+',this)">'+escHtml(w)+'</textarea><button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>').join('')+
-        '</div><div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div></div>':'')+
+      (hourly?_qiWorkHtml():'')+
       _qiPhotosHtml()+
       (hourly?_qiStep(2,DOC_STEP.time)+'<div class="ios-sec">'+(dayList.length>1?'<div class="ios-h"><span>'+dayList.length+' days not billed yet</span>':'<div class="ios-h" style="display:none"><span></span>')+
           (dayList.length>1?'<button type="button" onclick="_qiAllDays('+(_qi.off.size?'true':'false')+')">'+(_qi.off.size?'Check all':'Uncheck all')+'</button>':'')+'</div>'+
@@ -970,6 +965,8 @@ function renderQuickInvoice(){
   if(typeof _matClaim==='function')_matClaim(document.getElementById('qi-mat'));
   host.querySelectorAll('.qi-work-in').forEach(_qiWorkFit);
   if(typeof _tmWireSwipe==='function')_tmWireSwipe(host);
+  // Hold a line to drag it to another room, the proposal's own drag.
+  if(typeof _roomWireDrag==='function'&&host.querySelector('[data-room-list="qi"] .room-name'))_roomWireDrag(host);
 }
 // A person's rate is one number on the whole invoice: change Jack's on
 // Monday and Tuesday's Jack moves with it.
@@ -1149,38 +1146,92 @@ function _qiSayBuild(){
   if(!_qi)return;
   const said=timSaid('qi-say','Type or say what you did first');
   if(!said)return;
-  const lines=timSayLines(said);
-  const steps=lines.map(l=>l.text);
-  // Parts he said he used are lines on the bill too: "2 supply lines", "a
-  // Fluidmaster fill valve". Priced from his book when it knows them, blank
-  // when it does not, the same rule as every other line here.
-  const mats=(typeof timSaidMaterials==='function')?timSaidMaterials(said):[];
+  // THE PROPOSAL'S BUILD (owner 2026-10-01: "almost all of it should carry
+  // the same code except for the timesheet"). timScopeBuild splits it the way
+  // Build Your Own and T&M do: one step per thing, rooms, a pasted letter read
+  // as a letter, and what he left out offered back.
+  const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
+  const built=(typeof timScopeBuild==='function')?timScopeBuild(said,{rejected:[],trade}):{steps:timSayLines(said).map(l=>({text:l.text,price:l.price}))};
+  const steps=(built.steps||[]).map(st=>st.text);
   if(typeof timLogScope==='function')timLogScope(said,steps,'qi',_qi.id);
   if(_qi.mode==='hourly'){
-    const have=new Set(_qi.work.map(w=>w.toLowerCase()));
-    // workTim holds what Tim wrote beside each line, so a line he retypes
-    // later is logged as a fix (timLogFix). A line he typed has none.
-    _qi.workTim=_qi.workTim||_qi.work.map(()=>null);
-    steps.forEach(st=>{if(!have.has(st.toLowerCase())){_qi.work.push(st);_qi.workTim.push(st);have.add(st.toLowerCase());}});
+    // What he did, listed above the hours, never a price.
+    const before=new Set(_qiWorkArr());
+    _qi.missed=_scopeTakeBuilt('qi',built);
+    // What Tim wrote beside each new line, so a line he retypes later is
+    // logged as a fix (timLogFix). A line he typed himself has none.
+    _qiWorkArr().forEach(r=>{if(!before.has(r))r._tim=r.label;});
+    _qiWorkSync();
   }else{
-    const trade=(typeof getActiveTrade==='function'&&getActiveTrade())||'general';
     _qi.typed=_qi.typed.filter(l=>String(l.desc||'').trim()||Number(l.amount)>0);
     const have=new Set(_qi.typed.map(l=>String(l.desc).toLowerCase()));
-    // A price he said for the line is his, and beats the book.
-    lines.forEach(l=>{
-      const st=l.text;
-      if(have.has(st.toLowerCase()))return;have.add(st.toLowerCase());
-      const own=(typeof _pbFind==='function')?_pbFind(st,trade):null;
-      _qi.typed.push({desc:st,amount:l.price>0?l.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
+    // A price he said for the line is his, and beats the book. A guessed
+    // number on a bill is worse than a blank that asks.
+    (built.steps||[]).forEach(st=>{
+      if(have.has(st.text.toLowerCase()))return;have.add(st.text.toLowerCase());
+      const own=(typeof _pbFind==='function')?_pbFind(st.text,trade):null;
+      _qi.typed.push({desc:st.text,amount:st.price>0?st.price:(own&&Number(own.rate)>0?Number(own.rate):'')});
     });
   }
   // Parts he said land the way they land on a proposal (timAddMaterials,
   // js/materials.js): priced from his book as a Materials row, unpriced on the
   // supply house list waiting on a quote. One rule, one place.
-  if(mats.length&&typeof timAddMaterials==='function')timAddMaterials(mats);
+  const mats=built.materials||((typeof timSaidMaterials==='function')?timSaidMaterials(said):[]);
+  if(mats&&mats.length&&typeof timAddMaterials==='function')timAddMaterials(mats);
   if(_qi.mode!=='hourly'&&!_qi.typed.length)_qi.typed=[{desc:'',amount:''}];
   renderQuickInvoice();
   if(typeof _tdHaptic==='function')_tdHaptic('tick');
+}
+// ── THE WORK DONE: the proposal's own list (js/generic-estimate.js) ─────────
+// The same records a T&M step is ({label, section, notes, on}), so rooms,
+// rename, hold-to-drag, Tim's build and "you did not say" are the shared code
+// (_scopeTakeBuilt, _ROOM_LISTS, _roomStackHtml, _propScopeItemsHtml). _qi.work
+// stays the list of words for its readers (the saved invoice, the draft, Tim's
+// log, the printed bill).
+function _qiWorkArr(){
+  if(!_qi)return [];
+  if(!Array.isArray(_qi.workRecs))_qi.workRecs=[];
+  if(!_qi.workRecs.length&&Array.isArray(_qi.work)&&_qi.work.length)_qi.workRecs=_qi.work.map(w=>_tmRec(w));
+  return _qi.workRecs;
+}
+// The records as saved: on the invoice, and (with what Tim wrote) on a draft.
+function _qiWorkSaved(draft){
+  return _qiWorkArr().filter(r=>String(r.label||'').trim()).map(r=>{const o={label:r.label,section:r.section,notes:r.notes||'',on:r.on!==false};if(r._written)o._written=true;if(draft&&r._tim)o._tim=r._tim;return o;});
+}
+function _qiWorkSync(){if(_qi)_qi.work=_qiWorkArr().map(r=>r.label);}
+function _qiWorkCommit(){_qiWorkSync();renderQuickInvoice();}
+function _qiWorkMove(from,toRoom,before){
+  const ok=_roomMoveIn(_qiWorkArr(),from,before,x=>x.section,(x,r)=>{x.section=r;},toRoom);
+  if(ok)_qiWorkCommit();
+  return ok;
+}
+function _qiWorkRename(room,val){
+  const name=_roomCleanName(val);
+  if(!name||name===room)return false;
+  _qiWorkArr().forEach(r=>{if(r.section===room)r.section=name;});
+  _qiWorkCommit();
+  return true;
+}
+if(typeof _ROOM_LISTS!=='undefined')_ROOM_LISTS.qi={move:_qiWorkMove,rename:_qiWorkRename};
+function _qiTakeMissed(id){_scopeTakeMissed('qi',id);}
+function _qiTakeAllMissed(){_scopeTakeAllMissed('qi');}
+function _qiDropMissed(id){_scopeDropMissed('qi',id);}
+// The editor: one line a row, by room when the job spans rooms. Each line is
+// his to fix (owner 2026-09-29: "I want the ability to click into these steps
+// and edit them"). Tap the words and type; empty it and it goes.
+function _qiWorkHtml(){
+  const recs=_qiWorkArr();
+  if(!recs.length)return '';
+  const rooms=_roomOrder(recs,r=>r.section);
+  const titled=rooms.length>1;
+  const row=(r,i)=>'<div class="ios-swipe" data-room-key="'+i+'"><div class="ios-row qi-work">'+
+    '<textarea class="qi-work-in" data-room-text rows="1" autocapitalize="sentences" aria-label="Work done, line '+(i+1)+'" oninput="_qiWorkEdit('+i+',this)" onblur="_qiWorkDone('+i+',this)">'+escHtml(r.label)+'</textarea>'+
+    '<button type="button" class="qi-x" aria-label="Take it off" onclick="_qiDropWork('+i+')">×</button></div>'+
+    // Swipe left to delete, the way a proposal's line goes.
+    '<button type="button" class="ios-del" tabindex="-1" onclick="_qiDropWork('+i+')">Delete</button></div>';
+  return _roomStackHtml('qi',rooms.map(room=>({room,body:recs.map((r,i)=>r.section===room?row(r,i):'').join('')})),
+    {titled,noun:'line',lastAfter:'<div class="ios-foot">Listed on the invoice above the hours. It does not change the price.</div>'})+
+    ((_qi.missed||[]).length&&typeof _timMissCardHtml==='function'?_timMissCardHtml(_qi.missed,'_qiTakeMissed','_qiDropMissed','_qiTakeAllMissed',false):'');
 }
 function _qiMatDesc(m){
   const n=Math.round((Number(m&&m.qty)||1)*100)/100;
@@ -1194,22 +1245,25 @@ function _qiMatDesc(m){
   if(!name)item=item.charAt(0).toLowerCase()+item.slice(1);
   return n+unit+' '+item;
 }
-function _qiDropWork(i){if(!_qi)return;_qi.work.splice(i,1);if(_qi.workTim)_qi.workTim.splice(i,1);renderQuickInvoice();}
+function _qiDropWork(i){if(!_qi)return;_qiWorkArr().splice(i,1);_qiWorkCommit();}
 // Typing into a line changes the line; the box grows with the words.
 function _qiWorkEdit(i,el){
-  if(!_qi||i<0||i>=_qi.work.length||!el)return;
-  _qi.work[i]=String(el.value||'');
+  const recs=_qiWorkArr();
+  if(!_qi||i<0||i>=recs.length||!el)return;
+  recs[i].label=String(el.value||'');
+  _qiWorkSync();
   _qiWorkFit(el);
 }
 function _qiWorkFit(el){if(!el)return;el.style.height='auto';el.style.height=el.scrollHeight+'px';}
 // Leaving a line he emptied takes it off, the same as the ×.
 function _qiWorkDone(i,el){
-  if(!_qi||i<0||i>=_qi.work.length)return;
+  const recs=_qiWorkArr();
+  if(!_qi||i<0||i>=recs.length)return;
   const v=String((el&&el.value)||'').trim();
   if(!v){_qiDropWork(i);return;}
-  _qi.work[i]=v;
+  recs[i].label=v;_qiWorkSync();
   // What Tim wrote for this line, if he wrote it: the pair teaches him.
-  const tim=_qi.workTim&&_qi.workTim[i];
+  const tim=recs[i]._tim;
   if(tim&&tim!==v&&typeof timLogFix==='function')timLogFix('work',tim,v,'qi',_qi.id);
 }
 
@@ -1305,9 +1359,10 @@ function _qiCustomerItems(){
 // js/generic-estimate.js): his steps as bullets, in stages when there are
 // enough of them, above the charges.
 function _qiWorkListHtml(){
-  const w=_qiWork();
-  if(!w.length)return '';
-  return '<div style="margin:0 0 20px">'+_propStepsHtml(w)+'</div>';
+  if(!_qiWork().length)return '';
+  // Printed through the proposal's scope section, rooms and all.
+  const items=_qiWorkArr().filter(r=>String(r.label||'').trim()&&r.on!==false);
+  return '<div style="margin:0 0 20px">'+_propScopeItemsHtml(items)+'</div>';
 }
 function _qiWork(){return (_qi&&_qi.mode==='hourly'&&Array.isArray(_qi.work))?_qi.work.filter(x=>String(x||'').trim()):[];}
 // The heading over it, named from his own steps the way a proposal names its
@@ -1339,6 +1394,7 @@ function _qiSave(){
     qiShowRate:hourly?_qiShowRate():null,qiPartsMode:_qiPartsMode(),qiFixed:hourly?_qi.fixed:null,qiDayNotes:hourly?Object.assign({},_qi.dayNote):{},
     qiPhotos:(()=>{const pr=_qi.photos.on?_qiPhotoPair():null;return pr?{before:pr.before.id,after:pr.after.id}:null;})(),
     qiWork:hourly?_qi.work.slice():[],
+    qiWorkItems:hourly?_qiWorkSaved():[],
     qiMode:_qi.mode,
     // The days it carries, never a through-mark (see _qiBilled).
     qiTimeThrough:null,
@@ -1662,6 +1718,9 @@ function _qiDraftApply(d){
   if(!_qi||!d)return;
   _qi.off=new Set(d.off||[]);_qi.open=new Set(d.open||[]);
   _qi.dayNote=Object.assign({},d.dayNote||{});_qi.work=Array.isArray(d.work)?d.work.slice():[];
+  // Rooms and all when the draft has them; an older draft is words only.
+  _qi.workRecs=Array.isArray(d.workItems)&&d.workItems.length?d.workItems.filter(x=>x&&x.label).map(x=>{const r=_tmRec(x.label,x.section,x.notes);r.on=x.on!==false;if(x._written)r._written=true;if(x._tim)r._tim=x._tim;return r;}):[];
+  _qiWorkSync();
   _qi.typed=Array.isArray(d.typed)&&d.typed.length?d.typed.map(l=>Object.assign({},l)):_qi.typed;
   _qi.fixed=d.fixed!=null?Number(d.fixed):null;_qi.rates=Object.assign({},d.rates||{});
   _qi.showRate=d.showRate!=null?!!d.showRate:null;_qi.partsMode=d.partsMode||null;
@@ -1675,7 +1734,7 @@ function _qiDraftApply(d){
 // Everything on the screen, as a draft. qiSaveDraft keeps it; qiSend holds it
 // so an invoice he never sent can go back to being a draft.
 function _qiDraftSnap(){
-  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),
+  return {id:_qi.id,mode:_qi.mode,off:[..._qi.off],open:[..._qi.open],dayNote:Object.assign({},_qi.dayNote),work:_qi.work.slice(),workItems:_qiWorkSaved(true),
     typed:_qi.typed.map(l=>Object.assign({},l)),fixed:_qi.fixed,rates:Object.assign({},_qi.rates),showRate:_qi.showRate,partsMode:_qi.partsMode,
     added:_qi.added.slice(),crew:_qi.crew.slice(),due:_qi.due,photos:Object.assign({},_qi.photos),xOn:[..._qi.xOn],xOff:[..._qi.xOff],dropped:[..._qi.dropped],riderMins:Object.assign({},_qi.riderMins||{}),
     total:_qiTotal(),at:new Date().toISOString()};
