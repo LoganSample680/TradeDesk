@@ -296,6 +296,20 @@ function _fmtExpDate(el){
   if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2,6);
   el.value=v;
 }
+// A full date typed as MM/DD/YYYY (owner 2026-10-02: "on RRP cert, can't type
+// in a date, won't let me"). The license and certificate dates used
+// _fmtExpDate above, which is the CARD expiry formatter (MM/YY): it keeps four
+// digits after the month, so 03152027 came out as 03/1520 and no full date
+// could ever be typed. This one keeps eight digits and puts both slashes in,
+// and a pasted 2027-03-15 is turned around rather than mangled.
+function _fmtMdY(el){
+  if(!el)return;
+  const raw=String(el.value||'');
+  const iso=raw.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(iso){el.value=iso[2].padStart(2,'0')+'/'+iso[3].padStart(2,'0')+'/'+iso[1];return;}
+  const v=raw.replace(/\D/g,'').slice(0,8);
+  el.value=v.length>4?v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4):v.length>2?v.slice(0,2)+'/'+v.slice(2):v;
+}
 function _ymdToMdY(s){
   if(!s||!s.includes('-'))return s||'';
   const[y,m,d]=s.split('-');return m+'/'+d+'/'+y;
