@@ -70,6 +70,8 @@ Purpose: **App Functionality** (plus Analytics where noted).
 | Contact Info: Phone Number | Yes | App Functionality |
 | Contact Info: Physical Address | Yes | App Functionality |
 | Location: Precise Location | Yes | App Functionality |
+| Fitness (iPhone motion data that marks when a drive starts and stops) | Yes | App Functionality |
+| Environment Scanning (LiDAR room scans saved to the account) | Yes | App Functionality |
 | Contacts (clients imported from the phone's address book) | Yes | App Functionality |
 | Financial Info: Other Financial Info (invoices, payments logged) | Yes | App Functionality |
 | User Content: Photos or Videos | Yes | App Functionality |

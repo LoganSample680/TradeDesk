@@ -161,8 +161,11 @@ test.describe('A build can never quietly ship without a component', () => {
     const job = wf.indexOf('build-upload:');
     const firstStep = wf.indexOf('steps:', job);
     expect(job).toBeGreaterThan(-1);
+    // Behaviour change 2026-10-01 (owner: "fire without sharing"): the store
+    // channel skips it because Apple will not sign app.tradedesk with the App
+    // Group yet. Every other build, the monthly cron included, is still '0'.
     expect(wf.slice(job, firstStep), 'the flag must be declared on the job, above steps:')
-      .toContain("SKIP_SHARE_EXT: '0'");
+      .toContain("SKIP_SHARE_EXT: ${{ inputs.channel == 'store' && '1' || '0' }}");
     // And exactly one place sets it, or the guard grades a different value
     // than the build uses.
     expect((wf.match(/^\s*SKIP_SHARE_EXT:/gm) || []).length,
@@ -180,6 +183,15 @@ test.describe('A build can never quietly ship without a component', () => {
     expect(step).toContain('SKIP_SHARE_EXT');
     expect(step, 'and it must FAIL the run, not warn').toContain('::error::');
     expect(step).toContain('exit $MISSING');
+  });
+
+  test('only the store channel may leave the share extension out', () => {
+    const g = wf.indexOf('Every native component in the tree must be in the build');
+    const step = wf.slice(g, g + 1200);
+    // The exception names the store channel, and the beta path still fails.
+    expect(step).toMatch(/SKIP_SHARE_EXT" = "1" \] && \[ "\$TD_CHANNEL" = "store" \]/);
+    expect(step.indexOf('::notice::store build')).toBeLessThan(step.indexOf('::error::'));
+    expect(step).toContain('MISSING=1');
   });
 
   test('the guard runs long before the archive', () => {
