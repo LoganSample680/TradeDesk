@@ -41,7 +41,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "pr-sync: working tree is dirty. Commit or stash first." >&2; exit 1
 fi
+# Where to come back to. CI runs on a detached checkout, where the branch name
+# is just "HEAD", and checking out "HEAD" stays wherever the sync left off: the
+# first run on main (2026-10-02) synced #147 and then started #146 from #147's
+# branch. A detached start comes back to its commit, not its name.
 START="$(git rev-parse --abbrev-ref HEAD)"
+[ "$START" = "HEAD" ] && START="$(git rev-parse HEAD)"
 restore() { git checkout -q "$START" 2>/dev/null || true; }
 
 git fetch -q origin main "$BRANCH" || { echo "pr-sync: fetch failed." >&2; exit 1; }
@@ -67,8 +72,10 @@ fi
 
 # One bump on top of whichever stamp won, so the merged code never ships
 # under a version a different build already used. --no-verify because the
-# hook would bump a second time.
-node "$HERE/bump-version.js" >/dev/null || { git merge --abort 2>/dev/null; restore; exit 1; }
+# hook would bump a second time. The repo's own bump script, not one next to
+# this file: CI runs this from a copy outside the checkout, and bump-version
+# finds the files it stamps from its own location.
+node "$(git rev-parse --show-toplevel)/scripts/bump-version.js" >/dev/null || { git merge --abort 2>/dev/null; restore; exit 1; }
 git commit -q --no-verify -m "Merge main into $BRANCH [CF-Pages-Skip]" \
   || { echo "pr-sync: merge commit failed." >&2; git merge --abort 2>/dev/null; restore; exit 1; }
 

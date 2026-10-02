@@ -195,6 +195,13 @@ test.describe('a backgrounded page does no screen work', () => {
       auth: window.__realSupa && window.__realSupa.auth,
     };
     window._supaUser = { id: 'u1' };
+    // Crew-locate joins its own channel on a timer of its own. Inside this fake
+    // window it would join 'td-crew-u1' on the fake client whenever that timer
+    // happened to land, and the pocket then (rightly) closed it too, so the
+    // list below grew a fifth name on some runs and not others (webkit, #149,
+    // 2026-10-02). The channels in play are the four above, every run.
+    window.__realCrewLocateInit = _crewLocateInit;
+    _crewLocateInit = () => null;
     _realtimeSubscribed = true;
     window.__reconciles = 0;
     window.__realReconcile = _scheduleReconcile;
@@ -207,6 +214,7 @@ test.describe('a backgrounded page does no screen work', () => {
     window.Capacitor = window.__realCap;
     _realtimeSubscribed = window.__keep.sub; _isEmployee = window.__keep.emp;
     _scheduleReconcile = window.__realReconcile;
+    _crewLocateInit = window.__realCrewLocateInit;
   });
 
   test('an owner phone in a pocket closes the socket, and reopens and catches up on screen', async () => {
