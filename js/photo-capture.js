@@ -159,6 +159,74 @@ async function tdSavePhoto(opts){
 // copy. Found on UAT 2026-09-25: both retries sent the same photo, the second
 // time at display size.
 function tdPhotoWaiting(p){return !!(p&&(p.outboxWait||p.pendingUpload)&&!p.storagePath);}
+// ── HEIC full size (owner 2026-10-02: "keep 4k images but scale them down
+// so they don't hit storage and egress as hard") ────────────────────────────
+// A web view can only write JPEG, so the iPhone app's TdImage plugin
+// (native/td-image) writes the full copy as HEIC: every pixel, about half the
+// bytes. The original file goes in when it is an image, so the full copy is
+// not compressed twice; otherwise the JPEG full copy does. null whenever the
+// plugin is missing or fails, and the caller keeps the JPEG.
+const _PC_HEIC_Q=0.65;
+let _pcHeicOk=null;   // true | false | null (not asked yet)
+function _pcHeicPlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdImage');
+    return (cap.Plugins&&cap.Plugins.TdImage)||null;
+  }catch(_e){return null;}
+}
+async function _pcHeicCapable(){
+  if(_pcHeicOk!==null)return _pcHeicOk;
+  const P=_pcHeicPlugin();
+  if(!P||typeof P.isAvailable!=='function'||typeof P.heic!=='function'){_pcHeicOk=false;return false;}
+  try{const r=await P.isAvailable();_pcHeicOk=!!(r&&r.available);}catch(_e){_pcHeicOk=false;}
+  return _pcHeicOk;
+}
+function _pcBlobB64(blob){
+  return new Promise((res)=>{
+    try{
+      const fr=new FileReader();
+      fr.onload=()=>{const s=String(fr.result||'');const i=s.indexOf(',');res(i>=0?s.slice(i+1):'');};
+      fr.onerror=()=>res('');
+      fr.readAsDataURL(blob);
+    }catch(_e){res('');}
+  });
+}
+function _pcB64Blob(b64,type){
+  const bin=atob(b64),u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  return new Blob([u],{type});
+}
+async function _pcHeicFull(file,fullJpeg,row){
+  try{
+    if(!(await _pcHeicCapable()))return null;
+    const src=(file&&/^image\//.test(file.type||''))?file:fullJpeg;
+    if(!src)return null;
+    const b64=await _pcBlobB64(src);
+    if(!b64)return null;
+    const ts=Date.parse(row&&row.uploadedAt);
+    const r=await _pcHeicPlugin().heic({data:b64,quality:_PC_HEIC_Q,
+      lat:row&&row.lat!=null?Number(row.lat):undefined,lon:row&&row.lon!=null?Number(row.lon):undefined,
+      accM:row&&row.accM!=null?Number(row.accM):undefined,ts:ts>0?ts:undefined});
+    if(!r||!r.data)return null;
+    const out=_pcB64Blob(r.data,'image/heic');
+    return out.size?out:null;
+  }catch(_e){return null;}
+}
+// A HEIC full copy is turned back into JPEG on the phone before it is shared,
+// so the adjuster on a Windows laptop can open what he is sent. Storage keeps
+// the small file; only the share pays the conversion, once, on the device.
+async function _pcShareable(blob){
+  if(!blob||!/heic|heif/i.test(blob.type||''))return blob;
+  try{
+    const bmp=await createImageBitmap(blob);
+    const cv=document.createElement('canvas');cv.width=bmp.width;cv.height=bmp.height;
+    cv.getContext('2d').drawImage(bmp,0,0);
+    const j=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.86));
+    return (j&&j.size)?j:null;
+  }catch(_e){return null;}
+}
 // Upload one row's bytes and finish it: the row, the job sheet's copy, the
 // outbox entry. Shared by the first try (tdSavePhoto) and every retry
 // (tdPhotoFlush), so a retried photo lands exactly like a first-time one:
@@ -191,8 +259,18 @@ async function _pcUploadRow(row,file){
     const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
     // The full-resolution copy is the one an adjuster actually gets sent, so it
     // is the one that most needs the coordinates in it.
-    const _fullBody=_cp&&_cp.full?await _pcWithGps(_cp.full,row.lat,row.lon,row.uploadedAt,row.accM):null;
-    const fullPath=_fullBody?await _uploadPhotoFull(_fullBody,path,_cp.fullMime,_cp.fullExt):'';
+    // In the iPhone app the full copy is HEIC, about half the bytes of the
+    // JPEG for the same pixels; the coordinates go in natively. Anywhere else,
+    // or if the encode fails, it is the JPEG exactly as before.
+    let fullPath='';
+    if(_cp&&_cp.full){
+      const _heic=await _pcHeicFull(file,_cp.full,row);
+      if(_heic)fullPath=await _uploadPhotoFull(_heic,path,'image/heic','heic');
+      if(!fullPath){
+        const _fullBody=await _pcWithGps(_cp.full,row.lat,row.lon,row.uploadedAt,row.accM);
+        fullPath=_fullBody?await _uploadPhotoFull(_fullBody,path,_cp.fullMime,_cp.fullExt):'';
+      }
+    }
     row.url=publicUrl;row.storagePath=path;row.thumbUrl=thumbUrl;row.thumbPath=thumbPath;
     row.fullPath=fullPath;
     // The base64 copy is dropped once the row has a URL: keeping both doubles
@@ -1181,7 +1259,7 @@ function _pcRevViewerHTML(rows){
       '<button type="button" class="pc-side pc-round pc-glass" onclick="tdViewerMenu()">'+_pcIcon('more')+'<span class="pc-sr">More</span></button>'+
       '<div class="pc-menu pc-glass" id="pc-menu">'+
         '<button type="button" class="pc-side" onclick="tdViewerMenu(false);tdMovePhoto(\''+p.id+'\')">Move</button>'+
-        (p.fullPath?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdViewerMenu(false);tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
+        (_pcHasFull(p)?'<button type="button" class="pc-side" id="pc-rev-full" onclick="tdViewerMenu(false);tdPhotoFullSize(\''+p.id+'\');this.remove()">Full size</button>':'')+
       '</div>'+
     '</div>'+
     _pcRevStageHTML(rows)+
@@ -1215,11 +1293,22 @@ let _pcSharpTimer=null;
 function _pcViewSrc(p){
   return (p&&(p.url||p.data||p.thumbUrl))||'';
 }
+// Photos are immutable public objects, so the viewer asks for them through the
+// app's Cloudflare image cache (_cdnPhoto, functions/img): Supabase pays for
+// one fetch per photo per edge, and every repeat view, on any phone, is free
+// (egress, 2026-10-02). A miss on the cache route falls back to the direct
+// URL, so a photo can never go missing over it.
+function _pcCdn(url){
+  try{return (typeof _cdnPhoto==='function'&&url)?_cdnPhoto(url):url;}catch(_e){return url;}
+}
 function _pcSwapSrc(img,url){
-  if(!img||!url||img.getAttribute('src')===url)return;
+  if(!img||!url)return;
+  const via=_pcCdn(url);
+  if(img.getAttribute('src')===url||img.getAttribute('src')===via)return;
   const pre=new Image();
-  pre.onload=()=>{if(img.isConnected)img.src=url;};
-  pre.src=url;
+  pre.onload=()=>{if(img.isConnected)img.src=pre.src;};
+  pre.onerror=()=>{if(pre.src!==url&&via!==url)pre.src=url;};
+  pre.src=via;
 }
 function _pcRevSharpen(){
   clearTimeout(_pcSharpTimer);
@@ -1234,7 +1323,7 @@ function _pcRevSharpen(){
     _pcSwapSrc(panes[2],_pcViewSrc(rows[(i+1)%n]));
   }
   _pcSwapSrc(cur,_pcViewSrc(p));
-  if(!p.fullPath)return;
+  if(!_pcHasFull(p))return;
   const id=p.id;
   _pcSharpTimer=setTimeout(()=>{
     if(!_pcRev||_pcRev.i<0)return;
@@ -1339,9 +1428,12 @@ async function tdPhotoShare(ids){
       const files=[];
       for(let k=0;k<rows.length;k++){
         const p=rows[k];
-        const src=(p.fullPath&&_pcFullUrl(p))||tdPhotoSrc(p);
+        const full=_pcHasFull(p)?_pcFullUrl(p):'';
+        const src=full||tdPhotoSrc(p);
         if(!src)continue;
-        const blob=await (await fetch(src)).blob();
+        let blob=await _pcShareable(await (await fetch(src)).blob());
+        if(!blob&&full){const d=tdPhotoSrc(p);if(d)blob=await (await fetch(d)).blob();}
+        if(!blob)continue;
         const ext=/png/.test(blob.type)?'png':'jpg';
         files.push(new File([blob],(String(p.addr||'photo').split(',')[0].replace(/[^\w]+/g,'-')||'photo')+'-'+(k+1)+'.'+ext,{type:blob.type||'image/jpeg'}));
       }
@@ -3162,10 +3254,26 @@ function _pcShotTime(p){
 // the browser rather than billed again.
 function tdPhotoHasFull(photoId){
   const p=photos.find(x=>String(x.id)===String(photoId));
-  return !!(p&&p.fullPath);
+  return _pcHasFull(p);
+}
+// A HEIC full copy only counts where this browser can draw it (Safari on
+// iOS 17 and later, which is the app). Anywhere else the display copy is
+// what shows, and no Full size is offered that would come up blank.
+function _pcHasFull(p){
+  if(!p||!p.fullPath)return false;
+  return !/\.heic$/i.test(p.fullPath)||_pcCanShowHeic();
+}
+function _pcCanShowHeic(){
+  try{
+    const ua=navigator.userAgent||'';
+    const ios=/iP(hone|ad|od)/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
+    if(!ios)return false;
+    const m=ua.match(/OS (\d+)[_.]/)||ua.match(/Version\/(\d+)/);
+    return !!m&&Number(m[1])>=17;
+  }catch(_e){return false;}
 }
 function _pcFullUrl(p){
-  if(!p||!p.fullPath)return '';
+  if(!_pcHasFull(p))return '';
   if(!(typeof supaEnabled==='function'&&supaEnabled()&&_supa))return '';
   const{data}=_supa.storage.from('gallery').getPublicUrl(p.fullPath);
   return(data&&data.publicUrl)||'';
@@ -3179,7 +3287,11 @@ function tdPhotoFullSize(photoId,imgEl){
   const url=_pcFullUrl(p);
   if(!url)return '';
   const el=imgEl||document.getElementById('pc-rev-img');
-  if(el)el.src=url;
+  if(el){
+    const via=_pcCdn(url);
+    if(via!==url)el.onerror=()=>{el.onerror=null;el.src=url;};
+    el.src=via;
+  }
   return url;
 }
 

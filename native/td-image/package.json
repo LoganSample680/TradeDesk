@@ -1,0 +1,13 @@
+{
+  "name": "td-image",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk HEIC encoder. A web view cannot write HEIC (canvas only encodes JPEG and PNG on iOS), and HEIC is about half the bytes of JPEG for the same picture, so the full-size copy of a job photo is encoded here. Raw capability only: which photo, what quality and whether to use it at all are decided in js/photo-capture.js.",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdImage.podspec"]
+}
