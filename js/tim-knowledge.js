@@ -63,7 +63,10 @@
 // The phrases are how a contractor says the work, not how a spec writer does.
 // Longest phrase wins, so "tear out" cannot be eaten by "out".
 const TIM_STAGES=[
-  {k:'access', n:'Access and staging', say:['deliver the','acclimate','scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out']},
+  {k:'access', n:'Access and staging', say:['deliver the','acclimate','scaffold','staging','stage the','ladder','lift','boom lift','scissor lift','swing stage','set up','mobilize','permit','pull a permit','shut the water off','kill the power','lock out',
+    // Every shutoff is access, not just the water (owner's bid 2026-10-01: a
+    // "Shut the power off" step had no stage and landed after the start-up).
+    'shut the power','shut the gas','shut off the','turn off the','turn the power off','turn the gas off']},
   {k:'protect',n:'Protect and remove',  say:['recover the refrigerant','move the furniture','tarp','hang plastic','mask off','mask','masking','drop cloth','cover','protect','plastic off','move furniture','remove gutters','pull the gutters','take the gutters','remove shutters','remove fixtures','take down','pull the trim','disconnect']},
   // 'pull the old', 'take out', 'swap out' and the rest added 2026-09-23: this
   // list was a painter's, so a water heater coming out of a basement was a step
@@ -2215,6 +2218,135 @@ function timRoomOf(text){
   for(const [room,re] of _TIMK_ROOMS)if(re.test(t))return room;
   return null;
 }
+
+// ── HIS NARRATION, WRITTEN AS STEPS (owner 2026-10-01) ─────────────────────
+// Typed into Build Your Own: "I am removing a electric water heater and
+// replacing with gas". Tim split it right and then printed it as told:
+// "Removing a electric water heater", "Replacing with gas". A contract step is
+// an instruction, not a diary. So the step writer (never the splitter, which
+// stays his words so the split can be checked against them) turns a leading
+// "-ing" verb into the plain verb, fixes "a electric", says "the" for the thing
+// coming out, and reads "replacing with gas" after a removal as the new unit
+// going in. A letter he wrote himself is left exactly as written.
+const _TIMK_OUT_STEP=/^(?:remove|pull(?:\s+out)?|tear\s+out|take\s+out|rip\s+out|haul\s+(?:out|away|off)|disconnect|demo|get\s+rid\s+of|drain\s+and\s+remove)\b/i;
+const _TIMK_IN_STEP=/^(?:install|put\s+in|set|mount|hang|swap\s+in)\b/i;
+const _TIMK_APPLIANCE=/\b(tankless(?:\s+water\s+heater)?|water\s+heater|furnace|heat\s+pump|air\s+handler|condenser|boiler|mini\s?split|ac\s+unit|air\s+conditioner|water\s+softener|dryer|range|stove|oven|cooktop|dishwasher)\b/i;
+// The plain verb of "removing", "putting", "replacing", or null.
+function _timkBaseVerb(w){
+  const s=String(w||'').toLowerCase();
+  if(!/^[a-z]{4,}ing$/.test(s))return null;
+  const stem=s.slice(0,-3);
+  if(_TIMK_VERBS.has(stem))return stem;
+  if(_TIMK_VERBS.has(stem+'e'))return stem+'e';
+  if(/([bcdfglmnprstvz])\1$/.test(stem)&&_TIMK_VERBS.has(stem.slice(0,-1)))return stem.slice(0,-1);
+  return null;
+}
+// "a electric" is "an electric"; "a unit" stays "a unit".
+function _timkArticles(t){
+  // Lower-case words only: a brand is spelled how the maker spells it, and "a
+  // Uponor" is said the way he said it.
+  return String(t).replace(/\b([Aa])\s+(?=([a-z]+))/g,(m,a,w)=>{
+    const lw=w;
+    if(!/^[aeiou]/.test(lw))return m;
+    if(/^u/.test(lw)&&!/^un(?!i)/.test(lw))return m;
+    if(/^(?:one|once)$/.test(lw)||/^eu/.test(lw))return m;
+    return a+'n ';
+  });
+}
+function _timkImperative(text){
+  let t=String(text||'').trim();
+  const m=t.match(/^([A-Za-z]+ing)\b\s*(.*)$/);
+  if(m){
+    const base=_timkBaseVerb(m[1]);
+    const words=m[2].split(/\s+/).map(w=>w.replace(/[^a-z]/gi,''));
+    const next=words[0]||'';
+    const replaceWith=/^replac/i.test(m[1])&&/^with$/i.test(next);
+    // "putting in a softener", "tearing out the vanity": a verb and its
+    // particle. "Painting in the kitchen" is a heading, not an order.
+    const particle=/^(?:out|up|off|down|back)$/i.test(next)||/^in$/i.test(next)&&/^(?:an?|new|some|two|three|\d+)$/i.test(words[1]||'');
+    // Only a verb acting ON something: "replacing the IGUs", "running 2 new
+    // circuits", "putting LifeProof plank". "Bonding primer" is a kind of
+    // primer, not an order to bond it, so a bare noun after it is left alone.
+    const object=/^(?:the|a|an|all|both|every|each|some|any|my|our|his|her|their|its|it|them|this|that|these|those|new|old|existing|\d[\d.,\/]*)$/i.test(next)
+      ||/^[A-Z]/.test((m[2].split(/\s+/)[0]||''));
+    if(base&&m[2]&&(replaceWith||particle||object)){
+      t=base.charAt(0).toUpperCase()+base.slice(1)+' '+m[2];
+    }
+  }
+  t=_timkArticles(t);
+  // The thing coming out is the one in the house: "the", never "a".
+  // Not "pull": he pulls a permit and pulls a vacuum, and neither is in the house.
+  t=t.replace(/^((?:remove|pull\s+out|tear\s+out|take\s+out|rip\s+out|disconnect|get\s+rid\s+of)\s+)(?:an?)\s+(?=[a-z])/i,'$1the ');
+  return t;
+}
+// "Replace with gas" right after the old unit comes out is the new one going
+// in: "Install the new gas water heater". Only when the step before names the
+// unit, so "replace with a longer one" on its own is left alone.
+function _timkReplaceWith(steps){
+  return steps.map((t,i)=>{
+    const m=String(t).match(/^replace\s+(?:it\s+|that\s+|them\s+)?with\s+(?:an?\s+|the\s+)?(?:new\s+)?(.+?)\s*$/i);
+    if(!m||i===0)return t;
+    let prev=null;
+    for(let j=i-1;j>=0;j--){if(_TIMK_OUT_STEP.test(steps[j])&&_TIMK_APPLIANCE.test(steps[j])){prev=steps[j];break;}}
+    if(!prev)return t;
+    const unit=prev.match(_TIMK_APPLIANCE)[1].toLowerCase();
+    let what=m[1].replace(/\s+(?:one|unit|model)$/i,'').trim();
+    if(!what)return t;
+    if(!_TIMK_APPLIANCE.test(what))what+=' '+unit;
+    return 'Install the new '+what;
+  });
+}
+// A brand he names on a job where one unit comes out and another goes in is
+// the one going in. "Removing a electric water heater, Bradford White" was a
+// brand on the unit in the skip. "Old Rheem" stays on the old one, and two
+// brands said are two units, left as said.
+const _TIMK_BRAND_NAMES=['Bradford White','AO Smith','A.O. Smith','A. O. Smith','Rheem','Ruud','Navien','Rinnai','Noritz','Takagi','Bosch','State Select',
+  'Carrier','Bryant','Trane','American Standard','Lennox','Goodman','Amana','Daikin','Mitsubishi','Fujitsu','Tempstar',
+  'Weil-McLain','Burnham','Viessmann','Lochinvar','Kinetico','Culligan','Fleck','Generac','Kohler','Square D','Siemens','Eaton'];
+function _timkBrandIn(t){
+  for(const b of _TIMK_BRAND_NAMES){
+    const re=new RegExp('(^|[\\s,(])('+b.replace(/[.]/g,'\\.').replace(/\s+/g,'\\s+')+')(?=$|[\\s,.)])','i');
+    const m=String(t).match(re);
+    if(m)return {name:b,said:m[2],at:m.index+m[1].length};
+  }
+  return null;
+}
+function _timkBrandToInstall(steps){
+  const out=steps.slice();
+  const ins=out.findIndex(t=>_TIMK_IN_STEP.test(t)&&_TIMK_APPLIANCE.test(t));
+  if(ins<0||!out.some(t=>_TIMK_OUT_STEP.test(t)))return out;
+  const hits=[];
+  out.forEach((t,i)=>{const b=_timkBrandIn(t);if(b)hits.push({i,b});});
+  const names=new Set(hits.map(h=>h.b.name.toLowerCase()));
+  if(names.size!==1)return out;
+  const h=hits.find(x=>x.i!==ins);
+  if(!h)return out;
+  const src=out[h.i];
+  if(/\b(?:old|existing)\s*$/i.test(src.slice(0,h.b.at)))return out;
+  // Off the step it was stuck to, commas and all.
+  let rest=(src.slice(0,h.b.at)+src.slice(h.b.at+h.b.said.length))
+    .replace(/\s*,\s*,\s*/g,', ').replace(/\s{2,}/g,' ').replace(/^[\s,]+|[\s,]+$/g,'')
+    .replace(/\s+(?:and|with)$/i,'');
+  // Onto the new one, in front of what it is: "the new Bradford White gas water heater".
+  const brand=h.b.name==='A.O. Smith'||h.b.name==='A. O. Smith'?'AO Smith':h.b.name;
+  let dst=out[ins];
+  if(_timkBrandIn(dst))return out;
+  const nm=dst.match(/^(\S+(?:\s+in)?\s+(?:the\s+|an?\s+)?(?:new\s+)?)/i);
+  dst=nm?nm[1]+brand+' '+dst.slice(nm[1].length):dst+', '+brand;
+  dst=_timkArticles(dst.replace(/\b([Aa])n\s+(?=[A-Z])/,'$1 '));
+  out[ins]=dst;
+  // What is left of the step: gone when it was only the brand ("Bradford
+  // White gas" said before the install), otherwise the step without it.
+  const left=rest.replace(/\b(?:gas|electric|propane|tank|tankless|new|one|unit|model|going|goes|go|in|is)\b/gi,'').replace(/[^a-z]/gi,'');
+  out[h.i]=left?rest.charAt(0).toUpperCase()+rest.slice(1):null;
+  return out;
+}
+// One entry per step in, null where a step folded away (a brand said on its
+// own, now on the install).
+function timWriteSteps(steps){
+  const imp=(steps||[]).map(_timkImperative);
+  return _timkBrandToInstall(_timkReplaceWith(imp));
+}
 function timScopeBuild(text,opts){
   const _letter=timLetter(text);
   const said=_letter.text;
@@ -2239,6 +2371,18 @@ function timScopeBuild(text,opts){
     const keep=bits.filter((b,i)=>i===0||!(shoppy(b)&&!(headMat&&/^(?:and\s+)?\d/.test(b.trim()))&&_timkOnlyMaterials(b)));
     return keep.length===bits.length?p:Object.assign({},p,{text:keep.join(', ')});
   });
+  // The step writer: his narration as instructions (a letter he wrote stays
+  // as written). A step folded away (a brand said on its own, moved onto the
+  // install) hands any price it carried to the step before it.
+  if(!_written){
+    const wrote=timWriteSteps(priced.map(p=>p.text));
+    const kept=[];
+    priced.forEach((p,i)=>{
+      if(wrote[i]!==null&&wrote[i]!==undefined){kept.push(Object.assign({},p,{text:wrote[i]}));return;}
+      if(p.price&&kept.length)kept[kept.length-1].price=(kept[kept.length-1].price||0)+p.price;
+    });
+    priced.splice(0,priced.length,...kept);
+  }
   const steps=priced.map(p=>p.text);
   const staged=timOrderScope(steps);
   const byText={};
@@ -2556,9 +2700,11 @@ const TIM_IMPLIED=[
     step:'Shut the power off at the panel and verify it is dead',
     say:'Power off first',
     because:'You never said you killed it. Nothing else on this list happens until you have.',
+    // An electric water heater is a 240V circuit even when nobody says
+    // "panel" (owner's bid, 2026-10-01: the power-off step was missing).
     when:(t,steps)=>{
       const n=_timkNorm(t)+' '+(steps||[]).map(s=>_timkNorm(s&&s.text)).join(' ');
-      return _TIMK_HOT.test(n)&&!_TIMK_POWER_OFF.test(n);
+      return (_TIMK_HOT.test(n)||/\belectric (?:water heater|hot water|tankless|tank)\b/.test(n))&&!_TIMK_POWER_OFF.test(n);
     },
   },
   {

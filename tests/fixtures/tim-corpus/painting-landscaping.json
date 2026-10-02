@@ -50,7 +50,7 @@
     "trade": "painting",
     "said": "Um so will be removing all the kitchen cabinet doors and hardware, degrease everything, scuff sand, prime with Benjamin more Stix, uh actually no, prime with Zinsser BIN, then spray 2 coats of Advance in satin. Reinstall doors and hardware. 4800 for the kitchen.",
     "expect": [
-      "Removing all the kitchen cabinet doors and hardware",
+      "Remove all the kitchen cabinet doors and hardware",
       "Degrease everything",
       "Scuff sand",
       "Prime with Zinsser BIN",
@@ -112,7 +112,7 @@
     "trade": "painting",
     "said": "Where painting the sofit and fashia all the way around, 1 coat Duration satin in the existing color. Replace the rotted fashia board over the garage, about 12 feet. Cock all the gaps with Alex plus.",
     "expect": [
-      "Painting the soffit and fascia all the way around, 1 coat Duration satin in the existing color",
+      "Paint the soffit and fascia all the way around, 1 coat Duration satin in the existing color",
       "Replace the rotted fascia board over the garage, about 12 feet",
       "Caulk all the gaps with Alex Plus"
     ],
@@ -338,7 +338,7 @@
     "trade": "painting",
     "said": "will be spraying the hardy siding 2 coats of Duration color matched to their existing, Accessible Beige, and back roll it. Brush and roll the trim in Extra White.",
     "expect": [
-      "Spraying the Hardie siding 2 coats of Duration color matched to their existing, Accessible Beige, and back roll it",
+      "Spray the Hardie siding 2 coats of Duration color matched to their existing, Accessible Beige, and back roll it",
       "Brush and roll the trim in Extra White"
     ],
     "heard": [

@@ -2254,12 +2254,19 @@ function _timMissAskNeed(id){
   if(typeof showToast==='function')showToast('Type the make and model first');
 }
 // The line the unit goes into: his install step that names the equipment,
-// else any step that does. Returns the index, or -1.
+// else any step that does, as long as it is not the one coming OUT. The
+// make and model he types is the unit he is selling: "Removing a electric
+// water heater, Bradford White" put the new brand on the unit in the skip
+// (owner's bid, 2026-10-01), because a removal Tim had no stage for passed
+// the "not demo, not old" test. A step that takes a unit out never gets it.
+// Returns the index, or -1.
+const _TIM_ASK_OUT=/^\s*(?:remove|removing|pull|pulling|tear(?:ing)?\s+out|take\s+out|taking\s+out|rip(?:ping)?\s+out|haul|hauling|disconnect|disconnecting|demo|get(?:ting)?\s+rid|drain\s+and\s+remove|dispose)\b/i;
 function _timMissAskTarget(texts){
   const eq=/\b(tankless|water heater|furnace|heat pump|air handler|condenser|boiler|mini ?split|ac unit|air conditioner|panel|sub ?panel|water softener)\b/i;
   const st=t=>(typeof timStageOf==='function'?timStageOf(t):null);
-  let i=texts.findIndex(t=>eq.test(t)&&st(t)==='install');
-  if(i<0)i=texts.findIndex(t=>eq.test(t)&&st(t)!=='demo'&&!/\bold\b/i.test(t));
+  const out=t=>_TIM_ASK_OUT.test(t)||st(t)==='demo';
+  let i=texts.findIndex(t=>eq.test(t)&&st(t)==='install'&&!out(t));
+  if(i<0)i=texts.findIndex(t=>eq.test(t)&&!out(t)&&!/\bold\b/i.test(t));
   return i;
 }
 function _timMissLearn(im,yes){
@@ -2756,32 +2763,48 @@ function _pkgHistory(trade){
   return bids.filter(b=>b&&!b.cancelledAt&&(b.trade_type||'general')===t&&b.id!==_geiEditBidId&&_pkgBidLines(b).length)
     .sort((a,b)=>String(b.bid_date||'').localeCompare(String(a.bid_date||''))||(b.id-a.id));
 }
+// ONE JOB, HOWEVER MANY TIMES IT WAS SAVED (owner 2026-10-01: "it's also
+// pulling in my old estimate for usually goes with this"). His account held
+// FOUR copies of one washer-box job, same customer, same day: re-saves, a
+// lost one redone, the signed one. Counted as bids, that was four jobs that
+// "always" had "Shut the power off at the panel", so a line from one estimate
+// came back as a habit. A job is a customer on a day; the copies are one job,
+// and the newest copy speaks for it. A bid with no customer is its own job.
+// Each job: {bid (the newest), keys: Map key -> line, every line on any copy}.
+function _pkgJobs(trade){
+  const hist=_pkgHistory(trade);
+  const jobs=[],byKey=new Map();
+  hist.forEach(b=>{
+    const who=b.client_id!=null&&b.client_id!==''?'id:'+b.client_id:(String(b.client_name||'').trim()?'nm:'+String(b.client_name).trim().toLowerCase():'');
+    const k=who&&b.bid_date?who+'|'+b.bid_date:'';
+    let j=k?byKey.get(k):null;
+    if(!j){j={bid:b,keys:new Map()};jobs.push(j);if(k)byKey.set(k,j);}
+    _pkgBidLines(b).forEach(l=>{const lk=_pbKey(l.label);if(lk&&!j.keys.has(lk))j.keys.set(lk,l);});
+  });
+  return jobs;
+}
 function _pkgSuggestions(trade){
   const hist=_pkgHistory(trade);
   const out=[];
   if(!hist.length)return out;
   const last=_pkgBidLines(hist[0]);
   if(last.length)out.push({key:'last',label:'Same as last time',sub:last.length+' line'+(last.length===1?'':'s')+' from '+(hist[0].bid_date||'your last one'),lines:last});
-  if(hist.length>=_PKG_MIN_BIDS){
+  const jobs=_pkgJobs(trade);
+  if(jobs.length>=_PKG_MIN_BIDS){
     const seen=new Map();
-    hist.forEach(b=>{
-      const once=new Set();
-      _pkgBidLines(b).forEach(l=>{
-        const k=_pbKey(l.label);
-        if(!k||once.has(k))return;
-        once.add(k);
-        const e=seen.get(k)||{n:0,l};
-        e.n++;e.l=e.l||l;
-        seen.set(k,e);
-      });
-    });
-    const usual=[...seen.values()].filter(e=>e.n/hist.length>=_PKG_SHARE)
+    jobs.forEach(j=>j.keys.forEach((l,k)=>{
+      const e=seen.get(k)||{n:0,l};
+      e.n++;
+      seen.set(k,e);
+    }));
+    // Usual means two jobs at least, and more than half of them.
+    const usual=[...seen.values()].filter(e=>e.n>=2&&e.n/jobs.length>=_PKG_SHARE)
       .sort((a,b)=>b.n-a.n).map(e=>e.l);
     // Only worth offering when it is genuinely a package and genuinely
     // different from the last job, or it is the same button twice.
     const lastKeys=new Set(last.map(l=>_pbKey(l.label)));
     const differs=usual.some(l=>!lastKeys.has(_pbKey(l.label)))||usual.length!==last.length;
-    if(usual.length>=2&&differs)out.push({key:'usual',label:'What you always sell',sub:usual.length+' line'+(usual.length===1?'':'s')+' on most of your '+hist.length+' jobs',lines:usual});
+    if(usual.length>=2&&differs)out.push({key:'usual',label:'What you always sell',sub:usual.length+' line'+(usual.length===1?'':'s')+' on most of your '+jobs.length+' jobs',lines:usual});
   }
   return out;
 }
@@ -2910,15 +2933,10 @@ function _attachSuggestions(trade){
 }
 const _ATTACH_MAX=6;
 function _attachLearned(cur,trade){
-  const hist=_pkgHistory(trade).slice(0,_ATTACH_SCAN);
-  if(hist.length<_ATTACH_MIN)return [];
-  // One key->line map per past bid, built once. Everything below is set math
-  // over these, not another pass through the bids.
-  const past=hist.map(b=>{
-    const m=new Map();
-    _pkgBidLines(b).forEach(l=>{const k=_pbKey(l.label);if(k&&!m.has(k))m.set(k,l);});
-    return m;
-  });
+  // One key->line map per past JOB (copies of one estimate are one job, see
+  // _pkgJobs), built once. Everything below is set math over these.
+  const past=_pkgJobs(trade).slice(0,_ATTACH_SCAN).map(j=>j.keys);
+  if(past.length<_ATTACH_MIN)return [];
   const skip=new Set(_attachSkipped||[]);
   const cand=new Map();
   cur.forEach((anchorLabel,anchorKey)=>{
@@ -2932,7 +2950,9 @@ function _attachLearned(cur,trade){
     }));
     tally.forEach((e,k)=>{
       const share=e.n/withAnchor.length;
-      if(share<_ATTACH_SHARE)return;
+      // "Usually" is two jobs at the least and most of the ones with the
+      // anchor. One job is a last time, never a usually.
+      if(e.n<_ATTACH_MIN||share<_ATTACH_SHARE)return;
       // Nothing to compare against means we cannot tell the two apart yet, so
       // the share alone has to carry it.
       if(without.length){
@@ -2962,8 +2982,9 @@ function _geiAddRememberedLine(l){
     const secs=_byoSections();
     const sec=(/material/i.test(l.label)&&secs.find(x=>/material/i.test(x)))||secs[0]||'Work';
     const nid=(_byoItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
-    _byoItems.push(_byoNormItem({id:nid,section:sec,label:l.label,qty:1,
-      unit:(bk&&bk.unit)||l.unit||'ea',rate,price:rate,notes,on:true}));
+    const rec=_byoNormItem({id:nid,section:sec,label:l.label,qty:1,
+      unit:(bk&&bk.unit)||l.unit||'ea',rate,price:rate,notes,on:true});
+    _geiPlaceOffered(_byoItems,rec);
     return true;
   }
   if(_geiLines.some(x=>x&&!x._tmLabor&&_pbKey(x.desc)===key))return false;
@@ -2971,6 +2992,21 @@ function _geiAddRememberedLine(l){
   // Materials sheet (js/materials.js).
   _geiLines.push({desc:String(l.label).trim(),notes,qty:1,unit:'lot',rate,total:rate});
   return true;
+}
+// WHERE AN ACCEPTED OFFER LANDS ON THE BUILDER (owner's bid 2026-10-01:
+// "Shut the power off at the panel" was the LAST of thirteen steps, after the
+// new heater was started up). Every offer was pushed onto the end. The
+// customer's copy already regroups by stage (_propStageGroups) but the
+// builder is what he reads, so an offer goes where its stage says, by the
+// same rule a step he takes from Tim's card uses (_scopePlaceAt): shutoffs
+// and protection before the tear-out, start-up and clean-up last, and an
+// offer Tim has no stage for with the install work, ahead of the testing.
+// A list he wrote himself as a letter keeps his order: it goes on the end.
+function _geiPlaceOffered(arr,rec){
+  const work=!/material/i.test(String(rec.section||''));
+  if(!work||arr.some(x=>x&&x._written)||typeof timStageOf!=='function'){arr.push(rec);return;}
+  const st=timStageOf(String(rec.label||'').replace(/[-\u2010-\u2014]/g,' '))||'install';
+  _scopePlaceAt(arr,rec,st,false);
 }
 function _geiRefreshLines(){
   if(typeof _geiIsFreeForm!=='undefined'&&_geiIsFreeForm){
@@ -3002,25 +3038,36 @@ function _attachSkip(key){
   if(!_attachSkipped.includes(key))_attachSkipped.push(key);
   _geiRefreshLines();
 }
+// TWO SOURCES, TWO NAMES (owner 2026-10-01). "Usually goes with this" is a
+// claim about HIS jobs, so it heads only what his own history proves: two
+// jobs at least, most of the ones with the anchor. What the trade library
+// knows is labelled as the trade's, never as his habit. Every row is an
+// offer: nothing lands without his Add.
 function _attachCardHTML(){
   const sugg=_attachSuggestions();
   if(!sugg.length)return '';
-  const rows=sugg.map((s,i)=>
+  const row=(s,i)=>
     '<div style="display:flex;align-items:center;gap:8px;padding:10px 0'+(i?';border-top:1px solid var(--border)':'')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text);overflow-wrap:anywhere">'+escHtml(s.line.label)+'</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow-wrap:anywhere">'+(s.lib
           ?escHtml(s.why||('Often left off '+s.anchorLabel))
-          :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of)+'</div>'+
+          :'with '+escHtml(s.anchorLabel)+' on '+s.n+' of your last '+s.of+' jobs')+'</div>'+
       '</div>'+
       '<button onclick="_attachAdd('+escHtml(JSON.stringify(s.key))+')" class="btn btn-sm btn-p" style="flex-shrink:0;font-size:12px;padding:8px 14px">Add</button>'+
       '<button class="att-skip" onclick="_attachSkip('+escHtml(JSON.stringify(s.key))+')" aria-label="Not this time" title="Not this time" style="flex-shrink:0;background:none;border:none;color:var(--text3);font-size:18px;line-height:1;padding:4px 2px;cursor:pointer;font-family:inherit">×</button>'+
-    '</div>').join('');
+    '</div>';
+  const mine=sugg.filter(s=>!s.lib),trade=sugg.filter(s=>s.lib);
+  const sub=(t)=>'<div class="att-src" style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;padding:10px 0 0">'+t+'</div>';
+  const title=mine.length?'Usually goes with this':'What the trade usually needs';
+  const body=mine.length&&trade.length
+    ?mine.map(row).join('')+sub('What the trade usually needs')+trade.map(row).join('')
+    :sugg.map(row).join('');
   return '<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#B7791F)">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' Usually goes with this</div>'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('🔗',{size:14})+' '+title+'</div>'+
       (sugg.length>1?'<button onclick="_attachAddAll()" class="btn btn-sm" style="font-size:11px;padding:6px 10px">Add all</button>':'')+
     '</div>'+
-    '<div style="padding:2px 14px 12px">'+rows+'</div>'+
+    '<div style="padding:2px 14px 12px">'+body+'</div>'+
   '</div>';
 }
 
