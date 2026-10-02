@@ -1,0 +1,20 @@
+{
+  "_note": "Source of truth for the App Store listing. scripts/asc-listing.mjs pushes it; docs/app-store/submission-kit.md shows the same text for copy-paste (a test keeps them identical).",
+  "bundleId": "app.tradedesk",
+  "locale": "en-US",
+  "subtitle": "Estimate, invoice, get paid",
+  "privacyPolicyUrl": "https://tradedeskpro.app/privacy",
+  "primaryCategory": "BUSINESS",
+  "secondaryCategory": "PRODUCTIVITY",
+  "copyright": "2026 TradeDesk",
+  "promotionalText": "Estimate on site, get it signed, schedule the crew and get paid, all from your phone. Drives and job time log themselves. Works with no signal.",
+  "description": "TradeDesk runs a trade business from one app: the estimate, the signature, the schedule, the crew, the invoice and the payment. Built for painters, plumbers, electricians, HVAC, landscapers and general contractors who would rather be on the job than at a desk.\n\nESTIMATE AND SIGN ON THE SPOT\nBuild a fixed price, time and materials, or custom estimate in minutes using your own prices. Measure rooms by walking them with your iPhone. Send it by text or email and your client signs from their phone.\n\nSCHEDULE AND RUN THE CREW\nBook jobs, dispatch the crew and see who is where during working hours. Each crew member agrees on their own phone before their location is shared, and tracking runs only inside the business hours you set.\n\nTIME AND MILEAGE THAT LOG THEMSELVES\nWork drives become mileage entries with real road miles. Time on a job site is logged when you arrive and leave. Fix anything by hand in a tap.\n\nINVOICE AND GET PAID\nSend an invoice your client can pay by card through your own Stripe account, or log cash, check and Venmo yourself. Change orders, deposits and balances stay attached to the job.\n\nTHE BOOKS ARE BUILT IN\nIncome, expenses, mileage and lien deadlines are tracked as you work, so tax time is a report, not a weekend.\n\nWORKS WITH NO SIGNAL\nBasements, crawlspaces and rural jobs are fine. Your work saves on the phone and syncs when you are back online.\n\nQuestions: tradedeskprosupport@gmail.com",
+  "keywords": "contractor,estimate,invoice,mileage,crew,plumber,electrician,painter,hvac,quote,timesheet,lien,job",
+  "supportUrl": "https://tradedeskpro.app/support",
+  "marketingUrl": "https://tradedeskpro.app",
+  "reviewNotes": "TradeDesk is a business app for trade contractors (painters, plumbers, electricians, HVAC). It covers estimates, client e-signature, scheduling, crew dispatch, invoicing and payments.\n\nDEMO ACCOUNT\nThe account above is a sample contracting business with clients, estimates, jobs, a crew member, invoices and mileage already in it.\n\nBACKGROUND LOCATION (2.5.4)\nLocation is used to log work drives as mileage (an IRS business record) and time on job sites for payroll. It runs only inside the business hours the company sets in Settings. A crew member's location is shared with their employer only after they accept on their own phone, and anyone can turn it off in iOS Settings. Logged drives appear under Mileage, and job time appears on the job and in the time log. A screen recording of this is attached.\n\nPAYMENTS (3.1.3(e))\nCard payments are clients paying the contractor for physical, real-world services (painting, plumbing, repairs). They go through the contractor's own Stripe Connect account. The app sells no digital goods and has no in-app purchases. The app is free.\n\nACCOUNT DELETION (5.1.1(v))\nSettings, Danger zone, Delete account. It permanently deletes the account and its data.\n\nSIGN IN\nEmail and password, or Sign in with Apple.\n\nOTHER PERMISSIONS\nCamera: job photos and LiDAR room scans for estimates (room scan needs a LiDAR iPhone or iPad Pro). Microphone and speech: voice notes, transcribed on device. Motion: detects when a drive starts and ends. Face ID: locks the app to the signing screen while a client holds the phone. Notifications: job and payment alerts.\n\nSupport: tradedeskprosupport@gmail.com",
+  "contactEmail": "tradedeskprosupport@gmail.com",
+  "territories": [
+    "USA"
+  ]
+}

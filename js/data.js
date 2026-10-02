@@ -478,6 +478,203 @@ function setPropertyData(client,addr,data){
   // Mirror to legacy client-level fields for the primary address (back-compat).
   if(k===_addrKey(client.addr))_PROP_FIELDS.forEach(f=>{if(data[f]!=null)client[f]=data[f];});
 }
+// THE MATERIALS BOOK (Jack 2026-09-29: "Does it build a price sheet for
+// materials?"; owner: "receipts should build a materials book you can pull
+// from ... grabs the recent price ... most used thing at the top so we make
+// sure we got enough on the truck ... all this transitions over to other
+// trades"). Every scanned receipt's parts land here: the newest price wins,
+// with where and when, and how many he has bought over how many trips.
+// One book for every trade: a part is a part.
+// Kept apart from S.priceBook on purpose: the price book is what he CHARGES
+// and feeds every estimate; this is what he PAID. A receipt writing a sell
+// price would quietly bill parts at cost. A screen that wants a price for a
+// part the price book has never seen may start from this cost.
+// ONE LINE PER PART, WHATEVER STORE SOLD IT (Earl 2026-09-29): Ferguson prints
+// "SB 1/2 CPLG", Menards "SHARKBITE 1/2IN COUPLING", and to him both are the
+// same coupling. partCanon spells out the shorthand receipts use and drops the
+// SKU, so both land as "SharkBite 1/2 in coupling"; partCostLearn then treats
+// any name with the same sizes and nearly the same words as that one line.
+const _PART_ABBR={
+  cplg:'coupling',cpl:'coupling',cplng:'coupling',ell:'elbow',elb:'elbow',el:'elbow',adpt:'adapter',adptr:'adapter',adapt:'adapter',
+  vlv:'valve',ftg:'fitting',ftgs:'fittings',fem:'female',fpt:'FPT',mpt:'MPT',fip:'FIP',mip:'MIP',swt:'sweat',cu:'copper',cop:'copper',
+  brs:'brass',galv:'galvanized',nip:'nipple',bush:'bushing',bshg:'bushing',stl:'steel',ss:'stainless',wht:'white',blk:'black',
+  gal:'gallon',qt:'quart',pk:'pack',pkg:'pack',ct:'count',rl:'roll',bx:'box',asst:'assorted',sb:'SharkBite',shrkbt:'SharkBite',
+  recep:'receptacle',rcpt:'receptacle',rcp:'receptacle',outl:'outlet',sw:'switch',swch:'switch',wr:'wire',cbl:'cable',cndt:'conduit',
+  conn:'connector',cnctr:'connector',strp:'strap',brkr:'breaker',bkr:'breaker',scr:'screw',scrw:'screws',drywl:'drywall',dw:'drywall',
+  sht:'sheet',shts:'sheets',pnl:'panel',clg:'ceiling',flr:'floor',lt:'light',ltg:'lighting',fxtr:'fixture',fix:'fixture',
+  trp:'trap',tlt:'toilet',wtr:'water',htr:'heater',sup:'supply',supl:'supply',ln:'line',lns:'lines',ang:'angle',stp:'stop',
+  thrd:'threaded',thd:'threaded',plst:'plastic',tbg:'tubing',tub:'tubing',hd:'heavy duty',
+};
+function partCanon(desc){
+  let t=String(desc||'').replace(/[“”"]/g,' in ').replace(/\s+/g,' ').trim();
+  const letters=t.replace(/[^A-Za-z]/g,'');
+  const shout=letters.length>2&&letters.replace(/[^A-Z]/g,'').length/letters.length>0.7;
+  // SKUs, UPCs and item numbers at either end, and a trailing tax flag.
+  t=t.replace(/^(?:#?\d{5,}\s+)+/,'').replace(/(?:\s+#?\d{5,})+$/,'').replace(/\s+[A-Z]$/,'');
+  t=t.replace(/(\d)\s*(?:in|inch)\b\.?/gi,'$1 in').replace(/(\d)\s*(?:ft|foot|feet)\b\.?/gi,'$1 ft');
+  const words=t.split(' ').filter(Boolean).map(w=>{
+    const k=w.toLowerCase().replace(/[^a-z]/g,'');
+    if(k&&_PART_ABBR[k]&&/^[a-z.]+$/i.test(w))return _PART_ABBR[k];
+    return w;
+  });
+  t=words.join(' ').replace(/\s+/g,' ').trim();
+  // Receipts shout; a person reads sentence case. Codes and sizes stay as printed.
+  if(shout)t=t.toLowerCase().replace(/\b(pex|pvc|cpvc|abs|emt|gfci|afci|led|fpt|mpt|fip|mip|t&p|nm-b|romex|ptfe|sharkbite)\b/gi,m=>m.toLowerCase()==='sharkbite'?'SharkBite':m.toUpperCase());
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+function _partCostKey(desc){return partCanon(desc).toLowerCase().replace(/[^a-z0-9/]+/g,' ').trim();}
+// Same part: the same sizes (1/2 is never 3/4) and nearly the same words.
+function _partSame(a,b){
+  const sz=k=>(k.match(/\d+(?:\/\d+)?/g)||[]).sort().join(',');
+  if(sz(a)!==sz(b))return false;
+  const W=k=>new Set(k.replace(/\d+(?:\/\d+)?/g,' ').split(/\s+/).filter(w=>w.length>1&&!['in','ft','the','and','for','with','of'].includes(w)));
+  const A=W(a),B=W(b);if(!A.size||!B.size)return false;
+  let hit=0;A.forEach(w=>{if(B.has(w))hit++;});
+  return hit/Math.min(A.size,B.size)>=0.75&&hit/(A.size+B.size-hit)>=0.5;
+}
+function partCostLearn(desc,price,vendor,date,qty){
+  const k=_partCostKey(desc);const p=Number(price);
+  if(!k||k.length<3||!(p>0)||typeof S==='undefined'||!S)return false;
+  if(!S.partCosts||typeof S.partCosts!=='object'||Array.isArray(S.partCosts))S.partCosts={};
+  // Already in the book under another store's spelling: that line.
+  let key=k;
+  if(!S.partCosts[key]){const hit=Object.keys(S.partCosts).find(x=>_partSame(x,k));if(hit)key=hit;}
+  const was=S.partCosts[key]||null;
+  const d=String(date||'');
+  // An older receipt scanned late adds to the count but never overwrites a
+  // newer price.
+  const newer=!was||!was.at||!d||d>=String(was.at);
+  const q=Number(qty)>0?Number(qty):1;
+  S.partCosts[key]={
+    desc:was&&was.desc?was.desc:partCanon(desc).slice(0,80),
+    cost:newer?Math.round(p*100)/100:was.cost,
+    vendor:newer?String(vendor||'').slice(0,60):was.vendor,
+    at:newer?d:was.at,
+    n:((was&&was.n)||0)+1,
+    qty:Math.round((((was&&was.qty)||0)+q)*100)/100,
+  };
+  // Bounded: once there are more than 600 parts, the ones bought least and
+  // longest ago go first.
+  const keys=Object.keys(S.partCosts);
+  if(keys.length>600){
+    keys.sort((a,b)=>((S.partCosts[a].qty||0)-(S.partCosts[b].qty||0))||String(S.partCosts[a].at).localeCompare(String(S.partCosts[b].at)));
+    keys.slice(0,keys.length-600).forEach(x=>delete S.partCosts[x]);
+  }
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
+}
+function partCostFor(desc){
+  const k=_partCostKey(desc);
+  const pc=(typeof S!=='undefined'&&S&&S.partCosts&&typeof S.partCosts==='object')?S.partCosts:null;
+  if(!k||!pc)return null;
+  if(pc[k])return pc[k];
+  const hit=Object.keys(pc).find(x=>_partSame(x,k));
+  return hit?pc[hit]:null;
+}
+// Most bought first (what has to be on the truck), then most trips, then newest.
+function materialsBook(){
+  const pc=(typeof S!=='undefined'&&S&&S.partCosts&&typeof S.partCosts==='object')?S.partCosts:{};
+  return Object.keys(pc).map(k=>pc[k]).filter(r=>r&&r.desc&&Number(r.cost)>0)
+    .sort((a,b)=>((Number(b.qty)||0)-(Number(a.qty)||0))||((Number(b.n)||0)-(Number(a.n)||0))||String(b.at||'').localeCompare(String(a.at||'')));
+}
+// WHAT THE CUSTOMER'S COPY SHOWS (owner 2026-09-29: "the toggle we have on
+// rate should carry over"). One place for both documents' switches, so the
+// proposal and the invoice read the same setting and the same code. The
+// starting points differ on purpose: a T&M proposal shows the rate the
+// customer is agreeing to; an invoice shows the hours and one total, and
+// never parts cost unless he turns it on ("for a pissed off old man, I doubt
+// it"). A state that requires the rate overrides both (statePriceRule).
+const _COPY_DEFAULTS={proposal:{rate:true,parts:true},invoice:{rate:false,parts:false}};
+function copyShows(doc,what){
+  const d=(_COPY_DEFAULTS[doc]||{})[what];
+  if(typeof S==='undefined'||!S)return !!d;
+  // The proposal's rate lives where it always has (S.tmHideRate, which the
+  // proposal screen and every saved account already carry); setCopyShows
+  // keeps it in step.
+  if(doc==='proposal'&&what==='rate'&&typeof S.tmHideRate==='boolean')return !S.tmHideRate;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc][what];
+  if(typeof v==='boolean')return v;
+  return !!d;
+}
+// Parts on the customer's copy is three ways, not on and off (owner
+// 2026-09-29, "default to show a total price not showing materials and
+// prices, but toggle it on if they want to show the materials no price, and
+// a third to show materials and price"):
+//   'total'   the parts money is in the total, the parts are not named
+//   'items'   the parts are named with their counts, no prices
+//   'priced'  the parts, their counts and their prices
+const _PARTS_MODES=['total','items','priced'];
+function copyPartsMode(doc){
+  const def=doc==='proposal'?'priced':'total';
+  if(typeof S==='undefined'||!S)return def;
+  const v=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].partsMode;
+  if(_PARTS_MODES.includes(v))return v;
+  const b=S.copyShow&&S.copyShow[doc]&&S.copyShow[doc].parts;
+  return typeof b==='boolean'?(b?'priced':def):def;
+}
+function setCopyPartsMode(doc,mode){
+  if(!_PARTS_MODES.includes(mode)||typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{partsMode:mode});
+  S.copyShow=all;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+function setCopyShows(doc,what,on){
+  if(typeof S==='undefined'||!S)return;
+  const all=(S.copyShow&&typeof S.copyShow==='object')?S.copyShow:{};
+  all[doc]=Object.assign({},all[doc]||{},{[what]:!!on});
+  S.copyShow=all;
+  if(doc==='proposal'&&what==='rate')S.tmHideRate=!on;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+}
+// WHAT A PERSON BILLS AN HOUR (owner 2026-09-29: "updates in one spot show
+// all"). One lookup for every screen that charges for somebody's hour: the
+// T&M and BYO estimate (_billRateFor), the quick invoice and Ready to bill
+// (_qiRateFor). key is their email or their name: the estimate crew carries
+// emails, time rows carry names. The owner is not on the crew list, so their
+// rate is S.ownerBillRate. 0 when nobody set one; each screen decides its own
+// fallback. This is the SELL rate; what a person costs is pay_rate on
+// team_members, and the two are never mixed (CLAUDE.md 18.2).
+function _personIsOwner(k){
+  if(typeof S==='undefined'||!S)return false;
+  const names=[S.ownerName,typeof getOwnerName==='function'?getOwnerName():''].map(n=>String(n||'').trim().toLowerCase()).filter(Boolean);
+  const mail=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
+  return names.includes(k)||(!!mail&&k===mail);
+}
+function _personFind(key){
+  const k=String(key||'').trim().toLowerCase();
+  if(!k||typeof S==='undefined'||!S)return {k,e:null};
+  const e=(S.employees||[]).find(x=>x&&(String(x.email||'').toLowerCase()===k||String(x.name||'').trim().toLowerCase()===k))
+    // Crew with no app (owner 2026-09-29, John): a name and a rate, typed on
+    // an invoice, kept so next time it is just the name.
+    ||crewNoApp().find(x=>String(x.name||'').trim().toLowerCase()===k);
+  return {k,e:e||null};
+}
+function crewNoApp(){return (typeof S!=='undefined'&&S&&Array.isArray(S.crewNoApp))?S.crewNoApp.filter(x=>x&&x.name):[];}
+function addCrewNoApp(name,rate){
+  const n=String(name||'').replace(/\s+/g,' ').trim();
+  if(!n||typeof S==='undefined'||!S)return false;
+  if(_personFind(n).e||_personIsOwner(n.toLowerCase()))return false;
+  S.crewNoApp=crewNoApp().concat([{name:n,billRate:Math.max(0,Number(rate)||0)}]);
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
+}
+function personBillRate(key){
+  const {k,e}=_personFind(key);
+  if(!k)return 0;
+  const r=e?Number(e.billRate):(_personIsOwner(k)?Number(S.ownerBillRate):0);
+  return r>0?r:0;
+}
+function setPersonBillRate(key,rate){
+  const {k,e}=_personFind(key);
+  if(!k)return false;
+  const r=Math.max(0,Number(rate)||0);
+  if(e)e.billRate=r;
+  else if(_personIsOwner(k))S.ownerBillRate=r;
+  else return false;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  return true;
+}
 // Every address this client has: primary + saved extras. {label, addr, key}.
 function clientAddresses(client){
   const out=[];if(!client)return out;const seen={};

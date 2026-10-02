@@ -32,6 +32,23 @@ test.describe('Tim reads materials by shape', () => {
   test.afterAll(async () => { await page.context().close(); });
   const read = (list) => page.evaluate((l) => l.map(t => timSaidMaterials(t).map(m => m.qty + ' ' + m.unit + ' ' + m.item.toLowerCase())), list);
 
+  // Owner 2026-09-29, the sentence as he said it (td_tim_asks): "no way we can
+  // have copper pipe with pex a pipe, pex a is what we used, copper was replaced".
+  test('replaced X with Y lists Y, what went in; PEX a pipe is PEX-A', async () => {
+    const r = await page.evaluate(() => {
+      const t = 'I just did a walk-through here and replaced 10 feet of copper pipe with pecks a pipe';
+      return { mats: timSaidMaterials(t).map(m => m.qty + ' ' + m.unit + ' ' + m.item), steps: timSaySteps(t),
+        swap: timSaidMaterials('Swapped the 40 gallon tank for a 50 gallon tank.').map(m => m.item.toLowerCase()),
+        plain: timSaidMaterials('Used 2 sticks of pex a pipe and 4 bags of thinset.').map(m => m.qty + ' ' + m.item),
+        article: timSaySteps('Ran PEX a few feet past the joist.') };
+    });
+    expect(r.mats).toEqual(['10 foot PEX-A pipe']);
+    expect(r.steps).toContain('Replaced 10 feet of copper pipe with PEX-A pipe');
+    expect(r.swap.join()).not.toContain('40 gallon');
+    expect(r.plain[0]).toBe('2 PEX-A pipe');
+    expect(r.article.join(' '), '"PEX a few feet" is not a grade').not.toContain('PEX-A');
+  });
+
   test('a count, the unit it is sold in, and the thing, across trades', async () => {
     const r = await read([
       '40 bags of quikrete, 6 sticks of rebar and 2 rolls of wire mesh',
@@ -243,18 +260,22 @@ test.describe('Talk to Tim lands materials in the Materials section', () => {
     expect(r.list).toEqual(['3 box Mud', '1 roll Tape']);
   });
 
-  test('Quick invoice: each part is a line, priced from his book or left blank', async () => {
+  test('Quick invoice: parts land the way they land on a proposal: priced ones are Materials rows, the rest wait on the supply house list', async () => {
     const r = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       openQuickInvoice(99951); _qiSetMode('set');
       document.getElementById('qi-say').value = 'Poured the step. Used 12 bags of quikrete and 2 sticks of rebar.';
       _qiSayBuild();
-      return _qi.typed.map(l => l.desc + ' = ' + l.amount);
+      // One rule for every document (timAddMaterials, js/materials.js): a part
+      // his book prices is a Materials row; an unpriced one goes on the supply
+      // house list, never a $0 line.
+      return { lines: _qi.typed.filter(l => !l._supply).map(l => l.desc + ' = ' + l.amount + (l.part ? ' x' + l.qty + ' ' + (l.unit || 'ea') + ' | ' + _qiPartLabel(l) : '')),
+        list: ((_supData() || {}).items || []).map(it => it.qty + ' ' + it.unit + ' ' + it.desc) };
     });
-    expect(r).toContain('Poured the step = ');
-    expect(r).toContain('12 bags Quikrete = 78');
-    expect(r).toContain('2 sticks rebar = ');
-    expect(r.some(l => /used 12 bags/i.test(l))).toBe(false);
+    expect(r.lines).toContain('Poured the step = ');
+    expect(r.lines.some(l => / x12 bag \| 12 bags Quikrete$/i.test(l))).toBe(true);
+    expect(r.list).toEqual(['2 stick Rebar']);
+    expect(r.lines.some(l => /used 12 bags/i.test(l))).toBe(false);
   });
 
   test('no console errors', async () => {

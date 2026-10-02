@@ -154,6 +154,114 @@ test.describe('terminate wake: the wiring, read off the source', () => {
     expect(ping).toContain('sendSilentWake(');
   });
 
+  // A UAT roll wakes every phone once the new build is served (owner
+  // 2026-10-01), on its own gate so it never touches the half-hourly tick.
+  test('a roll wakes every phone once, on its own 3-minute gate', () => {
+    const ping = read('supabase/functions/push-geo-ping/index.ts');
+    // AMENDED 2026-10-01: the retry is a deploy wake on its own watermark.
+    expect(ping).toContain('const deploy = reason === "deploy" || retry;');
+    expect(ping).toContain('const mark = retry ? "geo-ping-retry" : deploy ? "geo-ping-deploy" : "geo-ping";');
+    expect(ping).toContain('const gateMs = deploy ? 3 * 60000 : 20 * 60000;');
+    expect(ping, 'the tick reads and writes its own watermark, unchanged').toContain('.eq("name", mark)');
+    const wf = read('.github/workflows/uat-wake.yml');
+    expect(wf).toMatch(/push:\s*\n\s*branches: \[uat\]/);
+    expect(wf, 'waits until UAT serves the rolled version').toContain('uat.tradedesk-cyp.pages.dev/version.json');
+    expect(wf).toContain('"reason":"deploy"');
+  });
+
+  // Two minutes after a roll's wake, once more for the phones still behind
+  // (owner 2026-10-01), judged by each phone's own boot report.
+  test('the retry wakes only phones whose last report is on another version', () => {
+    const ping = read('supabase/functions/push-geo-ping/index.ts');
+    expect(ping).toContain('reason === "deploy-retry"');
+    expect(ping, 'a version that is not one wakes nobody').toContain('/^\\d{2}\\.\\d{2}\\.\\d{2}\\.\\d{1,3}$/.test(want)');
+    expect(ping).toContain('"geo-ping-retry"');
+    expect(ping, 'judged by the boot report').toContain('.from("device_status")');
+    expect(ping, 'no report, no retry').toContain('return !!n && n.v !== want;');
+    const wf = read('.github/workflows/uat-wake.yml');
+    expect(wf).toContain('sleep 120');
+    expect(wf).toContain('deploy-retry');
+  });
+
+  // The phone's own stats ride the wakes and survive ingest, field by field.
+  test('ingest keeps the device stats and the native reload, typed and bounded', () => {
+    const src = read('supabase/functions/ingest-geo/index.ts');
+    expect(src).toContain('function statsDetail(e: any)');
+    expect(src).toContain('function reloadDetail(e: any)');
+    expect(src).toContain('e.type === "native-reload"');
+    expect(src).toContain('...(statsDetail(e) ? { stats: statsDetail(e) } : {})');
+    for (const k of ['out.lp', 'out.bgr', 'out.th', 'out.batt', 'out.chg', 'out.cpu', 'out.mem']) expect(src).toContain(k + ' =');
+  });
+
+  // Everything else Apple allows (owner 2026-10-01): the server's own filters,
+  // lifted out of ingest-geo and run, so the test is the code that ships.
+  const lift = (src, from, to) => {
+    const i = src.indexOf(from), j = src.indexOf(to, i);
+    return src.slice(i, j)
+      .replace(/\(e: any\): Record<string, unknown> \| null/g, '(e)')
+      .replace(/const out: Record<string, (unknown|number)> = /g, 'const out = ')
+      .replace(/\(out\.(\w+) as number\)/g, '(out.$1)')
+      .replace(/\(v: unknown\)/g, '(v)');
+  };
+  const ingestFns = () => {
+    const src = read('supabase/functions/ingest-geo/index.ts');
+    const code = lift(src, 'const THERMAL = new Set', '// The wake reloaded a stale web app');
+    return new Function(code + '; return { statsDetail, metricDetail, diagDetail };')();
+  };
+
+  test('ingest keeps every new phone field, typed, and drops junk', () => {
+    const { statsDetail } = ingestFns();
+    const good = statsDetail({ stats: { lp: false, th: 'fair', full: true, app: 'background', locked: true,
+      loc: 'always', acc: 'full', net: 'cell', exp: true, lowData: false, radio: '5g', up: 42.4 } });
+    expect(good).toEqual({ lp: false, th: 'fair', full: true, app: 'background', locked: true, loc: 'always',
+      acc: 'full', net: 'cell', exp: true, lowData: false, radio: '5g', up: 42 });
+    const junk = statsDetail({ stats: { app: 'zombie', locked: 'yes', loc: 'sometimes', acc: 'meh', net: 'carrier pigeon',
+      exp: 1, lowData: 'no', radio: '6g', up: -3, full: 'true', temp: 40, health: 88 } });
+    expect(junk, 'nothing invented, no temperature or health').toBe(null);
+  });
+
+  test('ingest keeps Apple\'s daily report and its crash counts, bounded', () => {
+    const { metricDetail, diagDetail } = ingestFns();
+    const m = metricDetail({ type: 'metrickit', ts: 2000, from: 1000,
+      mx: { cpu_s: 61.26, bg_loc_s: 3600, bgx_watchdog: 2, loc_nav_s: 0, made_up: 5, bad: -1, worse: 'x', huge: 1e20, bars: NaN } });
+    expect(m).toEqual({ from: 1000, mx: { cpu_s: 61.3, bg_loc_s: 3600, bgx_watchdog: 2, loc_nav_s: 0 } });
+    expect(metricDetail({ ts: 5, from: 9, mx: { cpu_s: 1 } }).from, 'a window that ends before it starts has no start').toBe(null);
+    expect(metricDetail({ ts: 5, mx: { nope: 1 } })).toBe(null);
+    expect(metricDetail({ ts: 5 })).toBe(null);
+    const d = diagDetail({ ts: 2000, from: 1000, crashes: 1, hangs: 2.4, cpuEx: -1, diskEx: 'x', why: 'w'.repeat(300) });
+    expect(d).toEqual({ crashes: 1, hangs: 2, cpuEx: 0, diskEx: 0, why: 'w'.repeat(120), from: 1000 });
+    expect(diagDetail({ ts: 1, crashes: 0, hangs: 0 })).toBe(null);
+    const src = read('supabase/functions/ingest-geo/index.ts');
+    expect(src).toMatch(/e\.type === "metrickit"\s*\n\s*\? metricDetail\(e\)\s*\n\s*: e\.type === "mx-diag"\s*\n\s*\? diagDetail\(e\)/);
+  });
+
+  test('the plugin subscribes to Apple\'s report on every launch and copies it only while tracking is on', () => {
+    const sw = read('native/td-geo/ios/Plugin/TdGeoPlugin.swift');
+    expect(sw).toContain('import MetricKit');
+    expect(sw).toContain('extension TdGeoPlugin: MXMetricManagerSubscriber');
+    expect(sw).toContain('MXMetricManager.shared.add(self)');
+    expect(sw, 'before the armed guard, like the other launch work').toMatch(/subscribeMetrics\(\)\n\s*let d = UserDefaults\.standard\n\s*guard let armed/);
+    expect(sw).toContain('guard trackingArmed(), !rows.isEmpty else { return }');
+    expect(sw, 'reading a permission never starts a location session').toContain('let m = locationManager ?? CLLocationManager()');
+    const tests = read('native/tests/TdGeoPluginTests.swift');
+    for (const t of ['testMetricRow_keepsOnlyFiniteNonNegativeNumbers', 'testDiagRow_onlyWhenSomethingHappened_andTheReasonIsBounded',
+      'testMetricRows_recordOnlyWhileTrackingIsArmed', 'testRadioWord_namesOnlyRealRadios', 'testDeviceStats_permissionReadNeverStartsALocationSession']) {
+      expect(tests).toContain('func ' + t + '(');
+    }
+  });
+
+  test('the page tells the native layer its version, so a wake can update it while the page sleeps', () => {
+    const src = read('js/geo-track.js');
+    expect(src).toContain("typeof Td.setUpdateProbe==='function'");
+    expect(src).toContain("Td.setUpdateProbe({url:location.origin+'/version.json',version:String(APP_VERSION)})");
+    const sw = read('native/td-geo/ios/Plugin/TdGeoPlugin.swift');
+    expect(sw).toContain('CAPPluginMethod(name: "setUpdateProbe"');
+    expect(sw, 'never in his face').toContain('UIApplication.shared.applicationState != .active');
+    expect(sw, 'at most once every two minutes').toContain('static let updateProbeGapSec: Double = 120');
+    const tests = read('native/tests/TdGeoPluginTests.swift');
+    expect(tests).toContain('func testShouldReload_onlyWhenTheServedVersionDiffers');
+  });
+
   test('wake-quiet runs every two minutes through the same rules and sender', () => {
     const fn = read('supabase/functions/wake-quiet/index.ts');
     expect(fn).toContain('quietWakeDue(last, now, workHoursFromSettings(');

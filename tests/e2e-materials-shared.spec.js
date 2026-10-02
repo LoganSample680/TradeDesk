@@ -67,7 +67,7 @@ test.describe('materials: one section for T&M and BYO', () => {
       eval('(' + tm + ')')();
       const a = norm(document.querySelector('#tm-mat-list #mat-card').outerHTML);
       eval('(' + byo + ')')();
-      const b = norm(document.querySelector('#byo-sections #mat-card').outerHTML);
+      const b = norm(document.querySelector('#byo-mat-wrap #mat-card').outerHTML);
       return { same: a === b, a, b };
     }, { tm: seedTM.toString(), byo: seedBYO.toString() });
     expect(r.same, 'T&M:\n' + r.a + '\nBYO:\n' + r.b).toBe(true);
@@ -79,12 +79,13 @@ test.describe('materials: one section for T&M and BYO', () => {
     await open(page, 'byo');
     const r = await page.evaluate((byo) => {
       eval('(' + byo + ')')();
-      const w = document.getElementById('byo-sections');
+      // Materials is its own step now (owner 2026-09-29, js/doc-steps.js).
+      const w = document.getElementById('byo-mat-wrap');
       return {
-        cards: w.querySelectorAll('#mat-card').length,
+        cards: document.querySelectorAll('#mat-card').length,
         sup: w.querySelectorAll('#sup-card').length,
         supInside: !!w.querySelector('#mat-card #sup-card'),
-        workRow: w.innerHTML.includes('Panel swap'),
+        workRow: document.getElementById('byo-sections').innerHTML.includes('Panel swap'),
       };
     }, seedBYO.toString());
     expect(r).toEqual({ cards: 1, sup: 1, supInside: true, workRow: true });

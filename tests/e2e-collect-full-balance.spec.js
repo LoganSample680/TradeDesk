@@ -1,6 +1,10 @@
 // @ts-check
 /**
- * The pay panel: three ways to get paid, and the full amount is always payable.
+ * The pay panel: two ways to get paid, and the full amount is always payable.
+ *
+ * Tap to pay was the third, a greyed "Coming soon" slot. Removed 2026-10-01 for
+ * App Store review (guideline 2.1: no placeholder features). It comes back as a
+ * real third option when the native Tap to Pay on iPhone work ships.
  *
  * Owner directive 2026-08-15: "the current payment screen on collect which action and
  * everywhere else has a ton of shit bolted on it... manual way to log money (Venmo,
@@ -23,7 +27,7 @@ const BID_25 = 940100;   // no explicit deposit → falls back to 25%
 const BID_50 = 940200;   // contracted 50% deposit
 const BID_BAL = 940300;  // completed job, part paid, balance owing
 
-test.describe('Pay panel: three options, full amount always payable', () => {
+test.describe('Pay panel: two options, full amount always payable', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -43,7 +47,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
 
   test.afterEach(() => { assertNoErrors(page, 'pay panel'); });
 
-  test('exactly three ways to pay, in order: manual, their link, tap to pay', async () => {
+  test('exactly two ways to pay, in order: manual, their link', async () => {
     const r = await page.evaluate((bid) => {
       window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
@@ -52,38 +56,31 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       window._stripeConnectStatus = null;
       return { count: opts.length, opts };
     }, BID_25);
-    expect(r.count).toBe(3);
+    expect(r.count).toBe(2);
     expect(r.opts[0].m).toBe('manual');
     expect(r.opts[0].t).toContain('Log it');
     expect(r.opts[1].m).toBe('stripe');
     expect(r.opts[1].t).toContain('Send link');
-    expect(r.opts[2].m).toBe(null);          // tap to pay is not selectable yet
-    expect(r.opts[2].t).toContain('Tap to pay');
+    expect(r.opts.some(o => /tap to pay/i.test(o.t))).toBe(false);
   });
 
   // Owner rule 2026-08-15: "paying through client hub via card and tap to pay should
-  // be grey until stripe is connected." Both charge through the connected account, so
-  // neither can work without it. Greyed and locked, never hidden, and never dead.
-  test('both card routes are locked and greyed until Stripe is connected', async () => {
+  // be grey until stripe is connected." The card route charges through the connected
+  // account, so it cannot work without it. Greyed and locked, never hidden, never dead.
+  test('the card route is locked and greyed until Stripe is connected', async () => {
     const r = await page.evaluate((bid) => {
       window._stripeConnectStatus = null;
       openPayPanel(bid);
       const btns = [...document.querySelectorAll('#mpay-type-btns button')];
       const hub = btns.find(b => /Send link/i.test(b.textContent));
-      const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
       const out = {
         // Locked: not selectable as a method, so selectPayType can never land on it
         hubSelectable: !!hub.dataset.pmethod,
-        tapSelectable: !!tap.dataset.pmethod,
         hubLocked: hub.dataset.plocked || null,
-        tapLocked: tap.dataset.plocked || null,
         hubOpacity: parseFloat(getComputedStyle(hub).opacity),
-        tapOpacity: parseFloat(getComputedStyle(tap).opacity),
         hubText: hub.textContent.replace(/\s+/g, ' ').trim(),
-        tapText: tap.textContent.replace(/\s+/g, ' ').trim(),
-        // Not dead: both route to the one thing that unlocks them
+        // Not dead: it routes to the one thing that unlocks it
         hubClick: hub.getAttribute('onclick'),
-        tapClick: tap.getAttribute('onclick'),
       };
       // Manual is unaffected by the gate, cash never needed Stripe
       out.manualSelectable = !!btns.find(b => b.dataset.pmethod === 'manual');
@@ -92,32 +89,25 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       return out;
     }, BID_25);
     expect(r.hubSelectable).toBe(false);
-    expect(r.tapSelectable).toBe(false);
     expect(r.hubLocked).toBe('stripe');
-    expect(r.tapLocked).toBe('tap');
     expect(r.hubOpacity).toBeLessThan(0.7);
-    expect(r.tapOpacity).toBeLessThan(0.7);
     // Grey is the whole signal (owner 2026-08-15: no LOCKED badge). The reason is
     // delivered by the tap, so what must hold is that the tap goes somewhere useful.
     expect(r.hubClick).toBe('_mpayNeedStripe()');
-    expect(r.tapClick).toBe('_mpayNeedStripe()');
     expect(r.manualSelectable).toBe(true);
     expect(r.manualOpacity).toBeGreaterThanOrEqual(0.99);
   });
 
-  test('connecting Stripe unlocks the hub route and leaves tap to pay unavailable', async () => {
+  test('connecting Stripe unlocks the hub route', async () => {
     const r = await page.evaluate((bid) => {
       window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
       const btns = [...document.querySelectorAll('#mpay-type-btns button')];
       const hub = btns.find(b => /Send link/i.test(b.textContent));
-      const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
       const out = {
         hubSelectable: !!hub.dataset.pmethod,
         hubOpacity: parseFloat(getComputedStyle(hub).opacity),
         hubText: hub.textContent.replace(/\s+/g, ' ').trim(),
-        tapText: tap.textContent.replace(/\s+/g, ' ').trim(),
-        tapClick: tap.getAttribute('onclick'),
       };
       closePayPanel();
       window._stripeConnectStatus = null;
@@ -126,7 +116,6 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.hubSelectable).toBe(true);
     expect(r.hubOpacity).toBeGreaterThanOrEqual(0.99);
     expect(r.hubText.toLowerCase()).not.toContain('locked');
-    expect(r.tapClick).toBe('_tapToPaySoon()');   // Stripe is not tap-to-pay's only blocker
   });
 
   test('manual is pre-selected with the balance filled in and editable', async () => {

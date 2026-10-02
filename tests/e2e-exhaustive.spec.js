@@ -6997,7 +6997,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const html = wrap.innerHTML;
         wrap.remove();
         return { composer: html.includes('Tell me what you are doing'),
-          build: html.includes('Build the steps'),
+          build: html.includes('Write it up'),
           picker: html.includes('Or pick from a list') };
       });
       // CHANGED 2026-09-22 (§10.4). The empty scope used to be a dashed
@@ -14579,6 +14579,23 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
+    // _clockAddTaskConfirm clocks in 60ms AFTER it returns (setTimeout in
+    // js/jobs.js). Left alone, that clock-in landed in whichever test ran
+    // next: on a fast CI runner it fired between the clockIn describe's
+    // beforeEach and its first test, which then found an open row for job
+    // 77702, switched jobs through this file's auto-yes zConfirm stub and
+    // stopped the very clock it had just started (CI red on #134 and #136,
+    // "null jobId, starts General time", timerSet false). Each test here
+    // waits for its own clock-in to land and clears it before the next runs.
+    test.afterEach(async () => {
+      await page.evaluate(async () => {
+        await new Promise(r => setTimeout(r, 150));
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        timeEntries = timeEntries.filter(e => !e.open);
+      });
+    });
+
     test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
@@ -14717,8 +14734,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // clockIn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('clockIn', () => {
+    // Each test starts from NO running clock. Resetting _activeTimer alone left
+    // the saved open rows behind, and clockIn now adopts a saved open row
+    // before starting a new one (one clock at a time, 2026-09-30), so a row a
+    // previous test left open would be picked up instead of a fresh clock.
     test.beforeEach(async () => {
-      await page.evaluate(() => { _activeTimer = null; });
+      await page.evaluate(() => { _activeTimer = null; timeEntries = timeEntries.filter(e => !e.open); });
     });
 
     test.afterEach(async () => {
@@ -14734,6 +14755,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
     test('null jobId, starts General time (no job/client required)', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
+        // clockIn now adopts a saved OPEN row before trusting an empty memory
+        // (PR #130, one clock at a time). This page is shared across the whole
+        // file, so an open row an earlier test left behind was adopted here on
+        // a slow WebKit run (2026-09-30) and this test was no longer about a
+        // fresh General clock. Start from no open clock, which is its premise.
+        (timeEntries || []).forEach(e => { if (e && e.open) e.open = false; });
         try {
           clockIn(null, 'sand', 'Sanding');
           return { ok: true, timerSet: _activeTimer !== null, jobIdNull: _activeTimer && _activeTimer.jobId === null, jobName: _activeTimer && _activeTimer.jobName };

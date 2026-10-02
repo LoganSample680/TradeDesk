@@ -1297,16 +1297,21 @@ test.describe('Crew location permission', () => {
   test("the owner gets their own row, and a manager never sees it", () => {
     const fs = require('fs'), path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
-    const i = src.indexOf('const _ownerRowHtml=');
+    // 2026-09-29 (CLAUDE.md 10.4): the row is built by _ownerRow(rateOn). The
+    // Team page also carries the owner's bill rate on it (owner: "rate should
+    // go on the person"), so on that page the row shows with tracking off,
+    // but its location lines still need S.teamTracking, and a crew login
+    // still gets no owner row at all.
+    const i = src.indexOf('const _ownerRow=');
     expect(i, 'the owner must be rendered as its own row, not fished out of S.employees')
       .toBeGreaterThan(-1);
     const blk = src.slice(i, i + 900);
     expect(blk.includes('_isEmployee'),
       "a manager is trusted with the crew, not with where the boss's phone is").toBe(true);
-    expect(blk.includes('S.teamTracking'),
-      'and nothing shows at all when crew tracking is off for the account').toBe(true);
+    expect(/S\.teamTracking&&[^;]*_geoRosterStatus/.test(blk),
+      'no location lines when crew tracking is off for the account').toBe(true);
     // It must be rendered, not just built.
-    expect(src.includes('_reqHtml+_ownerRowHtml+empHtml'),
+    expect(src.includes('_reqHtml+_ownerRowHtml+empHtml') && src.includes('_reqHtml+_ownerRow(true)+'),
       'built but never inserted is exactly the bug this replaces').toBe(true);
   });
 
@@ -3302,7 +3307,11 @@ test.describe('a battery we could not read never erases the one we could', () =>
         window._isEmployee = saved.emp; window._geoTdPlugin = saved.td;
         window._geoReadPermission = saved.read; window._geoAutoPrecise = saved.prec;
       }
-      const hit = rec.find(x => x.tbl === 'device_status');
+      // The LAST status row is this report's: it waits for the battery, so
+      // it writes after anything the app's own background report pushed
+      // through the stand-in client during the 120ms (seen on WebKit CI,
+      // 2026-09-30, where that earlier row had no battery on it).
+      const hit = rec.filter(x => x.tbl === 'device_status').pop();
       return hit ? hit.row : null;
     });
     expect(r, 'the row was written').toBeTruthy();

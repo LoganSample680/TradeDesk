@@ -200,6 +200,9 @@ test.describe('A support view boots as the target', () => {
           isEmployee: _isEmployee,
           effective: _effectiveUid(),                                  // every read scopes through this
           geoCid: typeof _geoCid === 'function' ? _geoCid() : null,    // and geo through this
+          // Link opens and signatures (owner 2026-09-30: an open of Tagen's
+          // link never showed while viewing Jack's app).
+          opens: _opsReadUid(),
           mine: _supaUser.id,
         });
       }
@@ -209,7 +212,11 @@ test.describe('A support view boots as the target', () => {
       expect(x.effective, x.role + ' read the viewer instead of the target').toBe(TARGET);
       expect(x.geoCid, x.role + ' geo read the viewer instead of the target').toBe(TARGET);
       expect(x.effective).not.toBe(x.mine);
+      expect(x.opens, x.role + ' opens read the viewer instead of the target').toBe(TARGET);
     });
+    // Outside the support view, everyone reads their own opens as before.
+    const own = await page.evaluate(() => { const v = window._opsView; window._opsView = null; try { return _opsReadUid() === _supaUser.id; } finally { window._opsView = v; } });
+    expect(own).toBe(true);
     expect(r[0].isEmployee).toBe(false);
     expect(r[1].isEmployee).toBe(true);
     await ctx.close();

@@ -686,6 +686,35 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.reloads, 'reloading in the user\'s face is the thing this avoids').toBe(0);
   });
 
+  // ── THE NEW BUILD IS IN THE CACHE BEFORE THE RELOAD (owner 2026-10-01) ──
+  // The foreground path stages the update first (_checkVersionOnResume); the
+  // wake skipped that step, so the service worker could hand the reload the
+  // copy it already had and the phone woke straight back into the old build.
+  test('the wake stages the new build before it reloads, like the foreground does', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, stage: window._stageUpdate,
+        poll: window._checkVersionOnResume };
+      const order = [];
+      try {
+        window._checkVersionOnResume = async () => {};
+        _deferredReload = false;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        window.fetch = async (u) => ({ ok: true, json: async () => ({ version: String(u).indexOf('bg=1') >= 0 ? '99.99.99.9' : APP_VERSION }) });
+        window._stageUpdate = async (v) => { order.push('stage ' + v); return true; };
+        window._autoSaveAndReload = async () => { order.push('reload'); };
+        _geoBgUpdAt = 0;
+        await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
+        await new Promise(r => setTimeout(r, 60));
+        return order;
+      } finally {
+        window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload; window._stageUpdate = saved.stage;
+        window._checkVersionOnResume = saved.poll;
+        delete document.hidden; _geoBgUpdAt = 0;
+      }
+    });
+    expect(r).toEqual(['stage 99.99.99.9', 'reload']);
+  });
+
   test('several buffered events in one wake cost ONE probe, not one each', async () => {
     const r = await page.evaluate(async () => {
       const saved = { fetch: window.fetch, reload: window._autoSaveAndReload };

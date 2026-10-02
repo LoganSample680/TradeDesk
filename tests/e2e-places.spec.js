@@ -907,7 +907,9 @@ test.describe('Places, drive attribution and the map', () => {
       return { opts, placeholder: all[0].value, kinds: Object.keys(PLACE_KINDS) };
     });
     expect(out.placeholder, 'the first option is the empty placeholder, not a kind').toBe('');
-    expect(out.opts.sort()).toEqual(['business_meeting', 'home_office', 'other', 'shop', 'supply'].sort());
+    // 'personal' joined 2026-09-30: the gym, church, a friend's house. Still
+    // client-independent, which is what this list is about.
+    expect(out.opts.sort()).toEqual(['business_meeting', 'home_office', 'other', 'personal', 'shop', 'supply'].sort());
     // Every PLACE_KINDS entry renders as an actual <option>, the picker is not
     // hand-maintained separately from the source of truth it reads from.
     expect(out.opts.sort()).toEqual(out.kinds.sort());

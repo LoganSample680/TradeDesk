@@ -125,6 +125,22 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
   // seventeen event kinds in analytics_events on the day this was written, the
   // three highest-volume were the test harness, so every product metric built
   // on that table would have counted CI as customers.
+  // Owner 2026-09-30: "i need you to confirm he actually typed that". A box
+  // he edits is one row: which box and, for a number, the number. Never words.
+  test('an edited field is recorded: the box and its number, never his words', () => {
+    const { windowObj, fire, lastEvents } = loadSandbox();
+    const box = (id, value, tagName = 'INPUT', type = 'text') => ({ target: { id, value, tagName, type } });
+    fire('document', 'change', box('byo-deposit-pct', '50'));
+    fire('document', 'change', box('byo-price-in', '$2,800'));
+    fire('document', 'change', box('byo-valid-days', '14', 'SELECT'));
+    fire('document', 'change', box('byo-note', 'I appreciate your faith', 'TEXTAREA'));
+    fire('document', 'change', box('set-bemail', 'a@b.c', 'INPUT', 'email'));
+    fire('document', 'change', box('', '9'));
+    windowObj._obs.flush();
+    const f = (lastEvents() || []).filter(e => e.event === 'field').map(e => [e.ctl, e.value]);
+    expect(f).toEqual([['#byo-deposit-pct', 50], ['#byo-price-in', 2800], ['#byo-valid-days', 14], ['#byo-note', null]]);
+  });
+
   test('a real session flushes as the app, which is the default', () => {
     const { windowObj, invocations } = loadSandbox();
     windowObj._obs.track('lead_created', 'pg-clients');

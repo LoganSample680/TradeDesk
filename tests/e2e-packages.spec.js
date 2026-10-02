@@ -151,6 +151,40 @@ test.describe('packages from his own history', () => {
     expect(r[1].notes).toBe('old words');
   });
 
+  // Owner 2026-09-30: "if we add what we did last time it doesn't break the
+  // steps down like we do with Tim today". Jack's real last bid, word for word.
+  test('Same as last time goes through Tim: a lumped old line comes back as today\'s steps and rooms', async () => {
+    await page.evaluate(() => {
+      bids = bids.filter(b => !String(b.id).startsWith('91')).concat([{ id: 91010, client_id: 91001, trade_type: 'plumbing', bid_date: '2026-09-30', status: 'Draft', byoItems: [
+        'Rough surface mounted washer box drain and water and vent',
+        'Electrical for washer receptacle and receptacle for dryer',
+        'Drill hole and run dryer vent to outside',
+        '3 hose bibs and piping',
+        'Cap the gas line to the gas light out front and existing washer lines and seal duct except enough to keep crawl from freezing',
+        'Secure the tub spout',
+      ].map((l, i) => ({ id: i + 1, section: 'Work', label: l, qty: 1, unit: 'ea', rate: 0, price: 0, notes: '', on: true })) }]);
+      _byoItems = []; _geiEditBidId = null; _geiTrade = 'plumbing'; _geiIsFreeForm = true; _geiIsTM = false; S.priceBook = {};
+    });
+    const r = await page.evaluate(() => { _pkgApply('last'); return _byoItems.map(i => ({ l: i.label, s: i.section })); });
+    const labels = r.map(x => x.l.toLowerCase());
+    expect(labels.some(l => /^cap .*gas/.test(l) && !/washer/.test(l)), 'the gas cap is its own step').toBe(true);
+    expect(labels.some(l => /washer lines/.test(l) && !/gas/.test(l)), 'the washer lines are their own step').toBe(true);
+    expect(new Set(r.map(x => x.s)).size, 'grouped by room, like a typed scope').toBeGreaterThan(1);
+  });
+
+  test('a last bid that was a pasted letter in one line comes back as steps, not one line', async () => {
+    const letter = "Here's my estimate $2800 to rough surface mounted washer box drain and water and vent. I have included electrical for washer receptacle and receptacle for dryer as well. I will drill hole and run dryer vent to outside. We will secure the tub spout. My estimate is good for 14 days. John Schonfeldt Plumbing Solutions by JS";
+    await page.evaluate((letter) => {
+      bids = bids.filter(b => !String(b.id).startsWith('91')).concat([{ id: 91011, client_id: 91001, trade_type: 'plumbing', bid_date: '2026-09-30', status: 'Draft',
+        byoItems: [{ id: 1, section: 'Work', label: '5713 SW 14th street', qty: 1, unit: 'ea', rate: 2800, price: 2800, notes: letter, on: true }] }]);
+      _byoItems = []; _geiEditBidId = null; _geiTrade = 'plumbing'; _geiIsFreeForm = true; _geiIsTM = false; S.priceBook = {};
+    }, letter);
+    const r = await page.evaluate(() => { _pkgApply('last'); return { n: _byoItems.filter(i => !i._supply).length, labels: _byoItems.map(i => i.label) }; });
+    expect(r.n).toBeGreaterThanOrEqual(4);
+    expect(r.labels.join('|')).not.toMatch(/5713 SW 14th/);
+    await assertNoErrors(page);
+  });
+
   test('applying twice never doubles a line up', async () => {
     await seed([{ id: 91002, date: '2026-09-01', lines: ['A', 'B'] }]);
     const n = await page.evaluate(() => { _pkgApply('last'); _pkgApply('last'); return _byoItems.length; });

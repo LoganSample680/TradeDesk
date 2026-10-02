@@ -9,15 +9,20 @@
          font-family:-apple-system,system-ui,sans-serif;background:#1B1612;color:#fff;text-align:center}
     .p{padding:24px}
     h1{font-size:20px;margin:0 0 8px}
-    p{font-size:14px;color:#c8c2bb;margin:0}
+    p{font-size:14px;color:#c8c2bb;margin:0 0 20px}
+    button{font:inherit;font-size:15px;font-weight:600;color:#1B1612;background:#fff;border:0;
+           border-radius:12px;padding:12px 28px}
   </style>
 </head>
 <body>
-  <!-- The shell normally loads the live app from server.url (capacitor.config.json).
-       This page only renders if that remote load fails, i.e. no connection. -->
+  <!-- server.errorPath (capacitor.config.json): shown only when the live app
+       cannot load AND the service worker has nothing cached yet, i.e. the very
+       first launch with no connection. After one online launch the app opens
+       offline from its own cache. -->
   <div class="p">
     <h1>TradeDesk</h1>
-    <p>No connection. TradeDesk needs internet to load. Your tracked drives and time are saved on this device and will sync when you're back online.</p>
+    <p>No connection. Open TradeDesk once with signal and it will work offline after that.</p>
+    <button onclick="location.href='https://uat.tradedesk-cyp.pages.dev/'">Try again</button>
   </div>
 </body>
 </html>

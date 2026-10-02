@@ -22,6 +22,8 @@ import CoreLocation
 // UIApplication.applicationState, for the two flush tests that skip rather
 // than assert vacuously when the host app is not foregrounded.
 import UIKit
+// The two MetricKit subscriber entry points, called with empty payload lists.
+import MetricKit
 @testable import TdGeo
 
 final class TdGeoPluginTests: XCTestCase {
@@ -3479,6 +3481,141 @@ extension TdGeoPluginTests {
         clearSelfArmState()
     }
 
+    // ── The stop turns it off (owner 2026-10-02) ────────────────────────────
+    // "it all needs to be at 100 percent in 10 seconds with battery cut". The
+    // window the plugin opened asleep could only be closed by JS, which was
+    // asleep too, so it ran to the cap in a parked truck: Jack's drive window
+    // was on 21.6 hours in eight days for about 8 hours of driving.
+    // selfCloseDrive mirrors selfArmDrive: JS names the kinds, Swift only
+    // acts on the list it was given.
+
+    private var restList: [String] { ["walking", "running", "onFoot", "still", "stationary", "cycling"] }
+
+    /// The recipe as setSampling stores it from JS that sends restKinds.
+    private func seedRecipeWithRest(_ kinds: [Any]?) {
+        seedDriveRecipe()
+        var cfg = UserDefaults.standard.dictionary(forKey: driveCfgKey) ?? [:]
+        if let kinds = kinds { cfg["restKinds"] = kinds } else { cfg.removeValue(forKey: "restKinds") }
+        UserDefaults.standard.set(cfg, forKey: driveCfgKey)
+    }
+
+    func testSelfClose_aRestFlipClosesTheWindowItOpenedAndSaysNative() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+
+        plugin.selfCloseDriveForTest(kind: "still")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "a still flip on JS's list ends the drive window")
+        let rows = radio("drive")
+        XCTAssertEqual(onOff(rows), [true, false])
+        XCTAssertEqual(rows.last?["reason"] as? String, "self-rest-still")
+        XCTAssertEqual(rows.last?["trigger"] as? String, "native",
+                       "the ledger must say which side turned the radio off")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_everyKindOnTheListCloses() {
+        for kind in restList {
+            seedRecipeWithRest(restList)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            plugin.selfCloseDriveForTest(kind: kind)
+            XCTAssertFalse(plugin.driveSamplingOnForTest(), "\(kind) is on the list and must close")
+        }
+        clearSelfArmState()
+    }
+
+    func testSelfClose_setSamplingStoresTheListAndDropsJunk() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        // A JSArray, the type the bridge actually delivers (see region() above
+        // for why a plain [Any] would fail the cast silently).
+        let kinds: JSArray = ["still", "", 7, "walking"]
+        let on = expectation(description: "js arms with a rest list")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "maxMs": 25 * 60_000.0,
+                                              "distanceFilter": 30.0, "flushMs": 20_000.0,
+                                              "accuracy": "ten", "restKinds": kinds,
+                                              "reason": "seed"],
+                                    onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let cfg = UserDefaults.standard.dictionary(forKey: driveCfgKey)
+        XCTAssertEqual(cfg?["restKinds"] as? [String], ["still", "walking"],
+                       "strings only, empty ones dropped, order kept")
+        plugin.selfCloseDriveForTest(kind: "walking")
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        clearSelfArmState()
+    }
+
+    // ── No list, no invention (3.2) ─────────────────────────────────────────
+
+    func testSelfClose_aRecipeWithNoListNeverClosesAnything() {
+        // JS that predates restKinds. The plugin must not decide what a stop is.
+        seedRecipeWithRest(nil)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for kind in restList { plugin.selfCloseDriveForTest(kind: kind) }
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "no list means the cap and JS still own the close")
+        XCTAssertEqual(onOff(radio("drive")), [true])
+        plugin.expireSamplingCapForTest()
+        clearSelfArmState()
+    }
+
+    func testSelfClose_junkListOrKindsOffTheListDoNothing() {
+        for junk: [Any]? in [[], [1, 2], ["", ""]] {
+            seedRecipeWithRest(junk)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            plugin.selfCloseDriveForTest(kind: "still")
+            XCTAssertTrue(plugin.driveSamplingOnForTest(), "a junk list is no list: \(String(describing: junk))")
+            plugin.expireSamplingCapForTest()
+        }
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for kind in ["automotive", "unknown", "", "STILL"] { plugin.selfCloseDriveForTest(kind: kind) }
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "only an exact kind on the list closes")
+        plugin.expireSamplingCapForTest()
+        clearSelfArmState()
+    }
+
+    // ── Boundary, concurrency, post-error ───────────────────────────────────
+
+    func testSelfClose_withNoWindowOpenWritesNothing() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfCloseDriveForTest(kind: "still")
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertTrue(radio("drive").isEmpty, "an OFF with no ON would be a lie on the ledger")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_tenFlipsInARowCloseOnce() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for _ in 0..<10 { plugin.selfCloseDriveForTest(kind: "still") }
+        XCTAssertEqual(onOff(radio("drive")), [true, false], "one close, however many flips")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_afterTheCapAlreadyClosedItIsANoOp_andTheNextDriveStillArms() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        plugin.expireSamplingCapForTest()
+        plugin.selfCloseDriveForTest(kind: "still")
+        XCTAssertEqual(onOff(radio("drive")), [true, false])
+        // The close never takes the recipe with it: drive, stop, drive.
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        plugin.selfCloseDriveForTest(kind: "walking")
+        XCTAssertEqual(onOff(radio("drive")), [true, false, true, false])
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "the recipe outlives every close")
+        clearSelfArmState()
+    }
+
     // ── The half-hourly ping pulls the tape (owner 2026-09-14) ──────────────
     // Every other wake already pulled the coprocessor's history on the way
     // past. This one did not, and it is the only wake that arrives on a
@@ -3977,4 +4114,483 @@ extension TdGeoPluginTests {
         XCTAssertTrue(true)
         clearSeqState()
     }
+
+    // MARK: - Re-reading the motion history while awake (owner 2026-09-28)
+
+    func testMotionPollInterval_offForNothingAndJunk() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(nil), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(0), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(-15_000), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.nan), 0)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(Double.infinity), 0)
+    }
+
+    func testMotionPollInterval_clampedSoItCanNeverBeABusyLoop() {
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1), 10_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(15_000), 15_000)
+        XCTAssertEqual(TdGeoPlugin.motionPollInterval(1e12), 300_000)
+    }
+
+    func testSetMotionPoll_armsOneTimerAndRemembersIt() {
+        let d = UserDefaults.standard
+        plugin.setMotionPollForTest(15_000)
+        XCTAssertEqual(plugin.motionPollMsForTest, 15_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollTimerForTest?.timeInterval ?? 0, 15, accuracy: 0.001)
+        XCTAssertEqual(d.double(forKey: plugin.motionPollKeyForTest), 15_000)
+        XCTAssertGreaterThan(plugin.motionPollTimerForTest?.tolerance ?? 0, 0, "slack lets iOS fold the wakes")
+        plugin.setMotionPollForTest(0)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertNil(d.object(forKey: plugin.motionPollKeyForTest), "off is forgotten, not remembered as zero")
+    }
+
+    func testSetMotionPoll_junkTurnsItOff() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.setMotionPollForTest(Double.nan)
+        XCTAssertNil(plugin.motionPollTimerForTest)
+        XCTAssertEqual(plugin.motionPollMsForTest, 0)
+    }
+
+    func testSetMotionPoll_rapidRepeatsLeaveExactlyOneLiveTimer() {
+        var seen: [Timer] = []
+        for i in 0..<25 {
+            plugin.setMotionPollForTest(Double(10_000 + i * 1_000))
+            if let t = plugin.motionPollTimerForTest { seen.append(t) }
+        }
+        XCTAssertEqual(seen.filter { $0.isValid }.count, 1, "every replaced timer is invalidated")
+        XCTAssertEqual(plugin.motionPollMsForTest, 34_000)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testSetMotionPoll_fromAnotherQueueStillLandsOnMain() {
+        let done = expectation(description: "off-main arm")
+        DispatchQueue.global().async {
+            self.plugin.setMotionPollForTest(20_000)
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(plugin.motionPollMsForTest, 20_000)
+        XCTAssertNotNil(plugin.motionPollTimerForTest)
+        plugin.setMotionPollForTest(0)
+    }
+
+    func testMotionPoll_endsWithTheShiftBeat() {
+        plugin.setMotionPollForTest(15_000)
+        plugin.hbStopForTest()
+        XCTAssertNil(plugin.motionPollTimerForTest, "the poll lives inside the shift")
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollKeyForTest))
+    }
+
+    func testMotionPoll_aQuietTickUploadsNothing() {
+        // The egress promise: a poll that finds nothing sends nothing. On the
+        // simulator there is no coprocessor, so this is also the guard path.
+        clearSeqState()
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"],
+              forKey: plugin.flushCfgKeyForTest)
+        withUploadsParked {
+            for _ in 0..<20 { plugin.backfillMotionPollForTest() }
+            let inflight = (d.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+            XCTAssertTrue(inflight.isEmpty, "no upload for a poll with nothing new")
+        }
+        clearSeqState()
+    }
+
+    func testMotionPoll_manyTicksFromTwoQueuesNeverCrash() {
+        clearSeqState()
+        let done = expectation(description: "poll ticks")
+        DispatchQueue.global().async {
+            for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+            DispatchQueue.main.async {
+                for _ in 0..<25 { self.plugin.backfillMotionPollForTest() }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 30)
+        clearSeqState()
+    }
+
+    // MARK: - The sleep detector (owner 2026-09-28, "add it")
+
+    func testSleepGap_ticksThatKeepTimeAreNotSleep() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_015_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_060_000, intervalMs: 15_000),
+                     "a minute exactly is not over a minute")
+    }
+
+    func testSleepGap_aFrozenTimerIsSleepAndSaysHowLong() {
+        XCTAssertEqual(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_060_001, intervalMs: 15_000), 60_001)
+        XCTAssertEqual(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 1_420_000, intervalMs: 15_000), 420_000)
+    }
+
+    func testSleepGap_aLongIntervalNeedsFourMissedTicks() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 0 + 1, nowMs: 1 + 4 * 300_000, intervalMs: 300_000))
+        XCTAssertNotNil(TdGeoPlugin.sleepGapMs(lastMs: 1, nowMs: 2 + 4 * 300_000, intervalMs: 300_000))
+    }
+
+    func testSleepGap_junkAndStaleMarksAreNeverAMeasurement() {
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 0, nowMs: 1_000_000, intervalMs: 15_000), "no mark yet")
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: -5, nowMs: 1_000_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: Double.nan, nowMs: 1_000_000, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: Double.infinity, intervalMs: 15_000))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1_000_000, nowMs: 2_000_000, intervalMs: 0))
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 2_000_000, nowMs: 1_000_000, intervalMs: 15_000), "clock went back")
+        XCTAssertNil(TdGeoPlugin.sleepGapMs(lastMs: 1, nowMs: 1 + 25 * 3600_000, intervalMs: 15_000), "over a day")
+    }
+
+    private func asleepRows() -> [[String: Any]] {
+        let buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        return buf.filter { ($0["type"] as? String) == "asleep" }
+    }
+
+    func testSleepTick_aNormalDayWritesNothing() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        for i in 0..<40 { plugin.motionPollTickForTest(nowMs: t0 + Double(i) * 15_000) }
+        XCTAssertTrue(asleepRows().isEmpty, "ticks on time add no rows")
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_oneRowPerSleepWithWhenAndHowLong() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        plugin.motionPollTickForTest(nowMs: t0)
+        plugin.motionPollTickForTest(nowMs: t0 + 420_000)
+        plugin.motionPollTickForTest(nowMs: t0 + 435_000)
+        let rows = asleepRows()
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?["fromMs"] as? Double, t0)
+        XCTAssertEqual(rows.first?["gapSec"] as? Double, 420)
+        XCTAssertEqual(rows.first?["relaunched"] as? Bool, false, "this process saw both ticks")
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_aMarkFromBeforeThisProcessIsARelaunch() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let now = Date().timeIntervalSince1970 * 1000
+        UserDefaults.standard.set(now - 600_000, forKey: plugin.motionPollTickKeyForTest)
+        plugin.motionPollTickForTest(nowMs: now)
+        XCTAssertEqual(asleepRows().first?["relaunched"] as? Bool, true)
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_turningThePollOffForgetsTheMark() {
+        // An evening at home must never be reported as the phone asleep.
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        let t0 = Date().timeIntervalSince1970 * 1000
+        plugin.motionPollTickForTest(nowMs: t0)
+        plugin.setMotionPollForTest(0)
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollTickKeyForTest))
+        plugin.setMotionPollForTest(15_000)
+        plugin.motionPollTickForTest(nowMs: t0 + 12 * 3600_000)
+        XCTAssertTrue(asleepRows().isEmpty)
+        plugin.setMotionPollForTest(0)
+        clearSeqState()
+    }
+
+    func testSleepTick_theShiftEndingForgetsTheMarkToo() {
+        clearSeqState()
+        plugin.setMotionPollForTest(15_000)
+        plugin.motionPollTickForTest(nowMs: Date().timeIntervalSince1970 * 1000)
+        plugin.hbStopForTest()
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.motionPollTickKeyForTest))
+        clearSeqState()
+    }
+
+    // MARK: - The wake updates the web app itself (owner 2026-10-01)
+
+    func testSetUpdateProbe_rejectsAnythingButAnHttpsUrlAndAVersion() {
+        let bad: [[String: Any]] = [
+            [:],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json"],
+            ["version": "10.01.26.8"],
+            ["url": "http://uat.tradedesk-cyp.pages.dev/version.json", "version": "10.01.26.8"],
+            ["url": "not a url", "version": "10.01.26.8"],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": ""],
+            ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": String(repeating: "9", count: 40)],
+            ["url": 42, "version": 7]
+        ]
+        for o in bad {
+            let exp = expectation(description: "reject \(o)")
+            plugin.setUpdateProbe(makeCall(options: o, onSuccess: { _ in XCTFail("accepted \(o)"); exp.fulfill() },
+                                           onError: { _ in exp.fulfill() }))
+            wait(for: [exp], timeout: 30)
+        }
+    }
+
+    func testSetUpdateProbe_storesAGoodOne() {
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+        let exp = expectation(description: "accept")
+        plugin.setUpdateProbe(makeCall(options: ["url": "https://uat.tradedesk-cyp.pages.dev/version.json", "version": "10.01.26.8"],
+                                       onSuccess: { _ in exp.fulfill() }))
+        wait(for: [exp], timeout: 30)
+        let p = UserDefaults.standard.dictionary(forKey: "td_update_probe")
+        XCTAssertEqual(p?["version"] as? String, "10.01.26.8")
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+    }
+
+    func testVersionIn_readsOnlyARealVersionFile() {
+        XCTAssertEqual(TdGeoPlugin.versionIn(#"{"version":"10.01.26.8"}"#.data(using: .utf8)), "10.01.26.8")
+        XCTAssertNil(TdGeoPlugin.versionIn(nil))
+        XCTAssertNil(TdGeoPlugin.versionIn(Data()))
+        XCTAssertNil(TdGeoPlugin.versionIn("<html>offline</html>".data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"{"version":7}"#.data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"{"version":""}"#.data(using: .utf8)))
+        XCTAssertNil(TdGeoPlugin.versionIn(#"["10.01.26.8"]"#.data(using: .utf8)))
+    }
+
+    func testShouldReload_onlyWhenTheServedVersionDiffers() {
+        XCTAssertTrue(TdGeoPlugin.shouldReload(have: "10.01.26.6", served: "10.01.26.8"))
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "10.01.26.8", served: "10.01.26.8"))
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "10.01.26.8", served: nil), "an unreadable answer reloads nothing")
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: nil, served: "10.01.26.8"), "no probe set, nothing to compare")
+        XCTAssertFalse(TdGeoPlugin.shouldReload(have: "", served: ""))
+    }
+
+    func testSilentPush_andHeartbeat_withNoProbeSet_neverThrowAndStillRecord() {
+        UserDefaults.standard.removeObject(forKey: "td_update_probe")
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.load()
+        let before = bufferCount(ofType: "push-ping")
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let done = expectation(description: "push handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "push-ping"), before)
+            XCTAssertEqual(self.bufferCount(ofType: "native-reload"), 0, "no probe, no reload")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    // MARK: - How the phone is doing
+
+    func testDeviceStats_carriesOnlyWhatIOSLetsUsRead() {
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            let s = self.plugin.deviceStats()
+            XCTAssertNotNil(s["lp"] as? Bool, "Low Power Mode")
+            XCTAssertNotNil(s["th"] as? String, "heat level")
+            XCTAssertTrue(["on", "off", "restricted", "unknown"].contains(s["bgr"] as? String ?? ""), "Background App Refresh")
+            if let b = s["batt"] as? Int { XCTAssertTrue((0...100).contains(b)) }
+            if let c = s["cpu"] as? Double { XCTAssertGreaterThanOrEqual(c, 0) }
+            if let m = s["mem"] as? Double { XCTAssertGreaterThan(m, 0) }
+            XCTAssertNil(s["temp"], "there is no temperature API; nothing may pretend otherwise")
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_offTheMainThreadStillAnswersWithoutTouchingUIKit() {
+        let exp = expectation(description: "stats off main")
+        DispatchQueue.global().async {
+            let s = self.plugin.deviceStats()
+            XCTAssertNotNil(s["lp"] as? Bool)
+            XCTAssertNotNil(s["bgr"] as? String)
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testAppCpuAndMemory_readThisProcess() {
+        XCTAssertNotNil(TdGeoPlugin.appCpuPercent())
+        let m = TdGeoPlugin.appMemoryMB()
+        XCTAssertNotNil(m)
+        XCTAssertGreaterThan(m ?? 0, 1)
+        // Concurrent reads: the thread list is copied and freed per call.
+        let group = DispatchGroup()
+        for _ in 0..<20 { group.enter(); DispatchQueue.global().async { _ = TdGeoPlugin.appCpuPercent(); group.leave() } }
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+    }
+
+    func testPushPing_carriesStats() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.load()
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let done = expectation(description: "push handled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            let ping = rows.last { ($0["type"] as? String) == "push-ping" }
+            XCTAssertNotNil(ping?["stats"] as? [String: Any])
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    // MARK: - Everything else Apple lets an app read (owner 2026-10-01)
+
+    func testDeviceStats_saysWhereTheAppWasAndWhatItWasAllowed() {
+        TdGeoPlugin.processStartedAt = Date(timeIntervalSinceNow: -125)
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            let s = self.plugin.deviceStats()
+            XCTAssertTrue(["active", "inactive", "background", "unknown"].contains(s["app"] as? String ?? ""))
+            XCTAssertNotNil(s["locked"] as? Bool)
+            XCTAssertTrue(["always", "whenInUse", "denied", "restricted", "notDetermined", "unknown"].contains(s["loc"] as? String ?? ""))
+            XCTAssertTrue(["full", "reduced"].contains(s["acc"] as? String ?? ""))
+            XCTAssertGreaterThanOrEqual(s["up"] as? Int ?? -1, 2, "minutes since this process started")
+            if let n = s["net"] as? String { XCTAssertTrue(["none", "wifi", "cell", "wired", "other"].contains(n)) }
+            if let r = s["radio"] as? String { XCTAssertTrue(["5g", "lte", "3g", "2g"].contains(r)) }
+            XCTAssertNil(s["temp"]); XCTAssertNil(s["health"]); XCTAssertNil(s["cycles"])
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_permissionReadNeverStartsALocationSession() {
+        let exp = expectation(description: "stats on main")
+        DispatchQueue.main.async {
+            XCTAssertFalse(self.plugin.hasLocationManagerForTest)
+            _ = self.plugin.deviceStats()
+            XCTAssertFalse(self.plugin.hasLocationManagerForTest, "a stats read must not arm a manager")
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testDeviceStats_manyQueuesAtOnceNeverCrash() {
+        plugin.startPathMonitorForTest()
+        // Half of these run on main, so the test must not block main while it
+        // waits for them: wait(for:) keeps the run loop turning, a
+        // DispatchGroup.wait() on main would wait on itself.
+        let all = (0..<40).map { i -> XCTestExpectation in
+            let e = expectation(description: "stats \(i)")
+            (i % 2 == 0 ? DispatchQueue.main : DispatchQueue.global()).async { _ = self.plugin.deviceStats(); e.fulfill() }
+            return e
+        }
+        wait(for: all, timeout: 20)
+    }
+
+    func testRadioWord_namesOnlyRealRadios() {
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyNR"), "5g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyNRNSA"), "5g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyLTE"), "lte")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyWCDMA"), "3g")
+        XCTAssertEqual(TdGeoPlugin.radioWord("CTRadioAccessTechnologyEdge"), "2g")
+        XCTAssertNil(TdGeoPlugin.radioWord(nil))
+        XCTAssertNil(TdGeoPlugin.radioWord(""))
+        XCTAssertNil(TdGeoPlugin.radioWord("LTE"), "only Apple's own constants")
+        XCTAssertNil(TdGeoPlugin.radioWord("CTRadioAccessTechnologySomethingNew"))
+    }
+
+    func testNetWord_offlineWinsThenWifiThenCell() {
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: false, wifi: true, cellular: true, wired: false), "none")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: true, cellular: true, wired: false), "wifi")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: true, wired: false), "cell")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: false, wired: true), "wired")
+        XCTAssertEqual(TdGeoPlugin.netWord(satisfied: true, wifi: false, cellular: false, wired: false), "other")
+    }
+
+    func testStateWords_coverEveryCase() {
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.active), "active")
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.inactive), "inactive")
+        XCTAssertEqual(TdGeoPlugin.appStateWord(.background), "background")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.authorizedAlways), "always")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.authorizedWhenInUse), "whenInUse")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.denied), "denied")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.restricted), "restricted")
+        XCTAssertEqual(TdGeoPlugin.locAuthWord(.notDetermined), "notDetermined")
+    }
+
+    func testMetricRow_keepsOnlyFiniteNonNegativeNumbers() {
+        let a = Date(timeIntervalSince1970: 1_759_276_800), b = a.addingTimeInterval(86_400)
+        let row = TdGeoPlugin.metricRow(begin: a, end: b, values: [
+            "cpu_s": 61.26, "bg_loc_s": 3600, "bad": -1, "nan": .nan, "inf": .infinity,
+            String(repeating: "k", count: 40): 5,
+        ])
+        XCTAssertEqual(row?["type"] as? String, "metrickit")
+        XCTAssertEqual(row?["ts"] as? Double, b.timeIntervalSince1970 * 1000)
+        XCTAssertEqual(row?["from"] as? Double, a.timeIntervalSince1970 * 1000)
+        let mx = row?["mx"] as? [String: Double]
+        XCTAssertEqual(mx, ["cpu_s": 61.3, "bg_loc_s": 3600])
+    }
+
+    func testMetricRow_noWindowOrNoNumbersIsNoRow() {
+        let a = Date()
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a, values: ["cpu_s": 1]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(-5), values: ["cpu_s": 1]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(5), values: [:]))
+        XCTAssertNil(TdGeoPlugin.metricRow(begin: a, end: a.addingTimeInterval(5), values: ["x": -3]))
+    }
+
+    func testDiagRow_onlyWhenSomethingHappened_andTheReasonIsBounded() {
+        let a = Date(), b = a.addingTimeInterval(60)
+        XCTAssertNil(TdGeoPlugin.diagRow(begin: a, end: b, crashes: 0, hangs: 0, cpuExceptions: 0, diskExceptions: 0, why: "x"))
+        let r = TdGeoPlugin.diagRow(begin: a, end: b, crashes: 1, hangs: 2, cpuExceptions: 0, diskExceptions: 0,
+                                    why: String(repeating: "w", count: 500))
+        XCTAssertEqual(r?["type"] as? String, "mx-diag")
+        XCTAssertEqual(r?["crashes"] as? Int, 1)
+        XCTAssertEqual(r?["hangs"] as? Int, 2)
+        XCTAssertEqual((r?["why"] as? String)?.count, 120)
+        let quiet = TdGeoPlugin.diagRow(begin: a, end: b, crashes: 0, hangs: 1, cpuExceptions: 0, diskExceptions: 0, why: "")
+        XCTAssertNil(quiet?["why"])
+    }
+
+    func testMetricRows_recordOnlyWhileTrackingIsArmed() {
+        let a = Date(timeIntervalSinceNow: -86_400), b = Date()
+        let row = TdGeoPlugin.metricRow(begin: a, end: b, values: ["cpu_s": 4])!
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.recordMetricRowsForTest([row])
+        let off = expectation(description: "unarmed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertFalse(rows.contains { ($0["type"] as? String) == "metrickit" }, "tracking off writes nothing")
+            off.fulfill()
+        }
+        wait(for: [off], timeout: 30)
+
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.recordMetricRowsForTest([row, row])
+        let on = expectation(description: "armed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertEqual(rows.filter { ($0["type"] as? String) == "metrickit" }.count, 2)
+            on.fulfill()
+        }
+        wait(for: [on], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testMetricKit_emptyDeliveriesAndRepeatedLoadsAreHarmless() {
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        for _ in 0..<5 { plugin.load() }
+        plugin.didReceive([MXMetricPayload]())
+        plugin.didReceive([MXDiagnosticPayload]())
+        let exp = expectation(description: "nothing recorded")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let rows = (UserDefaults.standard.array(forKey: self.plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+            XCTAssertFalse(rows.contains { ["metrickit", "mx-diag"].contains($0["type"] as? String ?? "") })
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testMetricRow_concurrentBuildsAgree() {
+        let a = Date(timeIntervalSince1970: 1_759_276_800), b = a.addingTimeInterval(86_400)
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var seen = Set<Double>()
+        for i in 0..<50 {
+            group.enter()
+            DispatchQueue.global().async {
+                let r = TdGeoPlugin.metricRow(begin: a, end: b, values: ["cpu_s": Double(i % 3)])
+                let v = (r?["mx"] as? [String: Double])?["cpu_s"] ?? -1
+                lock.lock(); seen.insert(v); lock.unlock()
+                group.leave()
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(seen, [0, 1, 2])
+    }
 }
+

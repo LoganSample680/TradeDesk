@@ -134,3 +134,55 @@ test.describe('legal pages', () => {
   });
 
 });
+
+// ── The support page (2026-10-01) ────────────────────────────────────────────
+// App Store Connect requires a Support URL that leads to real contact
+// information. A homepage with an email in the footer is a known coin flip
+// at review, so the app gets its own page, held to the same bar as the two
+// legal pages above.
+test.describe('support page', () => {
+  test('loads anonymously, with a working contact and no console errors', async ({ page }) => {
+    await bareSite(page);
+    const resp = await page.goto('/support.html', { waitUntil: 'domcontentloaded' });
+    expect(resp && resp.status()).toBeLessThan(400);
+    expect(await page.evaluate(() => !!document.getElementById('pg-dash'))).toBe(false);
+    expect(await page.getAttribute('#support-email', 'href')).toBe('mailto:tradedeskprosupport@gmail.com');
+    await assertNoErrors(page);
+  });
+
+  test('answers what a reviewer and a customer look for', async ({ page }) => {
+    await bareSite(page);
+    await page.goto('/support.html', { waitUntil: 'domcontentloaded' });
+    const txt = (await page.textContent('body')).replace(/\s+/g, ' ');
+    expect(txt).toMatch(/Settings, Danger zone, Delete account/i);   // same path as privacy, and as the app
+    expect(txt).toMatch(/Forgot password/i);
+    expect(txt).toMatch(/business hours/i);
+    expect(txt).toMatch(/never stores card numbers/i);
+    expect(txt).not.toMatch(/coming soon|beta|testflight/i);
+    expect(await page.locator('main a[href="/privacy"]').count()).toBe(1);
+    expect(await page.locator('main a[href="/terms"]').count()).toBe(1);
+  });
+
+  test('the deletion path it names is the one the app really has', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    const r = await page.evaluate(() => ({
+      btn: !!document.getElementById('set-del-acct-btn'),
+      zone: /Danger zone/i.test(document.body.innerHTML),
+      fn: typeof deleteMyAccount,
+    }));
+    expect(r).toEqual({ btn: true, zone: true, fn: 'function' });
+    await assertNoErrors(page);
+  });
+
+  test('holds at 390px and is in the sitemap', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await bareSite(page);
+    await page.goto('/support.html', { waitUntil: 'load' });
+    const b = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, win: window.innerWidth }));
+    expect(b.doc).toBeLessThanOrEqual(b.win + 1);
+    const fs = require('fs'), path = require('path');
+    expect(fs.readFileSync(path.join(__dirname, '..', 'sitemap.xml'), 'utf8')).toContain('<loc>https://tradedeskpro.app/support</loc>');
+  });
+});

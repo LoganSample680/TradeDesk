@@ -122,16 +122,27 @@ test.describe('Photo capture: the shared writer', () => {
     expect(r.wrote).toBe(0);
   });
 
+  // Counted by the ids the writer handed back, across the array it started
+  // with AND whatever photos[] is now. A late cache restore on a loaded
+  // webkit runner can swap photos[] for a fresh array while the five saves
+  // are awaiting (5 shot, 3 counted, #159 2026-10-02); the writer pushes into
+  // whichever array is current, so counting only the newest one blamed it for
+  // the swap. What this test owns: five distinct rows, every one written.
   test('concurrent shots all land, none overwrite another', async () => {
-    const n = await page.evaluate(async (b64) => {
+    const r = await page.evaluate(async (b64) => {
       const bin = atob(b64);
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const mk = () => new File([arr], 'shot.png', { type: 'image/png' });
-      await Promise.all([1, 2, 3, 4, 5].map(() => tdSavePhoto({ file: mk(), type: 'before', bidId: 901 })));
-      return photos.filter(p => p.bid_id === 901).length;
+      const start = photos;
+      const rows = await Promise.all([1, 2, 3, 4, 5].map(() => tdSavePhoto({ file: mk(), type: 'before', bidId: 901 })));
+      const ids = rows.map(x => (x ? String(x.id) : null));
+      const seen = new Set(start.concat(photos === start ? [] : photos).filter(p => p && p.bid_id === 901).map(p => String(p.id)));
+      return { ids, distinct: new Set(ids.filter(Boolean)).size, written: ids.filter(id => id && seen.has(id)).length };
     }, PNG_B64);
-    expect(n).toBe(5);
+    expect(r.ids.every(Boolean), 'every shot returned its row').toBe(true);
+    expect(r.distinct, 'five shots, five ids').toBe(5);
+    expect(r.written, 'every row was written to photos').toBe(5);
   });
 });
 
@@ -2928,6 +2939,140 @@ test.describe('TrueShot: module state is lexical, not on window', () => {
 // photo?"). So this does not test a piece. It drives the capture commit with a
 // warm fix, catches the exact blob handed to storage, and reads the GPS back
 // out of it.
+// Owner 2026-10-02: "keep 4k images but scale them down so they don't hit
+// storage and egress as hard". In the iPhone app the full copy is HEIC from
+// the TdImage plugin; everywhere else, and whenever the plugin fails, it is
+// the JPEG exactly as before. A HEIC full copy is only offered where it can be
+// drawn, and is shared as JPEG.
+test.describe('TrueShot: full size as HEIC in the app', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Upload one 2400x1800 shot through _pcUploadRow with a fake TdImage.
+  const upload = (mode) => page.evaluate(async (mode) => {
+    const saved = { en: supaEnabled, user: _supaUser, supa: _supa, cap: window.Capacitor };
+    const bodies = [], asked = [];
+    try {
+      supaEnabled = () => true;
+      _supaUser = { id: 'u-heic' };
+      // Only storage is faked: everything else falls through to the real
+      // client, so a background cloud load that lands mid-test still works.
+      _supa = Object.create(saved.supa || null);
+      _supa.storage = { from: () => ({
+        upload: async (path, body, o) => { bodies.push({ path, type: o && o.contentType, size: body.size }); return { error: null }; },
+        getPublicUrl: (path) => ({ data: { publicUrl: 'https://x/' + path } }),
+      }) };
+      const plugin = {
+        isAvailable: async () => ({ available: mode !== 'unavailable' }),
+        heic: async (o) => {
+          asked.push({ len: o.data.length, quality: o.quality, lat: o.lat, lon: o.lon, ts: o.ts });
+          if (mode === 'fails') throw new Error('could not encode HEIC');
+          return { data: btoa('heic-bytes'), bytes: 10 };
+        },
+      };
+      window.Capacitor = mode === 'browser' ? undefined : { isNativePlatform: () => true, registerPlugin: () => plugin };
+      _pcHeicOk = null;
+      const c = document.createElement('canvas'); c.width = 2400; c.height = 1800;
+      c.getContext('2d').fillRect(0, 0, 2400, 1800);
+      const file = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+      const row = { id: 'h-' + mode, type: 'after', lat: 39.03, lon: -95.71, accM: 8, uploadedAt: '2026-10-01T15:00:00.000Z' };
+      const ok = await _pcUploadRow(row, file);
+      return { ok, fullPath: row.fullPath, bodies, asked };
+    } finally {
+      supaEnabled = saved.en; _supaUser = saved.user; _supa = saved.supa; window.Capacitor = saved.cap; _pcHeicOk = null;
+    }
+  }, mode);
+
+  test('in the app, the full copy goes up as HEIC with the fix handed to the encoder', async () => {
+    const r = await upload('native');
+    expect(r.ok).toBe(true);
+    expect(r.fullPath).toMatch(/\/f-after-\d+\.heic$/);
+    const full = r.bodies.find(b => /\/f-/.test(b.path));
+    expect(full.type).toBe('image/heic');
+    expect(r.asked).toHaveLength(1);
+    expect(r.asked[0]).toMatchObject({ quality: 0.65, lat: 39.03, lon: -95.71, ts: Date.parse('2026-10-01T15:00:00.000Z') });
+    expect(r.asked[0].len, 'the original went in, not an empty string').toBeGreaterThan(1000);
+    // The display copy and the thumb are unchanged.
+    expect(r.bodies.filter(b => !/\/f-/.test(b.path)).map(b => b.type)).toEqual(['image/jpeg', 'image/jpeg']);
+  });
+
+  // The fallback is the web encoder's own full copy: WebP where the browser
+  // can write it (this Chromium), JPEG where it cannot (Safari).
+  test('a failed encode, no plugin, or a browser all keep the web full copy', async () => {
+    for (const mode of ['fails', 'unavailable', 'browser']) {
+      const r = await upload(mode);
+      expect(r.ok, mode).toBe(true);
+      expect(r.fullPath, mode).toMatch(/\/f-after-\d+\.(webp|jpg)$/);
+      expect(r.bodies.find(b => /\/f-/.test(b.path)).type, mode).toMatch(/^image\/(webp|jpeg)$/);
+      expect(r.bodies.filter(b => /\/f-/.test(b.path)), mode + ': one full copy, never two').toHaveLength(1);
+    }
+  });
+
+  test('a HEIC full copy is offered only where it can be drawn', async () => {
+    const r = await page.evaluate(() => {
+      const ua = Object.getOwnPropertyDescriptor(Navigator.prototype, 'userAgent');
+      const tp = Object.getOwnPropertyDescriptor(Navigator.prototype, 'maxTouchPoints');
+      const as = (s, touch) => {
+        Object.defineProperty(navigator, 'userAgent', { value: s, configurable: true });
+        Object.defineProperty(navigator, 'maxTouchPoints', { value: touch || 0, configurable: true });
+      };
+      const heic = { id: 'x', fullPath: 'u/f-1.heic' }, jpg = { id: 'y', fullPath: 'u/f-1.jpg' };
+      const out = {};
+      try {
+        as('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 TradeDeskShell');
+        out.ios18 = [_pcHasFull(heic), _pcHasFull(jpg)];
+        as('Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X) AppleWebKit/605.1.15');
+        out.ios16 = [_pcHasFull(heic), _pcHasFull(jpg)];
+        as('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0 Safari/537.36');
+        out.windows = [_pcHasFull(heic), _pcHasFull(jpg), _pcFullUrl(heic)];
+        as('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15', 5);
+        out.ipad = _pcHasFull(heic);
+        out.none = [_pcHasFull(null), _pcHasFull({ fullPath: '' })];
+      } finally {
+        delete navigator.userAgent; delete navigator.maxTouchPoints;
+        if (ua) Object.defineProperty(Navigator.prototype, 'userAgent', ua);
+        if (tp) Object.defineProperty(Navigator.prototype, 'maxTouchPoints', tp);
+      }
+      return out;
+    });
+    expect(r.ios18).toEqual([true, true]);
+    expect(r.ios16, 'iOS 16 Safari cannot draw HEIC').toEqual([false, true]);
+    expect(r.windows).toEqual([false, true, '']);
+    expect(r.ipad, 'an iPad reports a Mac user agent').toBe(true);
+    expect(r.none).toEqual([false, false]);
+  });
+
+  test('sharing turns a HEIC into JPEG on the phone, and gives up cleanly when it cannot', async () => {
+    const r = await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 40; c.height = 30;
+      c.getContext('2d').fillRect(0, 0, 40, 30);
+      const jpeg = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.9));
+      const passed = await _pcShareable(jpeg);
+      // Chromium cannot decode HEIC: the share falls back instead of sending junk.
+      const junk = await _pcShareable(new Blob(['not really heic'], { type: 'image/heic' }));
+      // A decodable image labelled HEIC (as Safari would decode it) comes out JPEG.
+      const png = await new Promise(res => c.toBlob(res, 'image/png'));
+      const asHeic = await _pcShareable(new Blob([await png.arrayBuffer()], { type: 'image/heic' }));
+      return { same: passed === jpeg, junk, outType: asHeic && asHeic.type, none: await _pcShareable(null) };
+    });
+    expect(r.same, 'a JPEG is shared as is').toBe(true);
+    expect(r.junk).toBe(null);
+    expect(r.outType).toBe('image/jpeg');
+    expect(r.none).toBe(null);
+  });
+
+  test('no console errors from the HEIC suite', async () => {
+    assertNoErrors(page, 'heic full size');
+  });
+});
+
 test.describe('TrueShot: the uploaded file carries its GPS', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -4968,5 +5113,20 @@ test.describe('Photo capture: pending uploads survive and retry', () => {
     expect(r.after, 'the pending one survives, the synced one follows the cloud').toEqual([5300, 5400]);
     expect(r.dup).toBe(1);
     expect(r.url).toBe('https://x/done.jpg');
+  });
+
+  // Jack at Treyton's, 2026-09-30: three photos, File here tapped, one filed.
+  // The other two were waiting for signal in the outbox (outboxWait), the
+  // sync dropped them, and they came back from the outbox with no customer.
+  test('a cloud reload keeps an outbox photo, and the filing he tapped', async () => {
+    const r = await page.evaluate((d) => {
+      photos.push({ id: 5500, type: 'after', data: d, outboxWait: true, client_id: null, uploadedAt: new Date().toISOString() });
+      photos.find(p => p.id === 5500).client_id = 501;   // he tapped File here
+      const t = _TD_TABLES.find(x => x.t === 'td_photos');
+      t.set([{ id: 5600, type: 'after', url: 'https://x/a.jpg', storagePath: 'u/a.jpg', client_id: 501, uploadedAt: new Date().toISOString() }]);
+      const kept = photos.find(p => p.id === 5500);
+      return { kept: !!kept, client: kept && kept.client_id, waiting: tdPhotoWaiting(kept) };
+    }, DATA);
+    expect(r).toEqual({ kept: true, client: 501, waiting: true });
   });
 });

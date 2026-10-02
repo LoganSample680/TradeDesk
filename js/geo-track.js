@@ -3212,10 +3212,10 @@ async function _geoPermissionBanner(){
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML=_geoBannerHtml('Location is off',
-    'TradeDesk logs your drive time and job hours automatically during work hours, it only works with location on. '+
+    'TradeDesk logs your drives and job hours on its own, but only with location on. '+
     (denied
       ?'Turn it back on in your phone: Settings → TradeDesk → Location → While Using the App.'
-      :'Tap below and choose Allow While Using.'),
+      :'Tap below, then pick Allow While Using.'),
     denied?null:'Turn on location');
 }
 // One banner shell for every state, so the copy is the only thing that varies.
@@ -4345,12 +4345,22 @@ let _geoDriveConfirmFix=null;// {lat,lng} position at the last 30-minute confirm
 // Short enough that a walk past a parked truck at 10:00 and a passenger ride
 // at 10:30 can never pair with each other.
 const _GEO_DRIVE_PAIR_MS=3*60000;
-// The NATIVE cap. Deliberately generous against a real drive and still far
-// short of a night: an open window re-asserts itself off its own fixes and off
+// The NATIVE cap. An open window re-asserts itself off its own fixes and off
 // the 30-minute confirmation long before this, so this only ever fires when
-// nothing is confirming anything, and then it costs 45 minutes of radio
-// instead of eight hours.
-const _GEO_DRIVE_WIN_CAP_MS=45*60000;
+// nothing is confirming anything.
+//
+// 45 -> 25 MINUTES (owner 2026-10-02: "it all needs to be at 100 percent in
+// 10 seconds with battery cut"). "Only ever fires" turned out to be most of
+// the time: the plugin opens the window by itself on an automotive flip
+// while the WebView is asleep (selfArmDrive), and until selfCloseDrive ships
+// in a build nothing asleep can close it, so it ran to the cap in a parked
+// truck. Eight days of Jack: the window was on 21.6 hours for about 8 hours
+// of driving, and 18 of his 27 long windows ended on "cap". Two weeks of
+// drive rows for both phones topped out at 26 minutes, median 8 to 9, so 25
+// still covers a real drive and gives back twenty minutes of GPS per window.
+// JS awake re-asserts every five minutes, so a long drive with the app
+// running never meets it.
+const _GEO_DRIVE_WIN_CAP_MS=25*60000;
 // How often JS re-asserts, which is what refreshes that cap. Comfortably
 // inside both the cap and the 30-minute confirmation.
 const _GEO_DRIVE_WIN_REASSERT_MS=5*60000;
@@ -4402,9 +4412,12 @@ function _geoEvFresh(ev){
 // deliberately differs from the server's AUTO_KINDS, and the difference is
 // documented rather than accidental.
 function _geoKindDrives(k){const s=String(k||'');return s==='automotive'||s==='driving';}
+// The kinds that end a drive, in ONE list: _geoKindRests reads it here and
+// the plugin reads it from the drive recipe (setSampling restKinds), so the
+// phone asleep closes the window on exactly the flips JS awake does.
+const _GEO_REST_KINDS=['walking','running','onFoot','still','stationary','cycling'];
 function _geoKindRests(k){
-  const s=String(k||'');
-  return s==='walking'||s==='running'||s==='onFoot'||s==='still'||s==='stationary'||s==='cycling';
+  return _GEO_REST_KINDS.indexOf(String(k||''))>=0;
 }
 function _geoDriveWindowOn(){return _geoDriveWinAt>0;}
 // The correlation, from either side. `half` is 'motion' or 'fix'; whichever
@@ -4519,7 +4532,7 @@ function _geoDriveWindowOpen(why){
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
   // `reason` rides every call that can turn the receiver on (owner 2026-09-08,
   // the radio ledger): the plugin writes the row, JS says why. 3.2 both ways.
-  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY,reason:String(why||'')})).catch(()=>{});}catch(_e){}
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY,restKinds:_GEO_REST_KINDS.slice(),reason:String(why||'')})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
   // The island shows the drive from the first second of the window, not from
   // the first fix that moves the tally (js/live-activity.js).
@@ -4791,6 +4804,17 @@ function _geoKeepAwakeMs(nowMs){
     return Math.round((b-cur)*60000);
   }catch(_e){return 0;}
 }
+// Re-read the motion chip's history this often while the app is awake in
+// working hours (owner 2026-09-28, "go but make sure this doesn't kill egress
+// or battery"). A flip the live stream skipped used to wait for the next region
+// or ping wake, 2 to 15 minutes. The read is local to the phone and a poll that
+// finds nothing uploads nothing (TdGeoPlugin.backfillMotionHistory), so the
+// server sees no extra traffic; a sleeping phone runs no timer at all.
+const _GEO_MOTION_POLL_MS=15000;
+function _geoMotionPollSet(Td,ms,why){
+  if(!Td||typeof Td.setMotionPoll!=='function')return;
+  Promise.resolve(Td.setMotionPoll({intervalMs:ms,reason:why})).catch(()=>{});
+}
 function _geoHeartbeatSync(spot){
   try{
     const Td=_geoTdPlugin();
@@ -4799,6 +4823,7 @@ function _geoHeartbeatSync(spot){
     if(atHome){
       _geoHbArmedAtMs=0;_geoHbKeepAwake=null;
       if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat({reason:'parked at home'})).catch(()=>{});
+      _geoMotionPollSet(Td,0,'parked at home');
       _geoParkNote('hb-off','home park');
       return;
     }
@@ -4825,6 +4850,9 @@ function _geoHeartbeatSync(spot){
     _geoHbArmedAtMs=Date.now();_geoHbKeepAwake=keepalive;
     const ttlMs=keepalive?awakeMs:12*3600000;
     Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs,keepalive,reason:keepalive?'shift keep-awake':'shift start'})).catch(()=>{});
+    // The poll rides the keep-awake: on while the app is held awake for the
+    // shift, off otherwise. The beat's own end (ttl, stopAll) stops it natively.
+    _geoMotionPollSet(Td,keepalive?_GEO_MOTION_POLL_MS:0,keepalive?'shift keep-awake':'off the clock');
     _geoParkNote('hb-on',keepalive?('awake '+Math.round(awakeMs/60000)+'m'):'30m tick armed');
   }catch(_e){}
 }
@@ -4839,6 +4867,28 @@ function _geoClearParkTimer(){
 }
 // One question, one place, and a seam the pocket-condition tests can stub.
 function _geoAppOnScreen(){try{return typeof document!=='undefined'&&document.visibilityState==='visible';}catch(_e){return false;}}
+// ── ON SCREEN IS NOT MOVING (owner 2026-09-30, "we really need to make sure
+// this battery issue resolves") ─────────────────────────────────────────
+// Opening the app used to switch full-accuracy GPS on every time, because a
+// phone pulled out at the truck mount should pick the drive up at the
+// driveway. Jack opened the app 65 times one morning, mostly standing at the
+// yard or at home, and every open lit the GPS: 33 full-accuracy starts, the
+// park and unpark flapping every minute or two at the shop.
+//
+// The drive does not need it any more: the automotive flip itself starts the
+// GPS (the drive window), and the motion history is re-read every 15 seconds
+// while the app is held awake (setMotionPoll). So an open lights the GPS only
+// when the tape says the truck is moving, or a drive is already running. A
+// phone with no motion reading yet behaves exactly as before.
+function _geoLooksMoving(){
+  try{
+    if(typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())return true;
+    if(_geoDriveStartedAt)return true;
+    const k=String(_geoLastMotionKind||'');
+    if(!k)return true;
+    return k==='automotive'||k==='driving'||k==='cycling';
+  }catch(_e){return true;}
+}
 function _geoEnterParkMode(spot){
   _geoClearParkTimer();
   if(_geoParkModeOn)return;
@@ -4848,7 +4898,7 @@ function _geoEnterParkMode(spot){
   // iOS wake-up region fires hundreds of meters past the fence. On screen =
   // GPS stays live; the countdown re-arms, and the firing after the app is
   // backgrounded parks for real.
-  if(_geoAppOnScreen()){
+  if(_geoAppOnScreen()&&_geoLooksMoving()){
     _geoParkNote('park-defer','app on screen');
     _geoArmParkTimer(spot);
     return;
@@ -6033,6 +6083,11 @@ async function _geoBgUpdateCheck(){
     // exists to avoid, and the foreground path will catch it a moment later.
     if(!document.hidden)return;
     _geoParkNote('bg-update',APP_VERSION+' -> '+d.version);
+    // Pull the new build into the cache FIRST, exactly as the foreground path
+    // does (_checkVersionOnResume in js/cloud.js). Without it the service
+    // worker's cache-first branch hands the reload the copy it already had,
+    // and a phone in a pocket reloads straight back into the old version.
+    if(typeof _stageUpdate==='function'){try{await _stageUpdate(d.version);}catch(_e){}}
     if(typeof _autoSaveAndReload==='function')await _autoSaveAndReload();
   }catch(_e){}
 }
@@ -6041,6 +6096,15 @@ function _geoTdInit(){
   const Td=_geoTdPlugin();
   if(!Td)return;
   window._geoTdBound=true;
+  // ── THE WAKE CAN UPDATE US EVEN WHILE THIS PAGE SLEEPS (owner 2026-10-01) ──
+  // Tell the native layer which version this page is and where to ask, so a
+  // silent push or heartbeat that wakes only the native side can still see a
+  // newer build and reload the WebView (TdGeoPlugin.checkForUpdate). A shell
+  // that predates the method just skips it.
+  try{
+    if(typeof Td.setUpdateProbe==='function'&&typeof APP_VERSION!=='undefined'&&APP_VERSION&&location.protocol==='https:')
+      Promise.resolve(Td.setUpdateProbe({url:location.origin+'/version.json',version:String(APP_VERSION)})).catch(()=>{});
+  }catch(_e){}
   try{
     if(typeof Td.addListener==='function')Td.addListener('geoEvent',(ev)=>{_geoTdEvent(ev);});
   }catch(_e){}
@@ -6147,14 +6211,14 @@ function startGeoTracking(){
   // through _geoExitParkMode with the flag down); a hidden one (a background
   // relaunch, a reload behind the lock screen) stays parked on the fences.
   if(_geoParkModeOn){
-    if(_geoAppOnScreen()){_geoExitParkMode();return;}
+    if(_geoAppOnScreen()&&_geoLooksMoving()){_geoExitParkMode();return;}
     // A reload while parked lands here with empty memory. Anything the old
     // JS left running is in the list, and nothing else will ever come back
     // for it: startGeoTracking's sweep is the only other reader and this is
     // the branch that never reaches it.
     const orphans=_geoDropWatchers('reload while parked');
     if(orphans)_geoParkNote('start-drop',orphans+' orphaned');
-    _geoParkNote('start-skip','parked, app hidden');
+    _geoParkNote('start-skip',_geoAppOnScreen()?'parked, not moving':'parked, app hidden');
     return;
   }
   const BG=_geoNativePlugin();
@@ -7225,11 +7289,11 @@ function _geoTrackInit(){
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
         _geoWakeNudge();                       // resolve where we ARE now, not eventually
-        // Same rule as the enter-side defer: an app being LOOKED AT runs live
-        // GPS. Exiting here restarts the watcher, so pulling the phone out at
-        // the truck mount picks the drive up at the driveway, not a quarter
-        // mile down the road when the wake-up region finally fires.
-        if(_geoParkModeOn)_geoExitParkMode();
+        // Same rule as the enter-side defer: an app being looked at IN A
+        // MOVING TRUCK runs live GPS, so the drive is picked up at the
+        // driveway. Standing still it does not (_geoLooksMoving, owner
+        // 2026-09-30): the automotive flip starts the GPS itself.
+        if(_geoParkModeOn&&_geoLooksMoving())_geoExitParkMode();
       }
     });
     // Queued entries also flush the moment connectivity returns.
@@ -7793,7 +7857,9 @@ function _geoDeriveClocks(dayStart,dayEnd){
     // backwards. An open clock runs to now, bounded by the day the caller
     // asked for, so it can never reach past the day it belongs to.
     const nowMs=Date.now();
-    return timeEntries.filter(e=>e&&e.start_time&&(e.end_time||e.open)&&mine(e))
+    // "Personal time" (a gap answered as not work, js/timelog.js) is the
+    // opposite of a clock: it must never make a drive under it bill (rule 27).
+    return timeEntries.filter(e=>e&&e.start_time&&(e.end_time||e.open)&&mine(e)&&e.personal!==true)
       .map(e=>({start:Date.parse(e.start_time),
                 end:e.end_time?Date.parse(e.end_time):Math.min(nowMs,dayEnd)}))
       .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);

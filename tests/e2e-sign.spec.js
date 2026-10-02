@@ -2404,3 +2404,57 @@ test.describe('sign.html: proposal fills, no "Scope & terms" label / dead space'
     expect(r.bleed, 'no horizontal bleed').toBeLessThanOrEqual(1);
   });
 });
+
+// Jack's proposal, 2026-09-30: the sign page frame was plain (the proposal
+// file never carried his logo), the contact footer showed the login email
+// instead of the business email, and "Not interested" sat under the sticky
+// Approve bar.
+test.describe('sign.html: his logo, his business email, nothing under the bar', () => {
+  let page;
+  const LOGO = 'https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/u1/branding/logo-1.png';
+  const PROP = Object.assign({}, MOCK_PROPOSAL_GENERAL, {
+    businessName: 'Plumbing Solutions by JS', logoUrl: LOGO, logoData: '', brandColor: '#2d5da8',
+    businessEmail: 'dad@plumbing.test', notifyEmail: 'jack@login.test', businessPhone: '785-555-0100',
+    contactName: 'John Schonfeldt',
+  });
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(data => { window.__mockProposalData = data; }, PROP);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: PROP, bidId: FAKE_BID_ID_2 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_2}_${FAKE_TOKEN_2}.json`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2500);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the top bar wears his stored logo; only his gallery URL is trusted', async () => {
+    const r = await page.evaluate((LOGO) => ({
+      top: document.querySelector('.topbar-logo img')?.getAttribute('src') || null,
+      trust: [_signLogoSrc({ logoUrl: LOGO }), _signLogoSrc({ logoUrl: 'https://evil.test/x.png' }), _signLogoSrc({ logoUrl: 'javascript:alert(1)' }), _signLogoSrc({ logoData: 'data:image/png;base64,AA' }), _signLogoSrc(null)],
+    }), LOGO);
+    expect(r.top).toBe(LOGO);
+    expect(r.trust).toEqual([LOGO, '', '', 'data:image/png;base64,AA', '']);
+    // Saved through the /api proxy: the same gallery file.
+    const proxied = await page.evaluate(() => _signLogoSrc({ logoUrl: 'https://uat.tradedesk-cyp.pages.dev/api/storage/v1/object/public/gallery/u1/branding/logo-1.png' }));
+    expect(proxied).toBe('https://mwtsmctajhrrybblgorf.supabase.co/storage/v1/object/public/gallery/u1/branding/logo-1.png');
+  });
+
+  test('the contact footer shows the business email, not the login', async () => {
+    const t = await page.evaluate(() => document.getElementById('prop-contact-footer')?.textContent || '');
+    expect(t).toContain('dad@plumbing.test');
+    expect(t).not.toContain('jack@login.test');
+    // Proposals signed by (owner 2026-09-30): the person to call is named.
+    expect(t).toContain('John Schonfeldt');
+  });
+
+  test('"Not interested" scrolls clear of the Approve bar', async () => {
+    const r = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const btn = [...document.querySelectorAll('button')].find(b => /Not interested/.test(b.textContent));
+      const bar = document.getElementById('sticky-bar');
+      if (!btn || !bar || getComputedStyle(bar).display === 'none') return { skip: true };
+      return { bottom: btn.getBoundingClientRect().bottom, barTop: bar.getBoundingClientRect().top };
+    });
+    if (!r.skip) expect(r.bottom).toBeLessThanOrEqual(r.barTop);
+  });
+});

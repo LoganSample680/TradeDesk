@@ -33,26 +33,65 @@ serve(async (req) => {
     if (!apnsConfigured()) return json({ ok: false, error: "APNs not configured" }, 503);
     const svc = createClient(SUPABASE_URL, SERVICE_KEY);
 
+    // ── A NEW BUILD IS A REASON TO WAKE (owner 2026-10-01) ─────────────────
+    // "How can we get new JS code from a uat roll on a phone that has never
+    // rolled it?" A woken app asks for version.json and reloads into the new
+    // build (_geoBgUpdateCheck, js/geo-track.js), so the roll waking every
+    // phone once is the whole answer: minutes, not the next half-hour tick.
+    // .github/workflows/uat-wake.yml posts {reason:"deploy"} once the new
+    // build is actually being served. It has its own watermark so it neither
+    // waits on nor resets the half-hourly one, and its own gate so a burst of
+    // rolls (or anybody else posting it) costs at most one wake in 3 minutes.
+    let reason = "", want = "";
+    try {
+      const body = await req.json();
+      reason = String(body?.reason || "");
+      want = String(body?.version || "");
+    } catch { reason = ""; }
+    // ── AND ONCE MORE FOR WHOEVER IS STILL BEHIND (owner 2026-10-01) ───────
+    // Two minutes after the deploy wake the workflow asks again, naming the
+    // version UAT is serving. Only phones whose own last report (device_status,
+    // written on every boot) is on a different version are woken a second
+    // time; a phone that already updated is left alone.
+    const retry = reason === "deploy-retry" && /^\d{2}\.\d{2}\.\d{2}\.\d{1,3}$/.test(want);
+    const deploy = reason === "deploy" || retry;
+    const mark = retry ? "geo-ping-retry" : deploy ? "geo-ping-deploy" : "geo-ping";
+    const gateMs = deploy ? 3 * 60000 : 20 * 60000;
     // Rate gate: whatever calls this, devices are nudged at most every 20
     // minutes. The read-then-write race window is a few ms against a
     // 30-minute cron; a rare double tick costs one extra silent push.
     const { data: wm } = await svc.from("cron_watermarks")
-      .select("ran_at").eq("name", "geo-ping").maybeSingle();
-    if (wm && Date.now() - Date.parse(wm.ran_at) < 20 * 60000) {
+      .select("ran_at").eq("name", mark).maybeSingle();
+    if (wm && Date.now() - Date.parse(wm.ran_at) < gateMs) {
       return json({ ok: true, skipped: "rate-gated" });
     }
     await svc.from("cron_watermarks")
-      .upsert({ name: "geo-ping", ran_at: new Date().toISOString() });
+      .upsert({ name: mark, ran_at: new Date().toISOString() });
 
-    const { data: rows, error: qerr } = await svc.from("device_tokens")
-      .select("token").is("invalid_at", null).limit(500);
+    const { data: all, error: qerr } = await svc.from("device_tokens")
+      .select("token,user_id").is("invalid_at", null).limit(500);
     if (qerr) return json({ ok: false, error: qerr.message }, 500);
-    if (!rows?.length) return json({ ok: true, sent: 0, note: "no devices" });
+    let rows = all || [];
+    if (retry && rows.length) {
+      // Each person's newest report, over the last two days. Nobody who has
+      // not reported at all is guessed at: no report, no retry.
+      const uids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+      const { data: st } = await svc.from("device_status")
+        .select("user_id,app_version,checked_at").in("user_id", uids)
+        .gt("checked_at", new Date(Date.now() - 2 * 86400000).toISOString());
+      const newest = new Map<string, { v: string; at: string }>();
+      for (const r of st || []) {
+        const cur = newest.get(r.user_id);
+        if (!cur || String(r.checked_at) > cur.at) newest.set(r.user_id, { v: String(r.app_version || ""), at: String(r.checked_at) });
+      }
+      rows = rows.filter((r) => { const n = newest.get(r.user_id); return !!n && n.v !== want; });
+    }
+    if (!rows.length) return json({ ok: true, sent: 0, note: retry ? "everyone is current" : "no devices" });
 
     // Expire before the next tick: a nudge delivered 40 minutes late is the
     // next nudge's job.
-    const { sent, pruned } = await sendSilentWake(svc, rows.map((r) => r.token), "geo-ping", 1500);
-    return json({ ok: true, sent, pruned });
+    const { sent, pruned } = await sendSilentWake(svc, rows.map((r) => r.token), "geo-ping", deploy ? 600 : 1500);
+    return json({ ok: true, sent, pruned, reason: retry ? "deploy-retry" : deploy ? "deploy" : "tick" });
   } catch (e) {
     console.error(`[push-geo-ping] ${String(e).slice(0, 300)}`);
     return json({ ok: false, error: "failed" }, 500);

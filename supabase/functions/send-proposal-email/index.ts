@@ -48,12 +48,24 @@ function bodyToHtml(text: string): string {
     .join('');
 }
 
+// What the email is about. Proposals, change orders and invoices all go out
+// through the app's one send screen (js/proposals.js tdSendSheet) and this one
+// function; only the headline and the button words change. Anything unknown
+// reads as a proposal, which is what every caller before this sent.
+const KINDS: Record<string, { noun: string; cta: string }> = {
+  proposal:     { noun: 'proposal',     cta: 'View &amp; Sign Proposal →' },
+  change_order: { noun: 'change order', cta: 'View &amp; Sign Change Order →' },
+  invoice:      { noun: 'invoice',      cta: 'View &amp; Pay Invoice →' },
+};
+
 function htmlTemplate(
   clientName: string,
   businessName: string,
   proposalUrl: string,
   customBody?: string,
+  kind = 'proposal',
 ): string {
+  const K = KINDS[kind] || KINDS.proposal;
   const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
   const displayUrl = proposalUrl.replace(/^https?:\/\//, '');
 
@@ -66,7 +78,7 @@ function htmlTemplate(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Your Proposal from ${escHtml(businessName)}</title>
+<title>Your ${K.noun} from ${escHtml(businessName)}</title>
 <style>
   body{margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
   .wrap{max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);}
@@ -104,9 +116,9 @@ function htmlTemplate(
     <p class="header-title">📋 ${escHtml(businessName)}</p>
   </div>
   <div class="body">
-    <h1>Hey ${escHtml(firstName)} — your proposal is ready!</h1>
+    <h1>Hey ${escHtml(firstName)}, your ${K.noun} is ready!</h1>
     ${bodyHtml}
-    <a class="cta" href="${escHtml(proposalUrl)}">View &amp; Sign Proposal →</a>
+    <a class="cta" href="${escHtml(proposalUrl)}">${K.cta}</a>
     <hr class="divider">
     <p>Looking forward to working with you,<br><strong>${escHtml(businessName)}</strong></p>
   </div>
@@ -114,7 +126,7 @@ function htmlTemplate(
     <p>If the button above doesn't work, copy and paste this link into your browser:</p>
     <p><a class="plain-link" href="${escHtml(proposalUrl)}">${escHtml(displayUrl)}</a></p>
     <hr class="divider">
-    <p>This proposal was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
+    <p>This ${K.noun} was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
   </div>
 </div>
 </td></tr>
@@ -146,7 +158,7 @@ Deno.serve(async (req) => {
     return reply({ error: 'RESEND_API_KEY not configured' }, 503);
   }
 
-  let body: { to?: string; clientName?: string; proposalUrl?: string; customSubject?: string; customBody?: string };
+  let body: { to?: string; clientName?: string; proposalUrl?: string; customSubject?: string; customBody?: string; kind?: string };
   try { body = await req.json(); } catch { return reply({ error: 'Invalid JSON' }, 400); }
 
   const to = String(body.to || '').trim();
@@ -174,7 +186,8 @@ Deno.serve(async (req) => {
   const customBody = rawBody ? stripLinks(rawBody).split(MARK).join(proposalUrl) : '';
   const customSubject = stripLinks(body.customSubject || '', 200).trim();
 
-  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody || undefined);
+  const kind = Object.prototype.hasOwnProperty.call(KINDS, String(body.kind)) ? String(body.kind) : 'proposal';
+  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody || undefined, kind);
   const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
   const subject = customSubject || `Your ${businessName} Proposal is Ready, ${firstName}!`;
   const replyTo = validEmail(caller.email) ? caller.email : '';

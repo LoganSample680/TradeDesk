@@ -14,7 +14,12 @@ import UniformTypeIdentifiers
 // and the app says "3 photos are waiting" the next time it opens.
 class ShareViewController: UIViewController {
 
-    static let appGroup = "group.app.tradedesk.beta"
+    // The extension's id is the app's plus ".share", so dropping the last
+    // part gives the app's id and the same group TdSharePlugin reads.
+    static let appGroup: String = {
+        let ext = Bundle.main.bundleIdentifier ?? "app.tradedesk.beta.share"
+        return "group." + ext.components(separatedBy: ".").dropLast().joined(separator: ".")
+    }()
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)

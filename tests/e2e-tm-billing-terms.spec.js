@@ -107,7 +107,7 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
     expect(s.bar).toEqual(['Check your rate']);
-    await page.evaluate(() => _tmMarkRateChecked());
+    await page.evaluate(() => { /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked(); });
     expect((await state()).bar).toEqual(['Sign here', 'Send it']);
   });
 
@@ -328,13 +328,13 @@ test.describe('T&M billing terms: materials, up front, and the law', () => {
       document.querySelectorAll('#_prop-preview-ov').forEach(e => e.remove());
       return { on, off };
     });
-    expect(r.on.label).toBe('Rate in the contract');
+    expect(r.on.label).toBe('Rate they agree to');
     expect(r.on.sw).toBe(true);
-    expect(r.on.sub).toContain('They sign to $85 an hour');
+    expect(r.on.sub).toContain('They agree to $85 an hour');
     expect(r.on.terms).toContain('$85 per hour');
     expect(r.on.doc, 'never on the proposal page').not.toContain('$85');
     expect(r.off.sw).toBe(false);
-    expect(r.off.sub).toBe('Nowhere they see. You still bill the hours at $85.');
+    expect(r.off.sub).toBe('Hidden from them. You still bill $85 an hour.');
     expect(r.off.terms).not.toContain('$85');
     expect(r.off.doc).not.toContain('$85');
   });

@@ -196,7 +196,13 @@ async function startStripeConnect(){
     });
     const data=await res.json();
     if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}return;}
-    window.location.href=data.url;
+    // NO LINK, NO NAVIGATION (2026-10-02). A reply with neither an error nor
+    // a url used to set location.href to undefined, which sends the app to
+    // "/undefined" and drops whatever screen he was on. Only a Stripe https
+    // link leaves the app; anything else says so and leaves him where he is.
+    const url=(data&&typeof data.url==='string'&&/^https:\/\//.test(data.url))?data.url:'';
+    if(!url){zAlert('Stripe did not send back a sign-up link. Try again in a minute.');if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}return;}
+    window.location.href=url;
   }catch(e){
     zAlert('Could not start Stripe Connect: '+e.message);
     if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}
@@ -345,7 +351,7 @@ async function _verifyCoOwner(boss){
       const{data:a}=await _supa.from('accounts').select('*').eq('owner_id',boss).maybeSingle();
       if(!a||String(_contractorUserId)!==String(boss))return;
       const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',a.id).maybeSingle();
-      _account=a;if(cfg){_config=cfg;_activeTrade=cfg.business_type||_activeTrade||'general';}
+      _account=a;if(cfg){_config=cfg;_activeTrade=(typeof _tradeStart==='function'?_tradeStart(cfg):cfg.business_type)||_activeTrade||'general';}
       try{const k='zp3_acct_'+_supaUser.id;const c=JSON.parse(localStorage.getItem(k)||'null');if(c&&c.coOwner){c.account=a;if(cfg){c.config=cfg;c.activeTrade=_activeTrade;}localStorage.setItem(k,JSON.stringify(c));}}catch(_e){}
       if(typeof _renderNavTradeSwitcher==='function')_renderNavTradeSwitcher();
       applyPermissions();
@@ -469,7 +475,9 @@ async function loadAccountData(){
       if(_account?.phone&&!S.bphone){S.bphone=_account.phone;_seeded.push('bphone');}
       if(_account?.license_info&&!S.blic){S.blic=_account.license_info;_seeded.push('blic');}
       if(_account?.state&&!S.state){S.state=_account.state;_seeded.push('state');}
-      _activeTrade=_config?.business_type||'general';
+      // The trade he last picked, if it is one of his (_tradeStart), not the
+      // signup trade every time the account loads.
+      _activeTrade=(typeof _tradeStart==='function'?_tradeStart(_config):_config?.business_type)||'general';
       _renderNavTradeSwitcher();
       applyPermissions();
       // Cache for offline restore
@@ -756,8 +764,10 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.29.26.2';
+const APP_VERSION='10.02.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
+// _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
+let _rtPocketT=null,_rtPocketed=false;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
 // and the cloud load resolving (either way). renderDash shows skeleton KPI
@@ -1623,7 +1633,11 @@ const _TD_TABLES=[
   // row never syncs (tx below needs a url), so the cloud copy of this table
   // never has it, and replacing the list wholesale erased the only copy.
   // _drainPhotoQueue (js/jobs.js) finishes it in place once there is signal.
-  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&p.pendingUpload&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
+  // Both waiting flags (tdPhotoWaiting, js/photo-capture.js): a camera photo
+  // waits as outboxWait, and keeping only pendingUpload dropped it, so a tap
+  // on File here before it uploaded was lost and it went up unfiled (Jack at
+  // Treyton's, 2026-09-30: 1 of 3 photos filed).
+  {t:'td_photos',      get:()=>photos,      set:v=>{const ids=new Set(v.map(r=>String(r&&r.id)));const keep=photos.filter(p=>p&&(p.pendingUpload||p.outboxWait)&&p.data&&!p.storagePath&&!ids.has(String(p.id)));photos.length=0;v.forEach(r=>photos.push(r));keep.forEach(r=>photos.push(r));},
     // originalUrl/originalPath/annotated are here for the SAME reason
     // thumbUrl was missing and had to be added: a field the feature depends
     // on that the sync drops is a field that exists only on the phone that
@@ -4001,6 +4015,110 @@ async function _denyPermissionRequest(reqId){
   }catch(e){console.warn('deny failed:',e);}
 }
 
+// RATES LIVE WITH THE PEOPLE (owner 2026-09-29: "I don't even think Settings
+// is the right spot for your hourly rate. I think it belongs under team").
+// What the owner bills, and the default for anyone without a rate of their
+// own. Each crew member's rate is on their own card (emp-bill-rate). Read by
+// the one lookup every estimate and invoice uses (personBillRate, js/data.js).
+// WHAT EACH PERSON BILLS AN HOUR sits on that person's row (owner 2026-09-29:
+// "rate should go on the person right?"). A separate "You / Everyone else"
+// box read as two more people. The sell rate is personBillRate (js/data.js);
+// what they cost is pay_rate, shown beside it and never mixed (CLAUDE.md 18.2).
+function _teamRateChip(id,label,val,ph,onchange){
+  return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
+    // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
+    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
+}
+function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
+// A typed amount: only the money noise ($ , spaces) comes off, never the sign,
+// so "-5" is refused instead of saved as 5. Blank is 0; junk is NaN.
+function _teamMoney(v){const t=String(v==null?'':v).replace(/[$,\s]/g,'');return t===''?0:(/^\d*\.?\d+$/.test(t)?parseFloat(t):NaN);}
+// BILLS vs COSTS YOU (owner 2026-09-29: "Bill at versus true hourly rate is
+// different things"). Bills is what the customer pays for their hour. Costs
+// you is their pay times the burden from Settings (payroll taxes, comp,
+// insurance), the same _empLoadedHourly every job cost uses. What is left is
+// what the hour earns. Cost is only drawn for someone allowed to see pay.
+// Pay sits beside Bills on the row (Earl 2026-09-29: pay was in the Edit
+// screen and the rate on the row, two places for one person's money). Typed
+// here, it is the same write the Edit screen makes. A salary stays in Edit:
+// it is a yearly number, not an hourly one to nudge.
+function _teamMoneyHtml(chip,bill,comp,payId,payFn,editFn){
+  let pay='',line='';
+  if(typeof _canViewComp==='function'&&_canViewComp()){
+    comp=comp||{};
+    pay=comp.pay_type==='salary'
+      ?'<button type="button" class="td-rate-chip td-pay-chip" onclick="'+editFn+'">Pays '+fmt(Number(comp.pay_rate)||0).replace(/\.00$/,'')+'/yr</button>'
+      :_teamRateChip(payId,'Pays',_teamRateVal(comp.pay_rate),'0',payFn).replace('class="td-rate-chip"','class="td-rate-chip td-pay-chip"');
+    const wage=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
+    if(wage>0){
+      const loaded=Math.round(_empLoadedHourly(comp)*100)/100;
+      const pct=Math.round(((Number(S.laborBurden)||1.3)-1)*100);
+      const keep=bill>0?Math.round((bill-loaded)*100)/100:0;
+      line='<div class="td-rate-cost">Costs you <b>'+fmt(loaded)+'/hr</b> with '+pct+'% for taxes and insurance'+
+        (bill>0?' · you keep <b class="'+(keep<0?'neg':'')+'">'+fmt(keep)+'/hr</b>':'')+'</div>';
+    }else line='<div class="td-rate-cost">Put in pay to see what an hour earns you</div>';
+  }
+  return '<div class="td-rate-row"><div class="td-rate-chips">'+chip+pay+'</div>'+line+'</div>';
+}
+// The default for anyone without their own rate: one quiet line, not a person.
+function _teamRatesHtml(){
+  if(!(typeof _ownerUI==='function'&&_ownerUI()))return '';
+  return '<div id="team-rates" class="td-rate-default">Anyone without a rate bills '+
+    _teamRateChip('team-labor-rate','','' +_teamRateVal(S.laborRate),'75',"_teamRateSet('laborRate',this.value)")+'</div>';
+}
+function _teamRateSet(key,val){
+  const r=_teamMoney(val);
+  if(!(r>=0))return;
+  if(key==='laborRate'&&!(r>0))return;
+  S[key]=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
+// What he pays them an hour, from the row: the same team_members write the
+// Edit screen makes (pay_type/pay_rate), only those two columns, only for
+// someone who may see pay.
+async function _teamPaySet(i,val){
+  const e=(S.employees||[])[i];if(!e||!e.email||!(typeof _canViewComp==='function'&&_canViewComp()))return false;
+  const r=_teamMoney(val);
+  if(!(r>=0))return false;
+  const email=String(e.email).toLowerCase();
+  const was=_teamComp[email]||_teamComp[e.email]||{};
+  const pay_type=was.pay_type==='salary'?'salary':'hourly';
+  _teamComp[email]={pay_type,pay_rate:r};
+  if(typeof renderTeam==='function')renderTeam();
+  if(typeof showToast==='function')showToast('Pay saved','✓');
+  if(_supa&&_supaUser){
+    try{
+      const {error}=await _supa.from('team_members').update({pay_type,pay_rate:r}).eq('contractor_user_id',_effectiveUid()).eq('email',e.email);
+      if(error){console.warn('team pay save failed:',error);if(typeof showToast==='function')showToast('Pay did not save, try again','⚠️');}
+    }catch(_e){}
+  }
+  return true;
+}
+// Your own pay, hourly, from your row. A salary is set in Settings.
+function _teamOwnerPaySet(val){
+  const r=_teamMoney(val);
+  if(!(r>=0))return false;
+  if(S.ownerPayType!=='salary')S.ownerPayType='hourly';
+  S.ownerPayRate=r;
+  if(typeof _settingsChanged==='function')_settingsChanged();
+  if(typeof renderTeam==='function')renderTeam();
+  if(typeof showToast==='function')showToast('Pay saved','✓');
+  return true;
+}
+// Your own pay lives in Settings (it feeds every job cost); this takes you there.
+function _teamOwnerPay(){
+  if(typeof goPg==='function')goPg('pg-settings');
+  setTimeout(()=>{const f=document.getElementById('set-owner-pay-rate');if(f){try{f.scrollIntoView({block:'center'});}catch(_e){}f.focus();}},250);
+}
+function _teamBillSet(i,val){
+  const e=(S.employees||[])[i];if(!e)return;
+  const r=_teamMoney(val);
+  if(!(r>=0))return;
+  if(typeof setPersonBillRate==='function'&&e.email)setPersonBillRate(e.email,r);
+  else{e.billRate=r;if(typeof _settingsChanged==='function')_settingsChanged();}
+  if(typeof showToast==='function')showToast('Rate saved','✓');
+}
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
@@ -4054,13 +4172,15 @@ function renderTeam(){
   //
   // No Edit button, no invite badge, no permissions line: those belong to
   // someone you hired, and on your own row they read as nonsense.
-  const _ownerRowHtml=(function(){
+  // The Team page also carries your bill rate on this row, so the row shows
+  // there even when tracking is off (rateOn); the Settings list keeps the old
+  // rule and shows it only for tracking.
+  const _ownerRow=rateOn=>{
     if(typeof _isEmployee!=='undefined'&&_isEmployee)return '';
-    if(!S.teamTracking)return '';
+    if(rateOn&&!(typeof _ownerUI==='function'&&_ownerUI()))rateOn=false;
     const email=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
-    if(!email)return '';
-    const g=(typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
-    if(!g)return '';
+    const g=(S.teamTracking&&email&&typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
+    if(!g&&!rateOn)return '';
     const name=(S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'You');
     const pal=(typeof _tlAvatarPalette==='function')?_tlAvatarPalette(name):{bg:'var(--bg3)',fg:'var(--text2)'};
     const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
@@ -4072,13 +4192,16 @@ function renderTeam(){
         '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
           ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+      (rateOn?_teamMoneyHtml(_teamRateChip('team-owner-rate','Bills',_teamRateVal(S.ownerBillRate),_teamRateVal(S.laborRate)||'95',"_teamRateSet('ownerBillRate',this.value)"),
+        Number(S.ownerBillRate)||Number(S.laborRate)||0,{pay_type:S.ownerPayType||'hourly',pay_rate:Number(S.ownerPayRate)||0},'team-owner-pay','_teamOwnerPaySet(this.value)','_teamOwnerPay()'):'')+
+      (g?'<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
         '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
       ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
       (g.ping?_sub(g.ping):'')+
-      (g.fix?_sub(g.fix):'')+
+      (g.fix?_sub(g.fix):''):'')+
     '</div>';
-  })();
+  };
+  const _ownerRowHtml=_ownerRow(false);
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -4088,7 +4211,12 @@ function renderTeam(){
       const _roleLabel={tech:'Field Tech',office:'Office / CSR',manager:'Manager',owner:'Owner'}[e.role]||e.role;
       const _classTag=e.classification?'<span style="font-size:10px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text2);padding:1px 7px;border-radius:8px;margin-left:4px">'+escHtml(e.classification)+'</span>':'';
       const _ec=_teamComp[(e.email||'').toLowerCase()];
-      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
+      // Pay sits with the bill rate on the Team page (_teamMoneyHtml); the
+      // tag stays for the Settings roster, where there is no rate line.
+      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<!--pay--><span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span><!--/pay-->':'';
+      const _billChip=(e.role!=='owner'&&typeof _ownerUI==='function'&&_ownerUI())
+        ?_teamMoneyHtml(_teamRateChip('team-bill-'+i,'Bills',_teamRateVal(e.billRate),_teamRateVal(S.laborRate)||'75','_teamBillSet('+i+',this.value)'),
+          Number(e.billRate)||Number(S.laborRate)||0,_ec||{},'team-pay-'+i,'_teamPaySet('+i+',this.value)','openEditEmployeeModal('+i+')'):'';
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4098,6 +4226,7 @@ function renderTeam(){
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:13px;min-height:44px;min-width:44px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
+        '<!--rate-->'+_billChip+'<!--/rate-->'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+'</div>':'')+
         (e.role!=='owner'?(function(){
@@ -4143,8 +4272,9 @@ function renderTeam(){
         })()+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  // Rates only on the Team page; the Settings list stays a roster.
+  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml.replace(/<!--rate-->[\s\S]*?<!--\/rate-->/g,'');
+  if(el2)el2.innerHTML=_reqHtml+_ownerRow(true)+empHtml.replace(/<!--pay-->[\s\S]*?<!--\/pay-->/g,'').replace(/<!--\/?rate-->/g,'')+_teamRatesHtml();
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
@@ -4722,6 +4852,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
+    // What this person's hour is SOLD for (Earl 2026-09-29: "Jack's rate goes
+    // on Jack, in the Team screen"). The one bill rate every estimate and
+    // invoice reads (personBillRate, js/data.js). Never the pay rate above.
+    '<div class="f" style="margin:0 0 14px"><label for="emp-bill-rate">Bills customers (per hour)</label>'+
+      '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+      '<input id="emp-bill-rate" type="text" inputmode="decimal" value="'+(Number(e.billRate)>0?String(e.billRate):'')+'" placeholder="Your labor rate" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;min-height:44px;box-sizing:border-box;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
@@ -4831,6 +4967,8 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
+  const _billEl=document.getElementById('emp-bill-rate');
+  const _billRate=_billEl?(parseFloat(String(_billEl.value).replace(/[^0-9.]/g,''))||0):null;
   // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
   // alone, so every field the form does not show was dropped on save: editing
   // somebody's phone number mid-morning silently wiped truckDay, their vehicle
@@ -4841,6 +4979,7 @@ async function _saveEmployee(idx){
   const _usualEl=document.getElementById('emp-usual-vehicle');
   const _usualVal=_usualEl?_usualEl.value:'';
   const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  if(_billRate!=null)emp.billRate=_billRate;
   // The standing vehicle answer. '' means nobody has said yet, which the
   // dispatch board reports as a gap rather than guessing.
   if(_usualEl){
@@ -6694,6 +6833,7 @@ function _teardownRealtimeChannels(){
   // joined and answer nobody.
   if(typeof _crewLocateTeardown==='function'){try{_crewLocateTeardown();}catch(_e){}}
   _syncBroadcastChannel=null;
+  _rtPocketed=false;if(_rtPocketT){clearTimeout(_rtPocketT);_rtPocketT=null;} // a pocketed socket belonged to the outgoing account
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
   _tdRealtimeReady=false;    // channels are gone, delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
@@ -7916,7 +8056,7 @@ async function _reconcilePendingSigStatuses(_attempt){
       for(let attempt=0;attempt<2&&!got;attempt++){
         try{
           const{data,error}=await _supa.from('signed_proposals').select('*')
-            .eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
+            .eq('contractor_user_id',_opsReadUid()).in('bid_id',ids);
           if(error)throw error;
           got=data||[];
         }catch(e){
@@ -8013,7 +8153,7 @@ async function checkNewSignatures(_src){
     // environment; an explicit column list would fail the whole query on drift.
     const _fullPoll=()=>_supa.from('signed_proposals')
       .select('*')
-      .eq('contractor_user_id',_supaUser.id)
+      .eq('contractor_user_id',_opsReadUid())
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
@@ -8024,7 +8164,7 @@ async function checkNewSignatures(_src){
       // is an UPDATE, which the td_touch_updated_at trigger re-surfaces here.
       ({data,error}=await _supa.from('signed_proposals')
         .select('*')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',_opsReadUid())
         .gt('updated_at',_sigPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(100));
@@ -8154,96 +8294,203 @@ function _sigPollTick(){
   if(document.visibilityState==='hidden')return;
   checkNewSignatures();_fetchProposalViews();
 }
+// ── PROPOSAL VIEWS AND THE AUDIT TRAIL, KEPT AND TOPPED UP (egress 2026-10-01) ──
+// The probe below already skipped quiet ticks. What still cost 32 MB a day
+// (Sep 30, the usage page) was everything else: every fresh page load, which
+// the version watchdog makes frequent, and every tick after ANY view changed,
+// pulled the full 500 view rows and the full 1,500 audit rows again, 966 and
+// 972 times that day. Now both are kept, in memory and across reloads
+// (zp3_acct_pv_<uid>, cleared with every other account cache on sign-out), and
+// a tick asks only for view rows whose updated_at moved and audit rows past the
+// newest id it holds. The maps are rebuilt from the kept rows with the exact
+// same top-500 / top-1,500 cut and order, so every badge reads as before. A
+// whole re-read still happens at least every PV_FULL_MS, which also drops any
+// row the server deleted.
 let _pvPollWatermark=null;
+// Whose signatures and opens to read. The support view reads the business
+// it is viewing (it has ops_view_read on these tables); everyone else reads
+// their own login's rows, exactly as before (owner 2026-09-30: opening
+// Tagen's link while viewing Jack's app never showed as opened).
+function _opsReadUid(){
+  if(typeof window!=='undefined'&&window._opsView&&window._opsView.target)return window._opsView.target;
+  return _supaUser&&_supaUser.id;
+}
+let _pvKept=null;   // {uid, views: Map id->row, audit: Map id->row, auditMax, fullAt}
+const _PV_FULL_MS=6*60*60*1000;
+function _pvKeyFor(uid){return 'zp3_acct_pv_'+uid;}
+let _pvUid=null;
+// Reads the stored copy once per account. It never clears a watermark this
+// session armed itself, or a session whose copy could not be kept (no audit
+// rows yet) would lose its probe and re-read 500 rows on every tick.
+function _pvLoadKept(uid){
+  if(_pvUid===uid)return _pvKept;
+  _pvUid=uid;_pvKept=null;_pvPollWatermark=null;
+  try{
+    const o=JSON.parse(localStorage.getItem(_pvKeyFor(uid))||'null');
+    if(o&&o.uid===uid&&Array.isArray(o.views)&&Array.isArray(o.audit)){
+      _pvKept={uid,views:new Map(o.views.map(r=>[r.id,r])),audit:new Map(o.audit.map(r=>[r.id,r])),
+        auditMax:Number(o.auditMax)||0,fullAt:Number(o.fullAt)||0};
+      _pvPollWatermark=o.wm||null;
+    }
+  }catch(_e){_pvKept=null;_pvPollWatermark=null;}
+  return _pvKept;
+}
+function _pvSaveKept(){
+  if(!_pvKept)return;
+  try{localStorage.setItem(_pvKeyFor(_pvKept.uid),JSON.stringify({uid:_pvKept.uid,wm:_pvPollWatermark,
+    auditMax:_pvKept.auditMax,fullAt:_pvKept.fullAt,views:[..._pvKept.views.values()],audit:[..._pvKept.audit.values()]}));}catch(_e){}
+}
+// The full read's answer from kept rows: newest first by the same column,
+// under the same cap.
+function _pvTopViews(){
+  return [..._pvKept.views.values()].filter(v=>v&&v.bid_id)
+    .sort((x,y)=>(String(y.opened_at||'')).localeCompare(String(x.opened_at||''))||String(x.id).localeCompare(String(y.id)))
+    .slice(0,500);
+}
+function _pvTopAudit(){
+  return [..._pvKept.audit.values()]
+    .sort((x,y)=>(String(y.ts||'')).localeCompare(String(x.ts||''))||(Number(y.id)-Number(x.id)))
+    .slice(0,1500);
+}
+function _pvApplyViews(data){
+  // Build into temporaries first, then swap atomically, prevents a renderDash()
+  // mid-flight from seeing an empty dict during the rebuild window (flicker race).
+  const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
+  data.forEach(v=>{
+    if(!v.bid_id)return;
+    if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
+    if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
+    if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
+    if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
+    if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
+    if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
+    if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
+    // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
+    if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
+    if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
+  });
+  // Render ONLY when the view data actually changed. This fetch runs after every
+  // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
+  // here rebuilt the whole dashboard for byte-identical data on every tick, and
+  // stacked 2-3 redundant render passes into every reconcile window (named live
+  // by the glitch-free budget's caller trace). The maps still swap every time.
+  const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt,_pvStep]);
+  const _pvChanged=_pvSig!==window._pvLastSig;
+  window._pvLastSig=_pvSig;
+  _proposalViewsByBid=_pvBid;
+  _proposalViewsByBidHubClient=_pvHub;
+  _proposalViewsByBidClient=_pvClient;
+  _proposalViewsByBidContractor=_pvCon;
+  _proposalViewsByBidHubCount=_pvHubCnt;
+  _proposalViewsByBidClientCount=_pvCliCnt;
+  _proposalViewsByBidStep=_pvStep;
+  _proposalViewsByBidStepAt=_pvStepAt;
+  _proposalViewsByBidClientIp=_pvCliIp;
+  _proposalViewsByBidHubIp=_pvHubIp;
+  if(_pvChanged)renderDash();
+}
+function _pvApplyAudit(rows){
+  const _byBid={};
+  rows.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
+  _proposalAuditEventsByBid=_byBid;
+}
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
+    // The support view reads the business it is viewing (_opsReadUid); the
+    // kept copy is keyed by that uid, so it never mixes with the login's own.
+    const uid=_opsReadUid();
+    let kept=_pvLoadKept(uid);
+    // A kept copy paints the badges on the first tick after a reload, before
+    // anything is asked of the server.
+    if(kept&&window._pvKeptPainted!==uid){window._pvKeptPainted=uid;_pvApplyViews(_pvTopViews());_pvApplyAudit(_pvTopAudit());}
+    if(kept&&Date.now()-kept.fullAt>_PV_FULL_MS){_pvKept=kept=null;_pvPollWatermark=null;}
     // Watermark probe (egress): steady state asks "is anything newer than what
     // I've seen?", at most ONE tiny row, instead of re-downloading 500 full
-    // rows every 30s. Any change → the full rebuild below runs unchanged, so
-    // the dict semantics (newest-first, atomic swap) never differ from today.
-    // Drift-safe: no updated_at column (un-migrated env) → the probe errors →
-    // full poll, the exact pre-fix behavior; rows without updated_at never arm
-    // the watermark, so an un-migrated database stays on full polls forever.
+    // rows every 30s. Drift-safe: no updated_at column (un-migrated env) → the
+    // probe errors → full poll, the exact pre-fix behavior; rows without
+    // updated_at never arm the watermark, so an un-migrated database stays on
+    // full polls forever.
+    // The top-up asks from the watermark as it stood BEFORE the probe moved it.
+    const since=_pvPollWatermark;
     if(_pvPollWatermark){
       const{data:_probe,error:_pErr}=await _supa.from('proposal_views')
         .select('updated_at')
-        .eq('contractor_user_id',_supaUser.id)
+        .eq('contractor_user_id',uid)
         .gt('updated_at',_pvPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(1);
       if(!_pErr&&_probe&&!_probe.length)return; // nothing changed, zero-row tick
+      if(_pErr){_pvKept=kept=null;}
       // The probe row is the global max updated_at (desc, limit 1), advance from
       // it so an old row's update (outside the top-500 by opened_at below) can't
       // wedge the watermark into probing positive on every tick.
       if(!_pErr&&_probe)_probe.forEach(v=>{if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
     }
-    // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
-    // Contractor reads back with their authenticated session, RLS allows SELECT on own rows.
-    // select('*') not an explicit list, furthest_step/_at may not exist yet in
-    // every environment (migration drift), and an explicit list would fail the
-    // whole query; same defensive pattern as checkNewSignatures above.
-    // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
-    // Any proposal a client is actively engaging with is in the newest 500 view
-    // rows; older rows only feed stale badges on long-closed bids.
-    const{data,error}=await _supa.from('proposal_views')
-      .select('*')
-      .eq('contractor_user_id',_supaUser.id)
-      .not('bid_id','is',null)
-      .order('opened_at',{ascending:false})
-      .limit(500);
-    if(data&&!error){
-      data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
-      // Build into temporaries first, then swap atomically, prevents a renderDash()
-      // mid-flight from seeing an empty dict during the rebuild window (flicker race).
-      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
-      data.forEach(v=>{
-        if(!v.bid_id)return;
-        if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
-        if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
-        if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
-        if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
-        if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
-        if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
-        if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
-        // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
-        if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
-        if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
-      });
-      // Render ONLY when the view data actually changed. This fetch runs after every
-      // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
-      // here rebuilt the whole dashboard for byte-identical data on every tick, and
-      // stacked 2-3 redundant render passes into every reconcile window (named live
-      // by the glitch-free budget's caller trace). The maps still swap every time.
-      const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt,_pvStep]);
-      const _pvChanged=_pvSig!==window._pvLastSig;
-      window._pvLastSig=_pvSig;
-      _proposalViewsByBid=_pvBid;
-      _proposalViewsByBidHubClient=_pvHub;
-      _proposalViewsByBidClient=_pvClient;
-      _proposalViewsByBidContractor=_pvCon;
-      _proposalViewsByBidHubCount=_pvHubCnt;
-      _proposalViewsByBidClientCount=_pvCliCnt;
-      _proposalViewsByBidStep=_pvStep;
-      _proposalViewsByBidStepAt=_pvStepAt;
-      _proposalViewsByBidClientIp=_pvCliIp;
-      _proposalViewsByBidHubIp=_pvHubIp;
-      if(_pvChanged)renderDash();
-    }
-    // Per-event audit log (every open + sign-flow step, each with its own timestamp
-    // + captured IP) for the client-record audit timeline and exportable report.
-    try{
-      const{data:_ae}=await _supa.from('proposal_audit_events')
-        .select('bid_id,event,ip_address,user_agent,ts')
-        .eq('contractor_user_id',_supaUser.id)
-        .order('ts',{ascending:false})
-        .limit(1500);
-      if(_ae){
-        const _byBid={};
-        _ae.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
-        _proposalAuditEventsByBid=_byBid;
+    if(kept&&since){
+      // Something changed: only the rows that did.
+      let vr=null,ar=null;
+      try{
+        [vr,ar]=await Promise.all([
+          _supa.from('proposal_views').select('*').eq('contractor_user_id',uid).not('bid_id','is',null)
+            .gt('updated_at',since).order('updated_at',{ascending:true}).limit(500),
+          _supa.from('proposal_audit_events').select('id,bid_id,event,ip_address,user_agent,ts')
+            .eq('contractor_user_id',uid).gt('id',kept.auditMax).order('id',{ascending:true}).limit(1500),
+        ]);
+      }catch(_e){vr=null;ar=null;}
+      // A failure, or a page that may have been cut short, gets the whole read.
+      if(!vr||!ar||vr.error||!vr.data||vr.data.length>=500||ar.error||!ar.data||ar.data.length>=1500){_pvKept=kept=null;_pvPollWatermark=null;}
+      else{
+        vr.data.forEach(v=>{kept.views.set(v.id,v);if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
+        ar.data.forEach(r=>{kept.audit.set(r.id,r);if(Number(r.id)>kept.auditMax)kept.auditMax=Number(r.id);});
+        _pvApplyViews(_pvTopViews());
+        _pvApplyAudit(_pvTopAudit());
+        _pvSaveKept();
       }
-    }catch(_e){}
+    }
+    if(!kept){
+      // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
+      // Contractor reads back with their authenticated session, RLS allows SELECT on own rows.
+      // select('*') not an explicit list, furthest_step/_at may not exist yet in
+      // every environment (migration drift), and an explicit list would fail the
+      // whole query; same defensive pattern as checkNewSignatures above.
+      // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
+      // Any proposal a client is actively engaging with is in the newest 500 view
+      // rows; older rows only feed stale badges on long-closed bids.
+      const{data,error}=await _supa.from('proposal_views')
+        .select('*')
+        .eq('contractor_user_id',uid)
+        .not('bid_id','is',null)
+        .order('opened_at',{ascending:false})
+        .limit(500);
+      if(data&&!error){
+        // Only ever raised: the probe above may already have moved it past
+        // anything in the newest 500, and resetting it would wedge the probe.
+        data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
+        _pvApplyViews(data);
+      }
+      // Per-event audit log (every open + sign-flow step, each with its own timestamp
+      // + captured IP) for the client-record audit timeline and exportable report.
+      let audit=null;
+      try{
+        const{data:_ae}=await _supa.from('proposal_audit_events')
+          .select('id,bid_id,event,ip_address,user_agent,ts')
+          .eq('contractor_user_id',uid)
+          .order('ts',{ascending:false})
+          .limit(1500);
+        if(_ae){audit=_ae;_pvApplyAudit(_ae);}
+      }catch(_e){}
+      if(data&&!error){
+        // Kept only when the views carry updated_at (the watermark) and the
+        // audit rows came back: otherwise this stays a whole read every tick,
+        // exactly as before.
+        if(_pvPollWatermark&&audit){
+          _pvKept={uid,views:new Map(data.map(v=>[v.id,v])),audit:new Map(audit.map(r=>[r.id,r])),
+            auditMax:audit.reduce((m,r)=>Math.max(m,Number(r.id)||0),0),fullAt:Date.now()};
+          _pvSaveKept();
+        }
+      }
+    }
     // Verified on-site presence (arrival/departure) for the client Activity timeline.
     // Only geofence/manual entries carry a job_id; the place-linked rows (source:'place',
     // job_id:null, a supply-house stop) don't belong to any one client and are skipped.
@@ -8923,6 +9170,15 @@ async function supaLoadFromCloud({silent=false}={}){
     // to real content exactly once (owner 2026-08-10: no mid-load stutters).
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
+    // Support view (owner 2026-09-30): the boot screen was painted before the
+    // viewed business's settings existed (ops mode hides the local cache), so
+    // it showed the TradeDesk default. Now that their settings are in, repaint
+    // it with THEIR logo. No cacheKey: nothing of theirs is kept on this device.
+    try{
+      const _ov=document.getElementById('supa-boot-overlay');
+      if(window._opsView&&_ov&&!_ov.classList.contains('td-fadeout')&&typeof tdBootFill==='function')
+        tdBootFill(_ov,{logo:S.logoData||S.logoUrl||'',name:S.bname||'',brand:S.brandColor||'',powered:S.poweredBy!==false});
+    }catch(_e){}
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
     // Mileage heal AFTER EVERY completed cloud merge, not only at boot (owner
@@ -9228,6 +9484,10 @@ async function supaLoadFromCloud({silent=false}={}){
       const _RECONCILE_HEARTBEAT_MS=5000;
       // A backgrounded phone asks at most this often (see _heartbeatTick).
       const _HIDDEN_CURSOR_MIN_MS=60000;
+      // And once the realtime socket is closed for the pocket (_rtPocket), every
+      // five minutes: the screen-on reconcile is what catches him up, so this
+      // check only exists to keep a long-hidden page from drifting too far.
+      const _HIDDEN_CURSOR_POCKET_MS=300000;
       // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
@@ -9307,7 +9567,8 @@ async function supaLoadFromCloud({silent=false}={}){
         // from ever sleeping. It is the last CHECK that makes the next one
         // unnecessary, so that is what the minute is measured from now.
         const _hid=document.visibilityState==='hidden';
-        if(!(_hid&&Date.now()-Math.max(window._lastCloudLoadAt||0,window._lastHiddenCursorAt||0)<_HIDDEN_CURSOR_MIN_MS)){
+        const _hidMin=_rtPocketed?_HIDDEN_CURSOR_POCKET_MS:_HIDDEN_CURSOR_MIN_MS;
+        if(!(_hid&&Date.now()-Math.max(window._lastCloudLoadAt||0,window._lastHiddenCursorAt||0)<_hidMin)){
           if(_hid)window._lastHiddenCursorAt=Date.now();
           window._cursorCheckReconcile();
         }
@@ -9426,7 +9687,13 @@ async function supaLoadFromCloud({silent=false}={}){
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
 
-    if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);}
+    if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);
+      // BORN IN A POCKET (owner 2026-10-01). iOS killed Jack's app at 10:01
+      // and relaunched it in the background 23 seconds later: the screen never
+      // came on, so no 'hidden' transition ever fired and the socket stayed
+      // open all morning. A boot that opens its channels while hidden arms the
+      // same pocket countdown the screen turning off would have.
+      _rtArmPocket();}
   }catch(e){
     // Fired now, awaited later: classification needs a real network round trip
     // (up to 4s, see _classifyCloudError), and an offline boot must still paint
@@ -9601,6 +9868,86 @@ function _initRealtimeSubscriptions(uid){
       .subscribe();
   }catch(_e){}
 }
+// ── IN A POCKET, NOTHING LISTENS (owner 2026-10-01) ─────────────────────────
+// "His phone shouldn't be dying this fast ... low drain until TradeDesk started
+// doing its thing." Measured on Jack's 30 September: 2.5% an hour from 6:34 to
+// 8:32am, then 4 to 10% an hour once the shift keep-awake held the app alive,
+// 10% in an hour standing still in the shop with the GPS parked.
+//
+// Kept alive in a pocket, the page still held its realtime socket open: a
+// heartbeat every 25 seconds, plus a push back to the phone every time the
+// server rewrote one of his rows, which it does on every upload he makes (and
+// each push woke the page to fetch again). The cell radio never got to sleep.
+//
+// None of that carries a row. A drive start goes phone -> ingest-geo natively
+// and the server writes the row there (CLAUDE.md 17.1), so the 10-second goal
+// never touched this socket. It only paints a screen, and a screen in a pocket
+// needs no painting. So after a short grace (an app switch is not a pocket)
+// the data channels close, and the moment the screen is back they reopen and
+// one reconcile catches up whatever the socket would have carried.
+//
+// The one listener that stays: a crew phone keeps the Locate channel
+// (js/crew-locate.js), because a manager asking where the truck is is the
+// whole point of that channel and the crew phone is in a pocket when he asks.
+// An owner's own phone has nobody to answer, so it closes everything.
+const _RT_POCKET_GRACE_MS=30000;
+// Only the native shell. Keep-awake (the thing that holds the page alive in a
+// pocket) exists only there; a browser tab in the background is suspended by
+// the OS already, and closing its socket would only make it reload on return.
+function _rtNativeShell(){
+  try{const c=window.Capacitor;return !!(c&&typeof c.isNativePlatform==='function'&&c.isNativePlatform());}catch(_e){return false;}
+}
+function _rtIsCrewPhone(){
+  try{return typeof _isEmployee!=='undefined'&&!!_isEmployee;}catch(_e){return false;}
+}
+function _rtPocketNote(on,reason){
+  try{if(typeof _geoIngestPost==='function'&&typeof supaEnabled==='function'&&supaEnabled())
+    _geoIngestPost([{type:'radio',ts:Date.now(),session:'realtime',on:!!on,reason:String(reason||''),trigger:'js',source:'js'}]);}catch(_e){}
+}
+function _rtPocket(){
+  _rtPocketT=null;
+  if(document.visibilityState!=='hidden'||_rtPocketed)return false;
+  if(!_rtNativeShell())return false;
+  if(!_supa||!_supaUser||!_realtimeSubscribed)return false;
+  const crew=_rtIsCrewPhone();
+  try{
+    const chans=(typeof _supa.getChannels==='function')?_supa.getChannels():[];
+    chans.forEach(ch=>{
+      const topic=String((ch&&ch.topic)||'');
+      if(crew&&/td-crew-/.test(topic))return;   // Locate stays reachable
+      try{_supa.removeChannel(ch);}catch(_e){}
+    });
+    if(!crew&&_supa.realtime&&typeof _supa.realtime.disconnect==='function')_supa.realtime.disconnect();
+  }catch(_e){}
+  if(!crew&&typeof _crewLocateTeardown==='function'){try{_crewLocateTeardown();}catch(_e){}}
+  _syncBroadcastChannel=null;_tdRealtimeReady=false;
+  _rtPocketed=true;
+  _rtPocketNote(false,crew?'pocket: data channels closed, locate kept':'pocket: socket closed');
+  return true;
+}
+function _rtUnpocket(){
+  if(_rtPocketT){clearTimeout(_rtPocketT);_rtPocketT=null;}
+  if(!_rtPocketed)return false;
+  _rtPocketed=false;
+  if(!_supa||!_supaUser)return false;
+  try{if(_supa.realtime&&typeof _supa.realtime.connect==='function')_supa.realtime.connect();}catch(_e){}
+  _realtimeSubscribed=true;
+  _initRealtimeSubscriptions(_supaUser.id);
+  if(typeof _crewLocateInit==='function'){try{_crewLocateInit();}catch(_e){}}
+  // Realtime is at-most-once: whatever it would have carried while closed is
+  // fetched once, the same catch-up every reconnect already uses.
+  _scheduleReconcile(0);
+  _rtPocketNote(true,'screen on');
+  return true;
+}
+function _rtArmPocket(){
+  if(document.visibilityState==='hidden'&&!_rtPocketT&&!_rtPocketed&&_rtNativeShell())
+    _rtPocketT=setTimeout(_rtPocket,_RT_POCKET_GRACE_MS);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden')_rtArmPocket();
+  else _rtUnpocket();
+});
 function _applyRealtimeRecord(tbl,payload,fromRealtime){
   const desc=_TD_TABLES.find(d=>d.t===tbl);
   if(!desc)return;

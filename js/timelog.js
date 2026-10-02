@@ -96,6 +96,7 @@ function _tlSourceLabel(source){
   // tools in the truck.
   if(s==='place-load')return 'Loading time';
   if(s==='place-office')return 'Office';
+  if(s==='place-personal')return 'Personal';
   // Somebody's own address, so the rail stops calling a house a job site
   // (owner 2026-09-03, on Jack's rail: "why is his own address showing as on
   // site?"). It used to arrive as a bare 'place', the same bucket a supply
@@ -915,8 +916,12 @@ async function _timeLogRows(sinceISO,opts){
     // Rules 13, 15 and 18: anything the day could not vouch for. One predicate
   // (js/geo-track.js) rather than a string this file has to keep in step.
   const _held=(typeof _geoIsHeldSource==='function')?_geoIsHeldSource(_es):_es==='client-held';
-    const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
+    // A drive still on the road has no destination YET, which is not the same
+    // as one nobody saved (owner 2026-09-29, the live drive row).
+    const _liveDrive=_openRow&&/^drive/.test(_es);
+    const _unnamedDrive=!_liveDrive&&/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
     const clientName=/^unsaved/.test(_es)?'Unsaved address'
+      :_liveDrive?'On the road'
       :_unnamedDrive?'Destination not saved'
       :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
@@ -948,7 +953,17 @@ async function _timeLogRows(sinceISO,opts){
       // August ran 46 minutes past a 3:45pm clock-out. Same class as the 2026
       // -08-29 split-bar bug, a rule keyed on a friendly label, so the fix is
       // the same: carry the fact on the row and test that.
-      destUnsaved:_unnamedDrive
+      destUnsaved:_unnamedDrive,
+      // A PERSONAL PLACE IS NOT ON THE RAIL AT ALL (owner 2026-09-30: "Colaw is
+      // still showing as manual time, it shouldn't show on the day rail at
+      // all"). It had no arm in _tlRailKind, so it fell to the unpaid
+      // catch-all and read "Manual time". Same shape as a personal gap answer:
+      // the row stays in `rows` so the blend and the gap filler see the stretch
+      // covered, and _tlDayRailHtml is the one thing that drops it. Unlike an
+      // answered visit it carries no undo chip, because it is not a one-tap
+      // answer: he saved the place as Personal, and changing the place is the
+      // way back.
+      dismissed:_es==='place-personal'||undefined
     });
   });
   const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;

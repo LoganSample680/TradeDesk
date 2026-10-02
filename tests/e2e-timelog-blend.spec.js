@@ -355,6 +355,41 @@ test.describe('manual clock over a derived day', () => {
     expect(p && { min: p.min, unpaid: p.unpaid, name: p.name }).toEqual({ min: 68, unpaid: true, name: 'Laurie Schonfeldt' });
   });
 
+  // A saved Personal place (the gym) never reaches the rail (owner
+  // 2026-09-30: "Colaw is still showing as manual time, it shouldn't show on
+  // the day rail at all"). Covered, so no clock re-bills it and no hole asks.
+  test('a Personal place is covered, unpaid and never drawn', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._fetchCrewLabor;
+      try {
+        window._fetchCrewLabor = async () => ({ name: { me: 'Me' }, shopEntries: [], entries: [
+          { id: 'g1', employee_user_id: 'me', job_id: null, dest_place: 'Colaw gym', source: 'place-personal', arrived_at: '2026-08-31T10:34:00Z', departed_at: '2026-08-31T11:19:00Z', minutes: 45 },
+          { id: 'c1', employee_user_id: 'me', job_id: null, dest_place: 'Cust', source: 'client', arrived_at: '2026-08-31T15:00:00Z', departed_at: '2026-08-31T17:00:00Z', minutes: 120 },
+        ] });
+        const rows = await _timeLogRows(null);
+        const g = rows.find(x => x.rawId === 'g1');
+        const rail = _tlDayRailHtml(rows.filter(x => x.date === '2026-08-31'));
+        return { g: g && { unpaid: g.unpaid, dismissed: !!g.dismissed }, gym: /Colaw/.test(rail),
+                 manual: /Manual time/.test(rail), cust: /Cust/.test(rail), paid: _tlPaidMin(rows) };
+      } finally { window._fetchCrewLabor = saved; }
+    });
+    expect(r.g).toEqual({ unpaid: true, dismissed: true });
+    expect(r.gym, 'the gym is not on the rail').toBe(false);
+    expect(r.manual, 'and nothing reads Manual time in its place').toBe(false);
+    expect(r.cust).toBe(true);
+    expect(r.paid).toBe(120);
+  });
+
+  test('a Personal place under a clock is not billed back as manual time', async () => {
+    const entries = [
+      row('g1', 'place-personal', T(7, 0), T(7, 45), { dest_place: 'Colaw gym' }),
+      row('c1', 'client', T(8, 0), T(16, 0), { dest_place: 'John Doe' }),
+    ];
+    const rows = await render(entries, [], [[T(6, 50), T(16, 10)]]);
+    const hm = t => t.slice(11, 16);
+    expect(rows.filter(r => r.raw === 'clock-span' && r.t.slice(0, 5) < hm(T(7, 45)) && r.t.slice(6) > hm(T(7, 0)))).toEqual([]);
+  });
+
   // The undo itself. It is the only way back from a one-tap answer, and it
   // goes through the SAME door the Home card's answers do (_visitHoldAnswer,
   // 'working'), so one definition of what an answer means serves both (7.3).
@@ -784,6 +819,17 @@ test.describe("somebody else's open dwell draws", () => {
     expect(r.rows[0].live).toBe(true);
     expect(r.rows[0].minutes).toBeGreaterThanOrEqual(r.used.k3 - 1);
     expect(r.rows[0].minutes).toBeLessThanOrEqual(r.used.k3 + 1);
+  });
+
+  test("a crew member's drive under way reads On the road, not Destination not saved", async () => {
+    // The live drive row (owner 2026-09-29): no destination YET is not the
+    // same as a destination nobody saved.
+    const r = await draw([{ id: 'k6', source: 'drive', job_id: null, employee_user_id: THEM,
+      client_key: 'j-k6', dest_place: null, origin_place: 'JS shop',
+      departed_at: null, minutes: null, agoMin: 4 }], []);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].name).toBe('On the road');
+    expect(r.rows[0].live).toBe(true);
   });
 
   test('an open row left over from an earlier day draws nothing', async () => {

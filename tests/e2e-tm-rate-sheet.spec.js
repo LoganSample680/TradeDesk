@@ -963,7 +963,7 @@ test.describe('the cap is worded the way a customer asks for it', () => {
       // tm-sec-bill since the iOS makeover (2026-09-23): the Next tag and its
       // reason sit on the field, and the plain-English read-back is Billing's
       // footnote. It contains tm-more-row.
-      const txt = ['tm-add-row', 'tm-sec-bill'].map(id => {
+      const txt = ['tm-add-row', 'tm-sec-bill', 'tm-sec-pay'].map(id => {
         const e = document.getElementById(id); return e ? e.textContent : '';
       }).join(' ').replace(/\s+/g, ' ').trim();
       if (box) box.value = prevCap;
@@ -1310,6 +1310,13 @@ test.describe('keeping the rate off the proposal', () => {
       const realToast = window.showToast;
       window.showToast = (m) => { toasts.push(String(m)); };
       try {
+        // Its own customer, not the one the test above left in memory. That one
+        // was never saved, so a background reload between the two tests could
+        // drop it, and then this proposal had no customer and was refused for
+        // the wrong reason ("Link this proposal to a client first", webkit,
+        // 2026-10-02). The gate this proves sits after the customer check.
+        clients = clients.filter(c => c.id !== 77712).concat([{ id: 77712, name: 'Rate Sheet Sign',
+          addr: '712 Sign Rd, Wichita KS 67202', phone: '316-555-7712' }]);
         openGenericEstimate(clients.filter(c => c.id === 77712)[0], null, 'plumbing');
         _geiIsTM = true;
         _tmLayers = new Set(); _tmRateOnly = false; _tmRatePerMan = 0;
@@ -1547,11 +1554,11 @@ test.describe('the ceiling leads, not the guess', () => {
       // Changed 2026-09-26 (§10.4, owner: "there was a ton of shit I would've
       // missed if my hand wasn't held"): Send waits for Tim's leftovers and
       // the rate check. Both done here, so the bar is Send.
-      _geiScopeMissed = []; _tmMarkRateChecked();
+      _geiScopeMissed = []; /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmMarkRateChecked();
       _tmApplyLayers();
       // The rail AND the Billing section since the iOS makeover (2026-09-23),
       // and the bar at the bottom, which names the next thing (tm-dock).
-      return ['tm-add-row', 'tm-sec-bill', 'tm-dock'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+      return ['tm-add-row', 'tm-sec-bill', 'tm-sec-pay', 'tm-dock'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ').trim();
     });
     // "Next", not "Do this next": the step that is next is now the only one
     // with a card, a sentence and a button, so the tag stopped carrying the
@@ -1610,7 +1617,7 @@ test.describe('the ceiling leads, not the guess', () => {
         sv('tm-i-nte', '');
         _tmLayers = new Set(cfg.layers);
         _tmApplyLayers();
-        const txt = ['tm-add-row', 'tm-sec-bill'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ');
+        const txt = ['tm-add-row', 'tm-sec-bill', 'tm-sec-pay'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ');
         return _tmSteps().filter(x => x.k !== 'send' && txt.indexOf(x.why) >= 0).length;
       }, setup);
       // AT MOST one since 2026-09-23 (§10.4). When the next thing is the work
@@ -1640,7 +1647,7 @@ test.describe('the ceiling leads, not the guess', () => {
       const n = document.getElementById('tm-i-nte'); if (n) n.value = '';
       _geiScopeChips = ['x'];
       _tmApplyLayers();
-      const edit = ['tm-add-row', 'tm-sec-bill'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ');
+      const edit = ['tm-add-row', 'tm-sec-bill', 'tm-sec-pay'].map(id => (document.getElementById(id) || {}).textContent || '').join(' ').replace(/\s+/g, ' ');
       return { edit, review: edit };
     });
     // Done: the work and the rate. Neither is mentioned.
