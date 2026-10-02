@@ -130,12 +130,21 @@ test.describe('Shared code, one copy of each', () => {
       const a = await _tdStoreDoc('k1', { a: 1 }), b = await _tdStoreDoc('k2', '{"x":1}', { upsert: false, cache: '3600' });
       _supa = { storage: { from: () => ({ upload: async () => { throw new Error('boom'); } }) } };
       const c = await _tdStoreDoc('k3', {});
+      _supa = { storage: { from: () => ({ upload: () => { throw new Error('sync boom'); } }) } };
+      const e = await _tdStoreDoc('k5', {});
+      _supa = { storage: { from: () => ({ upload: async () => ({ error: { message: 'denied' } }) }) } };
+      const f = await _tdStoreDoc('k6', {});
       _supa = null; const d = await _tdStoreDoc('k4', {});
       _supa = keep;
-      return { got, a: a.error, b: b.error, c: !!c.error, d: !!d.error };
+      // An async function that awaits the upload, not a returned .then() chain:
+      // the chain cost a first photo after boot "Promise was collected" (see
+      // the first-shot block in e2e-photo-capture).
+      return { got, a: a.error, b: b.error, c: !!c.error, d: !!d.error, e: !!e.error, f: f.error && f.error.message,
+        isAsync: _tdStoreDoc.constructor.name };
     });
     expect(r.got).toEqual([['proposals', 'k1', 'string', true, '0'], ['proposals', 'k2', 'string', false, '3600']]);
-    expect(r).toMatchObject({ a: null, b: null, c: true, d: true });
+    expect(r).toMatchObject({ a: null, b: null, c: true, d: true, e: true, f: 'denied', isAsync: 'AsyncFunction' });
+    expect(src('js/utils.js')).not.toMatch(/Promise\.resolve\(_supa\.storage\.from\('proposals'\)/);
     for (const f of ['js/agreements.js', 'js/cloud.js', 'js/generic-estimate.js', 'js/photo-gallery.js', 'js/proposals.js', 'js/quick-invoice.js']) {
       expect(src(f), f + ' uploads only through _tdStoreDoc').not.toMatch(/storage\.from\('proposals'\)\.upload\(/);
     }

@@ -8,8 +8,9 @@
  *   js/dashboard.js    _dashRevealSkeletons (tdSkelSweep lives in js/brand-look.js)
  *   js/cloud.js        _removeBootOverlay (the 2.15s beat), _showUpdateOverlay
  *   client.html        the hub boot (no "Powered by", ever)
+ *   sign.html          the proposal page boot: the same screen (owner 2026-10-02)
  */
-const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, FAKE_USER_ID } = require('./helpers');
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, FAKE_USER_ID, FAKE_BID_ID_1, FAKE_TOKEN, MOCK_PROPOSAL } = require('./helpers');
 
 // Test logos drawn in the page, so nothing depends on a file on disk.
 const DRAW = `
@@ -867,5 +868,141 @@ test.describe('client hub boot', () => {
     // not when the page began to parse.
     expect(r.painted - r.start).toBeLessThan(1500);
     expect(await page.locator('#boot-overlay .bt-word').count()).toBe(0);   // never the TradeDesk mark
+  });
+});
+
+// Owner 2026-10-02, from a phone opening a proposal link: the proposal page
+// still had the old navy loader (logo in a big white tile, "SECURE PROPOSAL",
+// a blue bar). "Should be the same loading screen for client hub and
+// tradedesk." It is now the same builder (tdBootPaint -> tdBootFill).
+test.describe('proposal page boot (sign.html)', () => {
+  const KEY = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
+  const OLD = '.cbo-glow,.cbo-center,.cbo-mark,.cbo-logo-frame,.cbo-name,.cbo-tag,.cbo-foot,.cbo-track,.cbo-bar,.cbo-hint,#sign-boot-bar,#sign-boot-logo-wrap,#sign-boot-logo,#sign-boot-mark,#sign-boot-name';
+  // A Supabase CDN that never answers: the cold fetch hangs, so the screen
+  // stays in its "who is this?" state long enough to look at.
+  const hangFetch = page => page.route('**/cdn.jsdelivr.net/**supabase**', () => {});
+
+  test('his logo on black, no white tile, the app exit, the old loader gone', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.addInitScript(p => {
+      const c = document.createElement('canvas'); c.width = c.height = 120; const x = c.getContext('2d');
+      x.fillStyle = '#000'; x.fillRect(0, 0, 120, 120); x.fillStyle = '#0a8cf5'; x.beginPath(); x.arc(60, 60, 34, 0, 7); x.fill();
+      window.__mockProposalData = { ...p, businessName: 'Plumbing Solutions By JS', logoData: c.toDataURL('image/png') };
+      window._forceSignBootDwell = true;
+    }, MOCK_PROPOSAL);
+    await page.goto(`/sign.html?key=${KEY}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => {
+      const ov = document.getElementById('sign-boot');
+      return ov && ov.querySelector('img.bt-logo') && /rgb\(0, 0, 0\)/.test(ov.style.background);
+    }, { timeout: 8000 });
+    const r = await page.evaluate(sel => {
+      const ov = document.getElementById('sign-boot');
+      const white = [...ov.querySelectorAll('*')].filter(e => /rgb\(255, 255, 255\)/.test(getComputedStyle(e).backgroundColor)).length;
+      const css = [...document.querySelectorAll('style')].map(s => s.textContent).join('');
+      return {
+        shared: ov.classList.contains('td-boot') && typeof tdBootPaint === 'function',
+        stages: ov.querySelectorAll('.bt-stage').length,
+        bootCss: document.querySelectorAll('#td-boot-css').length,
+        white,
+        old: document.querySelectorAll(sel).length,
+        oldCss: /\.cbo-|@keyframes cbo-/.test(css),
+        tag: /secure proposal/i.test(ov.textContent),
+        foot: (ov.querySelector('.bt-foot') || {}).textContent || '',
+      };
+    }, OLD);
+    expect(r.shared).toBe(true);
+    expect(r.stages).toBe(1);
+    expect(r.bootCss).toBe(1);
+    expect(r.white).toBe(0);           // no white plate around the logo
+    expect(r.old).toBe(0);             // §7.1: the old loader's markup is gone
+    expect(r.oldCss).toBe(false);      // and its CSS
+    expect(r.tag).toBe(false);
+    expect(r.foot).toContain('Loading your proposal');
+    // The exit is the app's (.td-boot.td-fadeout), then the proposal.
+    await page.waitForFunction(() => document.getElementById('sign-boot').classList.contains('td-fadeout'), { timeout: 6000 });
+    const ex = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById('sign-boot')); return { d: cs.transitionDuration, delay: cs.transitionDelay }; });
+    expect(ex).toEqual({ d: '0.3s', delay: '0.3s' });
+    await page.waitForFunction(() => getComputedStyle(document.getElementById('sign-boot')).display === 'none', { timeout: 3000 });
+    await expect(page.locator('#pg-sign')).toBeVisible();
+    assertNoErrors(page, 'proposal boot logo');
+  });
+
+  test('before the proposal lands: the app\'s plain dark base, never a placeholder brand', async ({ page }) => {
+    await mockAllExternal(page);
+    await hangFetch(page);
+    await page.goto(`/sign.html?key=${KEY}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const ov = document.getElementById('sign-boot');
+      return { kids: ov.children.length, bg: getComputedStyle(ov).backgroundColor, shown: getComputedStyle(ov).display !== 'none', shared: ov.classList.contains('td-boot') };
+    });
+    expect(r.shown).toBe(true);
+    expect(r.kids).toBe(0);
+    expect(r.bg).toBe('rgb(27, 22, 18)');   // #1B1612, the app's and the hub's base
+    expect(r.shared).toBe(true);
+    assertNoErrors(page, 'proposal boot neutral');
+  });
+
+  test('a device that has seen his hub paints him on the first frame', async ({ page }) => {
+    await mockAllExternal(page);
+    await hangFetch(page);
+    await page.addInitScript(uid => localStorage.setItem('td_hub_brand_' + uid, JSON.stringify({ name: 'Cached Co', color: '#1F4E8C', logo: '' })), FAKE_USER_ID);
+    await page.goto(`/sign.html?key=${KEY}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const r = await page.evaluate(() => ({
+      name: (document.querySelector('#sign-boot .bt-name') || {}).textContent || '',
+      mark: document.querySelectorAll('#sign-boot .bt-word').length,
+    }));
+    expect(r.name).toBe('Cached Co');
+    expect(r.mark).toBe(0);
+    assertNoErrors(page, 'proposal boot cached');
+  });
+
+  test('tdBootPaint: same contractor twice is one paint; nothing known is no paint; null is safe', async ({ page }) => {
+    await mockAllExternal(page);
+    await hangFetch(page);
+    await page.goto(`/sign.html?key=${KEY}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const r = await page.evaluate(() => {
+      const ov = document.createElement('div'); document.body.appendChild(ov);
+      const out = {
+        none: tdBootPaint(ov, {}), empty: tdBootPaint(ov, { logo: '', name: '  ' }),
+        first: tdBootPaint(ov, { name: 'A Co' }), again: tdBootPaint(ov, { name: 'A Co ' }),
+        changed: tdBootPaint(ov, { name: 'B Co' }), nul: tdBootPaint(null, { name: 'x' }),
+        name: ov.querySelector('.bt-name').textContent, stages: ov.querySelectorAll('.bt-stage').length,
+      };
+      ov.remove(); return out;
+    });
+    expect(r).toEqual({ none: false, empty: false, first: true, again: false, changed: true, nul: false, name: 'B Co', stages: 1 });
+    assertNoErrors(page, 'tdBootPaint');
+  });
+});
+
+test.describe('one boot screen everywhere', () => {
+  test('the hub paints through the shared tdBootPaint; its own guard is gone', async ({ page }) => {
+    await page.addInitScript(uid => { window.__mockHubData = { clientId: 931, contractorUserId: uid, contractorName: 'Plumbing Solutions By JS', clientName: 'Dana', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] }; }, FAKE_USER_ID);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => !!document.querySelector('#boot-overlay .bt-name'), { timeout: 8000 });
+    const r = await page.evaluate(() => ({
+      shared: document.getElementById('boot-overlay').classList.contains('td-boot'),
+      guard: typeof _bootShown,
+      pageExit: [...document.querySelectorAll('style')].some(s => s.textContent.includes('#boot-overlay.td-fadeout')),
+    }));
+    expect(r.shared).toBe(true);
+    expect(r.guard).toBe('undefined');   // §7.1: the hub's private repaint guard
+    expect(r.pageExit).toBe(false);      // the exit rule lives in js/brand-look.js now
+    assertNoErrors(page, 'hub shared boot');
+  });
+
+  test('the app boot screen takes the same shared exit', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const r = await page.evaluate(() => ({
+      pageExit: [...document.querySelectorAll('style')].some(s => s.textContent.includes('#supa-boot-overlay.td-fadeout')),
+      sharedExit: (document.getElementById('td-boot-css') || {}).textContent.includes('.td-boot.td-fadeout'),
+    }));
+    expect(r.pageExit).toBe(false);
+    expect(r.sharedExit).toBe(true);
+    await waitForAppBoot(page);
+    assertNoErrors(page, 'app shared exit');
   });
 });

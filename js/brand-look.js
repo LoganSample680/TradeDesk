@@ -135,7 +135,7 @@ function tdLogoKey(src){
 }
 // ── The boot screen (owner-approved design 2026-09-24) ──────────────────────
 // One builder for every boot surface: the app's first paint, the app's
-// "updating" screen, and the client hub. The logo sits on its OWN background
+// "updating" screen, the client hub and the proposal page (sign.html). The logo sits on its OWN background
 // colour, big, and simply fades in, holds, and fades out; nothing drifts,
 // glows or loads a bar under it (owner: "I don't want this shit to look AI").
 // No logo: the business name (and its initial on a tile), as before. Neither:
@@ -149,6 +149,12 @@ function tdLogoKey(src){
 //   o.cacheKey    localStorage key for the logo's look, so a repeat boot paints
 //                 the right background on the very first frame
 const _TD_BOOT_CSS=
+// The screen itself: every page's overlay takes this class from the builder,
+// so the exit (logo out first, then the screen, starting .3s in) is one rule.
+// !important: a logo read for the first time leaves an inline background-colour
+// transition on the screen, and that inline value was silently cancelling the
+// fade, so the screen cut out instead.
+'.td-boot{overflow:hidden}.td-boot.td-fadeout{opacity:0;transition:opacity .3s ease .3s!important}'+
 '.bt-stage{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:0 24px;transform:translateY(-4%)}'+
 '.bt-in{opacity:0;animation:bt-in .65s cubic-bezier(.45,0,.55,1) .05s forwards}'+
 '.bt-logo{width:min(78vw,340px);height:min(78vw,340px);object-fit:contain;display:block}'+
@@ -199,12 +205,16 @@ function tdSkelSweep(root,phase){
 }
 const _TD_BOOT_DARK='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
 const _TD_WRENCH='<svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
-function tdBootFill(ov,o){
-  if(!ov)return;o=o||{};
+function _tdBootCss(ov){
   if(!document.getElementById('td-boot-css')){
     const st=document.createElement('style');st.id='td-boot-css';st.textContent=_TD_BOOT_CSS;
     (document.head||document.documentElement).appendChild(st);
   }
+  if(ov)ov.classList.add('td-boot');
+}
+function tdBootFill(ov,o){
+  if(!ov)return;o=o||{};
+  _tdBootCss(ov);
   const el=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;};
   ov.textContent='';
   ov.style.display='flex';ov.style.flexDirection='column';ov.style.alignItems='center';ov.style.justifyContent='center';
@@ -257,7 +267,19 @@ function tdBootFill(ov,o){
   const foot=o.status?o.status:((o.powered&&(o.logo||name))?'Powered by TradeDesk':'');
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
-if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdSkelSweep};
+// For a page that learns who the contractor is while it loads (the client hub,
+// the proposal page): paints only when the logo or name changed, so a second
+// call with the same contractor never restarts the fade. Before either is
+// known the screen stays the plain dark base the app shows, never a
+// placeholder brand. Returns true when it painted.
+function tdBootPaint(ov,o){
+  if(!ov)return false;o=o||{};
+  _tdBootCss(ov);
+  const k=(o.logo||'')+'\n'+String(o.name||'').trim();
+  if(k===(ov._tdBootKey||'\n'))return false;
+  ov._tdBootKey=k;tdBootFill(ov,o);return true;
+}
+if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdBootPaint,tdSkelSweep};
 
 // ── Shared by the app and the client hub (audit 2026-10-01) ─────────────────
 // Each page kept its own copy of these; both pages load this file first.

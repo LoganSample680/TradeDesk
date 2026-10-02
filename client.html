@@ -415,8 +415,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    the same tdBootFill (js/brand-look.js). The contractor's logo on its own
    background, fade in, hold, fade out. Never "Powered by TradeDesk" here: the
    hub is the contractor's, full stop. */
-#boot-overlay{position:fixed;inset:0;background:#1B1612;z-index:9999;overflow:hidden}
-#boot-overlay.td-fadeout{opacity:0;transition:opacity .3s ease .3s}
+#boot-overlay{position:fixed;inset:0;background:#1B1612;z-index:9999}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
 
@@ -669,19 +668,16 @@ const MIN_BOOT_MS=2150; // the approved beat (owner 2026-09-24): fade in, hold, 
 // by CONTRACTOR (u), not client (c), so once ANY of their hubs has loaded here,
 // every other one paints their logo on its first frame.
 const _hubUid=new URLSearchParams(location.search).get('u')||'';
-let _bootShown={logo:'',name:''};
 function _hubBootPaint(logo,name,brand){
   const ov=document.getElementById('boot-overlay');
-  if(!ov||typeof tdBootFill!=='function')return;
-  if(_bootShown.logo===(logo||'')&&_bootShown.name===(name||''))return;
+  if(!ov||typeof tdBootPaint!=='function')return;
   // First visit on this device: the screen sat blank until the fetch told us
   // who the contractor is. His logo gets the whole beat from the moment it
   // appears, not what is left of it after a slow connection.
-  if(!_bootShown.logo&&!_bootShown.name)window._bootStart=Date.now();
-  _bootShown={logo:logo||'',name:name||''};
-  tdBootFill(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
+  const first=!ov._tdBootKey;
+  if(tdBootPaint(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
     // A hub whose contractor never picked a colour takes it from the logo.
-    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',adaBrand(lk.accent));}});
+    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',adaBrand(lk.accent));}})&&first)window._bootStart=Date.now();
 }
 (function(){
   try{

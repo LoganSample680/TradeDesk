@@ -141,7 +141,7 @@ function _gmRender(){
   const _ty=String(typeof trackerYear!=='undefined'&&trackerYear||'');
   const irsNow=IRS(/^\d{4}$/.test(_ty)?_ty:String(new Date().getFullYear()));
   const seg=(val,label)=>'<button type="button" id="gm-mode-'+val+'" class="fb'+(mode===val?' active':'')+'" onclick="_gmSetMode(\''+val+'\')" style="flex:1">'+label+'</button>';
-  const numIn=(id,val,ph,on)=>'<input id="'+id+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(val?escHtml(String(val)):'')+'" placeholder="'+ph+'" onchange="'+on+'" style="width:84px;font-size:16px;padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">';
+  const numIn=(id,val,ph,on)=>'<input id="'+id+'" type="text" data-num="dec" inputmode="decimal" value="'+(val?escHtml(String(val)):'')+'" placeholder="'+ph+'" onchange="'+on+'" style="width:84px;font-size:16px;padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums">';
 
   let html=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Gas money</div>'+
