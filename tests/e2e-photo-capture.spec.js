@@ -2952,10 +2952,13 @@ test.describe('TrueShot: full size as HEIC in the app', () => {
     try {
       supaEnabled = () => true;
       _supaUser = { id: 'u-heic' };
-      _supa = { storage: { from: () => ({
+      // Only storage is faked: everything else falls through to the real
+      // client, so a background cloud load that lands mid-test still works.
+      _supa = Object.create(saved.supa || null);
+      _supa.storage = { from: () => ({
         upload: async (path, body, o) => { bodies.push({ path, type: o && o.contentType, size: body.size }); return { error: null }; },
         getPublicUrl: (path) => ({ data: { publicUrl: 'https://x/' + path } }),
-      }) } };
+      }) };
       const plugin = {
         isAvailable: async () => ({ available: mode !== 'unavailable' }),
         heic: async (o) => {

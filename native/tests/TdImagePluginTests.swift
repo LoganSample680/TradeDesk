@@ -28,8 +28,12 @@ final class TdImagePluginTests: XCTestCase {
     }
 
     // A noisy 1200x900 JPEG, so the encoder has real detail to compress.
+    // Scale 1 so the size is in pixels: the renderer otherwise draws at the
+    // screen's scale and a 1200-point image comes out 3600 pixels wide.
     func sampleJpeg(w: Int = 1200, h: Int = 900) -> Data {
-        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: fmt)
         let img = r.image { ctx in
             for y in stride(from: 0, to: h, by: 12) {
                 for x in stride(from: 0, to: w, by: 12) {
