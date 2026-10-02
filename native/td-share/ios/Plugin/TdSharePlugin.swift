@@ -23,7 +23,14 @@ public class TdSharePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise)
     ]
 
-    static let appGroup = "group.app.tradedesk.beta"
+    // Derived from the bundle so the TestFlight app (app.tradedesk.beta) and
+    // the App Store app (app.tradedesk) each read their own group. Must match
+    // ShareViewController's, which derives it from the extension's id.
+    static let appGroup = group(forAppBundle: Bundle.main.bundleIdentifier)
+
+    static func group(forAppBundle id: String?) -> String {
+        return "group." + ((id?.isEmpty == false ? id : nil) ?? "app.tradedesk.beta")
+    }
 
     static func inboxDir() -> URL? {
         guard let base = FileManager.default

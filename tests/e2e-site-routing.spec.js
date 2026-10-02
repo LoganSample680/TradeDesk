@@ -40,6 +40,7 @@ const ROUTES = [
   '/tools/lien-deadlines',
   '/privacy',
   '/terms',
+  '/support',   // App Store Support URL (2026-10-01)
 ];
 
 const decode = s => s.replace(/<[^>]+>/g, '')

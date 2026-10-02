@@ -15,7 +15,7 @@
 require 'xcodeproj'
 require 'fileutils'
 
-APP_ID    = 'app.tradedesk.beta'
+APP_ID    = ENV['TD_BUNDLE_ID'] || 'app.tradedesk.beta'   # ios-beta.yml sets it per channel
 EXT_NAME  = 'ShareExt'
 EXT_ID    = "#{APP_ID}.share"
 APP_GROUP = "group.#{APP_ID}"
@@ -49,6 +49,9 @@ FileUtils.mkdir_p(dest)
 FileUtils.cp("#{SRC_DIR}/ShareViewController.swift", dest)
 FileUtils.cp("#{SRC_DIR}/Info.plist", dest)
 FileUtils.cp("#{SRC_DIR}/ShareExt.entitlements", dest)
+# The checked-in file names the beta's group; the store app has its own.
+ent_path = File.join(dest, 'ShareExt.entitlements')
+File.write(ent_path, File.read(ent_path).gsub('group.app.tradedesk.beta', APP_GROUP))
 
 ext_target = project.new_target(:app_extension, EXT_NAME, :ios, '15.0')
 

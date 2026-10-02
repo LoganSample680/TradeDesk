@@ -1109,3 +1109,84 @@ test.describe('Remote push: token handling and tap routing', () => {
     expect(r).toBe(0);
   });
 });
+
+// ── Two apps, one token table (2026-10-01) ───────────────────────────────────
+// The App Store app is app.tradedesk, the TestFlight beta app.tradedesk.beta.
+// A token belongs to one of them; APNs answers DeviceTokenNotForTopic for the
+// other. This RUNS the real apnsSend against a scripted APNs, not a scan.
+test.describe('apnsSend finds the right app for each token', () => {
+  const { execFileSync } = require('child_process');
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  function run(script, env = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apns-'));
+    fs.copyFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'apns.ts'), path.join(dir, 'apns.ts'));
+    // script: [{topic, host?, status, reason?}] matched in order of the calls made
+    fs.writeFileSync(path.join(dir, 'h.mjs'), `
+      globalThis.Deno = { env: { get: (k) => (${JSON.stringify(env)})[k] } };
+      const script = ${JSON.stringify(script)}; const calls = [];
+      globalThis.fetch = async (url, init) => {
+        const topic = init.headers['apns-topic']; const host = new URL(url).host;
+        calls.push({ topic, host });
+        const m = script.find((s) => s.topic === topic && (!s.host || s.host === host)) || { status: 500, reason: 'unscripted' };
+        return { ok: m.status === 200, status: m.status, text: async () => JSON.stringify({ reason: m.reason || '' }) };
+      };
+      const console_error = console.error; console.error = () => {};
+      const { apnsSend } = await import('./apns.ts');
+      const live = process.argv[2] === 'live';
+      const out = await apnsSend('jwt', 'tok', '{}', live ? { 'apns-topic': 'app.tradedesk.beta.push-type.liveactivity', 'apns-push-type': 'liveactivity' } : { 'apns-push-type': 'alert' });
+      console.error = console_error;
+      process.stdout.write(JSON.stringify({ out, calls }));`);
+    return (live) => JSON.parse(execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', path.join(dir, 'h.mjs'), live ? 'live' : ''], { encoding: 'utf8' }));
+  }
+
+  test('a beta token costs one request, as before', () => {
+    const r = run([{ topic: 'app.tradedesk.beta', status: 200 }])();
+    expect(r.out).toEqual({ ok: true, dead: false });
+    expect(r.calls.map((c) => c.topic)).toEqual(['app.tradedesk.beta']);
+  });
+
+  test('a store token is retried on app.tradedesk and delivered, not written off', () => {
+    const r = run([
+      { topic: 'app.tradedesk.beta', status: 400, reason: 'DeviceTokenNotForTopic' },
+      { topic: 'app.tradedesk', status: 200 },
+    ])();
+    expect(r.out).toEqual({ ok: true, dead: false });
+    expect(r.calls.map((c) => c.topic)).toEqual(['app.tradedesk.beta', 'app.tradedesk']);
+  });
+
+  test('a Live Activity keeps its suffix on the store topic', () => {
+    const r = run([
+      { topic: 'app.tradedesk.beta.push-type.liveactivity', status: 400, reason: 'DeviceTokenNotForTopic' },
+      { topic: 'app.tradedesk.push-type.liveactivity', status: 200 },
+    ])(true);
+    expect(r.out.ok).toBe(true);
+    expect(r.calls.map((c) => c.topic)).toEqual(['app.tradedesk.beta.push-type.liveactivity', 'app.tradedesk.push-type.liveactivity']);
+  });
+
+  test('a store token on the other gateway still lands (topic and gateway fallbacks together)', () => {
+    const r = run([
+      { topic: 'app.tradedesk.beta', status: 400, reason: 'DeviceTokenNotForTopic' },
+      { topic: 'app.tradedesk', host: 'api.sandbox.push.apple.com', status: 400, reason: 'BadDeviceToken' },
+      { topic: 'app.tradedesk', host: 'api.push.apple.com', status: 200 },
+    ])();
+    expect(r.out).toEqual({ ok: true, dead: false });
+  });
+
+  test('a token neither app knows is not marked dead, and an uninstalled app still is', () => {
+    const both = run([
+      { topic: 'app.tradedesk.beta', status: 400, reason: 'DeviceTokenNotForTopic' },
+      { topic: 'app.tradedesk', status: 400, reason: 'DeviceTokenNotForTopic' },
+    ])();
+    expect(both.out).toEqual({ ok: false, dead: false });
+    const gone = run([{ topic: 'app.tradedesk.beta', status: 410, reason: 'Unregistered' }])();
+    expect(gone.out).toEqual({ ok: false, dead: true });
+    expect(gone.calls.length).toBe(1);   // a dead token never tries the other app
+  });
+
+  test('APNS_TOPIC=app.tradedesk puts the store first once it is the bigger fleet', () => {
+    const r = run([{ topic: 'app.tradedesk', status: 200 }], { APNS_TOPIC: 'app.tradedesk' })();
+    expect(r.calls.map((c) => c.topic)).toEqual(['app.tradedesk']);
+  });
+});
