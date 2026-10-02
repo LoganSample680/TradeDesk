@@ -1878,24 +1878,53 @@ test.describe('geo-derive: the day deriver', () => {
       expect(hm(r.open.sinceTs)).toBe(hm(T(12, 59, 57)));
     });
 
-    test('a drive-by with a lost exit, tape still automotive, does not end the drive', async () => {
-      // His 08:08 that morning: Menards and Lowe's entered mid-drive.
-      // Two readings inside, seconds apart, and the phone quiet after them.
-      const r = await at(T(13, 5), { tape: tapeStill.slice(0, 2),
-        fixes: fixesUpTo(T(13, 0, 39), realFixes).concat([fix(T(13, 0, 45), IN2)]) });
-      expect(lastJ(r).endTs, 'the tape never left automotive').toBe(null);
-      expect(r.open).toBe(null);
+    // AMENDED 2026-10-02 (rule C, _gdArrivalSettled). This test said "a
+    // drive-by with a lost exit, tape still automotive, does not end the
+    // drive", where "tape still automotive" meant NO flip since the crossing.
+    // That was right while ending a drive needed the tape's word. It is the
+    // same evidence as a phone asleep in a parked truck, which is the stop
+    // rule C exists to write on time, and the seven-day replay found no lost
+    // exit at all (every drive-by's exit came 22 to 35 seconds after the
+    // enter). So silence is now a provisional stop, time rows only, never a
+    // leg; the tape SAYING automotive past the hold is what takes it back.
+    test('a drive-by with a lost exit and a silent tape: a provisional stop, never a leg', async () => {
+      const quiet = { tape: tapeStill.slice(0, 2),
+        fixes: fixesUpTo(T(13, 0, 39), realFixes).concat([fix(T(13, 0, 45), IN2)]) };
+      const r = await at(T(13, 5), quiet);
+      expect(lastJ(r).endTs, 'the crossing ends it for the time rows').toBe(T(12, 59, 57));
+      expect(lastJ(r).provisional, 'and only for them').toBe(true);
+      expect(r.legs.filter(l => !l.provisional).length, 'no leg is settled').toBe(0);
+      // The tape speaking up: automotive two minutes past the crossing and
+      // nothing else since it. He is still driving.
+      const driving = await at(T(13, 5), Object.assign({}, quiet, { tape: tapeStill.slice(0, 2).concat([mo(T(13, 2, 30), 'automotive')]) }));
+      expect(lastJ(driving).endTs, 'still driving').toBe(null);
+      expect(driving.open).toBe(null);
     });
 
-    test('a pass out the far side, newest fix outside, does not end the drive', async () => {
-      const r = await at(T(13, 10), { fixes: realFixes.concat([fix(T(13, 8), PAST)]) });
-      expect(lastJ(r).endTs).toBe(null);
-      expect(r.open).toBe(null);
+    // AMENDED 2026-10-02 (rule C). One fix outside used to be enough, back
+    // when the drive only ended on a fix INSIDE. Now the crossing alone ends
+    // it, so a fix is what takes it back, and one can lie: a `visit` row
+    // carries the coordinate of the place it describes, which on a departure
+    // is the place he LEFT (Jack 21 September, 10:33:03, 6,063 ft out a
+    // second after a fix 233 ft from the client he had parked at). Two
+    // readings moving away is leaving.
+    test('a pass out the far side: two fixes moving away end it, one does not', async () => {
+      const PAST2 = { lat: PAST.lat, lng: PAST.lng + 0.004 };
+      const two = await at(T(13, 10), { fixes: realFixes.concat([fix(T(13, 8), PAST), fix(T(13, 8, 20), PAST2)]) });
+      expect(lastJ(two).endTs).toBe(null);
+      expect(two.open).toBe(null);
+      const one = await at(T(13, 10), { fixes: realFixes.concat([fix(T(13, 8), PAST)]) });
+      expect(lastJ(one).endTs, 'one reading out the far side is not leaving').toBe(T(12, 59, 57));
     });
 
-    test('no proof fix inside the circle, no arrival', async () => {
+    // AMENDED 2026-10-02 (rule C). "No proof fix inside the circle, no
+    // arrival" held the whole drive open. The proof still guards everything it
+    // guarded: the leg and the closed drive. The time rows no longer wait on it.
+    test('no proof fix inside the circle: the time rows stop at the crossing, the leg waits', async () => {
       const r = await at(T(13, 10), { fixes: fixesUpTo(T(12, 59, 57), realFixes) });
-      expect(lastJ(r).endTs).toBe(null);
+      expect(lastJ(r).endTs).toBe(T(12, 59, 57));
+      expect(lastJ(r).provisional, 'unproven: time rows only').toBe(true);
+      expect(r.legs.filter(l => !l.provisional).length).toBe(0);
     });
   });
 
@@ -1904,7 +1933,7 @@ test.describe('geo-derive: the day deriver', () => {
   // phone stops reading as driving; the mileage leg keeps its 4-minute wait."
   // Rows, not just the result, because the rows are what reach the server and
   // the keys are what let a later derive land on them instead of beside them.
-  test.describe('rule 21 before gate 4: the stop row now, the leg later', () => {
+  test.describe('rule 21 before gate 4: the stop row and a draft leg now, the settled leg later', () => {
     const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
     const LOT = { lat: 39.0420, lng: -95.7511 };
     const ROAD = { lat: 39.0440, lng: -95.7230 };
@@ -1935,7 +1964,14 @@ test.describe('geo-derive: the day deriver', () => {
       regions: [{ ts: T(12, 59, 57), id: YARD.id, enter: true }],
     };
 
-    test('Jack 13:01:22: the yard row starts 12:59:57, and there is no leg yet', async () => {
+    // AMENDED 2026-10-02 (owner: "it all needs to be at 100 percent in 10
+    // seconds"). The leg used to wait for gate 4. It now lands at the crossing
+    // marked provisional, and geo_replace_day (20261065) lets the settled
+    // derive rewrite it under the same id. Every test below that said "no leg
+    // yet" now says "a draft leg"; the derive after he drives on still sends
+    // none, and the leg at the place he really stopped replaces the draft.
+    const draft = (r) => r.rows.td_mileage.map(m => [String(m.id), m.provisional === true]);
+    test('Jack 13:01:22: the yard row starts 12:59:57, and the leg is a draft', async () => {
       const r = await rowsAt(T(13, 1, 22), jack);
       const J = String(r.journeys[r.journeys.length - 1].id);
       const yard = keyed(r.rows, 'd-' + J);
@@ -1946,7 +1982,7 @@ test.describe('geo-derive: the day deriver', () => {
       const drive = keyed(r.rows, J);
       expect(drive.length, 'the drive row, on its own key').toBe(1);
       expect(drive[0].departed_at, 'closed at the crossing').toBe(new Date(T(12, 59, 57)).toISOString());
-      expect(r.rows.td_mileage.length, 'the leg waits for gate 4').toBe(0);
+      expect(draft(r), 'a draft leg under the drive key').toEqual([[J, true]]);
     });
 
     test('Jack 13:04:40: four minutes on, the leg lands on the same keys', async () => {
@@ -1954,7 +1990,7 @@ test.describe('geo-derive: the day deriver', () => {
       const r = await rowsAt(T(13, 4, 40), jack);
       const J = String(r.journeys[r.journeys.length - 1].id);
       expect(String(early.journeys[early.journeys.length - 1].id), 'same journey id').toBe(J);
-      expect(r.rows.td_mileage.map(m => String(m.id)), 'the leg, under the drive key').toEqual([J]);
+      expect(draft(r), 'the settled leg, same key, no longer a draft').toEqual([[J, false]]);
       expect(keyed(r.rows, 'd-' + J).length, 'the same stop row').toBe(1);
       expect(keyed(r.rows, J).length, 'the same drive row').toBe(1);
       const keys = allTime(early.rows).map(t => t.client_key);
@@ -1977,19 +2013,19 @@ test.describe('geo-derive: the day deriver', () => {
         { ts: T(12, 59, 57), id: YARD.id, enter: true }],
     };
 
-    test('a red light: the stop row comes at the still and goes at the exit, no leg mid-drive', async () => {
+    test('a red light: the stop row comes at the still and goes at the exit, the draft leg with it', async () => {
       const atStill = await rowsAt(T(12, 55, 12), light);
       const J = String(atStill.journeys[atStill.journeys.length - 1].id);
       const stop = keyed(atStill.rows, 'd-' + J);
       expect(stop.length, 'the stop row at the still').toBe(1);
       expect(stop[0].arrived_at).toBe(new Date(T(12, 55, 0)).toISOString());
-      expect(atStill.rows.td_mileage.length, 'no leg at a light').toBe(0);
+      expect(draft(atStill), 'a draft leg at the light').toEqual([[J, true]]);
 
       // Automotive again, newest fix still inside: the row holds rather than
       // blinking with every flip, and the leg still waits.
       const rolling = await rowsAt(T(12, 55, 53), light);
       expect(keyed(rolling.rows, 'd-' + J).length).toBe(1);
-      expect(rolling.rows.td_mileage.length).toBe(0);
+      expect(draft(rolling)).toEqual([[J, true]]);
 
       // Out the far side: the OS closed the crossing. Not resent, so
       // geo_replace_day step 5c retires it, and the drive row re-opens on the
@@ -1999,7 +2035,9 @@ test.describe('geo-derive: the day deriver', () => {
       const live = keyed(out.rows, J);
       expect(live.length).toBe(1);
       expect(live[0].departed_at, 'the drive is open again').toBe(null);
-      expect(out.rows.td_mileage.length, 'and still no leg').toBe(0);
+      // No leg sent: the draft on the server waits for the same journey's
+      // real end, which replaces it under this id.
+      expect(out.rows.td_mileage.length, 'no leg sent mid-drive').toBe(0);
 
       // He reaches the yard: one drive row from 12:50:06 to the crossing, one
       // leg, and nothing at the corner.
@@ -2015,12 +2053,16 @@ test.describe('geo-derive: the day deriver', () => {
       expect(yard[0].arrived_at, 'the stop key now names the yard').toBe(new Date(T(12, 59, 57)).toISOString());
     });
 
+    // AMENDED 2026-10-02 (rule C). This test said the Menards shape (two
+    // readings inside, the tape never leaving automotive, the exit lost)
+    // writes no stop row. With no flip since the crossing that is now a
+    // provisional stop (see 'a drive-by with a lost exit and a silent tape'),
+    // so the row-level guard moves to what really took Menards back on 1
+    // October, the tape and the exit, and the leg half stays as it was.
     test('Menards: a drive-by with the tape on automotive writes no stop row', async () => {
-      // His 08:08: two readings inside, the tape never left automotive, the
-      // exit lost. A live drive row, no stop, no leg.
       const r = await rowsAt(T(13, 5), {
         fences: [YARD], regions: jack.regions,
-        tape: jack.tape.slice(0, 2),
+        tape: jack.tape.slice(0, 2).concat([mo(T(13, 2, 30), 'automotive')]),
         fixes: jack.fixes.filter(f => f.ts <= T(13, 0, 39)).concat([fix(T(13, 0, 45), IN2)]),
       });
       const J = String(r.journeys[r.journeys.length - 1].id);
@@ -2028,6 +2070,128 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.rows.shop_time_entries.length + r.rows.open.filter(o => o._table === 'shop_time_entries').length).toBe(0);
       expect(keyed(r.rows, J).map(t => t.departed_at), 'still on the road').toEqual([null]);
       expect(r.rows.td_mileage.length).toBe(0);
+    });
+
+    // ── RULE C: THE STOP ROW AT THE CROSSING (owner 2026-10-02) ────────────
+    // "keep iterating on how we can get previous data to always land in 10
+    // seconds." The crossing reaches the server in about a second; the tape's
+    // next word, a minute or three later. So the crossing alone ends the drive
+    // for the time rows, and the exit, two fixes moving away, the tape saying
+    // automotive past the hold, or a newer crossing elsewhere take it back.
+    // Scored on seven real days by scripts/ops/replay-on-time.mjs.
+    test.describe('rule C: the stop row at the crossing', () => {
+      const along = (t) => {
+        // His line from the lot to the road, 12:50:06 to 12:55:00.
+        const k = (t - T(12, 50, 6)) / (T(12, 55) - T(12, 50, 6));
+        return { lat: LOT.lat + (ROAD.lat - LOT.lat) * k, lng: LOT.lng + (ROAD.lng - LOT.lng) * k };
+      };
+      const MENARDS = { id: 'place-menards', kind: 'supply', name: 'Menards', lat: 39.0433, lng: -95.73705 };
+      const menards = {
+        fences: [MENARDS, YARD],
+        tape: jack.tape,
+        fixes: jack.fixes.concat([T(12, 52, 8), T(12, 52, 20), T(12, 52, 33), T(12, 52, 45)].map(t => fix(t, along(t))))
+          .sort((a, b) => a.ts - b.ts),
+        regions: [{ ts: T(12, 52, 10), id: MENARDS.id, enter: true }, { ts: T(12, 52, 38), id: MENARDS.id, enter: false },
+          { ts: T(12, 59, 57), id: YARD.id, enter: true }],
+      };
+      const iso = ms => new Date(ms).toISOString();
+      const lastId = r => String(r.journeys[r.journeys.length - 1].id);
+
+      test('Jack 1 October: the yard row starts 12:59:57, written on the crossing upload', async () => {
+        // Nothing but the crossing and the fix that rode with it: no flip since
+        // 12:50:06, nothing inside the circle yet.
+        const r = await rowsAt(T(12, 59, 58), jack);
+        const J = lastId(r);
+        const yard = keyed(r.rows, 'd-' + J);
+        expect(yard.length, 'the stop row, on the key the settled derive will use').toBe(1);
+        expect(yard[0]._table).toBe('shop_time_entries');
+        expect(yard[0].arrived_at).toBe(iso(T(12, 59, 57)));
+        expect(yard[0].departed_at, 'open').toBe(null);
+        expect(keyed(r.rows, J)[0].departed_at, 'the drive row closes at the crossing').toBe(iso(T(12, 59, 57)));
+        expect(draft(r), 'a draft leg on the crossing alone').toEqual([[J, true]]);
+        // Four minutes and a fix inside later, the leg lands on the same keys.
+        const done = await rowsAt(T(13, 4, 40), jack);
+        expect(lastId(done)).toBe(J);
+        expect(done.rows.td_mileage.map(m => String(m.id))).toEqual([J]);
+        expect(keyed(done.rows, 'd-' + J)[0].arrived_at).toBe(iso(T(12, 59, 57)));
+      });
+
+      test('Menards 08:08: a provisional stop and draft leg, gone after the exit, one drive, one leg', async () => {
+        const enter = await rowsAt(T(12, 52, 11), menards);
+        const J = lastId(enter);
+        const stop = keyed(enter.rows, 'd-' + J);
+        expect(stop.length, 'the crossing writes the stop row').toBe(1);
+        expect(stop[0].arrived_at).toBe(iso(T(12, 52, 10)));
+        expect(draft(enter), 'a draft leg at the drive-by').toEqual([[J, true]]);
+        // Approach fixes after the crossing are outside the circle and still
+        // closing in: not leaving.
+        const closing = await rowsAt(T(12, 52, 30), menards);
+        expect(keyed(closing.rows, 'd-' + J).length).toBe(1);
+        // The exit, 28 seconds on. Not resent, so step 5c retires it, and the
+        // drive row re-opens on the key it always had.
+        const out = await rowsAt(T(12, 52, 39), menards);
+        expect(keyed(out.rows, 'd-' + J).length, 'the stop row is not sent').toBe(0);
+        expect(keyed(out.rows, J).map(t => t.departed_at), 'the drive is open again').toEqual([null]);
+        expect(out.rows.td_mileage.length).toBe(0);
+        // At the yard: one drive row the whole way, one leg, nothing at Menards.
+        const done = await rowsAt(T(13, 20), menards);
+        const drives = keyed(done.rows, J);
+        expect(drives.length, 'one continuous drive row').toBe(1);
+        expect(drives[0].arrived_at).toBe(iso(T(12, 50, 6)));
+        expect(drives[0].departed_at).toBe(iso(T(12, 59, 57)));
+        expect(done.rows.td_mileage.map(m => String(m.id))).toEqual([J]);
+        expect(allTime(done.rows).some(t => t.dest_place === 'Menards'), 'no row at Menards').toBe(false);
+      });
+
+      test('a red light inside a fence: the row and draft leg at the crossing, gone at the exit', async () => {
+        // Before the still: rule C does not wait for it.
+        const atCrossing = await rowsAt(T(12, 55, 1), light);
+        const J = lastId(atCrossing);
+        expect(keyed(atCrossing.rows, 'd-' + J).map(t => t.arrived_at)).toEqual([iso(T(12, 55, 0))]);
+        expect(draft(atCrossing)).toEqual([[J, true]]);
+        const out = await rowsAt(T(12, 56, 12), light);
+        expect(keyed(out.rows, 'd-' + J).length).toBe(0);
+        expect(keyed(out.rows, J).map(t => t.departed_at)).toEqual([null]);
+        expect(out.rows.td_mileage.length).toBe(0);
+      });
+
+      test('a phone asleep in the truck: no exit, no fix, no flip for minutes, still a stop row', async () => {
+        const asleep = { fences: [YARD], regions: jack.regions, tape: jack.tape.slice(0, 2),
+          fixes: jack.fixes.filter(f => f.ts <= T(12, 59, 57)) };
+        const r = await rowsAt(T(13, 6), asleep);
+        const J = lastId(r);
+        expect(keyed(r.rows, 'd-' + J).map(t => [t.arrived_at, t.departed_at])).toEqual([[iso(T(12, 59, 57)), null]]);
+        expect(keyed(r.rows, J)[0].departed_at).toBe(iso(T(12, 59, 57)));
+        expect(draft(r), 'unproven: a draft leg until a fix inside settles it').toEqual([[J, true]]);
+        // The phone wakes: the still flip and a fix inside. Same rows, and the leg.
+        const woke = await rowsAt(T(13, 20), jack);
+        expect(lastId(woke)).toBe(J);
+        expect(keyed(woke.rows, 'd-' + J)[0].arrived_at).toBe(iso(T(12, 59, 57)));
+        expect(woke.rows.td_mileage.map(m => String(m.id))).toEqual([J]);
+      });
+
+      test('a newer crossing into another fence: he is at the newest place', async () => {
+        // The corner's exit lost, then the yard.
+        const two = { fences: [CORNER, YARD], tape: jack.tape.slice(0, 2), fixes: jack.fixes,
+          regions: [{ ts: T(12, 55, 0), id: CORNER.id, enter: true }, { ts: T(12, 59, 57), id: YARD.id, enter: true }] };
+        const atCorner = await rowsAt(T(12, 55, 2), two);
+        const J = lastId(atCorner);
+        expect(keyed(atCorner.rows, 'd-' + J).map(t => t.arrived_at)).toEqual([iso(T(12, 55, 0))]);
+        const atYard = await rowsAt(T(12, 59, 58), two);
+        const yard = keyed(atYard.rows, 'd-' + J);
+        expect(yard.map(t => [t._table, t.arrived_at])).toEqual([['shop_time_entries', iso(T(12, 59, 57))]]);
+        expect(draft(atYard)).toEqual([[J, true]]);
+      });
+
+      test('a crossing before the drive began, or not yet happened, ends nothing', async () => {
+        // Jack's 07:43 'shop' enter that never exited must not end every drive
+        // of the day: only a crossing AFTER the drive began counts.
+        const early = { fences: [YARD], tape: jack.tape.slice(0, 2), fixes: jack.fixes.filter(f => f.ts <= T(12, 55)),
+          regions: [{ ts: T(7, 43), id: YARD.id, enter: true }] };
+        const r = await rowsAt(T(12, 56), early);
+        expect(keyed(r.rows, lastId(r)).map(t => t.departed_at)).toEqual([null]);
+        expect(r.rows.shop_time_entries.length + r.rows.open.filter(o => o._table === 'shop_time_entries').length).toBe(0);
+      });
     });
   });
 

@@ -713,6 +713,59 @@ test.describe('arrivalWatchDays: a fix batch derives while an arrival waits on i
   });
 });
 
+// ── RULE C ON THE SERVER: THE CROSSING UPLOAD WRITES THE STOP (2026-10-02) ──
+// The point of rule C is the timing, so the server half has to be proved too:
+// the upload carrying the regionEnter is itself a derive trigger, and that one
+// derive sends the open stop row and the closed drive row to geo_replace_day.
+// The exit's upload takes it back by not sending it (step 5c retires it).
+test.describe('rule C: the crossing upload writes the stop row', () => {
+  const ENTER = at(7, 57) + 20000;
+  const EXIT = ENTER + 28000;
+  const crossing = (type, ms) => ({ ts: iso(ms), type, kind: null, lat: CLIENT.lat + 0.002, lon: CLIENT.lon, region_id: 'client-111' });
+  const upTo = (ms, extra) => ({ ...TABLES, geo_events: EVENTS.filter((e) => Date.parse(e.ts) <= ms).concat(extra)
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts)) });
+
+  test('a batch holding only the crossing derives its day', async () => {
+    const { daysToDerive } = await import(SHARED);
+    const fs = require('fs');
+    const dd = fs.readFileSync(path.join(ROOT, 'supabase/functions/_shared/derive-day.mjs'), 'utf8');
+    expect(dd).toMatch(/TRIGGER_TYPES = new Set\(\[[^\]]*"regionEnter"/);
+    expect(daysToDerive([{ type: 'regionEnter', ts: ENTER, lat: 39, lng: -95, regionId: 'client-111' }], ENTER + 1000)).toEqual([DAY]);
+    expect(daysToDerive([{ type: 'regionExit', ts: EXIT, lat: 39, lng: -95, regionId: 'client-111' }], EXIT + 1000)).toEqual([DAY]);
+  });
+
+  test('that derive sends the open stop, the drive closed at the crossing, and a draft leg', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER)]), rpc), 'cid-1', 'uid-1', DAY, ENTER + 1000, null);
+    const write = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(write, 'written on the crossing upload').toBeTruthy();
+    const stop = write.args.p_time.filter((x) => x.source !== 'drive');
+    expect(stop.map((x) => [x.arrived_at, x.departed_at])).toEqual([[iso(ENTER), null]]);
+    const drive = write.args.p_time.filter((x) => x.source === 'drive');
+    expect(drive.map((x) => [x.arrived_at, x.departed_at])).toEqual([[iso(DEPART), iso(ENTER)]]);
+    expect(stop[0].client_key, 'the stop rides on the drive key').toBe('d-' + drive[0].client_key);
+    // AMENDED 2026-10-02: the leg used to wait for gate 4. It now goes out on
+    // the crossing, marked provisional, on the drive's own key, so the settled
+    // derive (or the drive's real end) rewrites it (geo_replace_day 20261065).
+    expect(write.args.p_miles.map((m) => [m.id, m.provisional === true]), 'a draft leg on the drive key')
+      .toEqual([[drive[0].client_key, true]]);
+    expect(r.wrote).toBe(true);
+  });
+
+  test('the exit upload takes it back: the stop is not resent, the drive re-opens on its key', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER)]), rpc), 'cid-1', 'uid-1', DAY, ENTER + 1000, null);
+    await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER), crossing('regionExit', EXIT)]), rpc), 'cid-1', 'uid-1', DAY, EXIT + 1000, null);
+    const [first, second] = rpc.filter((c) => c.name === 'geo_replace_day');
+    const key = first.args.p_time.find((x) => x.source === 'drive').client_key;
+    expect(second.args.p_time.filter((x) => x.source !== 'drive'), 'no stop row').toEqual([]);
+    expect(second.args.p_time.map((x) => [x.client_key, x.departed_at])).toEqual([[key, null]]);
+    expect(second.args.p_miles).toEqual([]);
+  });
+});
+
 // The ops portal explains an un-swept rebuild, and until 2026-09-18 there was
 // only one reason it could happen, so the page stated it as a fact. The
 // no-answer guard added a second, and the owner was told the server had no
