@@ -1310,6 +1310,13 @@ test.describe('keeping the rate off the proposal', () => {
       const realToast = window.showToast;
       window.showToast = (m) => { toasts.push(String(m)); };
       try {
+        // Its own customer, not the one the test above left in memory. That one
+        // was never saved, so a background reload between the two tests could
+        // drop it, and then this proposal had no customer and was refused for
+        // the wrong reason ("Link this proposal to a client first", webkit,
+        // 2026-10-02). The gate this proves sits after the customer check.
+        clients = clients.filter(c => c.id !== 77712).concat([{ id: 77712, name: 'Rate Sheet Sign',
+          addr: '712 Sign Rd, Wichita KS 67202', phone: '316-555-7712' }]);
         openGenericEstimate(clients.filter(c => c.id === 77712)[0], null, 'plumbing');
         _geiIsTM = true;
         _tmLayers = new Set(); _tmRateOnly = false; _tmRatePerMan = 0;

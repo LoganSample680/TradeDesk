@@ -1146,6 +1146,10 @@ function saveFleetVehicle() {
   else vehs.push(newV);
   _setVehicles(vehs);
   saveAll();
+  // Year, make, model and EPA MPG, looked up and stored on the truck the
+  // moment it is saved (js/vehicle-epa.js). Re-runs only when the name or
+  // VIN changed; offline it simply tries again next time.
+  if(typeof epaFillVehicle==='function')epaFillVehicle(newV).catch(()=>{});
   _closeFleetVehModal();
   renderFleetVehicles();
   // Refresh the dashboard setup to-do so its "Add a vehicle" item dismisses and

@@ -122,16 +122,27 @@ test.describe('Photo capture: the shared writer', () => {
     expect(r.wrote).toBe(0);
   });
 
+  // Counted by the ids the writer handed back, across the array it started
+  // with AND whatever photos[] is now. A late cache restore on a loaded
+  // webkit runner can swap photos[] for a fresh array while the five saves
+  // are awaiting (5 shot, 3 counted, #159 2026-10-02); the writer pushes into
+  // whichever array is current, so counting only the newest one blamed it for
+  // the swap. What this test owns: five distinct rows, every one written.
   test('concurrent shots all land, none overwrite another', async () => {
-    const n = await page.evaluate(async (b64) => {
+    const r = await page.evaluate(async (b64) => {
       const bin = atob(b64);
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const mk = () => new File([arr], 'shot.png', { type: 'image/png' });
-      await Promise.all([1, 2, 3, 4, 5].map(() => tdSavePhoto({ file: mk(), type: 'before', bidId: 901 })));
-      return photos.filter(p => p.bid_id === 901).length;
+      const start = photos;
+      const rows = await Promise.all([1, 2, 3, 4, 5].map(() => tdSavePhoto({ file: mk(), type: 'before', bidId: 901 })));
+      const ids = rows.map(x => (x ? String(x.id) : null));
+      const seen = new Set(start.concat(photos === start ? [] : photos).filter(p => p && p.bid_id === 901).map(p => String(p.id)));
+      return { ids, distinct: new Set(ids.filter(Boolean)).size, written: ids.filter(id => id && seen.has(id)).length };
     }, PNG_B64);
-    expect(n).toBe(5);
+    expect(r.ids.every(Boolean), 'every shot returned its row').toBe(true);
+    expect(r.distinct, 'five shots, five ids').toBe(5);
+    expect(r.written, 'every row was written to photos').toBe(5);
   });
 });
 

@@ -2189,6 +2189,65 @@ test.describe('settings.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // License dates are typed in full (owner 2026-10-02: "on RRP cert, can't type
+  // in a date, won't let me"). They used the card-expiry formatter, which
+  // turned 03152027 into 03/1520.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('license dates take a full MM/DD/YYYY', () => {
+    test('typing an RRP cert expiry key by key gives the whole date and saves it', async () => {
+      await page.evaluate(() => {
+        document.getElementById('_lic-modal-ov')?.remove();
+        window._editingLicId = null;
+        _showLicModal(null);
+        const sel = document.getElementById('_lic-type-sel');
+        sel.value = 'epa_renovator'; sel.dispatchEvent(new Event('change'));
+      });
+      await page.locator('#_lic-issue').pressSequentially('03152022');
+      await page.locator('#_lic-expiry').pressSequentially('03152027');
+      const typed = await page.evaluate(() => ({
+        issue: document.getElementById('_lic-issue').value,
+        expiry: document.getElementById('_lic-expiry').value,
+        mode: document.getElementById('_lic-expiry').getAttribute('inputmode'),
+      }));
+      expect(typed).toEqual({ issue: '03/15/2022', expiry: '03/15/2027', mode: 'numeric' });
+      const saved = await page.evaluate(() => {
+        const before = licenses.length;
+        const orig = window.zAlert; window.zAlert = () => {};
+        try { saveLicenseModal(); } finally { window.zAlert = orig; }
+        const rec = licenses[licenses.length - 1];
+        document.getElementById('_lic-modal-ov')?.remove();
+        return { added: licenses.length - before, issue: rec.issueDate, expiry: rec.expiryDate, type: rec.typeId };
+      });
+      expect(saved).toEqual({ added: 1, issue: '2022-03-15', expiry: '2027-03-15', type: 'epa_renovator' });
+    });
+
+    test('_fmtMdY: slashes land as you type, extra digits stop at the year, a pasted ISO date is turned around', async () => {
+      const r = await page.evaluate(() => {
+        const run = v => { const el = document.createElement('input'); el.value = v; _fmtMdY(el); return el.value; };
+        return [run(''), run('0'), run('03'), run('031'), run('0315'), run('03152'), run('03152027'),
+                run('031520271999'), run('03/15/2027'), run('ab03cd15ef2027'), run('2027-03-15'), run('2027-3-5')];
+      });
+      expect(r).toEqual(['', '0', '03', '03/1', '03/15', '03/15/2', '03/15/2027',
+                         '03/15/2027', '03/15/2027', '03/15/2027', '03/15/2027', '03/05/2027']);
+    });
+
+    test('_fmtMdY: null and a missing element do not throw', async () => {
+      const ok = await page.evaluate(() => { try { _fmtMdY(null); _fmtMdY(undefined); return true; } catch (e) { return e.message; } });
+      expect(ok).toBe(true);
+    });
+
+    test('editing a saved license shows its dates in full', async () => {
+      const v = await page.evaluate(() => {
+        _showLicModal({ id: 'x', typeId: 'epa_renovator', issueDate: '2022-03-15', expiryDate: '2027-03-15' });
+        const out = { issue: document.getElementById('_lic-issue').value, expiry: document.getElementById('_lic-expiry').value };
+        document.getElementById('_lic-modal-ov')?.remove();
+        return out;
+      });
+      expect(v).toEqual({ issue: '03/15/2022', expiry: '03/15/2027' });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // saveLicenseModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('saveLicenseModal', () => {

@@ -533,8 +533,8 @@ function _showLicModal(lic){
     '</div>'+
     '<div id="_lic-date-fields" style="display:'+(isEquip?'none':'block')+'">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-        '<div class="f"><label>Issue date</label><input type="text" id="_lic-issue" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtExpDate(this)" value="'+_ymdToMdY(lic?.issueDate||'')+'"></div>'+
-        '<div class="f"><label>Expiry date</label><input type="text" id="_lic-expiry" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtExpDate(this)" value="'+_ymdToMdY(lic?.expiryDate||'')+'"></div>'+
+        '<div class="f"><label>Issue date</label><input type="text" id="_lic-issue" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtMdY(this)" value="'+_ymdToMdY(lic?.issueDate||'')+'"></div>'+
+        '<div class="f"><label>Expiry date</label><input type="text" id="_lic-expiry" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtMdY(this)" value="'+_ymdToMdY(lic?.expiryDate||'')+'"></div>'+
       '</div>'+
     '</div>'+
     '<div class="f"><label>Notes</label><input id="_lic-notes" value="'+escHtml(lic?.notes||'')+'" placeholder="Optional"></div>'+

@@ -13,10 +13,21 @@ ok()   { echo "  ok   $1"; }
 bad()  { echo "  FAIL $1"; FAIL=1; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# No housekeeping behind the test's back. Git runs gc/maintenance DETACHED
+# after a commit or merge, and on 2026-10-02 one was still writing into the
+# last case's .git when the next case deleted it ("rm: cannot remove .../w/.git:
+# Directory not empty"); the clone into the half-deleted folder failed
+# silently and the drop check ran outside any repo. Off here, and every case
+# gets a folder of its own, so nothing still running can sit in its way.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 \
+       GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
+NREPO=0
 
 new_repo() {
-  rm -rf "$T/origin.git" "$T/w"; git init -q --bare -b main "$T/origin.git"
-  git clone -q "$T/origin.git" "$T/w" 2>/dev/null; cd "$T/w" || exit 1
+  NREPO=$((NREPO + 1)); local R="$T/case$NREPO"
+  git init -q --bare -b main "$R/origin.git" || exit 1
+  git clone -q "$R/origin.git" "$R/w" 2>/dev/null || { echo "  FAIL clone for case $NREPO"; exit 1; }
+  cd "$R/w" || exit 1
   git checkout -q -b main
   mkdir -p scripts/lib scripts/ci js supabase/migrations
   cp "$SRC/scripts/lib/"*.sh scripts/lib/; cp "$SRC/scripts/pr-sync.sh" "$SRC/scripts/bump-version.js" scripts/
@@ -89,6 +100,23 @@ git fetch -q origin
 [ "$rc" = 2 ] && [ "$(git rev-parse origin/claude/two)" = "$before" ] && ok "a real conflict stops the sync and pushes nothing" || bad "a real conflict stops the sync and pushes nothing (rc=$rc)"
 [ -z "$(git status --porcelain)" ] && ok "a stopped sync leaves the checkout clean" || bad "a stopped sync leaves the checkout clean"
 
+echo "pr sync, the way CI runs it"
+new_repo
+mkdir -p "$T/tools2"; cp -r "$SRC/scripts" "$T/tools2/"
+for b in one two; do
+  git checkout -q -B claude/$b main; echo "$b" > "js/$b.js"; stamp 10.01.26.4 "$b"; git push -q origin claude/$b
+done
+git checkout -q main; sed -i 's/return 1/return 4/' js/cloud.js; stamp 10.01.26.9 "main moves"; git push -q origin main
+start=$(git rev-parse HEAD); git checkout -q --detach "$start"
+rcs=""; for b in one two; do
+  rc=0; bash "$T/tools2/scripts/pr-sync.sh" claude/$b --push --only-if-conflicted >/dev/null 2>&1 || rc=$?
+  rcs="$rcs$rc"; [ "$(git rev-parse HEAD)" = "$start" ] || bad "after claude/$b the checkout is back where it started"
+done
+git fetch -q origin
+[ "$rcs" = "00" ] && git merge-base --is-ancestor origin/main origin/claude/one && git merge-base --is-ancestor origin/main origin/claude/two \
+  && ok "two PRs in a row sync from a detached start, run from a copy" || bad "two PRs in a row sync from a detached start (rcs=$rcs)"
+v=$(git show origin/claude/two:version.json); [ "$v" != '{"version":"10.01.26.9"}' ] && [ "$v" != '{"version":"10.01.26.4"}' ] && ok "the copy still bumps the repo's own stamp ($v)" || bad "the copy still bumps the repo's own stamp ($v)"
+
 echo "uat roll, end to end"
 new_repo
 mkdir -p "$T/tools/lib"; cp "$SRC/scripts/uat-roll.sh" "$T/tools/"; cp "$SRC/scripts/lib/"*.sh "$T/tools/lib/"
@@ -99,6 +127,28 @@ git fetch -q origin
 [ "$rc" = 0 ] && git merge-base --is-ancestor origin/claude/r origin/uat && ok "a roll with a stamp clash merges and pushes" || bad "a roll with a stamp clash merges and pushes (rc=$rc)"
 git show origin/uat:js/u.js >/dev/null 2>&1 && ok "the other session's file is still on uat" || bad "the other session's file is still on uat"
 [ "$(git show -s --format=%s origin/uat)" = "UAT deploy" ] && ok "the roll ends in a deploy commit that builds" || bad "the roll ends in a deploy commit that builds"
+
+echo "test scope"
+new_repo
+mkdir -p tests
+printf 'function shopWrap(){return 1;}\nfunction other(){return 2;}\n' > js/geo.js
+printf "test('x', () => shopWrap());\n" > tests/e2e-wrap.spec.js
+printf "test('y', () => other());\n" > tests/e2e-unrelated.spec.js
+printf "test('z', () => 1);\n" > tests/e2e-geo.spec.js
+for i in 1 2 3; do printf "test('g', () => other());\n" > tests/e2e-g$i.spec.js; done
+git add -A; git commit -qm scope-base; B=$(git rev-parse HEAD)
+scope() { TEST_SCOPE_MAX_PER_NAME=3 bash "$SRC/scripts/ci/test-scope.sh" "$B" HEAD; }
+stamp 10.01.26.2 "a commit that only bumps the stamp"
+[ "$(scope)" = "skip" ] && ok "a version stamp in cloud.js alone is not a change (was: the full suite on every PR)" || bad "stamp-only scope: $(scope)"
+sed -i 's/return 1;/return 7;/' js/geo.js; git commit -qam "change shopWrap"
+got="$(scope)"
+echo "$got" | grep -q 'tests/e2e-wrap.spec.js' && ok "the spec that calls the changed function runs" || bad "function spec missing: $got"
+echo "$got" | grep -q 'tests/e2e-geo.spec.js' && ok "the spec named after the file runs" || bad "filename spec missing: $got"
+echo "$got" | grep -q 'e2e-unrelated' && bad "a spec for an untouched function was pulled in: $got" || ok "a spec for an untouched function stays out"
+sed -i 's/return 2;/return 8;/' js/geo.js; git commit -qam "change other, named in 4 specs"
+echo "$(scope)" | grep -q 'e2e-g1' && bad "a name in more specs than the limit pulled them all in" || ok "a name in too many specs is ignored, not run everywhere"
+echo "// real" >> js/cloud.js; git commit -qam "real cloud change"
+[ "$(scope)" = "full" ] && ok "a real change to a shared file still runs everything" || bad "real cloud change scope: $(scope)"
 
 echo "live migrations"
 got=$(printf '   Local | Remote | Time\n  ---|---|---\n   20261060 | 20261060 | x\n            | 20261061 | x\n   20261062 |          | x\n' \
