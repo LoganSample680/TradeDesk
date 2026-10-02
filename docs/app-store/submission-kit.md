@@ -70,6 +70,8 @@ Purpose: **App Functionality** (plus Analytics where noted).
 | Contact Info: Phone Number | Yes | App Functionality |
 | Contact Info: Physical Address | Yes | App Functionality |
 | Location: Precise Location | Yes | App Functionality |
+| Fitness (iPhone motion data that marks when a drive starts and stops) | Yes | App Functionality |
+| Environment Scanning (LiDAR room scans saved to the account) | Yes | App Functionality |
 | Contacts (clients imported from the phone's address book) | Yes | App Functionality |
 | Financial Info: Other Financial Info (invoices, payments logged) | Yes | App Functionality |
 | User Content: Photos or Videos | Yes | App Functionality |
@@ -115,7 +117,7 @@ Income, expenses, mileage and lien deadlines are tracked as you work, so tax tim
 WORKS WITH NO SIGNAL
 Basements, crawlspaces and rural jobs are fine. Your work saves on the phone and syncs when you are back online.
 
-Questions: support@tradedeskpro.app
+Questions: tradedeskprosupport@gmail.com
 ```
 
 **Keywords (100 max):**
@@ -161,7 +163,7 @@ the demo account, press side button + volume up on each screen.
 |---|---|
 | User name | *(the tradedeskpro demo account email)* |
 | Password | *(its password)* |
-| Contact | your name, phone, `support@tradedeskpro.app` |
+| Contact | your name, phone, `tradedeskprosupport@gmail.com` |
 
 The demo account must already hold: a few clients, an estimate, a signed job,
 a scheduled job, one crew member, an invoice, and some mileage. No two-factor
@@ -193,7 +195,7 @@ Email and password, or Sign in with Apple.
 OTHER PERMISSIONS
 Camera: job photos and LiDAR room scans for estimates (room scan needs a LiDAR iPhone or iPad Pro). Microphone and speech: voice notes, transcribed on device. Motion: detects when a drive starts and ends. Face ID: locks the app to the signing screen while a client holds the phone. Notifications: job and payment alerts.
 
-Support: support@tradedeskpro.app
+Support: tradedeskprosupport@gmail.com
 ```
 
 ---
