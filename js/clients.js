@@ -874,11 +874,7 @@ function _previewClientHub(url,clientName,clientId){
   if(_supaUser&&clientId){
     const _pvBids=bids.filter(b=>b.client_id===clientId&&b.signingToken);
     _pvBids.forEach(b=>{
-      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'})
-      }).catch(()=>{});
+      _logProposalView({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'});
     });
   }
   const previewUrl=url+(url.includes('?')?'&':'?')+'preview=1';
@@ -906,20 +902,6 @@ function _clientHubCopy(url,btn){
   }).catch(()=>{
     if(typeof showToast==='function')showToast('Could not copy link','⚠️');
   });
-}
-function pipelineResendSms(bidId){
-  const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.signingToken)return;
-  const baseUrl=_clientBaseUrl();
-  const signUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
-  const c=getClientById(b.client_id);
-  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
-  const url=hubUrl||signUrl;
-  const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
-  const bname=S.bname||'TradeDesk';
-  const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
-  const msg=_smsApply(S.smsFollowup||_getSmsDefaults().followup,{name:firstName,business:bname,url});
-  window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
 }
 function onClientSearch(inp){
   const q=inp.value.trim();
@@ -2665,7 +2647,10 @@ function renderCDBids(){
     const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     let primaryHtml='',ctxHtml='';const quick=[],more=[];
     if(!isWon){
-      primaryHtml=_pbtn('sendBidEmail('+b.id+')',b.status==='Pending'?'Resend to client →':'Send to client →');
+      // Gone out already: the one resend (resendProposal, js/proposals.js).
+      // Never sent: open it the way Revise does, so it goes through Send.
+      const _wasSent=!!b.signingToken||b.status==='Pending';
+      primaryHtml=_wasSent?_pbtn('resendProposal('+b.id+')','Resend to client →'):_pbtn(_reviseFn,'Send to client →');
       quick.push(_qbtn(_reviseFn,'Revise'));
       quick.push(_qbtn('openBidNotes('+b.id+')','Notes'));
       more.push(_mrow('markBidHandshake('+b.id+')',svgIcon('🤝')+' Handshake deal'));
@@ -3798,14 +3783,11 @@ function saveAddClientAddress(editIdx){
   if(!c.extraAddresses)c.extraAddresses=[];
   const ptype=document.getElementById('_aa-ptype')?.value||'';
   const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
-  let was='',wasLabel='';
+  let was='';
   if(_edit!=null){
     const cur=clientAddresses(c)[_edit];
     if(!cur)return;
     was=cur.addr||'';
-    // Captured BEFORE the write below: the rename pass needs the label the
-    // fence was named with, and by then the record already holds the new one.
-    wasLabel=String(cur.label||'').trim();
     if(_edit===0)c.addr=addr;
     else{
       const e=c.extraAddresses[_edit-1];
@@ -3858,17 +3840,16 @@ function saveAddClientAddress(editIdx){
   // the address precisely because it is wrong, and asking whether they also
   // meant the trips it is on is a question with only one answer.
   //
-  // The name is rebuilt exactly as _geoDeriveFences builds it: the primary is
-  // the client name over the street line, an extra property is the client name
-  // over its label. Two places computing one name is how they drift, so if a
-  // third case ever appears, it belongs in _geoFenceName's callers, not here.
+  // The name is rebuilt exactly as _geoDeriveFences builds it: the client name
+  // over the street line, for the primary and every extra property alike (a
+  // label is a category, never the name: owner 2026-10-02). Two places
+  // computing one name is how they drift, so if a third case ever appears, it
+  // belongs in _geoFenceName's callers, not here.
   if(_edit!=null&&was&&was!==addr){
     const _street=(v)=>(typeof _geoStreetLine==='function')?_geoStreetLine(v):String(v||'').split(',')[0].trim();
     const _fn=(w)=>(typeof _geoFenceName==='function')?_geoFenceName(c.name||'Client',w)
       :((c.name||'Client')+(w?' ('+w+')':''));
-    const _wasWhere=(_edit===0)?_street(was):(wasLabel||_street(was));
-    const _nowWhere=(_edit===0)?_street(addr):(label||_street(addr));
-    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_wasWhere),_fn(_nowWhere),was,addr);}catch(_e){}
+    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_street(was)),_fn(_street(addr)),was,addr);}catch(_e){}
   }
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
@@ -4326,10 +4307,18 @@ async function _lookupPropertyData(clientId,addrParts){
     // applied; everything else leaves the address exactly as it was, to be
     // retried the next time it is saved or the button is tapped.
     if(!d)return false;
+    // THE RECORD IS LOOKED UP AGAIN AFTER THE WAIT. A sync or realtime update
+    // landing while the county answers swaps the client for a new object
+    // (_applyRealtimeRecord), and writing into the one captured before the
+    // wait put the answer on an object nobody holds any more: the county
+    // record was saved, the card stayed blank (Jack's 5713 SW 14th St,
+    // 2026-10-01).
+    const cur=clients.find(x=>x&&x.id===clientId);
+    if(!cur)return true;
     // {found:false} is the county answering that it has no such address, which
     // _propApplyMatch records as a miss so the card can say so and nothing asks
     // again. A null above is the opposite: we never got to ask.
-    if(_propApplyMatch(c,keyAddr,d.found===false?null:d)){
+    if(_propApplyMatch(cur,keyAddr,d.found===false?null:d)){
       saveAll();
       if(currentClientId===clientId)renderClientDetail();
     }

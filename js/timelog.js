@@ -1128,6 +1128,22 @@ function _tlBizInputToIso(local){
   }catch(_e){return new Date(naive).toISOString();}
 }
 let _tlLastRows=[];
+// EVERY row in scope, every year. _tlLastRows is the OPEN YEAR, which is the
+// right set for the year's months and the arrows, and the wrong set for a
+// week: a week is seven days and does not stop at a month or a year (owner
+// 2026-10-01: "this week is Sep 27 to Oct 3; it's saying Oct 1 is a new
+// week"). Anything that totals or draws ONE WEEK reads _tlWeekRows below.
+// _tlAllFor is the _tlLastRows it was taken alongside. Anything that hands
+// _tlLastRows a set of its own (the shared timesheet link, which holds one
+// week and nothing else) is then read as-is, never mixed with a stale year.
+let _tlAllRows=[],_tlAllFor=null;
+// One week's rows, all seven days of it, from whatever month or year they sit
+// in. uid narrows it to one crew member, the same test the person drill uses.
+function _tlWeekRows(wk,uid){
+  if(!wk)return [];
+  const src=(_tlAllFor&&_tlAllFor===_tlLastRows&&Array.isArray(_tlAllRows))?_tlAllRows:(_tlLastRows||[]);
+  return src.filter(r=>r&&_tlWeekKey(r.date)===wk&&(!uid||_tlRowUid(r)===uid));
+}
 // Split from the actual CSV build below so the build logic stays independently
 // testable (tests/e2e-timelog.spec.js calls _tlDoExportCSV directly).
 async function _tlExportCSV(){
@@ -2772,6 +2788,13 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
   const weeks=Object.keys(byWeek).sort();
   if(!weeks.length)return '';
+  // The MONTH decides which columns exist; the WEEK decides what is in each
+  // one. A column is labelled "9/27-10/3" and tapping it opens all seven of
+  // those days, so its bar has to be all seven days too. Filled from the
+  // month's rows it drew only the days on this side of the boundary: on
+  // Oct 1 the October chart showed one 2h column for a 23h week, which is
+  // exactly "I only see one day" (owner 2026-10-01).
+  weeks.forEach(wk=>{const all=_tlWeekRows(wk,uid);if(all.length)byWeek[wk]=all;});
   // Same reason the week's is suppressed, plus one more: these charts live in
   // an accordion, so N open cards would mean N Send buttons on one screen
   // (§15.1 allows exactly one primary Send per screen).
@@ -3143,8 +3166,9 @@ function _tlLevelsHtml(moRows,selMo,opts){
   // Only the WEEK LIST above stays month-scoped: that is the fallback for a
   // week that vanished under us, and it should still land inside the month
   // the picker is pointing at.
-  const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
-    (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
+  // _tlWeekRows, not _tlLastRows: the open YEAR cuts a week the same way the
+  // month did, Dec 27 to Jan 2 being the one that crosses it.
+  const wkRows=_tlWeekRows(_tlDrill.wk,_tlDrill.uid);
   const days=_tlWeekDayDates(_tlDrill.wk);
   // The week carries the same split bar the day does (owner 2026-09-19, of the
   // shared timesheet link: "does it include the breakdown of where time went?
@@ -3865,7 +3889,7 @@ async function _tlShareWeekAt(wk){
   // The chart's button opens the REVIEW (js/timesheet.js): check each day,
   // then Submit and send. Nothing goes out unsubmitted (owner 2026-09-05).
   if(typeof _tsReviewOpen==='function')return _tsReviewOpen(wk);
-  const rows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===wk);
+  const rows=_tlWeekRows(wk);
   return _tlShareText(rows,wk,'Timesheet');
 }
 // The current calendar week, for the button at the bottom of the page.
@@ -3873,7 +3897,7 @@ async function _tlShareWeek(){
   const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
   const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
   const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
-  const rows=_tlLastRows.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr);
+  const rows=_tlWeekRows(wkStartStr);
   return _tlShareText(rows,wkStartStr,'This week\'s hours');
 }
 // Cheap enough to run on every open, and the only thing that decides whether
@@ -4090,12 +4114,15 @@ async function renderTimeLog(opts){
     el.innerHTML='<div class="empty">No time logged in '+yr+(scope==='me'?' for you.':'.')+'</div>';
     if(totalEl)totalEl.textContent='';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
-    _tlLastRows=[];
+    _tlLastRows=[];_tlAllRows=[];_tlAllFor=null;
     return;
   }
-  _tlComputeOT(rows);
-  _tlComputeWeeklyRunning(rows);
-  _tlLastRows=rows;
+  // Over every row in scope, not the year's: both are PER WEEK, and the week
+  // of Dec 27 has its last two days in January. They write onto the row
+  // objects, which the year's rows share, so the year sees the right flags.
+  _tlComputeOT(visible);
+  _tlComputeWeeklyRunning(visible);
+  _tlLastRows=rows;_tlAllRows=visible;_tlAllFor=rows;
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   const totalMin=_tlPaidMin(rows);
   if(totalEl)totalEl.textContent=fm(totalMin)+' total in '+yr;
@@ -4106,7 +4133,6 @@ async function renderTimeLog(opts){
   // doesn't, so don't "fix" this sort to match them.
   const months=Object.keys(byMonth).sort((a,b)=>a.localeCompare(b));
   const curMo=todayKey().slice(0,7);
-  const curWk=_tlWeekKey(todayKey());
   // ONE month at a time (owner 2026-08-30). The picker replaced the list of
   // twelve collapsed month accordions: two navigations for one job, and the
   // second one was the clutter. Default to the current month when the open

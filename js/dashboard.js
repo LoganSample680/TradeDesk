@@ -1415,6 +1415,9 @@ function renderDash(){
     // a banner counting the evening up is the day refusing to end. Only the
     // two together suppress it: not counting at a CLIENT is still worth
     // showing, and being home at noon is still the workday.
+    // The deriver's last word on today, read back before the first paint so
+    // the boot placeholder already holds the right card (js/geo-track.js).
+    if(typeof _geoRestoreEarly==='function')_geoRestoreEarly();
     const _odw=window._geoOpenDwell;
     // AND ON A TIME OFF DAY (owner 2026-09-24, rule 25: "still counting his
     // hours even after the vacation fix"). The deriver only says false away
@@ -1432,7 +1435,13 @@ function renderDash(){
         '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
         '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
         '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
-        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
+        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}'+
+        // The kind-change cross-fade (_nearbyPaint): the new card fades up in
+        // place while the old one, lifted out of flow, fades away on top.
+        '@keyframes tdNbIn{from{opacity:0}to{opacity:1}}@keyframes tdNbOut{from{opacity:1}to{opacity:0}}'+
+        '#dash-nearby.td-nb-xf>*:not(.td-nb-ghost){animation:tdNbIn .18s ease both}'+
+        '#dash-nearby>.td-nb-ghost{position:absolute;left:0;right:0;top:0;pointer-events:none;animation:tdNbOut .18s ease both}'+
+        '@media (prefers-reduced-motion:reduce){#dash-nearby.td-nb-xf>*,#dash-nearby>.td-nb-ghost{animation-duration:1ms}}';
       document.head.appendChild(_s);
     }
     // Always renders SOMETHING now (owner 2026-08-19: "ability for somebody
@@ -1446,7 +1455,7 @@ function renderDash(){
       const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
-      let _usedSnap=false; // set true only by the no-rich-state branch below, when it painted a boot snapshot instead of the manual card
+      let _nbOut='',_nbKind=''; // what this render decided to show; painted once at the end (_nearbyPaint)
       // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
       // used to slide this card open while the cards below were still pouring
       // in: two animations fighting over the same layout, which is exactly the
@@ -1546,17 +1555,25 @@ function renderDash(){
       // the deriver has caught up. Name, address, when he got there and how
       // long, and Proposal. sinceIso null means nobody has measured the arrival
       // yet, and the card says "On site now" rather than inventing a time.
-      const _arrivalCard=(title,addr,sinceIso,sinceTs,clientId,below)=>{
-        const _when=sinceIso&&sinceTs>0
-          ?'Arrived '+_fmtClk(sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+sinceTs+'">'+_fmtDur(sinceTs)+'</span> on site'
-          :'On site now';
-        const _ex='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>'+_when+'</div>';
-        const _btn=clientId!=null?'<div style="display:flex;gap:9px;padding:4px 14px 15px"><button onclick="_nearbyStartWork('+Number(clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>'
-          // No customer (the shop) closes the card at the head rather than
-          // leaving an empty padded strip.
-          :'<div style="height:14px"></div>';
-        return _cardShell(_cardHead(title,addr,_ex)+(below||'')+_btn);
+      // The arrival line and the button row are their own builders because the
+      // placeholder the card waits in (_nearbyGeoPending below) is built from
+      // them too, so the shimmer is that card, line for line.
+      // stand: fixed stand-in words for the placeholder, so it never ticks.
+      const _odExtraFor=(sinceIso,sinceTs,stand)=>{
+        const _when=stand
+          ?'Arrived '+stand[0]+' <span style="color:#9fb5a8;font-weight:700">·</span> <span>'+stand[1]+'</span> on site'
+          :(sinceIso&&sinceTs>0
+            ?'Arrived '+_fmtClk(sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+sinceTs+'">'+_fmtDur(sinceTs)+'</span> on site'
+            :'On site now');
+        return '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>'+_when+'</div>';
       };
+      // No customer (the shop) closes the card at the head rather than
+      // leaving an empty padded strip.
+      const _odBtnRowFor=(clientId)=>clientId!=null
+        ?'<div style="display:flex;gap:9px;padding:4px 14px 15px"><button onclick="_nearbyStartWork('+Number(clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>'
+        :'<div style="height:14px"></div>';
+      const _arrivalCard=(title,addr,sinceIso,sinceTs,clientId,below)=>
+        _cardShell(_cardHead(title,addr,_odExtraFor(sinceIso,sinceTs))+(below||'')+_odBtnRowFor(clientId));
       const _dayEndP=(typeof _dayEndPending==='function')?_dayEndPending():null;
       if(_dayEndP){
         // YOUR DAY: the phone proposes, the person confirms (js/day-end.js,
@@ -1577,7 +1594,7 @@ function renderDash(){
         // "Still working" on the left, the clock-out on the right (owner 2026-09-03).
         const _deBtns='<button id="dash-dayend-no" onclick="_dayEndDismiss()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center">'+escHtml(_dt.no)+'</button>'+
           '<button id="dash-dayend-yes" onclick="_dayEndConfirm()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+escHtml(_dt.yes)+'</button>';
-        _nearbyEl.innerHTML=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
+        _nbKind='dayend';_nbOut=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
       } else if(typeof onLunch==='function'&&onLunch()){
         // ON LUNCH: the clock is stopped and there is exactly one thing to do.
         // This card is the way back; without it the lunch has no end and the
@@ -1585,7 +1602,7 @@ function renderDash(){
         const _l=_lunchRead()||{startedIso:new Date().toISOString(),jobName:''};
         const _lSince=Date.parse(_l.startedIso);
         const _lExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8a6d3b;font-weight:700;margin-top:3px"><span style="flex-shrink:0">'+_svgClk('#8a6d3b')+'</span>Since '+_fmtClk(_l.startedIso)+' <span style="color:#c7b299;font-weight:700">·</span> <span data-onsite-since="'+_lSince+'">'+_fmtDur(_lSince)+'</span></div>';
-        _nearbyEl.innerHTML=_cardShell(
+        _nbKind='lunch';_nbOut=_cardShell(
           _cardHead('On lunch',_l.jobName||'',_lExtra,'ON LUNCH')+
           '<div style="display:flex;gap:9px;padding:4px 14px 15px">'+
             '<button onclick="endLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+_svgClk('#fff')+'Back to work</button>'+
@@ -1612,7 +1629,7 @@ function renderDash(){
         // dressed as the lesser.
         ocBtns.push('<button onclick="startLunch()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px">🍽 Lunch</button>');
         const _ocProp=_cid?'<div style="display:flex;gap:9px;padding:0 14px 15px"><button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
+        _nbKind='clock';_nbOut=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px '+(_ocProp?'9px':'15px')+'">'+ocBtns.join('')+'</div>'+_ocProp);
       } else if(_openDwell){
         const _od=_openDwell,_f=_od.fence||{};
         const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
@@ -1622,7 +1639,7 @@ function renderDash(){
         // stamp and the running duration ARE the clock: the deriver owns this
         // dwell and writes its time row (CLAUDE.md 17), so a manual clock on
         // top would be a second observer of the same physical event.
-        _nearbyEl.innerHTML=_arrivalCard(_od.name||_kindLabel,(_f.addr||_kindLabel),_od.sinceIso,_od.sinceTs,_f.clientId);
+        _nbKind='dwell';_nbOut=_arrivalCard(_od.name||_kindLabel,(_f.addr||_kindLabel),_od.sinceIso,_od.sinceTs,_f.clientId);
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in
@@ -1637,7 +1654,7 @@ function renderDash(){
         const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
           '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
           '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
-        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
+        _nbKind='driving';_nbOut='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+_enter+'">'+
           '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
             '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
               '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
@@ -1680,7 +1697,7 @@ function renderDash(){
           '</button>';
         }).join('');
         const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
+        _nbKind='place';_nbOut=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
           '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
       } else if(_nearbyJob){
         // A GPS fix puts him at a customer before the deriver has published the
@@ -1698,47 +1715,50 @@ function renderDash(){
         const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===(nb.jobId||nb.fallbackJobId)):null;
         const _nbNoteHtml=_jobFieldNote(_nbJob,{editable:true});
         const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
-        _nearbyEl.innerHTML=_arrivalCard(nb.clientName,nb.addr,_clkTs>0?_clk:null,_clkTs,nb.clientId,_nbNoteBlock);
+        _nbKind='nearby';_nbOut=_arrivalCard(nb.clientName,nb.addr,_clkTs>0?_clk:null,_clkTs,nb.clientId,_nbNoteBlock);
+      } else if(_nearbyGeoPending()){
+        // WAITING ON THE DAY'S GEO ANSWER (owner 2026-10-01: the card "lags in
+        // and switches"). With tracking on, "Not clocked in" is only true once
+        // the deriver has said nobody is on site; painting it before that is
+        // the flash that turned into ON SITE a second later. So the card holds
+        // its own shimmer, in the space the real card took last time, until
+        // the answer lands (_geoDayAnsweredMark, js/geo-track.js) or the cap
+        // in _nearbyGeoPending runs out, then paints once.
+        // The placeholder IS the ON SITE card (owner 2026-10-01: "the skeleton
+        // shimmers don't match up the tiles"): the same builders with stand-in
+        // words, redacted to shimmer bars when painted (_nearbyPaint), held at
+        // the height the card took last time.
+        const _skH=_dashNearbySkelH();
+        _nbKind='skel';_nbOut='<div class="td-nb-skel" style="height:'+_skH+'px">'+
+          _cardShell(_cardHead('Customer name','1234 Street Rd, Town, ST',_odExtraFor('',0,['12:00p','10m']))+_odBtnRowFor(_skH>=_NB_SKEL_BTN_H?0:null))+'</div>';
       } else {
-        // No rich state (not on the clock, not driving, no nearby/known-place
-        // prompt). Before falling back to the plain manual card, give an
-        // already-fresh same-session-boot snapshot one chance to paint
-        // instead, exactly the pre-existing "shows instantly pre-fix"
-        // optimization (owner 2026-08-10: "comes in 3 seconds late"): a real
-        // ON SITE/DRIVING card from seconds ago must not flash to "Not
-        // clocked in" and back while the first GPS fix of this session is
-        // still in flight. Once a fix HAS been seen (or this session already
-        // painted live truth once), that truth wins outright, manual card,
-        // no snapshot.
-        if(!window._geoFixSeen&&!window._nearbyLiveRendered&&!_nearbyEl.dataset.snap){
-          try{
-            const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-            if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
-              _nearbyEl.dataset.snap='1';
-              _nearbyEl.innerHTML=_sn.html;
-              _usedSnap=true;
-            }
-          }catch(_e){}
-        }
-        if(!_usedSnap){
-          delete _nearbyEl.dataset.snap;
-          const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
-          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
-            '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
-              '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
-                '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
-                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
-                '</span>'+
-              '</div>'+
-              '<div style="flex:1;min-width:0">'+
-                '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
-                '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
-              '</div>'+
-              _btn+
+        // No rich state and nothing still on its way: the plain manual card.
+        // (The old frozen HTML snapshot of last session's card is gone: it
+        // painted a card kind that was often no longer true, which is the
+        // same flash in another order.)
+        const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
+        _nbKind='manual';_nbOut='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+_enter+'">'+
+          '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
+            '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+              '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
+              '</span>'+
             '</div>'+
-          '</div>';
-        }
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
+              '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
+            '</div>'+
+            _btn+
+          '</div>'+
+        '</div>';
       }
+      // ONE paint per render, and only as much of one as changed (owner
+      // 2026-10-01: "one shimmer, then one clean swap"). Same kind: the text
+      // moves and the nodes stay (the ticking figures and the ping rings keep
+      // running). A new kind: a short cross-fade with the height carried
+      // across. Under the boot shimmer, or on the card's first showing, there
+      // is nothing on screen to fade from, so it just lands.
+      _nearbyPaint(_nearbyEl,_nbOut,_nbKind,_underShimmer||_wasHidden);
       // Never hidden anymore (display='block' already handled up top,
       // _holdReveal and all), so the old collapse/fade-out machinery has
       // nothing left to do; a stray in-flight one from before this render
@@ -1749,23 +1769,20 @@ function renderDash(){
       // the CSS transition finishes, clearing it here would undo that
       // reveal animation before it ever gets to run.
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;}
-      if(!_usedSnap){
-        // Snapshot the rendered card: the next page load shows it INSTANTLY at
-        // the settle pour instead of waiting seconds for the first GPS fix
-        // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces
-        // it the moment a fix arrives (_geoFixSeen, js/geo-track.js). Skipped
-        // when THIS render itself painted from a snapshot, re-persisting that
-        // same stale copy under a fresh timestamp would just make it look
-        // newer than it is.
-        delete _nearbyEl.dataset.snap;
-        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
-        // h: its height, so the next boot's shimmer holds the same space
-        // (_dashNearbySkelH). 0 while hidden under the shimmer; the last
-        // measured height is kept then.
+      if(_nbKind!=='skel'){
+        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing")
+        // h: the card's height, so the next boot's shimmer holds the same
+        // space (_dashNearbySkelH). The card as it stands now, measured now:
+        // _nbH is only a paint-time reading (a 'same' render never refreshes
+        // it, so any layout change after the paint left it stale; CI caught
+        // it on WebKit). It is the right answer only mid-transition, while a
+        // cross-fade or the slide-open holds the box at a height it is
+        // leaving. 0 (not laid out) keeps the last height.
         try{
           const _prev=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-          const _h=_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
-          localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
+          const _moving=!!_nearbyEl._nbXfT||!!_nearbyEl.style.maxHeight;
+          const _h=(_moving?_nearbyEl._nbH:_nearbyEl.offsetHeight)||_nearbyEl._nbH||(_prev&&_prev.h)||0;
+          localStorage.setItem('zp3_nearby_snap',JSON.stringify({ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
         }catch(_e){}
       }
     }
@@ -1802,6 +1819,9 @@ function renderDash(){
 
   setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
   _dashApplySkeletons();
+  // A render landing mid-pour (a sync echo rebuilding the tiles) gives its
+  // fresh blocks the beat they still have left, never a second waterfall.
+  try{if(window._bootWfT0&&document.getElementById('pg-dash')?.classList.contains('boot-cascade'))_dashWfStamp(Math.max(1,performance.now()-window._bootWfT0));}catch(_e){}
   }finally{_renderDashRunning=false;}
 }
 
@@ -1819,111 +1839,342 @@ function _dashSkelMode(){
   // boots render normally instead of shimmering into the failsafe.
   return !!window._bootSyncPending&&!window._bootSkelDone;
 }
-// Component-shaped boot skeletons (owner 2026-08-14: every tile gets its OWN
-// shimmer shaped like itself, never one generic blob). Composed entirely from
-// the existing .td-skel shimmer primitive (§8.4), keyed by the widget's own
-// data-dw id so the skeleton mirrors exactly what will pour into its place:
-// the KPI widget shimmers as six metric tiles, quick actions as three round
-// buttons, the calendar as a week strip, and so on. Unknown widgets fall back
-// to the generic rows so a future widget is never a blank hole.
-function _tdSkelShape(kind,h){
-  const band=(ht,w,extra)=>'<div class="td-skel" style="height:'+ht+'px;width:'+w+';'+(extra||'')+'"></div>';
-  const tile=()=>'<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px">'+band(9,'55%','margin-bottom:8px')+band(16,'70%')+'</div>';
-  switch(kind){
-    case 'tbar':return band(18,'52%','margin:6px 0');
-    // The KPI widget also carries the geo banner (On site / On the road /
-    // Not clocked in), which always renders. Its shimmer card is sized to the
-    // banner's last height, so nothing below moves when the data lands.
-    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>'+
-      '<div style="margin-top:16px;height:'+_dashNearbySkelH()+'px;border:1px solid var(--border);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 16px">'+
-        band(34,'34px','border-radius:50%;flex:none;margin-left:9px')+'<div style="flex:1">'+band(14,'52%','margin-bottom:8px')+band(10,'66%')+'</div>'+band(40,'86px','border-radius:12px;flex:none')+'</div>';
-    case 'feed':return band(13,'42%','margin:2px 0 12px')+
-      [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
-    case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
-      [0,1,2].map(()=>'<div style="text-align:center">'+band(46,'46px','border-radius:14px;margin:0 auto 6px')+band(8,'40px','margin:0 auto')+'</div>').join('')+'</div>';
-    case 'pipeline':return band(13,'38%','margin:2px 0 10px')+band(40,'100%','border-radius:10px')+
-      '<div style="display:flex;gap:8px;margin-top:10px">'+band(10,'22%')+band(10,'22%')+band(10,'22%')+'</div>';
-    case 'calendar':return band(13,'34%','margin:2px 0 10px')+
-      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">'+Array.from({length:7},()=>band(42,'100%','border-radius:8px')).join('')+'</div>';
-    case 'sources':return band(13,'40%','margin:2px 0 10px')+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+band(24,'28%','border-radius:99px')+band(24,'34%','border-radius:99px')+band(24,'24%','border-radius:99px')+'</div>';
-    case 'goal':return band(13,'44%','margin:2px 0 10px')+band(14,'100%','border-radius:99px')+band(10,'30%','margin-top:8px');
-    default:return (typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round((h||120)/46)))):'';
-  }
-}
 // The geo banner's last rendered height (saved with its snapshot), so its
-// shimmer card holds exactly the space the banner will take.
+// placeholder holds exactly the space the banner will take.
 function _dashNearbySkelH(){
   try{
     const sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-    const h=sn&&Number(sn.h);
+    const h=Number(sn&&sn.h);
     if(h>=60&&h<=400)return Math.round(h);
   }catch(_e){}
   return 86;
+}
+// At or above this remembered height the last card had a button row, so its
+// placeholder draws one too (the ON SITE head alone is about 128px, with the
+// Proposal row about 178px).
+const _NB_SKEL_BTN_H=170;
+// Is the answer that decides the banner still on its way? With tracking on,
+// the deriver's verdict for today (js/geo-track.js _geoDayAnsweredMark) is
+// what tells "on site" from "not clocked in", and it lands a few seconds
+// after the boot sync. Capped, so a deriver that never answers (no network,
+// tracking blocked) costs a few seconds of shimmer and never the card.
+// The cap counts from the first wait the person can SEE: time under the
+// boot shimmer is not spent waiting on this card.
+// Two more rules keep it to the one swap the owner asked for:
+//   - It only waits when an answer is actually coming: a signed-in boot
+//     (the page shimmer was up), the native tracker, or a rebuild already
+//     scheduled or running. A plain browser session with none of those paints
+//     straight away.
+//   - Once a real card has painted this load (_nearbyLiveRendered) it never
+//     goes back to the shimmer. Shimmer, card, card: never card, shimmer.
+const _NB_GEO_WAIT_MS=6000;
+function _nearbyGeoPending(){
+  // _geoDayKnown: the deriver answered today on this phone within the last
+  // 45 minutes and nothing has said otherwise since (js/geo-track.js
+  // _geoRestoreDayAnswer), so its answer paints now rather than after a wait.
+  if(window._geoDayAnswered||window._geoDayKnown||window._nearbyLiveRendered)return false;
+  if(typeof S==='undefined'||!S||!S.teamTracking)return false;
+  if(typeof _supaUser==='undefined'||!_supaUser)return false;
+  if(typeof opsReadOnly==='function'&&opsReadOnly())return false;
+  if(typeof _dashSkelMode==='function'&&_dashSkelMode()){window._nbBootWait=true;return true;}
+  const coming=!!window._nbBootWait||
+    (typeof _geoDeriveRebuildT!=='undefined'&&!!_geoDeriveRebuildT)||
+    (typeof _geoDeriveRebuildP!=='undefined'&&!!_geoDeriveRebuildP)||
+    (typeof _geoTdPlugin==='function'&&!!_geoTdPlugin());
+  if(!coming)return false;
+  if(!window._nbWaitT0){
+    window._nbWaitT0=Date.now();
+    // When the cap runs out, paint whatever is known. One timer per wait.
+    setTimeout(()=>{
+      if(window._geoDayAnswered)return;
+      try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+    },_NB_GEO_WAIT_MS+30);
+  }
+  return Date.now()-window._nbWaitT0<_NB_GEO_WAIT_MS;
+}
+// Same-kind update: walk the live nodes against the new markup and change
+// only what differs (text, attributes). Nodes keep their identity, so a
+// running animation never restarts and a ticking figure is never swapped
+// out from under its timer. A subtree whose SHAPE changed (a field note
+// appearing, a third button) is replaced on its own, never the whole card.
+function _nearbyMorph(cur,next){
+  if(cur.nodeType===1&&next.nodeType===1){ // the root call passes a fragment: the host's own attributes are not ours to touch
+    for(const a of [...cur.attributes])if(!next.hasAttribute(a.name))cur.removeAttribute(a.name);
+    for(const a of [...next.attributes])if(cur.getAttribute(a.name)!==a.value)cur.setAttribute(a.name,a.value);
+  }
+  const cs=[...cur.childNodes],ns=[...next.childNodes];
+  if(cs.length!==ns.length){
+    while(cur.firstChild)cur.removeChild(cur.firstChild);
+    ns.forEach(n=>cur.appendChild(n.cloneNode(true)));
+    return;
+  }
+  for(let i=0;i<cs.length;i++){
+    const c=cs[i],n=ns[i];
+    if(c.nodeType!==n.nodeType||(c.nodeType===1&&c.tagName!==n.tagName)){cur.replaceChild(n.cloneNode(true),c);continue;}
+    if(c.nodeType===1)_nearbyMorph(c,n);
+    else if(c.nodeValue!==n.nodeValue)c.nodeValue=n.nodeValue;
+  }
+}
+// A cross-fade still running when the next one starts finishes at once, so
+// two never stack and the height lock never outlives its fade.
+function _nearbyXfadeEnd(el){
+  if(!el)return;
+  if(el._nbXfT){clearTimeout(el._nbXfT);el._nbXfT=null;}
+  el.querySelectorAll(':scope>.td-nb-ghost').forEach(g=>g.remove());
+  if(el.classList.contains('td-nb-xf')){
+    el.classList.remove('td-nb-xf');
+    el.style.height='';el.style.position='';el.style.transition='';
+  }
+}
+// The banner's one writer. Returns what it did: 'same' (nothing changed),
+// 'morph' (same kind, text updated in place), 'set' (painted with nothing on
+// screen to fade from) or 'fade' (kind changed while visible).
+// The placeholder card, dressed: its stand-in words become shimmer bars
+// (_tdRedact, js/utils.js) and the bars join the page's one sweep.
+function _nearbySkelDress(el){
+  const sk=el&&el.querySelector(':scope>.td-nb-skel');
+  if(!sk)return;
+  const card=sk.firstElementChild;
+  if(card&&typeof _tdRedact==='function')_tdRedact(card,card);
+  if(typeof tdSkelSweep==='function')tdSkelSweep(sk);
+}
+function _nearbyPaint(el,html,kind,instant){
+  if(!el)return 'same';
+  // 'same' is a promise about the SCREEN, not the cache: if anything emptied
+  // the host since the last paint, the cached markup matching proves nothing,
+  // and returning here left an empty card that measured 0px (CI 2026-10-02,
+  // WebKit: the stored height came back 0).
+  const live=[...el.children].some(c=>!c.classList.contains('td-nb-ghost'));
+  if(live&&el._nbHtml===html&&el.dataset.kind===kind)return 'same';
+  const prev=el.dataset.kind||'';
+  el._nbHtml=html;
+  const tpl=document.createElement('template');
+  tpl.innerHTML=html;
+  // A placeholder is redacted after it lands, so its nodes never match its
+  // markup: it is always repainted whole, never morphed.
+  if(prev===kind&&el.childNodes.length&&kind!=='skel'){
+    // Mid-fade the ghost is a child too: set it aside, morph the live card
+    // only, put it back, and let the fade finish on its own clock.
+    const g=el.querySelector(':scope>.td-nb-ghost');
+    if(g)g.remove();
+    _nearbyMorph(el,tpl.content);
+    if(g)el.appendChild(g);
+    if(!el._nbXfT)el._nbH=el.offsetHeight||el._nbH||0;
+    return 'morph';
+  }
+  el.dataset.kind=kind;
+  const oldH=el.offsetHeight;
+  _nearbyXfadeEnd(el);
+  if(instant||!prev||!oldH){
+    el.innerHTML='';
+    el.appendChild(tpl.content);
+    el._nbH=el.offsetHeight||el._nbH||0;
+    if(kind==='skel')_nearbySkelDress(el);
+    return 'set';
+  }
+  // Kind change on screen: the old card is lifted out of flow and fades on
+  // top while the new one fades up beneath it, and the box eases from the
+  // old height to the new one over the same 180ms, so nothing below jumps.
+  const ghost=document.createElement('div');
+  ghost.className='td-nb-ghost';ghost.setAttribute('aria-hidden','true');
+  while(el.firstChild)ghost.appendChild(el.firstChild);
+  // The ghost is a picture of the old card, not the card: no ids, so for its
+  // 180ms a lookup by id (#dash-dayend-yes, #dash-onsite-time) can only ever
+  // find the live card, never a dead copy fading out.
+  ghost.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+  el.appendChild(tpl.content);
+  const newH=el.offsetHeight;
+  el._nbH=newH;
+  el.appendChild(ghost);
+  el.classList.add('td-nb-xf');
+  el.style.position='relative';
+  el.style.height=oldH+'px';
+  void el.offsetHeight;
+  el.style.transition='height .18s cubic-bezier(.22,1,.36,1)';
+  el.style.height=newH+'px';
+  if(kind==='skel')_nearbySkelDress(el);
+  el._nbXfT=setTimeout(()=>_nearbyXfadeEnd(el),200);
+  return 'fade';
+}
+// ── The boot placeholder is the home screen itself (owner 2026-10-01) ────────
+// "The skeleton shimmers don't match up the tiles, it should be like shuffling
+// from the top down like iOS does." The hand-drawn per-widget shapes this
+// replaced could only approximate the screen: no greeting, no Month/Quarter/
+// Year row, six boxes the wrong size, a generic box where the ON SITE card
+// goes, so everything jumped when the data landed.
+//
+// Now each widget's placeholder is a COPY of its own real markup, redacted
+// (_tdRedact, js/utils.js): same boxes, same rows, same card, with every run
+// of text drawn as a shimmer bar. It sits exactly over the real content, which
+// stays laid out underneath (visibility, never display), so the swap moves
+// nothing by construction. NON-DESTRUCTIVE as before: widgets carry static
+// markup renderDash writes INTO but never rebuilds, so nothing is wiped.
+// dash-setup-todo/dash-hold/dash-geo-perm are siblings of #dash-widget-root
+// with their own display toggle, so they are named here or they would paint
+// bare while the rest shimmers.
+function _dashSkelTargets(){
+  return [...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
+}
+// The copy keeps ids (CSS keyed on them, #dash-period-seg .seg-btn and the
+// like, has to style the copy the same) and comes after the real markup, so
+// every getElementById still finds the real node. What it must not keep is
+// anything live: a ticking figure, a click.
+function _dashSkelClone(el,real){
+  const cs=getComputedStyle(el);
+  const sk=el.cloneNode(false);
+  sk.removeAttribute('id');
+  sk.removeAttribute('data-dw');
+  sk.classList.remove('td-boot-skel-on','td-skel-host');
+  sk.classList.add('td-boot-skel');
+  sk.style.cssText=el.style.cssText;
+  sk.style.display=cs.display==='none'?'block':cs.display;
+  sk.style.position='absolute';
+  sk.style.left=(-parseFloat(cs.borderLeftWidth)||0)+'px';
+  sk.style.top=(-parseFloat(cs.borderTopWidth)||0)+'px';
+  sk.style.width=el.offsetWidth+'px';
+  sk.style.height=el.offsetHeight+'px';
+  sk.style.margin='0';
+  sk.style.boxSizing='border-box';
+  sk.style.background='transparent';
+  sk.style.boxShadow='none';
+  sk.style.borderColor='transparent';
+  sk.style.animation='none';
+  sk.style.pointerEvents='none';
+  sk.setAttribute('aria-hidden','true');
+  real.forEach(c=>{
+    const k=c.cloneNode(true);
+    sk.appendChild(k);
+    if(typeof _tdRedact==='function')_tdRedact(c,k);
+  });
+  sk.querySelectorAll('[data-onsite-since],[onclick],[data-kpi]').forEach(n=>{n.removeAttribute('data-onsite-since');n.removeAttribute('onclick');n.removeAttribute('data-kpi');});
+  return sk;
 }
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;
   if(!window._bootSkelTimer){
     window._bootSkelTimer=setTimeout(()=>{if(typeof _bootSyncSettled==='function')_bootSyncSettled();},15000);
   }
-  // NON-DESTRUCTIVE overlay: widgets carry static markup (quick-actions grid,
-  // card shells) that renderDash writes INTO but never rebuilds, so wiping
-  // innerHTML would gut the dashboard permanently. Instead each widget gets a
-  // removable .td-boot-skel card appended and a class that hides its real
-  // children (CSS rule next to .td-skel in index.html). The greeting bar is
-  // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
-  // dash-setup-todo/dash-hold/dash-geo-perm are siblings of #dash-widget-root
-  // (their own display:none/block toggle controls whether they exist at all, unlike
-  // the always-present .td-dw widgets), so without them here they get zero shimmer
-  // coverage: whatever they compute on their first paint (Stripe/QR caches included)
-  // renders as final, bare content even while the rest of the dashboard is shimmering.
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
   const _sweepPhase=-Math.round(performance.now()%1300);
-  targets.forEach(el=>{
-    if(el.querySelector(':scope>.td-boot-skel'))return;
-    const tbar=el.classList.contains('tbar');
-    const h=tbar?44:el.offsetHeight;
-    if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
-    const sk=document.createElement('div');
-    sk.className='td-boot-skel'+(tbar?'':' card');
-    sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
-    el.classList.add('td-boot-skel-on');
-    el.appendChild(sk);
-    // Hold exactly the space the real card takes, so nothing below moves when
-    // the data lands (the shape is drawn from a template, the height is not).
-    if(!tbar){
-      const drift=el.offsetHeight-h;
-      if(drift){sk.style.boxSizing='border-box';sk.style.overflow='hidden';sk.style.height=Math.max(20,sk.offsetHeight-drift)+'px';}
+  _dashSkelTargets().forEach(el=>{
+    const old=el.querySelector(':scope>.td-boot-skel');
+    const real=[...el.children].filter(c=>!c.classList.contains('td-boot-skel'));
+    const h=el.offsetHeight;
+    if(!h){if(old)old.remove();return;} // empty/hidden conditional widgets stay collapsed, no phantom card
+    // Re-copied only when what it stands for changed (a render under the
+    // shimmer), so the sweep never restarts for nothing. Phase-locked to the
+    // document clock either way (tdSkelSweep), so a re-copy does not jump.
+    const sig=h+'|'+el.offsetWidth+'|'+real.map(c=>c.outerHTML.length).join(',');
+    if(old&&old._sig===sig)return;
+    el.classList.add('td-boot-skel-on','td-skel-host');
+    const sk=_dashSkelClone(el,real);
+    sk._sig=sig;
+    if(old)old.replaceWith(sk);else el.appendChild(sk);
+    // The copy is absolutely placed, so it contains its first child's top
+    // margin where the real widget lets that margin collapse through it. One
+    // measured nudge puts the copy's content exactly on the real content.
+    const ri=real.findIndex(c=>c.offsetHeight>0);
+    if(ri>-1&&sk.children[ri]){
+      const dy=real[ri].getBoundingClientRect().top-sk.children[ri].getBoundingClientRect().top;
+      if(Math.abs(dy)>=0.5)sk.style.top=(parseFloat(sk.style.top)||0)+dy+'px';
     }
     if(typeof tdSkelSweep==='function')tdSkelSweep(sk,_sweepPhase);
   });
 }
-// The boot sync landed: each card swaps its shimmer for its real content, in a
-// shuffled order across a short beat, so the page fills the way data arrives
-// rather than all at once (owner-approved 2026-09-24). The content is already
-// rendered underneath; this only chooses the moment each card shows it.
+// ── The one waterfall, block by block (owner 2026-10-01) ─────────────────────
+// "Shuffling from the top down like iOS does": the greeting, the period row,
+// each row of tiles, the ON SITE card, then each card below, every one a
+// short fade-and-rise in reading order. These are the blocks. Containers that
+// hold a grid (the KPI widget, its tile grid, the crew's job list) are opened
+// up so a ROW of tiles is one beat, not the whole widget.
+function _dashWfExpand(el){
+  if(!el||el.nodeType!==1||el.classList.contains('td-boot-skel'))return [];
+  if(!el.offsetHeight)return [];
+  if(el.matches('#dash-kpi,.mets,#emp-today-jobs'))return [...el.children].flatMap(_dashWfExpand);
+  return [el];
+}
+// Real blocks get a beat each, grouped by the row they sit on; each piece of a
+// placeholder takes the beat of the real row it covers, so it fades out the
+// moment its content fades in. Anything below the fold shares one last beat,
+// so a long page never makes the screen wait on what nobody can see yet.
+function _dashWfBlocks(){
+  const real=[],skel=[];
+  _dashSkelTargets().forEach(t=>{
+    if(!t.offsetHeight)return;
+    [...t.children].forEach(c=>{
+      if(c.classList.contains('td-boot-skel'))[...c.children].forEach(k=>skel.push(..._dashWfExpand(k)));
+      else real.push(..._dashWfExpand(c));
+    });
+  });
+  const top=el=>el.getBoundingClientRect().top;
+  const rows=real.map(el=>({el,y:top(el)})).sort((a,b)=>a.y-b.y);
+  const fold=window.innerHeight||844;
+  const bands=[];
+  rows.forEach(r=>{
+    const last=bands[bands.length-1];
+    if(last&&(r.y-last.y<=6||(last.y>fold&&r.y>fold)))r.i=last.i;
+    else{r.i=bands.length;bands.push({y:r.y,i:r.i});}
+  });
+  const sk=skel.map(el=>{
+    const y=top(el);
+    let i=0;
+    bands.forEach(b=>{if(b.y<=y+6)i=b.i;});
+    return {el,y,i};
+  });
+  return {real:rows,skel:sk,beats:bands.length};
+}
+const _WF_STEP_MS=45,_WF_TRAVEL_MS=200;
+// Stamps each block with its beat. With elapsed>0 (a render landing mid-pour)
+// only blocks the pour has not reached yet are stamped, and a block whose
+// beat already passed just shows: the cascade is never replayed.
+function _dashWfStamp(elapsed){
+  const w=_dashWfBlocks();
+  const put=(r)=>{
+    if(elapsed&&r.el.hasAttribute('data-wf'))return;
+    const d=r.i*_WF_STEP_MS-(elapsed||0);
+    if(elapsed&&d<=0)return;
+    r.el.setAttribute('data-wf','');
+    r.el.style.setProperty('--wf-d',Math.max(0,d)+'ms');
+  };
+  w.real.forEach(put);
+  if(!elapsed)w.skel.forEach(put);
+  return w;
+}
+// A block that shows, hides or changes AFTER the render that drew the page (an
+// async banner answering late) missed both the placeholder copy and the pour's
+// stamping. Under the placeholder it gets copied now, so it shimmers with the
+// rest instead of appearing bare; mid-pour it gets the beat it has left.
+function _dashLateBlock(){
+  try{
+    if(_dashSkelMode())_dashApplySkeletons();
+    else if(window._bootWfT0&&document.getElementById('pg-dash')?.classList.contains('boot-cascade'))_dashWfStamp(Math.max(1,performance.now()-window._bootWfT0));
+  }catch(_e){}
+}
+function _dashWfClear(){
+  document.querySelectorAll('#pg-dash [data-wf]').forEach(el=>{el.removeAttribute('data-wf');el.style.removeProperty('--wf-d');});
+}
+// The swap itself. When the boot's one cascade has not been spent yet it
+// carries the swap (_armBootCascade, js/cloud.js): each placeholder piece fades
+// as its content rises in. Otherwise (a failsafe, a second sign-in) the
+// placeholders simply go.
 function _dashRevealSkeletons(){
   const els=[...document.querySelectorAll('#pg-dash .td-boot-skel-on')];
   if(!els.length)return;
-  const order=els.map((el,i)=>({el,k:Math.random()})).sort((a,b)=>a.k-b.k);
-  const span=Math.min(420,60*els.length);
-  order.forEach(({el},i)=>{
-    // A card whose shimmer a re-render already replaced has nothing to swap:
-    // show it now rather than leave it blank until its turn.
-    const bare=!el.querySelector(':scope>.td-boot-skel');
-    const at=bare?0:(els.length>1?Math.round(i*span/(els.length-1)):0);
-    setTimeout(()=>{
-      if(!el.classList.contains('td-boot-skel-on'))return;
-      el.classList.remove('td-boot-skel-on');
-      el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
-      el.classList.add('td-data-in');
-      setTimeout(()=>el.classList.remove('td-data-in'),360);
-    },at);
-  });
+  const o=document.getElementById('supa-boot-overlay');
+  const dash=document.getElementById('pg-dash');
+  if(!window._bootCascadeRan&&(!o||o.classList.contains('td-fadeout'))&&dash&&dash.classList.contains('active')&&typeof _armBootCascade==='function'){
+    _armBootCascade();
+    if(window._bootCascadeRan)return;
+  }
+  _dashClearSkeletons();
+}
+// Real content shows; the placeholder copies stay (absolute, on top) until
+// their pieces have faded, then _dashClearSkeletons takes them away.
+function _dashSkelLift(){
+  document.querySelectorAll('#pg-dash .td-boot-skel-on').forEach(el=>el.classList.remove('td-boot-skel-on'));
 }
 function _dashClearSkeletons(){
-  document.querySelectorAll('#pg-dash .td-boot-skel-on').forEach(el=>{
-    el.classList.remove('td-boot-skel-on');
+  document.querySelectorAll('#pg-dash .td-boot-skel-on,#pg-dash .td-skel-host').forEach(el=>{
+    el.classList.remove('td-boot-skel-on','td-skel-host');
     el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
   });
 }
@@ -3318,7 +3569,7 @@ function renderTodayFeed(){
         '</div>'+
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
-          '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
+          '<button onclick="resendProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
           (_showExtend?'<button onclick="_extendBidPrice('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Extend price</button>':'')+
           '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+
@@ -3465,7 +3716,7 @@ function checkGoalPrompt(){
       '<div class="zmodal-title" style="text-align:center">5 paid jobs, milestone!</div>'+
       '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many proposals you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
-        '<input type="number" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" min="0" step="500" '+
+        '<input type="text" data-num="money" inputmode="decimal" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" '+
           'style="font-size:18px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center">'+
         '<button id="goal-prompt-set" class="btn btn-p" style="font-size:15px;padding:12px;width:100%">Set my goal</button>'+
         '<button id="goal-prompt-skip" class="btn" style="font-size:13px;padding:10px;width:100%;color:var(--text3)">Maybe later</button>'+
@@ -3473,7 +3724,7 @@ function checkGoalPrompt(){
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     document.getElementById('goal-prompt-set').onclick=()=>{
-      const val=parseFloat(document.getElementById('goal-prompt-input').value)||0;
+      const val=_numVal('goal-prompt-input');
       if(!val)return;
       S.goalMonthly=val;
       // Bump settingsTs so this goal wins the next cloud merge. Without it, a cloud

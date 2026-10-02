@@ -764,7 +764,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.02.26.11';
+const APP_VERSION='10.02.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -1981,71 +1981,44 @@ let _sessionRestoreInProgress=false;
 // Demo mode (?demo=1) has no backend at all: supaInit() returns on this, and
 // so does every other cloud entry point that asks the same question.
 function supaEnabled(){return !window.__TD_DEMO&&!!(SUPA_URL&&SUPA_KEY);}
-// Boot waterfall arming, popup-gated. Cards start hidden (boot-hold); ~220ms in
-// we sample for an open popup (boot-time alerts spawn right around overlay
-// removal). None → pour immediately. One up → hold until the LAST popup closes
-// (debounced 220ms so chained popups stay first), then pour. 20s failsafe so a
-// detection miss can never leave the dashboard permanently hidden.
+// The boot waterfall: ONE per page load, top to bottom, block by block.
+// Owner 2026-10-01: "it should be like shuffling from the top down like iOS
+// does." The greeting, the Month/Quarter/Year row, each row of money tiles, the
+// ON SITE card and each card below fade in and rise 8px in reading order, 45ms
+// apart, 200ms each (CSS: #pg-dash.boot-cascade [data-wf] in index.html; the
+// beats come from js/dashboard.js _dashWfBlocks). When the boot placeholder is
+// up (_dashApplySkeletons), each of its pieces fades out on the same beat its
+// content fades in, so the shimmer hands over row by row rather than all at
+// once. It plays behind a boot popup too: the dashboard fills in under the
+// scrim instead of sitting blank behind it.
 function _armBootCascade(){
   const d=document.getElementById('pg-dash');
   if(!d||!d.classList.contains('active'))return;
   // ONE pour per page load (owner 2026-08-10: "the tiles at the top are
-  // waterfalling 3 times"). Boot re-renders (local paint, cloud load,
-  // settings apply) each re-armed the ripple, so the cards visibly restarted
-  // their entrance mid-flight. The first arm wins; later renders just update
-  // content in place.
+  // waterfalling 3 times"). Later renders just update content in place.
   if(window._bootCascadeRan)return;
+  // While the first sync is still in flight the screen is the placeholder, and
+  // the pour belongs to the moment the data lands (_bootSyncSettled), not to
+  // the overlay lifting onto shimmer.
+  if(typeof _dashSkelMode==='function'&&_dashSkelMode())return;
   window._bootCascadeRan=true;
-  // Cascade plays RIGHT AWAY as the boot overlay lifts, including BEHIND a boot
-  // popup (owner: blank white behind a popup looks odd; the dashboard should be
-  // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
-  // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
-  // gaps: the ripple flows smoothly over exactly what's on screen.
-  // Backwards `both` fill keeps each card invisible until its own delay elapses,
-  // so no boot-hold class (and no blank-hold) is needed.
-  //
-  // DIRECTION: top → bottom (owner 2026-08-15, after seeing the bottom-up build
-  // on UAT: "I don't want bottom up, want top down"). The greeting bar goes
-  // first, then each card in page order, so the page fills the way it is read.
-  // Each card does a gentle fade + 14px rise; scale was rejected earlier for
-  // blurring text mid-flight.
-  let count=0;
+  let beats=1;
   try{
-    const root=d.querySelector('#dash-widget-root');
-    const tbar=d.querySelector('.tbar');
-    // The waterfall SPANS the same 1.2s beat the shimmer holds for (owner
-    // 2026-08-15: "drop skeleton shimmer and iOS load to 1.2 seconds"), so the
-    // boot reads as one continuous piece of choreography instead of a long wait
-    // followed by a quick flick. The stagger is COMPUTED from the card count
-    // rather than fixed, because a fixed step makes the span depend on how many
-    // widgets happen to be visible: four cards would finish in half the time
-    // seven do. Clamped so a very short dashboard does not crawl and a very long
-    // one does not machine-gun. The greeting bar is the first beat of the wave,
-    // so it is counted here too. _travel MUST match the td-card-cascade duration
-    // in index.html, it is the tail every card still has to fly after it starts.
-    const base=60,_travel=620,_target=1200;
-    const cards=root?[...root.children].filter(el=>el.nodeType===1&&el.classList.contains('td-dw')):[];
-    const vis=cards.filter(el=>el.offsetHeight>2);   // read BEFORE the class → natural layout height
-    const _n=vis.length+1;                           // +1 for the tbar, which leads the wave
-    // FLOOR, not round: rounding a fractional step up pushes the last card past
-    // the target beat by a frame or two.
-    const step=Math.floor(Math.min(240,Math.max(50,(_target-base-_travel)/Math.max(1,_n-1))));
-    // The header is the top of the page, so the falling wave starts there.
-    if(tbar)tbar.style.animationDelay=base+'ms';
-    // Then page order. Hidden widgets take the delay of the visible one above
-    // them, so an empty crew/alerts card leaves no gap in the ripple.
-    cards.forEach(el=>{
-      const idx=vis.indexOf(el);
-      el.style.animationDelay=(base+((idx>=0?idx:vis.length-1)+1)*step)+'ms';
-    });
-    count=vis.length;
+    const w=_dashWfStamp(0);
+    beats=Math.max(1,w.beats);
   }catch(_e){}
+  window._bootWfT0=performance.now();
+  try{if(typeof _dashSkelLift==='function')_dashSkelLift();}catch(_e){}
   d.classList.add('boot-cascade');
-  const total=60+(Math.max(1,count)+1)*240+620+260;   // last starter + travel + slack, at the widest stagger
+  // The last beat starts at (beats-1)*45ms and travels 200ms. The placeholder
+  // copies go the moment their last piece has faded; the class a beat later.
+  const _last=(beats-1)*45+200;
+  setTimeout(()=>{try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}},_last+20);
   setTimeout(()=>{try{
     d.classList.remove('boot-cascade');
-    d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
-  }catch(_e){}},total);
+    window._bootWfT0=null;
+    if(typeof _dashWfClear==='function')_dashWfClear();
+  }catch(_e){}},_last+260);
 }
 // The moment the boot's first cloud sync lands: end the shimmer, render the
 // real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
@@ -2115,14 +2088,13 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  // Render the real content underneath the shimmer, then let each card swap
-  // over (js/dashboard.js _dashRevealSkeletons).
+  // Render the real content underneath the placeholder, then swap: the one
+  // waterfall carries it, row by row (js/dashboard.js _dashRevealSkeletons).
+  // Under a boot overlay that has not lifted yet the placeholder just goes and
+  // the lift pours instead (skel mode is off now, so the lift arms it), or the
+  // once-guard would burn the cascade invisibly behind the overlay.
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
-  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
-  // Pour only if the boot overlay already lifted. A fast sync that settles
-  // while the overlay is still up must leave the pour to _removeBootOverlay
-  // (skel mode is off now, so the lift arms it), or the once-guard would burn
-  // the cascade invisibly behind the overlay.
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();}catch(_e){}
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
   // A logo with no brand colour yet: take it from the logo, read at boot by
@@ -2187,16 +2159,12 @@ function _removeBootOverlay(immediate){
         }
       }
     }catch(_e){}
-    // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
-    // no popups → after boot load"). _armBootCascade holds the cards invisible,
-    // waits out any boot popup (collect alert, verdicts), then pours them in.
-    // A signed-in fresh boot stays in skeleton until the first sync settles;
-    // _bootSyncSettled pours the cascade then. Everything else pours now.
-    // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
-    // if no render has run yet this boot.
-    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
-    // EVEN while the first sync is in flight, as shimmer cards; the data then
-    // lands in place (_bootSyncSettled). One pour either way.
+    // The overlay lifts onto the home screen. While the first sync is still
+    // in flight that screen is its own placeholder, standing still in exactly
+    // the layout the data will fill (applied HERE so the lift never shows a
+    // bare frame), and the one waterfall waits for the data
+    // (_bootSyncSettled). Everything else pours now (owner 2026-10-01: one
+    // top-down pour, never a pour of shimmer and then a second of content).
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
     }
@@ -2627,7 +2595,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._geoDayAnswered=false;window._geoDayKnown=false;window._geoEarlyFor=null;window._nbWaitT0=null;window._nbBootWait=false;window._nearbyLiveRendered=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -4027,7 +3995,7 @@ async function _denyPermissionRequest(reqId){
 function _teamRateChip(id,label,val,ph,onchange){
   return '<label class="td-rate-chip" for="'+id+'">'+(label?label+' $':'$')+
     // Sized to the number, so "$75/hr" reads as one thing, not "$ 75  /hr".
-    '<input id="'+id+'" type="text" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
+    '<input id="'+id+'" type="text" data-num="rate" inputmode="decimal" value="'+val+'" placeholder="'+ph+'" style="width:'+Math.max(2,String(val||ph).length)+'ch" oninput="this.style.width=Math.max(2,(this.value||this.placeholder).length)+\'ch\'" onchange="'+onchange+'">/hr</label>';
 }
 function _teamRateVal(n){return Number(n)>0?String(Number(n)):'';}
 // A typed amount: only the money noise ($ , spaces) comes off, never the sign,
@@ -5069,7 +5037,7 @@ async function _saveEmployee(idx){
             notifyEmail:_supaUser.email||'',
             status:'sent',signedAt:null,signerName:null,sigData:null,
             createdAt:agRecord.createdAt,inviteUrl};
-          await _supa.storage.from('proposals').upload(agKey,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+          await _tdStoreDoc(agKey,snapshot);
           saveAll();
           const _base=_clientBaseUrl?_clientBaseUrl():(window.location.origin+window.location.pathname.split('index.html')[0]);
           signUrl=_base+'contract-sign.html?t='+agToken+'&u='+cid+'&a='+agId;
@@ -5150,7 +5118,7 @@ function _subModalHTML(sub,idx){
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:16px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">1099-NEC filing info <span style="font-weight:400;text-transform:none;letter-spacing:0">(needed if you pay them $600+/yr)</span></div>'+
       '<div class="fg fg2" style="margin-bottom:8px">'+
-        '<div class="f"><label>EIN or SSN</label><input id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
+        '<div class="f"><label>EIN or SSN</label><input type="text" data-num="ein" inputmode="numeric" id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
         '<div class="f" style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="sub-w9" '+(s.w9?'checked':'')+' style="width:16px;height:16px;accent-color:var(--blue)"> W-9 on file</label></div>'+
       '</div>'+
       '<div class="f"><label>Mailing address</label><input id="sub-addr" value="'+escHtml(s.addr||'')+'" placeholder="Street, City, ST ZIP" style="font-size:13px;padding:10px"></div>'+
@@ -8722,7 +8690,7 @@ function editSentBid(bidId){
     _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
       if(!data)return;
       data.text().then(txt=>{
-        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true,cacheControl:'0'});}catch(e){}
+        try{const p=JSON.parse(txt);_tdStoreDoc(b.signingKey,{...p,status:'voided'});}catch(e){}
       });
     });
   }
@@ -8746,7 +8714,7 @@ async function _extendBidPrice(bidId,days){
       if(dl&&dl.data){
         const j=JSON.parse(await dl.data.text());
         j.validUntil=b.validUntil;
-        await _supa.storage.from('proposals').upload(b.proposalKey,JSON.stringify(j),{contentType:'application/json',upsert:true,cacheControl:'0'});
+        await _tdStoreDoc(b.proposalKey,j);
       }
     }
     if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
@@ -8757,7 +8725,7 @@ async function _extendBidPrice(bidId,days){
 // ── After an in-person signature ────────────────────────────────────────────
 // He signs at the kitchen table and the client used to walk away with nothing
 // in their hand while he was still standing there. Both of these use the hub
-// link the account already mints (same builder as resendProposalLink), so
+// link the account already mints (resendProposal uses this builder too), so
 // there is one client-facing URL in the product, not a second one.
 function _geiHubUrlFor(bid){
   const c=bid&&bid.client_id?getClientById(bid.client_id):null;
@@ -8790,24 +8758,6 @@ function _geiCollectDepositNow(bidId){
   const url=_geiHubUrlFor(b);
   if(!url){if(typeof showToast==='function')showToast('Connect Stripe to collect here','⚠️');return;}
   try{window.open(url,'_blank');}catch(_e){window.location.href=url;}
-}
-function resendProposalLink(bidId){
-  const b=bids.find(x=>x.id===bidId);
-  if(!b)return;
-  const baseUrl=_clientBaseUrl();
-  const c=getClientById(b.client_id);
-  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
-  if(hubUrl&&c?.phone){
-    const firstName=(c.name||b.client_name||'there').split(' ')[0];
-    const biz=S.bname||'your contractor';
-    const msg='Hi '+firstName+', '+biz+' sent you a proposal to review and sign. Open your project hub here: '+hubUrl;
-    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
-  } else if(hubUrl){
-    navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>{});
-  } else if(b.signingToken){
-    const sigUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
-    navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
-  }
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;

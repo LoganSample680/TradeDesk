@@ -1,25 +1,10 @@
 // ── Active time tracking ─────────────────────────────────────────────────────
 
-// The work a bid actually sold, as clockable scopes. Priced line items first
-// (they are the job), then any scope chips that say something the lines do not.
-// Deduplicated on the price-book key so a chip repeating a line is one row, the
-// same rule the proposal and the hours math already use.
+// The work a bid actually sold, as clockable scopes: the shared work reader
+// (_bidWorkItems, js/proposals.js) without the free text, keyed line:<pbKey>.
 function _jobScopesFromBid(bid){
-  if(!bid)return [];
   const key=d=>(typeof _pbKey==='function')?_pbKey(d):String(d||'').trim().toLowerCase();
-  const out=[],seen=new Set();
-  const add=(label,icon)=>{
-    const l=String(label||'').trim();
-    if(!l)return;
-    const k=key(l);
-    if(!k||seen.has(k))return;
-    seen.add(k);
-    out.push({id:'line:'+k,label:l,icon:icon||'🔧'});
-  };
-  if(Array.isArray(bid.byoItems))bid.byoItems.forEach(it=>{if(it&&it.on!==false&&!it._rrp)add(it.label);});
-  if(!out.length&&Array.isArray(bid.geiLines))bid.geiLines.forEach(l=>{if(l&&!l._tmLabor)add(l.desc);});
-  if(Array.isArray(bid.scopeChips))bid.scopeChips.forEach(l=>add(l,'📋'));
-  return out;
+  return _bidWorkItems(bid,{priced:true}).map(x=>({id:'line:'+key(x.label),label:x.label,icon:x.chip?'📋':'🔧'}));
 }
 function getJobScopes(jobId){
   const j=jobs.find(x=>x.id===jobId);
@@ -2295,7 +2280,7 @@ function openAssignSubModal(jobId,clientId){
     '<div class="f" style="margin-bottom:12px"><label>Description of work</label>'+
       '<input id="asub-desc" placeholder="Drywall repair, trim, plumbing rough-in..." style="font-size:14px;padding:10px"></div>'+
     '<div class="f" style="margin-bottom:16px"><label>Amount owed ($)</label>'+
-      '<input id="asub-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+      '<input id="asub-amount" type="text" data-num="money" inputmode="decimal" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="document.getElementById(\'_asub-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button id="asub-save" onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
@@ -2308,7 +2293,7 @@ function _saveSubAssignment(jobId,clientId){
   const sub=(S.subcontractors||[])[idx];
   if(!sub)return showToast('Select a subcontractor','⚠️');
   const desc=(document.getElementById('asub-desc')?.value||'').trim();
-  const amount=parseFloat(document.getElementById('asub-amount')?.value||0)||0;
+  const amount=_numVal('asub-amount');
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(!j.subs)j.subs=[];
   j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
@@ -2790,6 +2775,9 @@ function markJobDone(jobId){
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Job complete</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||'')+'</div>'+
+    // Where it stands before he closes it out (owner 2026-10-01): a deposit
+    // or a card payment on their page shows here, so he never bills it twice.
+    ((bid&&(bid.amount||0)>0&&_moneyVisible()&&typeof _settleSumHtml==='function')?_settleSumHtml(bid):'')+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Completion date</label>'+
       '<input type="date" id="job-done-date" value="'+todayKey()+'" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text)">'+
@@ -2827,6 +2815,11 @@ function markJobDone(jobId){
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   box._jobId=jobId;
+  // Anything paid away from this phone lands before the numbers are trusted.
+  if(bid&&(bid.amount||0)>0&&typeof _settleFetch==='function')_settleFetch(bid).then(ch=>{
+    const el=ch&&document.getElementById('settle-sum-'+bid.id);
+    if(el&&typeof _settleSumHtml==='function')el.outerHTML=_settleSumHtml(bid);
+  });
 }
 let _adjType=null;
 // Root cause (found while wiring the price-increase signature gate below): the
@@ -3051,7 +3044,7 @@ function showJobDebrief(jobId){
   let debriefRows='';
   const _row=(room,s)=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
         <div style="font-size:13px;flex:1">${s.icon?svgIcon(s.icon):''} ${escHtml(s.label)}</div>
-        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
+        <input type="text" data-num="dec" inputmode="decimal" placeholder="hrs"
           data-room="${encodeURIComponent(room)}" data-scope="${escHtml(s.id)}"
           style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
       </div>`;

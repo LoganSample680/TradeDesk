@@ -21,11 +21,23 @@ function tdLogoLook(img){
     const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
     const d=x.getImageData(0,0,N,N).data;
     const px=(i,j)=>{const k=(j*N+i)*4;return[d[k],d[k+1],d[k+2],d[k+3]];};
-    // The border ring decides the background.
-    let er=0,eg=0,eb=0,ea=0,en=0;
-    for(let i=0;i<N;i++)for(const j of[0,1,N-2,N-1]){
-      for(const p of[px(i,j),px(j,i)]){er+=p[0];eg+=p[1];eb+=p[2];ea+=p[3];en++;}
+    // The border ring decides the background: the ring just INSIDE the
+    // edge, where a screenshot's hairline or a JPEG's fringe never reaches
+    // (2026-10-01), and every logo's background still is.
+    const RING=[1,2,N-3,N-2];
+    // The background is the ring's MOST COMMON colour, not its average:
+    // artwork that reaches the edge (Jack's flag) tinted an average to
+    // (6,8,10), and the logo's own black showed as a box on that cover.
+    let ea=0,en=0;const rb={};
+    for(let i=0;i<N;i++)for(const j of RING){
+      for(const p of[px(i,j),px(j,i)]){
+        ea+=p[3];en++;
+        const key=(p[0]>>4)+','+(p[1]>>4)+','+(p[2]>>4),e=rb[key]||(rb[key]=[0,0,0,0]);
+        e[0]++;e[1]+=p[0];e[2]+=p[1];e[3]+=p[2];
+      }
     }
+    const mode=Object.values(rb).sort((a,b)=>b[0]-a[0])[0]||[1,0,0,0];
+    const er=mode[1]/mode[0]*en,eg=mode[2]/mode[0]*en,eb=mode[3]/mode[0]*en;
     const lum=(r,g,b)=>(0.299*r+0.587*g+0.114*b)/255;
     let bg,bgRgb;
     if(ea/en<128){
@@ -55,7 +67,16 @@ function tdLogoLook(img){
       :null;
     // The same three facts S.logoMeta records in the app (js/settings.js
     // _logoEnsureMeta), so tdLogoIsTile reads either one.
-    const solid=ea/en>235,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100;
+    // Solid means an opaque border of one colour, the logo's own square.
+    // Most of the ring, not every pixel: a logo saved as a screenshot carries
+    // a hairline at its edge (the owner's copy of Jack's logo, 2026-10-01),
+    // and four exact corners called that "not solid" while Jack's original of
+    // the same logo was, so the two printed two different proposals.
+    let near=0,ring=0;
+    for(let i=0;i<N;i++)for(const j of RING){
+      for(const p of[px(i,j),px(j,i)]){ring++;if(p[3]>235&&Math.abs(p[0]-bgRgb[0])+Math.abs(p[1]-bgRgb[1])+Math.abs(p[2]-bgRgb[2])<90)near++;}
+    }
+    const solid=ea/en>235&&near/ring>=0.85,ratio=Math.round(img.naturalWidth/Math.max(1,img.naturalHeight)*100)/100; // dup-ok: a shape ratio, not money
     return{bg,fg:dark?'rgba(255,255,255,.42)':'rgba(0,0,0,.38)',accent,dark,solid,ratio,light:!dark&&lum(bgRgb[0],bgRgb[1],bgRgb[2])>0.92};
   }catch(e){return null;}
 }
@@ -114,7 +135,7 @@ function tdLogoKey(src){
 }
 // ── The boot screen (owner-approved design 2026-09-24) ──────────────────────
 // One builder for every boot surface: the app's first paint, the app's
-// "updating" screen, and the client hub. The logo sits on its OWN background
+// "updating" screen, the client hub and the proposal page (sign.html). The logo sits on its OWN background
 // colour, big, and simply fades in, holds, and fades out; nothing drifts,
 // glows or loads a bar under it (owner: "I don't want this shit to look AI").
 // No logo: the business name (and its initial on a tile), as before. Neither:
@@ -128,6 +149,12 @@ function tdLogoKey(src){
 //   o.cacheKey    localStorage key for the logo's look, so a repeat boot paints
 //                 the right background on the very first frame
 const _TD_BOOT_CSS=
+// The screen itself: every page's overlay takes this class from the builder,
+// so the exit (logo out first, then the screen, starting .3s in) is one rule.
+// !important: a logo read for the first time leaves an inline background-colour
+// transition on the screen, and that inline value was silently cancelling the
+// fade, so the screen cut out instead.
+'.td-boot{overflow:hidden}.td-boot.td-fadeout{opacity:0;transition:opacity .3s ease .3s!important}'+
 '.bt-stage{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:0 24px;transform:translateY(-4%)}'+
 '.bt-in{opacity:0;animation:bt-in .65s cubic-bezier(.45,0,.55,1) .05s forwards}'+
 '.bt-logo{width:min(78vw,340px);height:min(78vw,340px);object-fit:contain;display:block}'+
@@ -178,12 +205,16 @@ function tdSkelSweep(root,phase){
 }
 const _TD_BOOT_DARK='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
 const _TD_WRENCH='<svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
-function tdBootFill(ov,o){
-  if(!ov)return;o=o||{};
+function _tdBootCss(ov){
   if(!document.getElementById('td-boot-css')){
     const st=document.createElement('style');st.id='td-boot-css';st.textContent=_TD_BOOT_CSS;
     (document.head||document.documentElement).appendChild(st);
   }
+  if(ov)ov.classList.add('td-boot');
+}
+function tdBootFill(ov,o){
+  if(!ov)return;o=o||{};
+  _tdBootCss(ov);
   const el=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;};
   ov.textContent='';
   ov.style.display='flex';ov.style.flexDirection='column';ov.style.alignItems='center';ov.style.justifyContent='center';
@@ -236,4 +267,68 @@ function tdBootFill(ov,o){
   const foot=o.status?o.status:((o.powered&&(o.logo||name))?'Powered by TradeDesk':'');
   if(foot){const f=el('div','bt-foot',foot);f.style.color=fg;ov.appendChild(f);}
 }
-if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdSkelSweep};
+// For a page that learns who the contractor is while it loads (the client hub,
+// the proposal page): paints only when the logo or name changed, so a second
+// call with the same contractor never restarts the fade. Before either is
+// known the screen stays the plain dark base the app shows, never a
+// placeholder brand. Returns true when it painted.
+function tdBootPaint(ov,o){
+  if(!ov)return false;o=o||{};
+  _tdBootCss(ov);
+  const k=(o.logo||'')+'\n'+String(o.name||'').trim();
+  if(k===(ov._tdBootKey||'\n'))return false;
+  ov._tdBootKey=k;tdBootFill(ov,o);return true;
+}
+if(typeof module!=='undefined')module.exports={tdLogoLook,tdLogoKey,tdLogoThumb,tdLogoIsTile,tdBootCacheLogo,tdBootFill,tdBootPaint,tdSkelSweep};
+
+// ── Shared by the app and the client hub (audit 2026-10-01) ─────────────────
+// Each page kept its own copy of these; both pages load this file first.
+
+// WCAG clamp for the contractor's brand color. The brand color renders both as
+// colored TEXT on white surfaces (proposal section labels, hub links) and as a
+// BACKGROUND under white text (proposal header, TOTAL row, hub buttons), both
+// are the same white↔color pair, so one clamp covers both directions: darken
+// the pick toward black (hue preserved) until it clears AA 4.5:1 against
+// white, with a small margin for the near-white (#f8fafc) document surfaces.
+// Invalid/empty input passes through untouched so callers' fallbacks still run.
+function adaBrand(hex){
+  const h=String(hex||'').trim().replace('#','');
+  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
+  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
+  const ratioVsWhite=c=>1.05/(lum(c)+0.05);
+  let guard=0;
+  while(ratioVsWhite(rgb)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
+  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+// Egress fix: route public gallery images through the Cloudflare edge cache
+// (/img/<path>) when served from Cloudflare, so repeat views hit Cloudflare,
+// not Supabase. Localhost/dev, data: URLs and non-gallery URLs pass through.
+function _cdnPhoto(u){
+  try{
+    if(!u||u.startsWith('data:'))return u;
+    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
+    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
+    return m?'/img/'+m[1]:u;
+  }catch(_e){return u;}
+}
+
+// A change order's itemized lines, when he broke it out, on his copy and the
+// customer's. Rows carry the sign of the change itself, so a removal reads as
+// money coming off, not as a second charge. esc and money are the page's own
+// escaper and money format.
+function tdCoLinesHTML(lines,color,type,esc,money){
+  if(!Array.isArray(lines)||!lines.length)return '';
+  const sign=type==='sub'?'-':'+';
+  return '<div style="margin-bottom:10px">'+
+    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
+      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc((l&&l.desc)||'')+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+money((l&&l.amt)||0)+'</span>'+
+    '</div>').join('')+
+    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
+      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
+      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+money(lines.reduce((s,l)=>s+(Number(l&&l.amt)||0),0))+'</span>'+
+    '</div>'+
+  '</div>';
+}

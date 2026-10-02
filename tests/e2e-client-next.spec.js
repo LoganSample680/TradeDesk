@@ -35,6 +35,11 @@ test.describe('Next on the customer page', () => {
       next: n ? n.textContent.replace(/\s+/g, ' ').trim() : null,
       nx: _clientNext(93001),
       newProp: [...document.querySelectorAll('#cd-estimate-actions button')].some(b => /New proposal/.test(b.textContent)),
+      // Measured in the same pass as the render: a late boot sync can swap
+      // the arrays and re-render the page between two evaluates.
+      sw: document.documentElement.scrollWidth, w: innerWidth,
+      right: n ? n.getBoundingClientRect().right : null,
+      filled: [...document.querySelectorAll('#cd-estimate-actions button')].filter(b => getComputedStyle(b).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
     };
   }, o || {});
 
@@ -100,12 +105,8 @@ test.describe('Next on the customer page', () => {
   });
 
   test('Next is the only big button, and nothing bleeds at 390', async () => {
-    await show({ bids: [{ id: 508, status: 'Closed Won', amount: 3000, bid_date: await daysAgo(2) }] });
-    const r = await page.evaluate(() => ({
-      sw: document.documentElement.scrollWidth, w: innerWidth,
-      right: document.getElementById('cd-next').getBoundingClientRect().right,
-      filled: [...document.querySelectorAll('#cd-estimate-actions button')].filter(b => getComputedStyle(b).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
-    }));
+    const r = await show({ bids: [{ id: 508, status: 'Closed Won', amount: 3000, bid_date: await daysAgo(2) }] });
+    expect(r.right).not.toBeNull();
     expect(r.sw).toBeLessThanOrEqual(r.w + 1);
     expect(r.right).toBeLessThanOrEqual(r.w);
     expect(r.filled).toBe(1);

@@ -59,8 +59,7 @@ function _tsRange(wk){
 // submitted is what is on screen. Me scope only: _tlWeekBarsHtml never draws
 // the button inside a crew member's week.
 function _tsWeekRows(wk){
-  return (typeof _tlLastRows!=='undefined'&&Array.isArray(_tlLastRows)?_tlLastRows:[])
-    .filter(r=>r&&_tlWeekKey(r.date)===wk);
+  return typeof _tlWeekRows==='function'?_tlWeekRows(wk):[];
 }
 // What stops a submit: a hole nobody answered, or a visit the day could not
 // vouch for. One entry per day, in calendar order.
@@ -216,7 +215,7 @@ function _tsReviewOpen(wk){
       '<div class="ts-days">'+dayRows+'</div>'+
       '<div class="ts-total"><span>Total</span><b>'+escHtml(fm(e.min)||'0m')+'</b></div>'+
       (()=>{const r=_tsLastRate(wk);return '<label class="ts-pay"><span>Pay</span>'+
-        '<span class="ts-pay-rate">$<input id="ts-rate" type="text" inputmode="decimal" placeholder="0" value="'+(r>0?r:'')+'" oninput="_tsRateInput(this,'+Math.round(e.min)+')">/hr</span>'+
+        '<span class="ts-pay-rate">$<input id="ts-rate" type="text" data-num="rate" inputmode="decimal" placeholder="0" value="'+(r>0?r:'')+'" oninput="_tsRateInput(this,'+Math.round(e.min)+')">/hr</span>'+
         '<b id="ts-pay-total">'+(r>0?_tsPayMoney(_tsPay(e.min,r)):'')+'</b></label>';})()+
       (split?'<div class="ts-split">'+escHtml(split)+'</div>':'')+
       '<div class="ts-btns">'+

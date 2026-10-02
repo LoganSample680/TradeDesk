@@ -2,7 +2,7 @@
 <!-- Inline bg on <html> matches the boot overlay's dark base so the first paint,
      even before CSS parses, is the boot color, never white (same pre-paint
      trick as index.html and client.html). -->
-<html lang="en" style="background:#1F2230">
+<html lang="en" style="background:#1B1612">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -29,6 +29,7 @@ addEventListener('load',function(){setTimeout(window._loadVendor,2000);});
 <script src="js/icons.js"></script>
 <script src="js/esign.js"></script>
 <script src="js/legal.js"></script>
+<script src="js/brand-look.js"></script>
 <!-- Fonts load without blocking first paint (print-media swap trick); text renders
      with the system fallback and upgrades when the webfont lands. -->
 <link id="font-css" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
@@ -52,34 +53,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    page's BOOT overlay (supported browsers). Snapshot backgrounds pinned dark to
    match the boot so no white can show through the navigation gap. */
 @view-transition{navigation:auto}
-::view-transition-old(root),::view-transition-new(root){background:#1F2230}
-/* ── Boot overlay, the hub's exact premium boot treatment (client.html #boot-
-   overlay / cbo-*), proposal-specific copy: business name center stage,
-   "Loading your proposal…". Covers font load, layout, and raster; the
-   waterfall then runs on a fully-warmed page (owner: spinner, then waterfall). */
-#sign-boot{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1);will-change:opacity,transform,filter;overflow:hidden}
-.cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
-@keyframes cbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
-.cbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
-@keyframes cbo-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
-.cbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:linear-gradient(155deg,#2D5DA8 0%,#1E3F73 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:cbo-logoin .5s cubic-bezier(.22,1,.36,1) both,cbo-breathe 2.8s ease-in-out .6s infinite}
-.cbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.cbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:cbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
-@keyframes cbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
-@keyframes cbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
-.cbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:cbo-logoin .55s cubic-bezier(.22,1,.36,1) both}
-.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-namein .55s cubic-bezier(.22,1,.36,1) both,cbo-textsheen 2.6s ease-in-out 1s infinite}
-@keyframes cbo-namein{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
-@keyframes cbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
-.cbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:cbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
-@keyframes cbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-.cbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
-.cbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
-.cbo-bar{height:100%;width:0%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);transition:width 1.4s cubic-bezier(.4,0,.2,1)}
-.cbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:cbo-sheen 1.7s ease-in-out .5s infinite}
-@keyframes cbo-sheen{to{transform:translateX(100%)}}
-.cbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:cbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
-@media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
+::view-transition-old(root),::view-transition-new(root){background:#1B1612}
 /* Waterfall reveal (matches the dashboard's cascade): once the page is revealed,
    the proposal's sections fade + rise in top-to-bottom sequence, ~1.1s each with
    a ~160ms stagger so the whole proposal loads in slowly (owner: double the time). */
@@ -256,21 +230,22 @@ input[type=text]:focus{border-color:var(--denim)}
 </head>
 <body>
 
-<!-- Boot overlay, covers font load, layout, and raster; the waterfall then
-     runs on a fully-warmed page. Same treatment as the client hub boot. -->
-<div id="sign-boot">
-  <div class="cbo-glow"></div>
-  <div class="cbo-center">
-    <div id="sign-boot-logo-wrap" class="cbo-logo-frame" style="display:none"><img id="sign-boot-logo" style="max-height:96px;max-width:100%;object-fit:contain;display:block" alt=""></div>
-    <div id="sign-boot-mark" class="cbo-mark"><svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></div>
-    <div id="sign-boot-name" class="cbo-name"></div>
-    <div class="cbo-tag">Secure proposal</div>
-  </div>
-  <div class="cbo-foot">
-    <div class="cbo-track"><div id="sign-boot-bar" class="cbo-bar"></div><div class="cbo-sheen"></div></div>
-    <div class="cbo-hint">Loading your proposal…</div>
-  </div>
-</div>
+<!-- Boot overlay: the app's own boot screen (tdBootFill, js/brand-look.js), the
+     same one the client hub shows, so hub -> proposal reads as one screen. It
+     covers font load, layout and raster; the waterfall then runs on a warm page. -->
+<div id="sign-boot" style="position:fixed;inset:0;z-index:9999;background:#1B1612"></div>
+<script>
+// The contractor this link belongs to (?u=, or the uid in ?key=). The hub
+// caches his name, logo and logo look under it, so a proposal opened on a
+// device that has seen his hub paints his screen on the first frame.
+window._signUid=(function(q){return q.get('u')||((q.get('key')||'').match(/^proposals\/([^/]+)\//)||[])[1]||'';})(new URLSearchParams(location.search));
+function _signBootPaint(logo,name,brand){
+  if(typeof tdBootPaint==='function')tdBootPaint(document.getElementById('sign-boot'),{logo:logo||'',name:name||'',brand:brand||'',
+    status:'Loading your proposal…',cacheKey:window._signUid?'td_hub_look_'+window._signUid:''});
+}
+try{const c=window._signUid&&JSON.parse(localStorage.getItem('td_hub_brand_'+window._signUid)||'null');
+  _signBootPaint(c&&c.logo,c&&c.name,c&&c.color);}catch(e){_signBootPaint('','','');}
+</script>
 
 <div class="topbar">
   <div class="topbar-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
@@ -646,11 +621,11 @@ function show(id){
 }
 // ── Boot dismiss, the hub's exact recipe (client.html _dismissBootOverlay):
 // hold for a minimum dwell so the boot reads as intentional (and so fonts,
-// layout, and raster ALL finish underneath it), fill the bar, then the premium
-// blur+scale exit while the waterfall cascades in beneath. Pending timers are
-// cancelled on re-entry (the hub's stale-timer race fix).
+// layout, and raster ALL finish underneath it), then the app's exit
+// (.td-boot.td-fadeout, js/brand-look.js) while the waterfall cascades in
+// beneath. Pending timers are cancelled on re-entry (the hub's stale-timer
+// race fix).
 window._bootStart=Date.now();
-setTimeout(()=>{const b=document.getElementById('sign-boot-bar');if(b)b.style.width='78%';},40);
 let _bodyRevealed=false,_sbTimers=[];
 function _reveal(){
   if(_bodyRevealed)return;_bodyRevealed=true;
@@ -670,31 +645,35 @@ function _dismissSignBoot(fast){
   const ov=document.getElementById('sign-boot');
   if(!ov){_reveal();return;}
   _sbTimers.forEach(clearTimeout);_sbTimers=[];
-  const bb=document.getElementById('sign-boot-bar');
   // Under the E2E mock the dwell shrinks so hundreds of sign-booting specs
   // aren't each slowed ~1.5s; _forceSignBootDwell opts a dwell test back in.
   const _testEnv=(typeof window.__mockProposalData!=='undefined')&&!window._forceSignBootDwell;
   const MIN_SIGN_BOOT_MS=1500;
   const elapsed=Date.now()-window._bootStart;
   const delay=fast?0:(_testEnv?120:Math.max(220,MIN_SIGN_BOOT_MS-elapsed));
-  if(bb){bb.style.width='92%';_sbTimers.push(setTimeout(()=>{bb.style.width='100%';},Math.max(0,delay-300)));}
   _sbTimers.push(setTimeout(()=>{
-    ov.style.opacity='0';ov.style.transform='scale(1.05)';ov.style.filter='blur(10px)';
+    ov.classList.add('td-fadeout');
     _reveal();
-    _sbTimers.push(setTimeout(()=>{ov.style.display='none';},780));
+    _sbTimers.push(setTimeout(()=>{ov.style.display='none';},650));
   },delay));
 }
 // Safety net, never leave the boot up if init() throws before a show().
 setTimeout(()=>_dismissSignBoot(true),5000);
 
-function _showPortfolioOffer(){
+// THE PORTFOLIO PRICES (audit 2026-10-01: the offer card and the accept
+// step each did this math). The contractor's discounted price when he set
+// one, otherwise the full price less the offer's percent, to the cent.
+function _portfolioPrices(){
   const pct=_prop.portfolioPct||15;
+  const fullP=_prop.fullPrice||_prop.amount;
+  const discP=_prop.discountedPrice||_cents(fullP*(1-pct/100));
+  return {pct,fullP,discP,savings:_cents(fullP-discP)};
+}
+function _showPortfolioOffer(){
+  const {pct,fullP,discP,savings}=_portfolioPrices();
   const years=_prop.portfolioYears||0;
   const target=_prop.portfolioTarget||5;
   const owner=_prop.portfolioOwnerName||_prop.businessName||'Your contractor';
-  const fullP=_prop.fullPrice||_prop.amount;
-  const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
-  const savings=Math.round((fullP-discP)*100)/100;
   document.getElementById('po-pct-hdr').textContent=pct;
   document.getElementById('po-pitch').textContent='We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected for this opportunity. In exchange for permission to photograph your home before and after completion and feature the results across our platforms, we are offering '+pct+'% off this project. No personal information is ever shared without your explicit permission.';
   document.getElementById('po-full-price').textContent=fmt(fullP);
@@ -710,10 +689,8 @@ function portfolioAccept(){
     document.getElementById('po-accept-btn').textContent='I agree, apply '+pct+'% discount';
     _portfolioStep=1;
   } else {
-    const fullP=_prop.fullPrice||_prop.amount;
-    const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
-    const savings=Math.round((fullP-discP)*100)/100;
-    const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
+    const {discP,savings}=_portfolioPrices();
+    const _depFrac=_signDepFrac();
     const newDep=Math.round(discP*_depFrac*100)/100;
     const newBal=Math.round(discP*(1-_depFrac)*100)/100;
     window._portfolioAccepted=true;
@@ -738,19 +715,6 @@ function portfolioDecline(){
 // cache could show a stale status for up to an hour. Fetch the public object URL
 // with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
 // fall back to storage.download() on any failure so the error UI is unchanged.
-async function _fetchStorageJson(key){
-  try{
-    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
-    if(!pub)throw new Error('no public url');
-    const res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    return{data:await res.json(),error:null};
-  }catch(e){
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)return{data:null,error:error||e};
-    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
-  }
-}
 // "Already signed" terminal page, extracted from init so the stash-handoff path
 // can also reach it from its background signed-status verify.
 // Signing state, through the token-checked RPC (20261049). signed_proposals
@@ -766,15 +730,6 @@ async function _sigStatus(key){
   }catch(_){return null;}
 }
 function _sigIsDecline(r){return !!r&&(r.payment_status==='declined'||r.payment_method==='declined');}
-// Every write this page makes goes through proposal-sign (20261049), which
-// proves the link, takes the amount from the stored proposal and writes the
-// row and the proposal file together.
-async function _signCall(body){
-  const{data,error}=await _supa.functions.invoke('proposal-sign',{body});
-  if(error)throw error;
-  if(data&&data.error)throw new Error(data.error);
-  return data||{};
-}
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
   const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -824,16 +779,10 @@ async function init(){
     if(!data){await _whenSupaReady();({data,error}=await _fetchStorageJson(key));}
     if(error||!data)throw error||new Error('no data returned');
     _prop=data;
-    // Boot overlay branding, business name (stash path: instantly at parse;
-    // cold path: as soon as the fetch lands), contractor logo when present
-    // (same swap the hub boot does for white-label).
-    {const _bn=document.getElementById('sign-boot-name');
-     if(_bn&&_prop.businessName)_bn.textContent=_prop.businessName;
-     const _lg=_signLogoSrc(_prop);
-     if(_lg){
-       const _bl=document.getElementById('sign-boot-logo'),_blw=document.getElementById('sign-boot-logo-wrap'),_bm=document.getElementById('sign-boot-mark');
-       if(_bl&&_blw){_bl.src=_lg;_blw.style.display='flex';if(_bm)_bm.style.display='none';}
-     }}
+    // The boot screen shows this contractor (stash path: instantly at parse;
+    // cold path: as soon as the fetch lands). Repaints only if it differs from
+    // what the hub's cache already painted.
+    _signBootPaint(_signLogoSrc(_prop),_prop.businessName,_prop.brandColor);
     if(_prop.status==='voided'){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
@@ -890,11 +839,7 @@ async function init(){
           if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
         }catch(_){}
         window._viewerIsContractor=(_viewerType==='contractor');
-        fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-          body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
-        }).catch(()=>{});
+        _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType});
       }).catch(()=>{});},1600);
     }
     const _biz=_prop.businessName||'Your Contractor';
@@ -1236,11 +1181,7 @@ function _logStep(step){
   if(_isPreview||window._viewerIsContractor||!_prop?.contractorUserId||!_prop?.id)return;
   if(_stepsSent.has(step))return;
   _stepsSent.add(step);
-  fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-    body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step})
-  }).catch(()=>{});
+  _logProposalView({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step});
 }
 function approveAndSign(){
   _logStep('approved');
@@ -1357,8 +1298,7 @@ function goToPayment(){
   _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
-  const depAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
-  const fullAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt2,full:fullAmt2}=_signPayAmts();
   const nowAmt=_payFullAmount?fullAmt2:depAmt2;
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(nowAmt);
@@ -1370,9 +1310,23 @@ function selPay(opt){
   _payOpt=opt;
   if(opt==='cash')_paySign('cash');
 }
+// WHAT IS DUE TODAY (audit 2026-10-01: the pay tiles, the pay button, the
+// tile picker and the checkout each worked it out on their own, two of them
+// with a hardcoded 25% on the discounted price). The deposit's share of the
+// price, or a quarter when the proposal carries no deposit, applied to the
+// portfolio price once it is accepted.
+function _signDepFrac(){
+  return (_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
+}
+function _signPayAmts(){
+  const frac=_signDepFrac();
+  const disc=window._portfolioAccepted&&_prop?.discountedPrice;
+  return {frac,
+    dep:disc?_cents(_prop.discountedPrice*frac):_prop?.deposit||0,
+    full:disc?_prop.discountedPrice:_prop?.amount||0};
+}
 function _selectPayTile(choice){
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt,full:fullAmt}=_signPayAmts();
   // Don't allow full-pay tile if amounts are the same
   if(choice==='full'&&Math.abs(fullAmt-depAmt)<0.01)return;
   _payFullAmount=choice==='full';
@@ -1380,13 +1334,11 @@ function _selectPayTile(choice){
   _updatePayButtons();
 }
 function _renderPayTiles(){
-  // A RATE SHEET'S DEPOSIT IS A FLAT FIGURE. _depFrac's 0.25 fallback would
+  // A RATE SHEET'S DEPOSIT IS A FLAT FIGURE. _signDepFrac's 0.25 fallback would
   // label a $500 mobilization deposit "25% Deposit" against a total of zero,
   // which is both wrong and the kind of number a client rings up about.
   if(_prop?.rateOnly)return _renderRateSheetPayTiles();
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {frac:_depFrac,dep:depAmt,full:fullAmt}=_signPayAmts();
   const showFull=fullAmt>depAmt+0.01;
   const depSel=!_payFullAmount;
   const td=document.getElementById('pay-tile-dep'),tf=document.getElementById('pay-tile-full');
@@ -1439,9 +1391,7 @@ function _updatePayButtons(){
     if(pndR)pndR.textContent=fmt(Number(_prop?.deposit)||0);
     return;
   }
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
-  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const {dep:depAmt,full:fullAmt}=_signPayAmts();
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
@@ -1468,7 +1418,7 @@ async function _saveSignature(method){
   const ts=new Date().toISOString();
   // The function takes the amount and deposit from the stored proposal, never
   // from this page, and writes the row and the signed proposal file together.
-  await _signCall({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
+  await _proposalSign({action:'sign',key,signerName:name,method,signatureData:_sigData||null,
     portfolioAccepted:!!window._portfolioAccepted,colorChoices:window._colorChoices||[],
     buyerSenior:!!window._buyerSenior});
   // Signal the contractor's open TradeDesk tab to refresh immediately
@@ -1597,7 +1547,7 @@ async function _confirmDecline(){
   try{
     // proposal-sign writes the declined row (the contractor app reads it as
     // Closed Lost) and marks the stored proposal declined, after proving the link.
-    await _signCall({action:'decline',key,reason:declineReason||null});
+    await _proposalSign({action:'decline',key,reason:declineReason||null});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
@@ -1685,9 +1635,9 @@ async function _paySign(method){
   }
   // 'stripe', open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
   if(_isPreview){document.getElementById('pay-err').textContent='Preview mode, card payment is disabled. Your client will see a real checkout here.';return;}
-  const _depFrac=(_prop?.amount>0&&_prop?.deposit!=null&&_prop.deposit!=='')?(Number(_prop.deposit)||0)/_prop.amount:0.25;
-  const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100):Math.round((_prop.deposit||0)*100);
-  const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
+  const _pa=_signPayAmts();
+  const depBase=Math.round(_pa.dep*100);
+  const fullBase=Math.round(_pa.full*100);
   const amt=_payFullAmount?fullBase:depBase;
   const btn=document.getElementById('_pay-now-btn');
   if(btn){btn.disabled=true;btn.textContent='Opening secure checkout…';}
@@ -1731,34 +1681,10 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
-    // Stripe.js MUST be initialised with that account or the client_secret won't resolve.
-    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
-    _stripeInst=stripeObj;
-    document.getElementById('sign-embed-container').innerHTML='';
-    // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout
-    // pi_                = PaymentIntent   → use Payment Element (accordion)
-    if(d.clientSecret.startsWith('cs_')){
-      const inst=await stripeObj.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');}
-      });
-      inst.mount('#sign-embed-container');
-      _stripeInst={destroy:()=>inst.destroy()};
-      _stripeElements=null;
-      if(submitBtn){submitBtn.style.display='none';}// Stripe's own UI has submit built in
-    }else{
-      _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-      const payEl=_stripeElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      });
-      payEl.mount('#sign-embed-container');
-      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
-      payEl.on('loaderror',()=>{
-        _closeStripeModal();
-        document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
-      });
-    }
+    const m=await _tdMountStripe(d,{container:'sign-embed-container',submitBtn,
+      onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');},
+      onLoadError:()=>{_closeStripeModal();document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';}});
+    _stripeInst=m.inst;_stripeElements=m.elements;
   }catch(e){
     console.error('[_launchEmbedded]',e);
     _closeStripeModal();
