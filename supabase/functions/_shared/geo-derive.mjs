@@ -1992,12 +1992,22 @@ function geoDeriveDay(input) {
     if (open && !t.openCounts) open.counts = false;
     if (drivingNow) drivingNow.timeOffClock = _gdUnderClock(_gdClockSpans(inp), Number(drivingNow.startTs), Number(nowMs));
   }
+  // Rule 28: a manual clock out ends the day (see _gdClockOutHold). After
+  // rule 25, so a day off with a clock that closed is judged by both.
+  const clockOutAt = _gdClockOutAt(inp, nowMs);
+  if (clockOutAt) {
+    const c = _gdClockOutHold(outDwells, outLegs, clockOutAt);
+    outDwells = c.dwells; outLegs = c.legs;
+    if (open && open.kind !== 'office') open.counts = false;
+    if (drivingNow && Number(drivingNow.startTs) >= clockOutAt) drivingNow.afterClockOut = true;
+  }
 
   return {
     day: inp.day || '',
     dwells: outDwells.filter(d => d.minutes >= 1),
     legs: outLegs,
     timeOff,
+    clockOutAt: clockOutAt || 0,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
@@ -2006,7 +2016,7 @@ function geoDeriveDay(input) {
     // and `open`: a journey that has left closes the dwell it left from.
     driving: (drivingNow && !open) ? {
       id: drivingNow.id, startTs: drivingNow.startTs, from: drivingNow.from,
-      counts: !drivingNow.fromHouse && (!timeOff || drivingNow.timeOffClock === true),
+      counts: !drivingNow.fromHouse && (!timeOff || drivingNow.timeOffClock === true) && drivingNow.afterClockOut !== true,
     } : null,
     // How many fences this derive was handed. A client whose coordinates
     // never made it into the fence list cannot be arrived at, and that is
@@ -2668,7 +2678,7 @@ function _gdDayShape(inp) {
 // the 5am gym trip and the evening at the yard out of the day.
 function _gdClockSpans(inp) {
   return (Array.isArray(inp && inp.clocks) ? inp.clocks : [])
-    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .map(c => c && { a: Number(c.start), b: Number(c.end), gap: c.gap === true, open: c.open === true })
     .filter(c => c && c.a > 0 && c.b > c.a);
 }
 // A minute of real overlap, the same threshold rules 13 and 16 already use, so
@@ -2719,6 +2729,60 @@ function _gdTimeOffHold(dwells, legs, inp, open, nowMs) {
     .map(d => (d.held === true || under(d.startTs, d.endTs)) ? d : Object.assign({}, d, { held: true, timeOff: true }));
   const openCounts = !!open && under(Number(open.startTs || open.sinceTs), Number(nowMs));
   return { dwells: heldDwells, legs: heldLegs, openCounts };
+}
+
+// ── RULE 28: A MANUAL CLOCK OUT ENDS THE DAY (owner 2026-10-02) ───────────
+// "clock out should end the day other than office time." Jack tapped Clock
+// out at 12:21 and then drove to the supply house and back, and every one of
+// those rows went on counting, because the manual clock was only ever a layer
+// on top of the automatic day. Now the last clock out of the day is where the
+// day stops:
+//   - a drive that starts after it is held (out of every total, one tap from
+//     counting), exactly like a Time off drive (rule 25);
+//   - a stop that starts after it is held, and a stop that was already under
+//     way is cut at the clock out;
+//   - the shop after it writes nothing: the yard after hours is not a shift,
+//     the same call rule 25 makes;
+//   - office time is untouched. It has its own rule (10): app-open minutes at
+//     the home office, outside the working day.
+// Held, never dropped, where a held form exists: "going back in and editing
+// the clock to after would bring in the drives and things that happened in
+// between" (owner, same day). The clock is an input, so moving it and
+// re-deriving the day puts those rows back as they were.
+//
+// Only a PUNCH ends the day, and only once it has closed:
+//   - a clock still running (open, which reaches the deriver bounded by now)
+//     means the day is still on, whatever else is in the list;
+//   - a gap answered as work or a break on the Time Log (fromGap, carried as
+//     `gap`) is an answer about a stretch, not a clock out, so a Tuesday with
+//     no punches does not end at the first hole somebody explained.
+// Lunch (startLunch, js/jobs.js) is a clock out and a clock back in, so it
+// only ever moves the end of the day, never ends it early.
+function _gdClockOutAt(inp, nowMs) {
+  const spans = _gdClockSpans(inp).filter(c => !c.gap);
+  if (!spans.length || spans.some(c => c.open)) return 0;
+  const last = Math.max(...spans.map(c => c.b));
+  const now = Number(nowMs) || Date.now();
+  return (last > 0 && last < now - 60000) ? last : 0;
+}
+function _gdClockOutHold(dwells, legs, outAt) {
+  const heldLegs = (legs || []).map(l => (!l || l.held === true || !(Number(l.startTs) >= outAt))
+    ? l : Object.assign({}, l, { held: true, afterClockOut: true }));
+  const outDwells = [];
+  (dwells || []).forEach(d => {
+    if (!d) return;
+    if (d.kind === 'office' || Number(d.endTs) <= outAt) { outDwells.push(d); return; }
+    if (Number(d.startTs) < outAt) {
+      // Under way at the clock out: the part before it stood, the rest is not
+      // the day any more.
+      const endTs = outAt;
+      outDwells.push(Object.assign({}, d, { endTs, minutes: Math.round((endTs - Number(d.startTs)) / 60000), open: false }));
+      return;
+    }
+    if (d.kind === 'shop') return;
+    outDwells.push(d.held === true ? d : Object.assign({}, d, { held: true, afterClockOut: true }));
+  });
+  return { dwells: outDwells, legs: heldLegs };
 }
 
 function _gdHeldVisits(dwells, inp, dayStart) {

@@ -1391,6 +1391,7 @@ async function _tlSaveEntry(kind,id){
     const list=(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries))?timeEntries:[];
     const e=list.find(x=>x&&String(x.id)===String(id));
     if(!e)return _tlEditErr('Could not save, try again.');
+    const _wasDay=e.date;
     e.start_time=start.toISOString();e.end_time=end.toISOString();
     e.minutes=v.mins;
     // The BUSINESS day, matching the times above and every other day key in
@@ -1401,6 +1402,12 @@ async function _tlSaveEntry(kind,id){
       e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
     }
     if(typeof saveAll==='function')saveAll();
+    // The clock is an input to the day (rule 28): re-derive the day it is on
+    // now, and the day it left if the edit moved it.
+    if(typeof _tlClockRederive==='function'){
+      _tlClockRederive(e.date);
+      if(_wasDay&&_wasDay!==e.date)_tlClockRederive(_wasDay);
+    }
     document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
     // crewCached: the change is a local row, so the rail must be on screen in
     // this same task, not after three Supabase queries (owner 2026-09-18).

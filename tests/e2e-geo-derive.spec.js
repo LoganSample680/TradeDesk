@@ -852,6 +852,152 @@ test.describe('geo-derive: the day deriver', () => {
         await assertNoErrors(page);
       });
     });
+
+    // ── RULE 28: A MANUAL CLOCK OUT ENDS THE DAY (owner 2026-10-02) ───────
+    // "clock out should end the day other than office time." Jack tapped
+    // Clock out at 12:21 and then drove to the supply house and back, and
+    // every one of those rows went on counting. And: "editing the clock to
+    // after would bring in the drives and things that happened in between."
+    // The fixture: the shop, a drive to John Doe at 10, there until 12, the
+    // drive back at 12.
+    test.describe('rule 28: a clock out ends the day, office time aside', () => {
+      const TUE = '2026-09-01';
+      const shape = (inp) => page.evaluate((i) => {
+        const r = geoDeriveDay(i);
+        const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+        const doe = rows.job_time_entries.find(x => /^client/.test(x.source));
+        return {
+          clockOutAt: r.clockOutAt,
+          time: rows.job_time_entries.map(x => x.source),
+          doeMin: doe ? doe.minutes : null,
+          shop: rows.shop_time_entries.length,
+          miles: rows.td_mileage.map(m => !!m.pendingPurpose),
+          open: r.open ? { counts: r.open.counts } : null,
+          driving: r.driving ? r.driving.counts : null,
+        };
+      }, inp);
+
+      test('clocked out before the drive: every drive and stop after it is held, nothing counts', async () => {
+        const { t } = dayOf(TUE);
+        const base = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(15) }] }));
+        expect(base.clockOutAt, 'a clock out after the last row ends nothing that happened').toBeGreaterThan(0);
+        expect(base.time).toContain('client');
+        expect(base.miles.some(p => !p), 'a clocked day has counted miles').toBe(true);
+
+        const out = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(9) }] }));
+        expect(out.clockOutAt).toBe(t(9));
+        expect(out.time).not.toContain('client');
+        expect(out.time).toContain('client-held');
+        expect(out.time.filter(x => /^drive/.test(x)).every(x => x === 'drive-held')).toBe(true);
+        // Held, not dropped: the miles stay on the log, off every total.
+        expect(out.miles.length).toBe(base.miles.length);
+        expect(out.miles.every(Boolean)).toBe(true);
+        await assertNoErrors(page);
+      });
+
+      test('clocked out at the customer: the visit is cut at the clock out and the drive back is held', async () => {
+        const { t } = dayOf(TUE);
+        const out = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(11) }] }));
+        expect(out.time).toContain('client');
+        expect(out.doeMin, '10:20 to the 11:00 clock out').toBe(40);
+        const drives = out.time.filter(x => /^drive/.test(x));
+        expect(drives).toContain('drive');        // the drive there, before the clock out
+        expect(drives).toContain('drive-held');   // the drive back, after it
+      });
+
+      test('moving the clock out later brings the day back exactly as it was', async () => {
+        const { t } = dayOf(TUE);
+        const late = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(15) }] }));
+        const early = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(9) }] }));
+        const edited = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(15) }] }));
+        expect(early.time).not.toEqual(late.time);
+        expect(edited).toEqual(late);
+      });
+
+      test('no clock at all, a running clock, or a gap answered on the Time Log ends nothing', async () => {
+        const { t } = dayOf(TUE);
+        const none = await shape(visit(TUE, 10, 12));
+        expect(none.clockOutAt).toBe(0);
+        const running = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(9), open: true }] }));
+        expect(running.clockOutAt).toBe(0);
+        expect(running.time).toEqual(none.time.length ? running.time : running.time);
+        expect(running.time).not.toContain('client-held');
+        // "That was work" on a hole at 9 is an answer about a stretch, not a punch.
+        const gap = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(8, 30), end: t(9), gap: true }] }));
+        expect(gap.clockOutAt).toBe(0);
+        expect(gap.time).not.toContain('client-held');
+      });
+
+      test('lunch is a clock out and back in: only the last clock out ends the day', async () => {
+        const { t } = dayOf(TUE);
+        const lunch = await shape(visit(TUE, 10, 12, { clocks: [{ start: t(7), end: t(9, 30) }, { start: t(9, 45), end: t(15) }] }));
+        expect(lunch.clockOutAt).toBe(t(15));
+        expect(lunch.time).toContain('client');
+        expect(lunch.time).not.toContain('client-held');
+      });
+
+      test('the live stop and the drive under way after a clock out are off the clock', async () => {
+        const { ds, t } = dayOf(TUE);
+        const now = { day: TUE, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', fences: [SHOP, HOME, DOE],
+          tape: [mo(t(9), 'onFoot'), mo(t(10), 'automotive'), mo(t(10, 20), 'onFoot')],
+          fixes: [fix(t(9, 30), SHOP), fix(t(10, 20) + 5000, DOE), fix(t(11), DOE), fix(t(11, 25), DOE)],
+          nowMs: t(11, 30) };
+        const on = await shape(now);
+        expect(on.open && on.open.counts).toBe(true);
+        const off = await shape(Object.assign({}, now, { clocks: [{ start: t(7), end: t(11) }] }));
+        expect(off.open && off.open.counts).toBe(false);
+        // Clocked out at 9:30, then the truck leaves at 10 and is still rolling.
+        const rolling = Object.assign({}, now, { tape: [mo(t(9), 'onFoot'), mo(t(10), 'automotive')],
+          fixes: [fix(t(9, 30), SHOP), fix(t(10, 10), { lat: 39.06, lng: -95.70 })], nowMs: t(10, 15) });
+        const roll = await shape(rolling);
+        const rollOut = await shape(Object.assign({}, rolling, { clocks: [{ start: t(7), end: t(9, 30) }] }));
+        // Whatever the rolling drive counts as on its own, after a clock out it never counts.
+        expect(rollOut.driving === true).toBe(false);
+        if (roll.driving === true) expect(rollOut.driving).toBe(false);
+      });
+
+      test('office time stands, the yard after the clock out writes nothing, a visit is held, one under way is cut', async () => {
+        const r = await page.evaluate(() => {
+          const out = 1000 * 60 * 60 * 12;
+          const d = (kind, a, b, extra) => Object.assign({ id: kind + a, kind, startTs: a, endTs: b, minutes: Math.round((b - a) / 60000), fence: {} }, extra || {});
+          const mins = 60000;
+          const res = _gdClockOutHold([
+            d('client', out - 90 * mins, out - 30 * mins),         // before: untouched
+            d('client', out - 30 * mins, out + 30 * mins),         // under way: cut at the clock out
+            d('client', out + 10 * mins, out + 50 * mins),         // after: held
+            d('shop', out + 60 * mins, out + 120 * mins),          // after: nothing
+            d('office', out + 130 * mins, out + 160 * mins),       // after: office stands
+            null,
+          ], [{ id: 'l1', startTs: out - 60 * mins, endTs: out - 40 * mins }, { id: 'l2', startTs: out + 5 * mins, endTs: out + 9 * mins }, null], out);
+          return {
+            dwells: res.dwells.map(x => [x.kind, x.minutes, !!x.held]),
+            legs: res.legs.map(l => l && !!l.held),
+            junk: [_gdClockOutAt(null, 0), _gdClockOutAt({}, 0), _gdClockOutAt({ clocks: 'x' }, 0),
+              _gdClockOutAt({ clocks: [null, {}, { start: 'a', end: 'b' }] }, 0)],
+          };
+        });
+        expect(r.dwells).toEqual([['client', 60, false], ['client', 30, false], ['client', 40, true], ['office', 30, false]]);
+        expect(r.legs).toEqual([false, true, null]);
+        expect(r.junk).toEqual([0, 0, 0, 0]);
+      });
+
+      test('a punch or an edit re-derives the day it is on', async () => {
+        const r = await page.evaluate(() => {
+          const calls = [];
+          const live = window._geoDeriveLiveSoon, now = window._geoDeriveDayNow;
+          window._geoDeriveLiveSoon = (why) => calls.push('live:' + why);
+          window._geoDeriveDayNow = (d) => { calls.push('day:' + d); return Promise.resolve(null); };
+          try {
+            _tlClockRederive();
+            _tlClockRederive('2026-09-01');
+            _tlClockRederive(null);
+            return calls;
+          } finally { window._geoDeriveLiveSoon = live; window._geoDeriveDayNow = now; }
+        });
+        expect(r).toEqual(['live:clock', 'day:2026-09-01', 'live:clock']);
+        await assertNoErrors(page);
+      });
+    });
   });
 
   // ── Rule 18: a loop's two ends are one end, counted twice ────────────────
@@ -6379,12 +6525,16 @@ test.describe('geo-derive: the day deriver', () => {
         ['13:00', '17:23', 'unsaved', false],
         ['17:27', '18:19', 'shop', false],       // 12:27 to 13:19, the 13:03 twitch inside it
         ['18:30', '18:45', 'supply', false],
-        ['19:05', '21:53', 'unsaved', false],
+        // Clocked out at 16:50 (21:50 here) while still at the site, and
+        // left at 16:53. Rule 28 (owner 2026-10-02, "clock out should end
+        // the day"): the stop under way at the clock out ends at it. It used
+        // to run to the 21:53 departure.
+        ['19:05', '21:50', 'unsaved', false],
       ]);
       // The nine-minute yard-to-yard loop that rule 7 writes nothing for
       // leaves no hole between two shop rows either.
       expect(r.time.filter(t => t[2] === 'shop').map(t => [t[0], t[1]])).toEqual([['12:35', '12:53'], ['17:27', '18:19']]);
-      expect(r.time.filter(t => t[2] === 'unsaved').map(t => [t[0], t[1]])).toEqual([['13:00', '17:23'], ['19:05', '21:53']]);
+      expect(r.time.filter(t => t[2] === 'unsaved').map(t => [t[0], t[1]])).toEqual([['13:00', '17:23'], ['19:05', '21:50']]);
     });
 
     test('the mileage: one row per drive, the job sites unclaimed, Neenans asked about once', async () => {
