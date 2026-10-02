@@ -158,6 +158,79 @@ function freshFix(e) {
   return !(stale > 0);
 }
 
+// ── A FIX IS A TRIGGER WHILE AN ARRIVAL IS WAITING ON ONE (owner 2026-10-02) ─
+// "everything needs to hit in 10 seconds or less." An arrival ends an open
+// drive on three pieces of evidence (_gdArrivalSettled, js/geo-derive.js): the
+// fence crossing, a fix inside the fence after it, and the tape leaving
+// automotive. The first and the last are triggers above; the fix is not, so
+// when the fix landed LAST the stop waited for whatever trigger came next, up
+// to the half-hourly ping. The leg's four-minute wait has the same shape: it
+// passes on the clock, and only a derive can notice.
+//
+// So a batch of fixes derives too, but only inside that window, and the rule
+// is the deriver's own gates read off the cheapest evidence there is: one
+// indexed read (geo_events_dedupe_uq leads on employee_user_id, type, ts) of
+// this person's crossings and motion flips over the last ARRIVAL_WATCH_MS.
+//   - the newest crossing of a named region is an ENTER with no exit since;
+//   - the tape has left automotive since that enter and is still off it
+//     (gate 3: without it the derive cannot end the drive, so it is wasted);
+//   - the batch carries a fresh fix taken after the enter.
+// Outside that window a fix is still the breadcrumb it always was. The window
+// is stillEndMs (js/geo-derive.js GEO_DERIVE_DEFAULTS), the deriver's own "a
+// truck that sits this long has parked": past it the tape ends the drive by
+// itself and the next ordinary trigger finds it.
+//
+// location_pings cannot use this: the phone inserts them straight into the
+// table and no server code sees the insert. The same reading reaches this
+// function as a `fix` in the next flush, which is the door this watches.
+const ARRIVAL_WATCH_MS = 10 * 60000;
+const WATCH_TYPES = ["regionEnter", "regionExit", "motion"];
+// The deriver's own reading of the tape (_gdKind): anything else says nothing.
+const AUTO_KINDS = new Set(["automotive", "driving"]);
+const OFF_KINDS = new Set(["onFoot", "walking", "running", "cycling", "still", "stationary"]);
+//
+// `openSince` is the caller's free answer to "is anybody standing in a fence
+// right now": ingest-geo's own state machine already opens a dwell on every
+// enter and closes it on the exit (geo_device_state, read on every flush
+// anyway). Passed, it keeps the read off every flush that is not inside an
+// arrival window, which is nearly all of them. Left out, the read decides.
+export async function arrivalWatchDays(svc, uid, evs, nowMs, openSince) {
+  try {
+    if (!Array.isArray(evs) || daysToDerive(evs, nowMs).length) return [];
+    if (openSince !== undefined && !(nowMs - Number(openSince) <= ARRIVAL_WATCH_MS)) return [];
+    const fx = evs.filter((e) => e && FRESH_FIX_TYPES.includes(e.type) && freshFix(e) &&
+      e.ts > 0 && e.ts <= nowMs + TWO_HOURS && e.lat != null);
+    if (!fx.length) return [];
+    const { data, error } = await svc.from("geo_events")
+      .select("type,kind,region_id,ts")
+      .eq("employee_user_id", uid).in("type", WATCH_TYPES)
+      .gte("ts", new Date(nowMs - ARRIVAL_WATCH_MS).toISOString())
+      .order("ts", { ascending: false }).limit(200);
+    if (error || !Array.isArray(data)) return [];
+    // Newest first. 'fence' is the OS's anonymous twin of a named crossing
+    // (see ingest-geo, ONE CROSSING, ONE EVENT) and names no place.
+    const exited = new Set();
+    let enter = null, tape = null;
+    for (const r of data) {
+      const ts = Date.parse(r && r.ts);
+      if (!(ts > 0)) continue;
+      if (r.type === "motion") {
+        const k = String(r.kind || "");
+        if (tape == null && (AUTO_KINDS.has(k) || OFF_KINDS.has(k))) tape = { ts, auto: AUTO_KINDS.has(k) };
+        continue;
+      }
+      const rid = String(r.region_id || "");
+      if (!rid || rid === "fence") continue;
+      if (r.type === "regionExit") { exited.add(rid); continue; }
+      if (!exited.has(rid)) { enter = { ts, rid }; break; }
+    }
+    if (!enter || !tape || !(tape.ts > enter.ts) || tape.auto) return [];
+    const after = fx.filter((e) => e.ts > enter.ts);
+    if (!after.length) return [];
+    return [centralDayKey(Math.max(...after.map((e) => e.ts)))];
+  } catch { return []; }
+}
+
 // ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
 // The twin of the guard in _geoFixLogPush (js/geo-track.js), and it has to
 // exist on BOTH sides: that one protects the phone's own log, this one is what
