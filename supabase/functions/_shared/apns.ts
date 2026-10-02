@@ -18,6 +18,14 @@ export const APNS_KEY = (Deno.env.get("APNS_KEY") || "").replace(/\\n/g, "\n");
 export const APNS_KEY_ID = Deno.env.get("APNS_KEY_ID") || "";
 export const APNS_TEAM_ID = Deno.env.get("APNS_TEAM_ID") || "";
 export const APNS_TOPIC = Deno.env.get("APNS_TOPIC") || "app.tradedesk.beta";
+// Two apps share one token table (2026-10-01): the TestFlight beta
+// (app.tradedesk.beta) and the App Store app (app.tradedesk). A token belongs
+// to exactly one of them and APNs answers DeviceTokenNotForTopic for the
+// other, so, like the gateway below, the topic is a per-token fact found by
+// trying, not a setting. APNS_TOPIC goes first so the common case costs one
+// request.
+export const APNS_TOPICS = [APNS_TOPIC, "app.tradedesk.beta", "app.tradedesk"]
+  .filter((t, i, a) => t && a.indexOf(t) === i);
 // TestFlight builds are served by the SANDBOX gateway; the App Store build is
 // production. Sending to the wrong one returns BadDeviceToken for every
 // device, which looks exactly like a broken token list, so it is a setting,
@@ -43,33 +51,45 @@ export const APNS_HOST = (Deno.env.get("APNS_ENV") || "sandbox") === "production
 export const APNS_OTHER_HOST = APNS_HOST === APNS_PROD_HOST ? APNS_SANDBOX_HOST : APNS_PROD_HOST;
 const badToken = (status: number, txt: string) =>
   status === 400 && /BadDeviceToken/i.test(txt);
+const wrongTopic = (status: number, txt: string) =>
+  status === 400 && /DeviceTokenNotForTopic/i.test(txt);
 
 export type ApnsSend = { ok: boolean; dead: boolean };
 
-// One push to one token, with the environment fallback. `headers` carries the
-// per-call apns-push-type / priority / expiration; the topic and auth are
-// added here so no caller can get them wrong.
+// One push to one token, with the environment and topic fallbacks. `headers`
+// carries the per-call apns-push-type / priority / expiration; the topic and
+// auth are added here so no caller can get them wrong. A caller that passes
+// its own apns-topic built on APNS_TOPIC (Live Activities add
+// ".push-type.liveactivity") keeps that suffix on every topic tried.
 export async function apnsSend(
   jwt: string,
   token: string,
   payload: string,
   headers: Record<string, string>,
 ): Promise<ApnsSend> {
-  const hit = async (host: string) => {
+  const given = headers["apns-topic"];
+  const suffix = given && given.startsWith(APNS_TOPIC) ? given.slice(APNS_TOPIC.length) : "";
+  const topics = given && !given.startsWith(APNS_TOPIC) ? [given] : APNS_TOPICS.map((t) => t + suffix);
+  const hit = async (host: string, topic: string) => {
     const res = await fetch(`${host}/3/device/${token}`, {
       method: "POST",
-      headers: { authorization: `bearer ${jwt}`, "apns-topic": APNS_TOPIC, ...headers },
+      headers: { authorization: `bearer ${jwt}`, ...headers, "apns-topic": topic },
       body: payload,
     });
     return { status: res.status, txt: res.ok ? "" : await res.text() };
   };
-  let r = await hit(APNS_HOST);
-  if (r.status === 200) return { ok: true, dead: false };
-  // Wrong gateway for this token: try the other before condemning it.
-  if (badToken(r.status, r.txt)) {
-    const alt = await hit(APNS_OTHER_HOST);
-    if (alt.status === 200) return { ok: true, dead: false };
-    r = alt;
+  let r = { status: 0, txt: "" };
+  for (const topic of topics) {
+    r = await hit(APNS_HOST, topic);
+    if (r.status === 200) return { ok: true, dead: false };
+    // Wrong gateway for this token: try the other before condemning it.
+    if (badToken(r.status, r.txt)) {
+      const alt = await hit(APNS_OTHER_HOST, topic);
+      if (alt.status === 200) return { ok: true, dead: false };
+      r = alt;
+    }
+    // The other app's token: try the next topic. Anything else is final.
+    if (!wrongTopic(r.status, r.txt)) break;
   }
   // 410 Gone, or BadDeviceToken from BOTH gateways: the app is really gone.
   if (r.status === 410 || badToken(r.status, r.txt) || /Unregistered/i.test(r.txt)) {

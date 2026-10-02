@@ -1,0 +1,57 @@
+# App Store listing -> App Store Connect
+#
+# Registers the store app's ID (app.tradedesk) with its capabilities, then fills
+# in the App Store listing from docs/app-store/listing.json: categories,
+# subtitle, privacy URL, age rating, price (free), availability, description,
+# keywords, promotional text, URLs, copyright, review notes, and the newest
+# processed build. Idempotent; safe to run again after any change to the file.
+#
+# It never submits for review and never touches the App Privacy answers or
+# screenshots (Apple keeps those out of the API). Those stay a human step.
+#
+# Triggers: by hand (workflow_dispatch), or a push to the App Store branch
+# whose commit message says [asc-listing], so it can run before this file is on
+# main. Same App Store Connect key the iOS build uses.
+#
+# Optional repo secrets, typed on the phone instead if unset:
+#   ASC_REVIEW_FIRST / ASC_REVIEW_LAST / ASC_REVIEW_PHONE  review contact
+#   ASC_DEMO_USER / ASC_DEMO_PASS                          reviewer login
+name: App Store listing
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/app-store-ready]
+
+jobs:
+  listing:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[asc-listing]')
+    runs-on: ubuntu-latest
+    env:
+      APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Register app.tradedesk and its capabilities
+        # Same script the store build runs; doing it here first means the bundle
+        # id is in the New App dropdown before any build exists.
+        continue-on-error: true
+        env:
+          TD_BUNDLE_ID: app.tradedesk
+          TD_APP_NAME: TradeDesk
+        run: node scripts/asc-ensure-ids.mjs
+
+      - name: Fill in the App Store listing
+        env:
+          ASC_REVIEW_FIRST: ${{ secrets.ASC_REVIEW_FIRST }}
+          ASC_REVIEW_LAST: ${{ secrets.ASC_REVIEW_LAST }}
+          ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
+          ASC_DEMO_USER: ${{ secrets.ASC_DEMO_USER }}
+          ASC_DEMO_PASS: ${{ secrets.ASC_DEMO_PASS }}
+        run: node scripts/asc-listing.mjs

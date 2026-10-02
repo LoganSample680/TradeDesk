@@ -279,3 +279,109 @@ test.describe('Share extension accepts a contact card', () => {
     expect(si).toMatch(/vcf[\s\S]{0,80}vcard/i);
   });
 });
+
+// ── Offline cold launch (2026-10-01) ─────────────────────────────────────────
+// WKWebView only runs a service worker for App-Bound domains. The shell had
+// none, so nothing was ever cached and a launch with no signal hung on the
+// launch screen. These pin the three pieces that have to agree.
+test.describe('Shell opens offline', () => {
+  const cfg = () => JSON.parse(fs.readFileSync(path.join(NATIVE, 'capacitor.config.json'), 'utf8'));
+  const wf = () => fs.readFileSync(path.join(ROOT, '.github/workflows/ios-beta.yml'), 'utf8');
+
+  test('the server.url host is an App-Bound domain, so its service worker runs', () => {
+    const host = new URL(cfg().server.url).host;
+    const bound = [...wf().matchAll(/Add :WKAppBoundDomains:\d+ string (\S+)"/g)].map(m => m[1]);
+    expect(bound).toContain(host);
+    expect(bound).toContain('localhost');
+    expect(bound.length).toBeLessThanOrEqual(10);   // WebKit ignores the list past 10
+  });
+
+  test('the webview is limited to App-Bound domains, which is what turns them on', () => {
+    expect(cfg().ios.limitsNavigationsToAppBoundDomains).toBe(true);
+  });
+
+  test('a first launch with no cache shows the local page, not a stuck launch screen', () => {
+    const c = cfg();
+    expect(c.server.errorPath).toBe('index.html');
+    const page = fs.readFileSync(path.join(NATIVE, 'www', c.server.errorPath), 'utf8');
+    expect(page).toContain('No connection');
+    expect(page).toContain(new URL(c.server.url).host);   // Try again goes to the live app
+  });
+});
+
+// ── App Store build (2026-10-01) ─────────────────────────────────────────────
+// One workflow, two apps: channel beta = app.tradedesk.beta loading UAT for
+// TestFlight, channel store = app.tradedesk loading production for the App
+// Store. Everything that names a bundle has to follow the channel, or the
+// store app signs with the beta's group, pushes to the beta's topic, or opens
+// links in the wrong app.
+test.describe('Store channel builds its own app', () => {
+  const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+  test('the workflow offers beta and store, and beta stays the default the schedule uses', () => {
+    const wf = read('.github/workflows/ios-beta.yml');
+    expect(wf).toMatch(/options: \[beta, store\]/);
+    expect(wf).toMatch(/default: beta/);
+    expect(wf).toContain("TD_CHANNEL: ${{ inputs.channel || 'beta' }}");
+    expect(wf).toMatch(/BUNDLE=app\.tradedesk; NAME=TradeDesk; HOST=tradedeskpro\.app/);
+  });
+
+  test('the store user agent still says TradeDeskShell, so production serves the app, not the landing page', () => {
+    const wf = read('.github/workflows/ios-beta.yml');
+    const ua = wf.match(/HOST=tradedeskpro\.app; UA="([^"]+)"/)[1];
+    expect(ua).toMatch(/TradeDeskShell/);
+    expect(ua).toMatch(/TradeDeskStore/);   // js/settings.js _tdShellIsStore reads this
+    expect(read('functions/index.js')).toMatch(/SHELL_UA = \/TradeDeskShell\/i/);
+  });
+
+  test('both sites are App-Bound, whichever one the channel loads', () => {
+    const bound = [...read('.github/workflows/ios-beta.yml').matchAll(/Add :WKAppBoundDomains:\d+ string (\S+)"/g)].map(m => m[1]);
+    expect(bound).toEqual(expect.arrayContaining(['uat.tradedesk-cyp.pages.dev', 'tradedeskpro.app', 'localhost']));
+  });
+
+  test('nothing in the build hardcodes the beta bundle where the channel should decide', () => {
+    const wf = read('.github/workflows/ios-beta.yml');
+    expect(wf).not.toContain("PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;");
+    expect(wf).toContain("TD_BUNDLE_ID: ${{ inputs.channel == 'store' && 'app.tradedesk' || 'app.tradedesk.beta' }}");
+    for (const f of ['scripts/ios-add-share-target.rb', 'scripts/ios-add-live-target.rb']) {
+      expect(read(f), f).toMatch(/APP_ID\s+= ENV\['TD_BUNDLE_ID'\] \|\| 'app\.tradedesk\.beta'/);
+    }
+    expect(read('scripts/ios-add-share-target.rb')).toContain("gsub('group.app.tradedesk.beta', APP_GROUP)");
+    expect(read('scripts/asc-ensure-ids.mjs')).toContain("process.env.TD_BUNDLE_ID || 'app.tradedesk.beta'");
+  });
+
+  test('the Swift derives the group and background session from the bundle', () => {
+    for (const f of ['native/td-share/ios/Plugin/TdSharePlugin.swift', 'native/td-share/ios/Extension/ShareViewController.swift', 'native/td-bg-up/ios/Plugin/TdBgUpPlugin.swift']) {
+      const src = read(f);
+      expect(src, f).toContain('Bundle.main.bundleIdentifier');
+      expect(src, f).not.toMatch(/static let appGroup = "group\.app\.tradedesk\.beta"/);
+      expect(src, f).not.toMatch(/withIdentifier: "app\.tradedesk\.beta\.bgup"/);
+    }
+  });
+
+  test('universal links open in either app', async () => {
+    // Pages Functions are ES modules in a CommonJS repo: load a .mjs copy.
+    const os = require('os');
+    const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aasa-')), 'aasa.mjs');
+    fs.copyFileSync(path.join(ROOT, 'functions/.well-known/apple-app-site-association.js'), tmp);
+    const mod = await import(tmp);
+    const res = await mod.onRequestGet({ env: { APPLE_TEAM_ID: 'TEAM123' } });
+    const body = JSON.parse(await res.text());
+    expect(body.applinks.details[0].appIDs).toEqual(['TEAM123.app.tradedesk.beta', 'TEAM123.app.tradedesk']);
+  });
+
+  test('the app ships a privacy manifest declaring the APIs our plugins use', () => {
+    const wf = read('.github/workflows/ios-beta.yml');
+    expect(wf).toContain('ruby ../scripts/ios-add-privacy-manifest.rb');
+    const m = read('native/PrivacyInfo.xcprivacy');
+    expect(m).toContain('<key>NSPrivacyTracking</key>\n  <false/>');
+    expect(m).toContain('NSPrivacyAccessedAPICategoryUserDefaults');
+    expect(m).toContain('NSPrivacyAccessedAPICategoryFileTimestamp');
+  });
+
+  test('iPad is in: all four iPad orientations and both device families', () => {
+    const wf = read('.github/workflows/ios-beta.yml');
+    for (const o of ['Portrait', 'PortraitUpsideDown', 'LandscapeLeft', 'LandscapeRight']) expect(wf).toMatch(new RegExp('UIInterfaceOrientation' + o + '[ ;]'));
+    expect(wf).toContain('TARGETED_DEVICE_FAMILY=1,2');
+  });
+});

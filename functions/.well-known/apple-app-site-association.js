@@ -14,19 +14,20 @@
 // association: a missing/empty appID would make iOS silently reject the
 // WHOLE file (every entry, not just this one), so it's safer to serve
 // nothing than to serve wrong.
-const BUNDLE_ID = 'app.tradedesk.beta';
+// Both shells: the TestFlight beta and the App Store app (2026-10-01). A
+// signing link opens in whichever one is installed.
+const BUNDLE_IDS = ['app.tradedesk.beta', 'app.tradedesk'];
 
 export async function onRequestGet({ env }) {
   const teamId = (env && env.APPLE_TEAM_ID || '').trim();
   if (!teamId) {
     return new Response('APPLE_TEAM_ID not configured for this Pages project', { status: 404 });
   }
-  const appID = `${teamId}.${BUNDLE_ID}`;
   const body = {
     applinks: {
       details: [
         {
-          appIDs: [appID],
+          appIDs: BUNDLE_IDS.map((b) => `${teamId}.${b}`),
           components: [
             { '/': '/sign.html*', comment: 'Proposal signing' },
             { '/': '/client.html*', comment: 'Client hub' },
