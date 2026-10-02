@@ -207,6 +207,13 @@ jobs:
         env:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-placeholder.sql
+      # The server writes a mileage leg at the fence crossing now, marked
+      # provisional (owner 2026-10-02, 10 seconds). 20261065 lets the settled
+      # derive replace it and keeps every unmarked leg protected.
+      - name: A provisional leg is replaced by the settled one
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-provisional.sql
       # Jack's gym morning (2026-09-30): answered "work" as Don's, re-derived as
       # a Personal place, and the old answer kept it a job site. 20261058 lets a
       # Personal place clear it; every other answer is still carried.
