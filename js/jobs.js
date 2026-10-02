@@ -171,24 +171,6 @@ function _fmtMin(m){
   return (h?h+'h ':'')+(rem?rem+'m':'');
 }
 
-// Owner correction 2026-07-11: hiding Clock in when there's no job was
-// backwards: you'd still want to clock in because you're physically on
-// site, job record or not. The real bug was that tapping it with nothing to
-// clock into dead-ended on the client profile page instead of doing
-// anything. Fix: always offer Clock in; if there's no existing job target,
-// create a minimal walk-up job for this client (same shape schedule.js/
-// proposals.js already use for ad-hoc jobs) and clock into that, no new
-// data model, just reuses the existing job-scoped time-tracking machinery.
-function _nearbyClockIn(clientId,jobId){
-  if(!jobId){
-    const c=getClientById(clientId);if(!c)return;
-    const j={id:_newId(),bid_id:null,client_id:clientId,name:c.name,addr:c.addr||'',start:todayKey(),days:1,buffer:0,value:0,color:'#6366F1',eventType:'job',allowWeekend:true,time:null,hours:null,notes:'',status:'upcoming'};
-    jobs.push(j);
-    saveAll();
-    jobId=j.id;
-  }
-  openClockInSheet(jobId);
-}
 // One-tap clock-in from the location prompt on the dashboard (js/dashboard.js),
 // which fires wherever the fence machine says they are: the shop, a supply
 // house, any saved place. Skips the task-scope sheet deliberately: the prompt
@@ -513,7 +495,7 @@ function _isMyTimeEntry(e){
 // jobId===null (not undefined/an unmatched id, an explicit null) means
 // "General time": no client, no job, nothing set up yet. This is the
 // always-on Home clock bar's fallback so it truly works with an empty
-// account. Deliberately NOT the _nearbyClockIn pattern of auto-creating a
+// account. Deliberately NOT the old walk-up pattern of auto-creating a
 // walk-up job (js/jobs.js:55-62): that pattern fits a REAL client with no
 // job record yet, a job genuinely belongs in their history. General time
 // has no one to belong to, inventing a fake job for it would just leak a
