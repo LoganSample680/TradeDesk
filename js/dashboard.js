@@ -1759,11 +1759,16 @@ function renderDash(){
       if(_nbKind!=='skel'){
         window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing")
         // h: the card's height, so the next boot's shimmer holds the same
-        // space (_dashNearbySkelH). 0 while hidden under the shimmer; the
-        // last measured height is kept then.
+        // space (_dashNearbySkelH). The card as it stands now, measured now:
+        // _nbH is only a paint-time reading (a 'same' render never refreshes
+        // it, so any layout change after the paint left it stale; CI caught
+        // it on WebKit). It is the right answer only mid-transition, while a
+        // cross-fade or the slide-open holds the box at a height it is
+        // leaving. 0 (not laid out) keeps the last height.
         try{
           const _prev=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-          const _h=_nearbyEl._nbH||_nearbyEl.offsetHeight||(_prev&&_prev.h)||0;
+          const _moving=!!_nearbyEl._nbXfT||!!_nearbyEl.style.maxHeight;
+          const _h=(_moving?_nearbyEl._nbH:_nearbyEl.offsetHeight)||_nearbyEl._nbH||(_prev&&_prev.h)||0;
           localStorage.setItem('zp3_nearby_snap',JSON.stringify({ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,h:_h}));
         }catch(_e){}
       }
@@ -1922,7 +1927,12 @@ function _nearbySkelDress(el){
 }
 function _nearbyPaint(el,html,kind,instant){
   if(!el)return 'same';
-  if(el._nbHtml===html&&el.dataset.kind===kind)return 'same';
+  // 'same' is a promise about the SCREEN, not the cache: if anything emptied
+  // the host since the last paint, the cached markup matching proves nothing,
+  // and returning here left an empty card that measured 0px (CI 2026-10-02,
+  // WebKit: the stored height came back 0).
+  const live=[...el.children].some(c=>!c.classList.contains('td-nb-ghost'));
+  if(live&&el._nbHtml===html&&el.dataset.kind===kind)return 'same';
   const prev=el.dataset.kind||'';
   el._nbHtml=html;
   const tpl=document.createElement('template');
@@ -2115,6 +2125,16 @@ function _dashWfStamp(elapsed){
   w.real.forEach(put);
   if(!elapsed)w.skel.forEach(put);
   return w;
+}
+// A block that shows, hides or changes AFTER the render that drew the page (an
+// async banner answering late) missed both the placeholder copy and the pour's
+// stamping. Under the placeholder it gets copied now, so it shimmers with the
+// rest instead of appearing bare; mid-pour it gets the beat it has left.
+function _dashLateBlock(){
+  try{
+    if(_dashSkelMode())_dashApplySkeletons();
+    else if(window._bootWfT0&&document.getElementById('pg-dash')?.classList.contains('boot-cascade'))_dashWfStamp(Math.max(1,performance.now()-window._bootWfT0));
+  }catch(_e){}
 }
 function _dashWfClear(){
   document.querySelectorAll('#pg-dash [data-wf]').forEach(el=>{el.removeAttribute('data-wf');el.style.removeProperty('--wf-d');});

@@ -171,7 +171,14 @@ test.describe('On-site card: updates in place, cross-fades on a change of kind',
       document.getElementById('dash-geo-perm')?.remove();
       window._bootSyncPending = false; window._bootSkelDone = true;
       document.getElementById('pg-dash')?.classList.remove('boot-cascade');
+      // The boot's own deriver rebuild (scheduled 2.5s after tracking starts)
+      // is a real "answer on its way" (_nearbyGeoPending). These tests decide
+      // for themselves whether one is coming, so the boot's is let finish and
+      // not rescheduled. On a loaded WebKit runner it was still in flight when
+      // they ran, and the card rightly waited for it (CI 2026-10-02).
+      window._geoDeriveRebuilt = true;
     });
+    await page.waitForFunction(() => !(typeof _geoDeriveRebuildT !== 'undefined' && _geoDeriveRebuildT) && !(typeof _geoDeriveRebuildP !== 'undefined' && _geoDeriveRebuildP), null, { timeout: 15000 });
   });
   test.afterAll(async () => { await page.close(); });
 
@@ -329,6 +336,13 @@ test.describe('On-site card: updates in place, cross-fades on a change of kind',
         out.reshaped = el.querySelectorAll('i').length === 1 && el.children.length === 1;
         out.empty = _nearbyPaint(el, '', 'b', true);
         out.emptyKids = el.childNodes.length;
+        // Something else emptied the host after a paint: the same markup is NOT
+        // 'same', it is painted again (CI 2026-10-02, WebKit: an emptied card
+        // stayed empty and its stored height came back 0).
+        _nearbyPaint(el, '<div><b>9</b></div>', 'e', true);
+        el.innerHTML = '';
+        out.emptied = _nearbyPaint(el, '<div><b>9</b></div>', 'e', false);
+        out.emptiedKids = el.querySelectorAll('b').length;
         for (let i = 0; i < 10; i++) _nearbyPaint(el, '<p>' + i + '</p>', i % 2 ? 'c' : 'd', false);
         _nearbyXfadeEnd(el);
         out.burst = el.children.length;
@@ -345,6 +359,8 @@ test.describe('On-site card: updates in place, cross-fades on a change of kind',
     expect(r.reshaped).toBe(true);
     expect(r.empty).toBe('set');
     expect(r.emptyKids).toBe(0);
+    expect(r.emptied).not.toBe('same');
+    expect(r.emptiedKids).toBe(1);
     expect(r.burst, 'rapid kind changes never stack ghosts').toBe(1);
   });
 

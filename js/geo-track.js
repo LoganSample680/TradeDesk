@@ -3246,9 +3246,14 @@ async function _geoPermissionBanner(){
       if(!p._tdBound){p._tdBound=true;p.onchange=()=>_geoPermissionBanner();}
     }
   }catch(_e){}
-  if(state==='granted'){el.style.display='none';return;}
+  // Everything past the await lands AFTER the render that called this, so the
+  // home screen's boot placeholder and its waterfall were already laid out
+  // without it (js/dashboard.js _dashLateBlock tells them). Caught on WebKit,
+  // where the permission query answers later than the render finishes.
+  const late=()=>{try{if(typeof _dashLateBlock==='function')_dashLateBlock();}catch(_e){}};
+  if(state==='granted'){el.style.display='none';late();return;}
   // The await above is a gap the checklist can repaint in.
-  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';late();return;}
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML=_geoBannerHtml('Location is off',
@@ -3257,6 +3262,7 @@ async function _geoPermissionBanner(){
       ?'Turn it back on in your phone: Settings → TradeDesk → Location → While Using the App.'
       :'Tap below, then pick Allow While Using.'),
     denied?null:'Turn on location');
+  late();
 }
 // One banner shell for every state, so the copy is the only thing that varies.
 // The button is sized to its words, left, not full width: a full-width button's

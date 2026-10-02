@@ -46,10 +46,19 @@ test.describe('home waterfall', () => {
     const byY = (a, b) => a.y - b.y || a.x - b.x;
     return { real: w.real.map(b => R(b.el)).sort(byY), skel: w.skel.map(b => R(b.el)).sort(byY), beats: w.beats };
   });
-  const enterSkel = () => page.evaluate(() => {
-    window._bootSyncPending = true; window._bootSkelDone = false; window._bootCascadeRan = false;
-    _dashApplySkeletons();
-  });
+  // The location banner answers after an awaited permission query, i.e. after
+  // the render that called it (late on WebKit). Measuring before it lands
+  // compares a page with the banner to one without, so every measurement
+  // waits for it first; the app's side of that (the late banner gets its own
+  // placeholder) is its own test below.
+  const settled = () => page.evaluate(async () => { if (typeof _geoPermissionBanner === 'function') await _geoPermissionBanner(); });
+  const enterSkel = async () => {
+    await page.evaluate(() => {
+      window._bootSyncPending = true; window._bootSkelDone = false; window._bootCascadeRan = false;
+      _dashApplySkeletons();
+    });
+    await settled();
+  };
   const leaveSkel = () => page.evaluate(() => {
     window._bootSyncPending = false; window._bootSkelDone = true;
     try { clearTimeout(window._bootSkelTimer); } catch (e) {}
@@ -60,6 +69,7 @@ test.describe('home waterfall', () => {
 
   test('A. every placeholder piece sits on its real block within 1px', async () => {
     await page.evaluate(() => { goPg('pg-dash'); renderDash(); });
+    await settled();
     const before = await rects();
     await enterSkel();
     const r = await rects();
@@ -98,12 +108,49 @@ test.describe('home waterfall', () => {
     const skel = await rects();
     await page.evaluate(() => { window._bootSkelDone = true; window._bootSyncPending = false; renderDash(); _dashRevealSkeletons(); });
     await page.waitForFunction(() => !document.querySelector('#pg-dash .td-boot-skel') && !document.getElementById('pg-dash').classList.contains('boot-cascade'), null, { timeout: 3000 });
+    await settled();
     const after = await rects();
     expect(after.real.length).toBe(skel.skel.length);
     after.real.forEach((b, i) => {
       expect(Math.abs(b.y - skel.skel[i].y), `block ${i} y`).toBeLessThanOrEqual(1);
       expect(Math.abs(b.h - skel.skel[i].h), `block ${i} h`).toBeLessThanOrEqual(1);
     });
+  });
+
+  // CI 2026-10-02, WebKit only: 17 real blocks against 16 placeholder pieces.
+  // The 17th was the location banner (#dash-geo-perm): it shows after an
+  // awaited permission query, so it landed after the placeholder was copied
+  // and appeared bare, shoving the page down under the shimmer.
+  test('A. a block that answers late still gets its placeholder, and joins the pour on its beat', async () => {
+    const r = await page.evaluate(async () => {
+      const el = document.getElementById('dash-geo-perm');
+      const saved = { q: navigator.permissions && navigator.permissions.query, todo: window._setupTodoShowsLocation, html: el.innerHTML, disp: el.style.display };
+      const slow = (state) => { navigator.permissions.query = () => new Promise(res => setTimeout(() => res({ state }), 60)); };
+      try {
+        window._setupTodoShowsLocation = () => false;
+        el.style.display = 'none'; el.innerHTML = '';
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootCascadeRan = false;
+        _dashApplySkeletons();
+        const before = !!el.querySelector(':scope>.td-boot-skel');
+        slow('prompt');
+        await _geoPermissionBanner();
+        const shown = el.style.display === 'block';
+        const covered = el.classList.contains('td-boot-skel-on') && !!el.querySelector(':scope>.td-boot-skel .td-skel');
+        // and when it goes away again, so does its placeholder
+        slow('granted');
+        await _geoPermissionBanner();
+        const gone = !el.querySelector(':scope>.td-boot-skel');
+        return { before, shown, covered, gone };
+      } finally {
+        navigator.permissions.query = saved.q; window._setupTodoShowsLocation = saved.todo;
+        el.innerHTML = saved.html; el.style.display = saved.disp;
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = null;
+        _dashClearSkeletons();
+      }
+    });
+    expect(r).toEqual({ before: false, shown: true, covered: true, gone: true });
   });
 
   test('A. _tdRedact: bars where words were, blobs for badges, nothing live; junk input is a no-op', async () => {
@@ -330,20 +377,26 @@ test.describe('home waterfall', () => {
       window._geoOpenDwell = { id: 'd2', name: 'John Doe', kind: 'job', sinceTs: t, sinceIso: new Date(t).toISOString(), counts: true, fence: { kind: 'job', clientId: 901, addr: '2950 SW McClure Rd' } };
       renderDash();
       const el = document.getElementById('dash-nearby');
+      // The card arrives by a kind change (the previous test left the
+      // placeholder up), so it cross-fades: the old card rides along as a
+      // ghost for 180ms and _nearbyXfadeEnd removes it. That removal is the
+      // fade finishing, not a tick, so wait it out before watching. (CI caught
+      // it on WebKit, where the loop below outlasts the 200ms fade timer.)
+      await new Promise(res => { const w = () => (!el._nbXfT && !el.querySelector('.td-nb-ghost')) ? res() : setTimeout(w, 20); w(); });
       // A tick sets a figure's text, which swaps that one TEXT node; no
       // ELEMENT may ever be added or removed by a tick or a same-kind render.
       const muts = [];
-      const mo = new MutationObserver(ms => ms.forEach(m => [...m.addedNodes, ...m.removedNodes].forEach(n => { if (n.nodeType === 1) muts.push(n.nodeName); })));
+      const mo = new MutationObserver(ms => ms.forEach(m => [...m.addedNodes, ...m.removedNodes].forEach(n => { if (n.nodeType === 1) muts.push(n.nodeName + '.' + n.className); })));
       mo.observe(el, { subtree: true, childList: true });
       const nodes = [...el.querySelectorAll('*')];
       for (let i = 0; i < 4; i++) { if (typeof _geoOnsiteTick === 'function') _geoOnsiteTick(); renderDash(); await new Promise(res => setTimeout(res, 30)); }
       mo.disconnect();
       const same = nodes.every(n => el.contains(n)) && el.querySelectorAll('*').length === nodes.length;
       window._geoOpenDwell = null;
-      return { muts: muts.length, kind: el.dataset.kind, same };
+      return { muts: muts.length, list: muts, kind: el.dataset.kind, same };
     });
     expect(r.kind).toBe('dwell');
-    expect(r.muts, 'ticks and same-kind renders only change text').toBe(0);
+    expect(r.list, 'ticks and same-kind renders only change text').toEqual([]);
     expect(r.same, 'every node of the card is the node it was').toBe(true);
   });
 
