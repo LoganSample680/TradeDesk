@@ -601,6 +601,68 @@ test.describe('egress: photo compression, thumbnails, CDN rewrite', () => {
     expect(r.empty).toBe('');
   });
 
+  // 2026-10-02: full size kept every pixel but was 3 to 5.7 MB a shot.
+  test('the full-size copy keeps every pixel at the tighter quality (JPEG 0.75 where WebP cannot encode)', async () => {
+    const r = await page.evaluate(async () => {
+      const cv = document.createElement('canvas'); cv.width = 4032; cv.height = 3024;
+      cv.getContext('2d').fillRect(0, 0, 4032, 3024);
+      const src = await new Promise(res => cv.toBlob(res, 'image/png'));
+      const calls = [];
+      const real = HTMLCanvasElement.prototype.toBlob;
+      // An iPhone: asking for WebP hands back something else.
+      HTMLCanvasElement.prototype.toBlob = function (cb, mime, q) {
+        calls.push({ w: this.width, mime, q });
+        return real.call(this, cb, mime === 'image/webp' ? 'image/png' : mime, q);
+      };
+      try {
+        const out = await _compressPhoto(src);
+        const bmp = await createImageBitmap(out.full);
+        return { calls, fullMime: out.fullMime, w: bmp.width, h: bmp.height };
+      } finally { HTMLCanvasElement.prototype.toBlob = real; }
+    });
+    expect(r.fullMime).toBe('image/jpeg');
+    expect([r.w, r.h], 'every pixel kept').toEqual([4032, 3024]);
+    const full = r.calls.filter(c => c.w === 4032);
+    expect(full.map(c => c.mime + ':' + c.q)).toEqual(['image/webp:0.78', 'image/jpeg:0.75']);
+  });
+
+  test('the viewer loads photos through the image cache, and falls back to the direct link on a miss', async () => {
+    const r = await page.evaluate(async () => {
+      const realCdn = window._cdnPhoto;
+      window._cdnPhoto = (u) => u.replace('https://direct/', '/img/');
+      const realImage = window.Image;
+      const tried = [];
+      // Every cache URL "fails", every direct one loads.
+      window.Image = function () {
+        const o = {}; let s = '';
+        Object.defineProperty(o, 'src', { get: () => s, set: (v) => { s = v; tried.push(v); setTimeout(() => (v.startsWith('/img/') ? o.onerror : o.onload)?.(), 0); } });
+        return o;
+      };
+      try {
+        const img = document.createElement('img'); document.body.appendChild(img);
+        _pcSwapSrc(img, 'https://direct/gallery/u/f-1.jpg');
+        await new Promise(res => setTimeout(res, 30));
+        const swapped = img.getAttribute('src');
+        const el = document.createElement('img');
+        photos.push({ id: 99881, fullPath: 'u/f-2.jpg', url: 'https://direct/gallery/u/2.jpg' });
+        const realFull = window._pcFullUrl;
+        window._pcFullUrl = () => 'https://direct/gallery/u/f-2.jpg';
+        const used = tdPhotoFullSize(99881, el);
+        const first = el.getAttribute('src');
+        el.onerror && el.onerror();
+        const after = el.getAttribute('src');
+        window._pcFullUrl = realFull;
+        photos.splice(photos.findIndex(p => p.id === 99881), 1);
+        img.remove();
+        return { tried, swapped, used, first, after };
+      } finally { window.Image = realImage; window._cdnPhoto = realCdn; }
+    });
+    expect(r.tried).toEqual(['/img/gallery/u/f-1.jpg', 'https://direct/gallery/u/f-1.jpg']);
+    expect(r.swapped).toBe('https://direct/gallery/u/f-1.jpg');
+    expect(r.first, 'Full size asks the cache first').toBe('/img/gallery/u/f-2.jpg');
+    expect(r.after, 'and the direct link if the cache misses').toBe('https://direct/gallery/u/f-2.jpg');
+  });
+
   test('no console errors from the photo suite', async () => {
     assertNoErrors(page, 'photo compression + thumbnails');
   });

@@ -2508,10 +2508,13 @@ async function _compressPhoto(fileOrBlob,opts){
     if(wantFull&&Math.max(bmp.width,bmp.height)>maxEdge){
       // Only worth keeping when there is more picture than the view copy holds.
       // A 1200px shot IS its own full size, and storing it twice is waste.
-      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.82);
+      // Every pixel is kept; only the encoding is tighter (egress, 2026-10-02).
+      // JPEG at 0.86 was 3 to 5.7 MB a shot on an iPhone, which cannot encode
+      // WebP; 0.75 is about 40% of that and reads the same on a serial plate.
+      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.78);
       let fullMime='image/webp',fullExt='webp';
       if(!full||!full.size||full.type!=='image/webp'){
-        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.86);
+        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.75);
         fullMime='image/jpeg';fullExt='jpg';
       }
       if(full&&full.size){out.full=full;out.fullMime=fullMime;out.fullExt=fullExt;}
