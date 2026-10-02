@@ -532,6 +532,22 @@ function _tlFlushClockPunch(){
     if(typeof opsReadOnly==='function'&&opsReadOnly())return;
     if(typeof _flushSaveNow==='function')Promise.resolve(_flushSaveNow()).catch(()=>{});
   }catch(_e){}
+  _tlClockRederive();
+}
+// A manual clock is an input to the deriver: the last clock out ends the day
+// (rule 28, js/geo-derive.js, owner 2026-10-02). So a punch, or an edit to
+// one, re-derives the day it belongs to, and moving a clock out later brings
+// the drives and stops in between straight back ("editing the clock to after
+// would bring in the drives"). Today goes through the live debounce like
+// every other trigger; another day re-derives on its own.
+function _tlClockRederive(dayKey){
+  try{
+    if(typeof opsReadOnly==='function'&&opsReadOnly())return;
+    const today=(typeof _geoDayKeyOf==='function'&&typeof _geoBizTz==='function')?_geoDayKeyOf(Date.now(),_geoBizTz()):todayKey();
+    const d=dayKey||today;
+    if(d===today){if(typeof _geoDeriveLiveSoon==='function')_geoDeriveLiveSoon('clock');}
+    else if(typeof _geoDeriveDayNow==='function')Promise.resolve(_geoDeriveDayNow(d,null)).catch(()=>{});
+  }catch(_e){}
 }
 function clockIn(jobId,scopeId,scopeLabel){
   const general=jobId===null;
