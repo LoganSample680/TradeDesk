@@ -100,6 +100,28 @@ git fetch -q origin
 git show origin/uat:js/u.js >/dev/null 2>&1 && ok "the other session's file is still on uat" || bad "the other session's file is still on uat"
 [ "$(git show -s --format=%s origin/uat)" = "UAT deploy" ] && ok "the roll ends in a deploy commit that builds" || bad "the roll ends in a deploy commit that builds"
 
+echo "test scope"
+new_repo
+mkdir -p tests
+printf 'function shopWrap(){return 1;}\nfunction other(){return 2;}\n' > js/geo.js
+printf "test('x', () => shopWrap());\n" > tests/e2e-wrap.spec.js
+printf "test('y', () => other());\n" > tests/e2e-unrelated.spec.js
+printf "test('z', () => 1);\n" > tests/e2e-geo.spec.js
+for i in 1 2 3; do printf "test('g', () => other());\n" > tests/e2e-g$i.spec.js; done
+git add -A; git commit -qm scope-base; B=$(git rev-parse HEAD)
+scope() { TEST_SCOPE_MAX_PER_NAME=3 bash "$SRC/scripts/ci/test-scope.sh" "$B" HEAD; }
+stamp 10.01.26.2 "a commit that only bumps the stamp"
+[ "$(scope)" = "skip" ] && ok "a version stamp in cloud.js alone is not a change (was: the full suite on every PR)" || bad "stamp-only scope: $(scope)"
+sed -i 's/return 1;/return 7;/' js/geo.js; git commit -qam "change shopWrap"
+got="$(scope)"
+echo "$got" | grep -q 'tests/e2e-wrap.spec.js' && ok "the spec that calls the changed function runs" || bad "function spec missing: $got"
+echo "$got" | grep -q 'tests/e2e-geo.spec.js' && ok "the spec named after the file runs" || bad "filename spec missing: $got"
+echo "$got" | grep -q 'e2e-unrelated' && bad "a spec for an untouched function was pulled in: $got" || ok "a spec for an untouched function stays out"
+sed -i 's/return 2;/return 8;/' js/geo.js; git commit -qam "change other, named in 4 specs"
+echo "$(scope)" | grep -q 'e2e-g1' && bad "a name in more specs than the limit pulled them all in" || ok "a name in too many specs is ignored, not run everywhere"
+echo "// real" >> js/cloud.js; git commit -qam "real cloud change"
+[ "$(scope)" = "full" ] && ok "a real change to a shared file still runs everything" || bad "real cloud change scope: $(scope)"
+
 echo "live migrations"
 got=$(printf '   Local | Remote | Time\n  ---|---|---\n   20261060 | 20261060 | x\n            | 20261061 | x\n   20261062 |          | x\n' \
   | bash "$SRC/scripts/ci/live-migrations-from-branches.sh" --list | tr '\n' ' ')
