@@ -116,7 +116,9 @@ await step('Age rating (4+, every answer None / No)', async () => {
   const FREQ = /Themes|References|Humor|Nudity|Violence|Realistic|Simulated|Contests|Information|Override|Topics/i;
   const attributes = {};
   for (const k of Object.keys(q.attributes || {})) {
-    if (k === 'kidsAgeBand') continue;
+    // Not questions: the kids band and any link field (Apple added an info
+    // URL that must be a real link or absent).
+    if (k === 'kidsAgeBand' || /url/i.test(k)) continue;
     attributes[k] = FREQ.test(k) && k !== 'gambling' && k !== 'unrestrictedWebAccess' ? 'NONE' : false;
   }
   // Apple keeps adding questions and only names a missing one in the 409. So:
@@ -128,7 +130,12 @@ await step('Age rating (4+, every answer None / No)', async () => {
     if (r.ok) return Object.keys(attributes).length + ' questions answered';
     const msg = why(r);
     const k = (msg.match(/attribute '(\w+)'/) || [])[1];
-    if (!k) throw new Error(msg);
+    if (!k) {
+      // "wrong type" without a name: drop the newest guess and try again.
+      const last = Object.keys(attributes).pop();
+      if (last && /wrong type/i.test(msg)) { delete attributes[last]; continue; }
+      throw new Error(msg);
+    }
     if (!(k in attributes)) attributes[k] = false;
     else if (attributes[k] === false) attributes[k] = 'NONE';
     else if (attributes[k] === 'NONE') delete attributes[k];
