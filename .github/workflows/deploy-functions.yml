@@ -23,6 +23,17 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Find files for migrations a branch already made live
+        # A branch can push its migrations before it merges (CLAUDE.md 14.1.2),
+        # and db push then refuses to run from main at all ("Remote migration
+        # versions not found"), which held #145's edge functions back on
+        # 2026-10-01. The script copies those files in from the branch that
+        # has them, for this run only; they are already applied, so nothing
+        # runs twice.
+        run: supabase migration list | bash scripts/ci/live-migrations-from-branches.sh
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Push database migrations
         # --include-all: a migration was renamed to an earlier date (20260610→20260609),
         # so it now sorts before the last migration already on remote. Supabase refuses

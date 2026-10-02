@@ -388,6 +388,31 @@ never decides on their behalf that their testing is finished.
   arriving twice. With a merge commit the commits are identical on both sides
   and the roll is clean. `mcp__github__merge_pull_request` takes
   `merge_method: 'merge'`; the §14.1.1 skip-token check still applies.
+- **Everything on `uat` reaches `main`, and the pipeline checks that it
+  does** (owner 2026-10-01: "how do we write in multiple sessions but ensure
+  everything makes it to main and everything rolls UAT"). The path for every
+  session is the same: branch from `main`, roll to `uat` with the script, PR
+  the same branch to `main`, merge. Four pieces keep it from snagging:
+  1. **`.github/workflows/pr-sync.yml`** runs on every push to `main`. Each
+     open `claude/*` PR that now conflicts with `main` only on the version
+     stamp gets `main` merged in by `scripts/pr-sync.sh` and pushed, so its
+     tests rerun and it stays mergeable. A conflict in real code is never
+     resolved: the PR gets one comment naming the files. Run the script by
+     hand for the same result: `bash scripts/pr-sync.sh <branch> --push`.
+  2. **One stamp resolver**, `scripts/lib/stamp-merge.sh`, used by both the
+     roll and the sync. Fix it there and both are fixed.
+  3. **The roll's drop check counts every common ancestor**
+     (`scripts/lib/uat-drop-guard.sh`). It used to compare against one, and
+     after a few rolls and merges git has several; on 2026-10-01 it picked
+     the wrong one and called a branch rewriting its own lines a theft. A
+     false stop teaches people to type `UAT_ROLL_ALLOW_DROP=1`, which is how
+     a real one gets waved through.
+  4. **`.github/workflows/uat-backlog.yml`** rewrites one issue, "On UAT, not
+     in production", every morning: each branch with work on `uat` and not on
+     `main`, its age and its PR, or that it has none. Two days or older is
+     flagged. `node scripts/uat-backlog.js` prints the same list locally.
+  `scripts/ci/ship-pipeline-test.sh` proves all four on throwaway repos in
+  the **Ship pipeline** CI job; change any of them and change that test.
 - **To try one feature on its own, use that branch's Pages preview URL**, which
   every push already builds. `uat` is only special because the TestFlight shell
   points at it, so spend it on what has to be on a phone.
@@ -1814,6 +1839,15 @@ infrastructure. Confirm success via `mcp__github__actions_get` /
 `get_workflow_run` (the "Push database migrations" and "Deploy edge
 functions" steps), the same way CI green is verified elsewhere (§1.4), don't
 assume the dispatch succeeded just because it queued.
+
+**A branch that made its migrations live no longer blocks `main`'s deploy**
+(2026-10-01). `supabase db push` refuses to run when the database has a
+version `main` has no file for, which held #145's edge functions back until
+#143 merged. The first step of `deploy-functions.yml` now copies those files
+in from whichever branch carries them, for that run only
+(`scripts/ci/live-migrations-from-branches.sh`); they are already applied, so
+nothing runs twice. A version that no branch carries still stops the deploy,
+because that is a database somebody changed by hand.
 
 ### 14.2 The `/api` Proxy Is Load-Bearing: Never Remove It
 
