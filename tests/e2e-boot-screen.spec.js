@@ -758,23 +758,32 @@ test.describe('client hub boot', () => {
     jobs: [{ id: 5001, bid_id: null, name: 'Water heater', start: '2026-09-28', days: 1, status: 'scheduled', photos: [] }] });
 
   test('after the logo, the hub cards pour in as shimmer, then each fills with its data', async ({ page }) => {
-    await page.addInitScript(h => { window.__mockHubData = h; window._forceBootDwell = true; }, HUB_FULL());
+    await page.addInitScript(h => {
+      window.__mockHubData = h; window._forceBootDwell = true;
+      // The shimmer is up for about a second. A loaded runner can poll right
+      // past it, so the page records what it looked like the moment it went up.
+      new MutationObserver((_m, obs) => {
+        if (!document.querySelector('#view-overview .hub-skel')) return;
+        obs.disconnect();
+        window.__hubSkelSeen = (() => {
+          const bars = [...document.querySelectorAll('#view-overview .hub-skel .td-skel')];
+          const covered = [...document.querySelectorAll('#view-overview>.hub-hero,#view-overview .card')];
+          return {
+            cards: covered.length,
+            allCovered: covered.every(c => c.classList.contains('hub-skel-on') && c.querySelector(':scope>.hub-skel')),
+            bars: bars.length,
+            swept: bars.every(b => b.classList.contains('td-sweep') && /px$/.test(b.style.getPropertyValue('--sx'))),
+            oneClock: new Set(bars.map(b => b.style.animationDelay)).size,
+            anim: bars[0] ? getComputedStyle(bars[0]).animationName : '',
+            cascade: document.getElementById('view-overview').classList.contains('hub-cascade'),
+          };
+        })();
+      }).observe(document, { childList: true, subtree: true });
+    }, HUB_FULL());
     await mockAllExternal(page);
     await page.goto(`/client.html?c=931&u=${FAKE_USER_ID}&t=boot931`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForFunction(() => document.querySelectorAll('#view-overview .hub-skel').length > 0, { timeout: 8000 });
-    const during = await page.evaluate(() => {
-      const bars = [...document.querySelectorAll('#view-overview .hub-skel .td-skel')];
-      const covered = [...document.querySelectorAll('#view-overview>.hub-hero,#view-overview .card')];
-      return {
-        cards: covered.length,
-        allCovered: covered.every(c => c.classList.contains('hub-skel-on') && c.querySelector(':scope>.hub-skel')),
-        bars: bars.length,
-        swept: bars.every(b => b.classList.contains('td-sweep') && /px$/.test(b.style.getPropertyValue('--sx'))),
-        oneClock: new Set(bars.map(b => b.style.animationDelay)).size,
-        anim: getComputedStyle(bars[0]).animationName,
-        cascade: document.getElementById('view-overview').classList.contains('hub-cascade'),
-      };
-    });
+    await page.waitForFunction(() => !!window.__hubSkelSeen, null, { timeout: 8000 });
+    const during = await page.evaluate(() => window.__hubSkelSeen);
     expect(during.cards).toBeGreaterThanOrEqual(2);
     expect(during.allCovered).toBe(true);
     expect(during.bars).toBeGreaterThanOrEqual(4);
@@ -782,7 +791,7 @@ test.describe('client hub boot', () => {
     expect(during.oneClock).toBe(1);
     expect(during.anim).toBe('td-skel-sweep');
     expect(during.cascade).toBe(true);   // the shimmer drops down with the waterfall
-    await page.waitForFunction(() => !document.querySelector('#view-overview .hub-skel,#view-overview .hub-skel-on'), { timeout: 5000 });
+    await page.waitForFunction(() => !document.querySelector('#view-overview .hub-skel,#view-overview .hub-skel-on'), null, { timeout: 5000 });
     const after = await page.evaluate(() => ({
       text: document.getElementById('view-overview').textContent,
       greet: !!document.querySelector('#view-overview .hub-hero-greeting'),
@@ -850,7 +859,7 @@ test.describe('client hub boot', () => {
       }, { k: kind, uid: FAKE_USER_ID });
       await mockAllExternal(page);
       await page.goto(`/client.html?c=933&u=${FAKE_USER_ID}&t=boot933`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForFunction(() => { const l = document.getElementById('topbar-logo-img'); return l && l.complete && l.naturalWidth > 0; }, { timeout: 8000 });
+      await page.waitForFunction(() => { const l = document.getElementById('topbar-logo-img'); return l && l.complete && l.naturalWidth > 0; }, null, { timeout: 8000 });
       await page.waitForTimeout(100);
       const r = await page.evaluate(() => {
         const l = document.getElementById('topbar-logo-img'), n = document.getElementById('topbar-name');
