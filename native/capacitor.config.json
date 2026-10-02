@@ -6,10 +6,12 @@
     "url": "https://uat.tradedesk-cyp.pages.dev",
     "allowNavigation": [
       "uat.tradedesk-cyp.pages.dev"
-    ]
+    ],
+    "errorPath": "index.html"
   },
   "ios": {
-    "contentInset": "never"
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": true
   },
   "appendUserAgent": "TradeDeskShell"
 }

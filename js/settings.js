@@ -2305,7 +2305,7 @@ async function _obNativeApple(){
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
   const hashed=Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
   const res=await AppleP.authorize({
-    clientId:'app.tradedesk.beta',
+    clientId:_tdShellIsStore()?'app.tradedesk':'app.tradedesk.beta',
     redirectURI:location.origin,
     scopes:'email name',
     nonce:hashed
@@ -2316,6 +2316,9 @@ async function _obNativeApple(){
   if(error)throw error;
   return true;
 }
+// The App Store shell appends TradeDeskStore to its user agent (ios-beta.yml,
+// channel store); the TestFlight beta does not. Same web code serves both.
+function _tdShellIsStore(){return /TradeDeskStore/.test(navigator.userAgent||'');}
 function _obOAuth(provider){
   try{
     // Shell + Apple: the native sheet, never the browser redirect.
@@ -2353,8 +2356,9 @@ function _obOAuth(provider){
         window._nativeSocialAuthPending=null;
         if(handled===false){
           const errEl=document.getElementById('supa-login-err');
-          if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
-          if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);
+          const _upd=_tdShellIsStore()?'Update TradeDesk in the App Store for Apple sign-in, or use email':'Update TradeDesk Beta in TestFlight for Apple sign-in, or use email';
+          if(errEl)errEl.textContent=_upd+'.';
+          if(typeof showToast==='function')showToast(_upd,'⚠️',5000);
         }
       }).catch(e=>{
         window._nativeSocialAuthPending=null;

@@ -920,7 +920,6 @@ function openPayPanel(bidId, autoType){
     '<div id="mpay-type-btns" style="display:flex;gap:3px;padding:4px;border-radius:13px;background:var(--cream);box-shadow:inset 0 0 0 1px var(--border2)">'+
       _opt('manual',svgIcon('💵',{size:19,color:'var(--green)'}),'Log it',false)+
       (balance>0.50?_opt('stripe',svgIcon('🔗',{size:19,color:'var(--denim)'}),'Send link',_needStripe,_needStripe?'_mpayNeedStripe()':null):'')+
-      (balance>0.50?_opt('tap',svgIcon('📶',{size:19,color:'#C0720A'}),'Tap to pay',true,stripeOn?'_tapToPaySoon()':'_mpayNeedStripe()'):'')+
     '</div>'+
     '<div id="mpay-hint" style="font-size:11.5px;color:var(--text3);text-align:center;margin:9px 0 14px"></div>';
   // Amount presets: the deposit this contract calls for and the whole balance.
@@ -1037,16 +1036,13 @@ function autoFillPayAmount(){
 // walks straight to the Connect screen, which is the single thing standing between the
 // contractor and both of them.
 function _mpayNeedStripe(){
-  zConfirm('Card payments run through Stripe, so the client hub and tap to pay stay locked until your account is connected. It takes a couple of minutes.',
+  zConfirm('Card payments run through Stripe, so the client hub stays locked until your account is connected. It takes a couple of minutes.',
     ()=>{
       closePayPanel();
       goPg('pg-settings');
       setTimeout(()=>{if(typeof _openStripeConnect==='function')_openStripeConnect();},250);
     },
     {title:'Connect Stripe first',yes:'Connect Stripe',no:'Not now',danger:false});
-}
-function _tapToPaySoon(){
-  zAlert('Tap to pay is coming with the TradeDesk app. For now, tap Collect for cash/check, or send the client the QR code to pay by card.',{title:'Coming soon'});
 }
 // The invoice the client sees IS the hub's invoice view, deep-linked with
 // #invoice-<bidId>, so there is no second document to build or keep in sync. It
