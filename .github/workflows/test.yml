@@ -150,6 +150,14 @@ jobs:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/call-ops-rollups.sql
 
+      # The Phones card (20261061): one phone's day, worked by hand, against
+      # every number the card shows. A truck charger, a killed app with GPS
+      # on, an after-hours reading and a stranger asking are the cases.
+      - name: The Phones card reads a day right
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/device-health.sql
+
       # ONE fixture, TWO implementations. geoDeriveDay is pure and portable, so
       # it can run off the phone unchanged; the FENCE LIST cannot, because
       # _geoDeriveFences reads S, places, clients and jobs off the window. That
@@ -222,6 +230,15 @@ jobs:
         env:
           PGPASSWORD: testpass
         run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-supersede.sql
+
+      # One drive described twice under two journey ids (the server's and the
+      # phone's) left two legs, because a purpose the deriver writes itself
+      # was read as a person's answer (Logan, 2026-10-01: 3.3 mi twice).
+      # 20261062 tells the two apart by purposeAt; this replays his noon.
+      - name: A derived purpose does not keep a re-described leg alive
+        env:
+          PGPASSWORD: testpass
+        run: psql -h localhost -U testuser -d testdb -f scripts/ci/geo-replace-day-derived-purpose.sql
 
       # 20261049 closed doors a stranger could walk through: moving a login
       # onto another business, writing where payouts land, reading every
@@ -304,6 +321,23 @@ jobs:
         run: |
           git fetch -q origin "${{ github.event.pull_request.base.ref }}"
           node scripts/ci/dup-check.mjs "origin/${{ github.event.pull_request.base.ref }}"
+
+  # ── The ship pipeline scripts, proven on throwaway repos ──────────────────
+  # scripts/uat-roll.sh, scripts/pr-sync.sh and the migration step in
+  # deploy-functions.yml decide what reaches UAT and production. A wrong
+  # change to any of them loses another session's work silently, so they are
+  # tested like app code (scripts/ci/ship-pipeline-test.sh, ~5 seconds).
+  ship-pipeline:
+    name: Ship pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Roll, sync and migration scripts
+        run: bash scripts/ci/ship-pipeline-test.sh
 
   flow-test-advisory:
     name: "§12.8 flow-test advisory"

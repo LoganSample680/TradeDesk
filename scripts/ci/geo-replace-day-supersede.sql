@@ -65,7 +65,9 @@ begin
   insert into job_time_entries (contractor_user_id, employee_user_id, arrived_at, departed_at, minutes, source, client_key)
     values (u, u, a + interval '13h 30m', a + interval '13h 29m', 0, 'client', 'bad-1');
   insert into td_mileage (id, user_id, data, deleted_at) values ('j-ANSWERED', u,
-    jsonb_build_object('id','j-ANSWERED','gps',true,'date',d,'miles',1.6,'purpose','Business',
+    -- A PERSON's answer: the purpose carries purposeAt (20261062). A bare
+    -- 'Business' is what the deriver writes itself and is no answer at all.
+    jsonb_build_object('id','j-ANSWERED','gps',true,'date',d,'miles',1.6,'purpose','Business','purposeAt','2026-09-23T15:00:00Z',
       'startedIso', to_char(a + interval '13h 10m 00s', iso), 'endedIso', to_char(a + interval '13h 13m 00s', iso)), null);
   insert into td_mileage (id, user_id, data, deleted_at) values ('j-JUNK', u,
     jsonb_build_object('id','j-JUNK','gps',true,'date',d,'miles',1,'startedIso','not a date','endedIso','nope'), null);
