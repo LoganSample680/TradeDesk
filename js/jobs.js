@@ -1521,7 +1521,7 @@ function renderJobsPage(){
     if(!primaryBtn&&nextJob&&_jobDueForDone(nextJob,tk))primaryBtn='<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm btn-g" style="border-radius:20px">✓ Mark done</button>';
     const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
-    return '<div class="tf-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
+    return '<div class="tf-card" onclick="'+_jobsCardOpen(b)+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
       '<div class="tf-icon '+(st.stage==='active'?'t-green':st.stage==='balance_due'?'t-red':'t-blue')+'" style="font-size:14px">'+
         (st.stage==='active'?svgIcon('🔨'):st.stage==='balance_due'?svgIcon('💰'):st.stage==='signed'?svgIcon('✍'):svgIcon('📅'))+
       '</div>'+
@@ -1538,6 +1538,17 @@ function renderJobsPage(){
   }).join('')+'</div>'+_looseHtml;
 }
 
+// WHAT A JOBS CARD OPENS (hotfix, error_log 287/288, 2026-10-02). Both job
+// boards draw a proposal whose customer is not on this device with a stand-in
+// ({id:b.client_id}), and the card still called openJobSheet with that id,
+// which finds no customer and returns without a word: a dead tap on a card
+// that looks perfectly live. The proposal is the thing on the card and
+// openBidDetail already copes with a missing customer, so that is what opens.
+function _jobsCardOpen(b){
+  if(!b)return 'void(0)';
+  const c=getClientById(b.client_id);
+  return c?'openJobSheet('+c.id+')':'openBidDetail('+b.id+')';
+}
 function _renderJobsKanban(el,tk,wonBidsList){
   const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
   const cols=[
@@ -1585,7 +1596,7 @@ function _renderJobsKanban(el,tk,wonBidsList){
             chipLabel=paidDate?paidDate+' paid':'Paid';
             chipCls='sf-won';
           }
-          return '<div class="k-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'" style="margin-bottom:8px">'+
+          return '<div class="k-card" onclick="'+_jobsCardOpen(b)+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'" style="margin-bottom:8px">'+
             '<div class="k-name">'+escHtml(c.name)+'</div>'+
             '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
             '<div class="k-foot">'+
