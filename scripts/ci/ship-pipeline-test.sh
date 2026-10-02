@@ -13,10 +13,21 @@ ok()   { echo "  ok   $1"; }
 bad()  { echo "  FAIL $1"; FAIL=1; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# No housekeeping behind the test's back. Git runs gc/maintenance DETACHED
+# after a commit or merge, and on 2026-10-02 one was still writing into the
+# last case's .git when the next case deleted it ("rm: cannot remove .../w/.git:
+# Directory not empty"); the clone into the half-deleted folder failed
+# silently and the drop check ran outside any repo. Off here, and every case
+# gets a folder of its own, so nothing still running can sit in its way.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 \
+       GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
+NREPO=0
 
 new_repo() {
-  rm -rf "$T/origin.git" "$T/w"; git init -q --bare -b main "$T/origin.git"
-  git clone -q "$T/origin.git" "$T/w" 2>/dev/null; cd "$T/w" || exit 1
+  NREPO=$((NREPO + 1)); local R="$T/case$NREPO"
+  git init -q --bare -b main "$R/origin.git" || exit 1
+  git clone -q "$R/origin.git" "$R/w" 2>/dev/null || { echo "  FAIL clone for case $NREPO"; exit 1; }
+  cd "$R/w" || exit 1
   git checkout -q -b main
   mkdir -p scripts/lib scripts/ci js supabase/migrations
   cp "$SRC/scripts/lib/"*.sh scripts/lib/; cp "$SRC/scripts/pr-sync.sh" "$SRC/scripts/bump-version.js" scripts/
