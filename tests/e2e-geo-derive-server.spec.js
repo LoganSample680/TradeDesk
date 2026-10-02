@@ -611,6 +611,161 @@ test.describe('the deriver on the server', () => {
   });
 });
 
+// ── A FIX IS A TRIGGER WHILE AN ARRIVAL IS WAITING ON ONE (owner 2026-10-02) ─
+// "everything needs to hit in 10 seconds or less." The fix that proves an
+// arrival is often the last piece to land, and a breadcrumb was never a
+// trigger, so the stop waited for the next flip or the half-hourly ping.
+// arrivalWatchDays makes a fix batch derive, but only inside an arrival
+// window, and only after one indexed read of crossings and flips.
+test.describe('arrivalWatchDays: a fix batch derives while an arrival waits on it', () => {
+  const ENTER = at(12, 59) + 57000;                     // Jack's yard, 12:59:57
+  const NOW = at(13, 1) + 30000;
+  const svcWith = (events, calls) => ({
+    from(table) {
+      const q = { f: [] };
+      const b = {
+        select() { return b; },
+        eq(k, v) { q.f.push(['eq', k, v]); return b; },
+        in(k, v) { q.f.push(['in', k, v]); return b; },
+        gte(k, v) { q.f.push(['gte', k, v]); return b; },
+        order() { return b; },
+        limit(n) { q.limit = n; return b; },
+        then(res, rej) {
+          calls.push({ table, f: q.f, limit: q.limit });
+          const types = (q.f.find((x) => x[0] === 'in') || [])[2] || [];
+          const since = Date.parse((q.f.find((x) => x[0] === 'gte') || [])[2]);
+          const data = events.filter((e) => types.includes(e.type) && Date.parse(e.ts) >= since)
+            .sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
+          return Promise.resolve({ data, error: null }).then(res, rej);
+        },
+      };
+      return b;
+    },
+  });
+  const ev = (type, ms, extra) => Object.assign({ type, ts: iso(ms), kind: null, region_id: null }, extra || {});
+  const fixAt = (ms) => ({ type: 'fix', ts: ms, lat: 39.0457, lng: -95.7148, detail: null });
+  const arrived = [
+    ev('motion', at(12, 50), { kind: 'automotive' }),
+    ev('regionEnter', ENTER, { region_id: 'place-1788216906515011' }),
+    ev('motion', at(13, 1) + 20000, { kind: 'still' }),
+  ];
+
+  test('the arrival is waiting on this fix: derive the day', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    const days = await arrivalWatchDays(svcWith(arrived, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER);
+    expect(days).toEqual([DAY]);
+    expect(calls.length, 'one read').toBe(1);
+    expect(calls[0].table).toBe('geo_events');
+    expect(calls[0].f).toContainEqual(['eq', 'employee_user_id', 'uid-1']);
+    expect(calls[0].limit, 'bounded').toBeGreaterThan(0);
+  });
+
+  test('outside an arrival window the read never happens', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    const svc = svcWith(arrived, calls);
+    // Nobody standing in a fence, by ingest-geo's own state machine.
+    expect(await arrivalWatchDays(svc, 'uid-1', [fixAt(NOW - 1000)], NOW, null)).toEqual([]);
+    // Standing in one for longer than the window: the tape has had its chance.
+    expect(await arrivalWatchDays(svc, 'uid-1', [fixAt(NOW - 1000)], ENTER + 11 * 60000, ENTER)).toEqual([]);
+    // A batch with a trigger in it derives anyway, through daysToDerive.
+    expect(await arrivalWatchDays(svc, 'uid-1', [{ type: 'motion', ts: NOW - 1000 }], NOW, ENTER)).toEqual([]);
+    // No fresh fix in the batch: nothing new to read.
+    expect(await arrivalWatchDays(svc, 'uid-1', [{ type: 'fix', ts: NOW - 1000, lat: 39, lng: -95, detail: { staleMs: 600000 } }], NOW, ENTER)).toEqual([]);
+    expect(await arrivalWatchDays(svc, 'uid-1', [], NOW, ENTER)).toEqual([]);
+    expect(calls.length, 'none of those cost a query').toBe(0);
+  });
+
+  test('the deriver could not end the drive: no derive', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    // Tape still automotive since the crossing (Menards, 08:08): gate 3 fails.
+    const driving = arrived.slice(0, 2);
+    expect(await arrivalWatchDays(svcWith(driving, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // Back on automotive after the still.
+    const rolling = arrived.concat([ev('motion', NOW - 5000, { kind: 'automotive' })]);
+    expect(await arrivalWatchDays(svcWith(rolling, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // He already left: the exit closed the crossing.
+    const left = arrived.concat([ev('regionExit', NOW - 5000, { region_id: 'place-1788216906515011' })]);
+    expect(await arrivalWatchDays(svcWith(left, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // The fix predates the crossing: it cannot prove the arrival.
+    expect(await arrivalWatchDays(svcWith(arrived, calls), 'uid-1', [fixAt(ENTER - 5000)], NOW, ENTER)).toEqual([]);
+    // The anonymous 'fence' twin names no place.
+    const anon = [arrived[0], ev('regionEnter', ENTER, { region_id: 'fence' }), arrived[2]];
+    expect(await arrivalWatchDays(svcWith(anon, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+  });
+
+  test('a read that fails derives nothing and throws nothing', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const broken = { from() { throw new Error('db down'); } };
+    expect(await arrivalWatchDays(broken, 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    const errored = { from() { const b = { select: () => b, eq: () => b, in: () => b, gte: () => b, order: () => b, limit: () => b,
+      then: (res) => Promise.resolve({ data: null, error: { message: 'x' } }).then(res) }; return b; } };
+    expect(await arrivalWatchDays(errored, 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+  });
+
+  test('ingest-geo asks it only when the batch has no trigger, with its own open dwell', async () => {
+    const fs = require('fs');
+    const ig = fs.readFileSync(path.join(ROOT, 'supabase/functions/ingest-geo/index.ts'), 'utf8');
+    expect(ig).toContain('deriveNow.length ? deriveNow : await arrivalWatchDays(svc, uid, evs, Date.now(), openSince)');
+    expect(ig).toContain('openSince = dwell ? Number(dwell.arrivedTs) : null;');
+  });
+});
+
+// ── RULE C ON THE SERVER: THE CROSSING UPLOAD WRITES THE STOP (2026-10-02) ──
+// The point of rule C is the timing, so the server half has to be proved too:
+// the upload carrying the regionEnter is itself a derive trigger, and that one
+// derive sends the open stop row and the closed drive row to geo_replace_day.
+// The exit's upload takes it back by not sending it (step 5c retires it).
+test.describe('rule C: the crossing upload writes the stop row', () => {
+  const ENTER = at(7, 57) + 20000;
+  const EXIT = ENTER + 28000;
+  const crossing = (type, ms) => ({ ts: iso(ms), type, kind: null, lat: CLIENT.lat + 0.002, lon: CLIENT.lon, region_id: 'client-111' });
+  const upTo = (ms, extra) => ({ ...TABLES, geo_events: EVENTS.filter((e) => Date.parse(e.ts) <= ms).concat(extra)
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts)) });
+
+  test('a batch holding only the crossing derives its day', async () => {
+    const { daysToDerive } = await import(SHARED);
+    const fs = require('fs');
+    const dd = fs.readFileSync(path.join(ROOT, 'supabase/functions/_shared/derive-day.mjs'), 'utf8');
+    expect(dd).toMatch(/TRIGGER_TYPES = new Set\(\[[^\]]*"regionEnter"/);
+    expect(daysToDerive([{ type: 'regionEnter', ts: ENTER, lat: 39, lng: -95, regionId: 'client-111' }], ENTER + 1000)).toEqual([DAY]);
+    expect(daysToDerive([{ type: 'regionExit', ts: EXIT, lat: 39, lng: -95, regionId: 'client-111' }], EXIT + 1000)).toEqual([DAY]);
+  });
+
+  test('that derive sends the open stop, the drive closed at the crossing, and a draft leg', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    const r = await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER)]), rpc), 'cid-1', 'uid-1', DAY, ENTER + 1000, null);
+    const write = rpc.find((c) => c.name === 'geo_replace_day');
+    expect(write, 'written on the crossing upload').toBeTruthy();
+    const stop = write.args.p_time.filter((x) => x.source !== 'drive');
+    expect(stop.map((x) => [x.arrived_at, x.departed_at])).toEqual([[iso(ENTER), null]]);
+    const drive = write.args.p_time.filter((x) => x.source === 'drive');
+    expect(drive.map((x) => [x.arrived_at, x.departed_at])).toEqual([[iso(DEPART), iso(ENTER)]]);
+    expect(stop[0].client_key, 'the stop rides on the drive key').toBe('d-' + drive[0].client_key);
+    // AMENDED 2026-10-02: the leg used to wait for gate 4. It now goes out on
+    // the crossing, marked provisional, on the drive's own key, so the settled
+    // derive (or the drive's real end) rewrites it (geo_replace_day 20261065).
+    expect(write.args.p_miles.map((m) => [m.id, m.provisional === true]), 'a draft leg on the drive key')
+      .toEqual([[drive[0].client_key, true]]);
+    expect(r.wrote).toBe(true);
+  });
+
+  test('the exit upload takes it back: the stop is not resent, the drive re-opens on its key', async () => {
+    const { deriveDayServer } = await import(SHARED);
+    const rpc = [];
+    await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER)]), rpc), 'cid-1', 'uid-1', DAY, ENTER + 1000, null);
+    await deriveDayServer(fakeSvc(upTo(ENTER, [crossing('regionEnter', ENTER), crossing('regionExit', EXIT)]), rpc), 'cid-1', 'uid-1', DAY, EXIT + 1000, null);
+    const [first, second] = rpc.filter((c) => c.name === 'geo_replace_day');
+    const key = first.args.p_time.find((x) => x.source === 'drive').client_key;
+    expect(second.args.p_time.filter((x) => x.source !== 'drive'), 'no stop row').toEqual([]);
+    expect(second.args.p_time.map((x) => [x.client_key, x.departed_at])).toEqual([[key, null]]);
+    expect(second.args.p_miles).toEqual([]);
+  });
+});
+
 // The ops portal explains an un-swept rebuild, and until 2026-09-18 there was
 // only one reason it could happen, so the page stated it as a fact. The
 // no-answer guard added a second, and the owner was told the server had no

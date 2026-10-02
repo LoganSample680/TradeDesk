@@ -249,6 +249,25 @@ test.describe('brand-look: the look a logo gives the screen', () => {
   });
 });
 
+// What the boot screen showed, read from its first frame rather than sampled
+// once at domcontentloaded: on a loaded WebKit runner the scripts can run past
+// the 2.15s beat and the screen has lifted before a single sample looks (the
+// first test below hit it 2026-09-27; the two first-frame tests after it hit
+// it on #149, 2026-10-02). The first content the overlay ever held wins.
+const watchBootFrame = (page) => page.addInitScript(() => {
+  const look = () => {
+    if (window.__bootFrame) return;
+    const ov = document.getElementById('supa-boot-overlay');
+    if (!ov || !ov.firstElementChild) return;
+    window.__bootFrame = {
+      logo: !!ov.querySelector('img.bt-logo'),
+      name: (ov.querySelector('.bt-name') || {}).textContent || '',
+      foot: !!ov.querySelector('.bt-foot'),
+    };
+  };
+  new MutationObserver(look).observe(document, { childList: true, subtree: true });
+});
+
 test.describe('app boot screen', () => {
   test('the old glow, bar and status copy are gone; the new screen is up', async ({ page }) => {
     await mockAllExternal(page);
@@ -285,11 +304,9 @@ test.describe('app boot screen', () => {
       }
     });
     await mockAllExternal(page);
+    await watchBootFrame(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const r = await page.evaluate(() => ({
-      name: (document.querySelector('#supa-boot-overlay .bt-name') || {}).textContent || '',
-      foot: !!document.querySelector('#supa-boot-overlay .bt-foot'),
-    }));
+    const r = await page.evaluate(() => window.__bootFrame);
     expect(r.name).toBe('Acme Plumbing');
     expect(r.foot).toBe(false);
   });
@@ -305,13 +322,11 @@ test.describe('app boot screen', () => {
       }
     });
     await mockAllExternal(page);
+    await watchBootFrame(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const r = await page.evaluate(() => ({
-      logo: !!document.querySelector('#supa-boot-overlay img.bt-logo'),
-      name: !!document.querySelector('#supa-boot-overlay .bt-name'),
-    }));
+    const r = await page.evaluate(() => window.__bootFrame);
     expect(r.logo).toBe(true);
-    expect(r.name).toBe(false);
+    expect(!!r.name).toBe(false);
     await waitForAppBoot(page);
     assertNoErrors(page, 'split logo boot');
   });

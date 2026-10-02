@@ -8370,6 +8370,55 @@ test.describe('Paint estimate surface and product functions', () => {
     expect(r.oauthCalled, 'the browser redirect flow must never fire in the shell').toBe(false);
   });
 
+  // App Store shell (2026-10-01): its own bundle id, app.tradedesk. It says so
+  // with TradeDeskStore in the user agent; the beta does not.
+  test('store shell Apple sign-in: asks Apple as app.tradedesk, and a stale build says App Store', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, savedNative = window._obNativeApple, savedCE = console.error;
+      const realIdToken = _supa.auth.signInWithIdToken;
+      const uaDesc = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+      const errEl = document.createElement('div');
+      errEl.id = 'supa-login-err'; errEl.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(errEl);
+      const setUA = (ua) => Object.defineProperty(navigator, 'userAgent', { get: () => ua, configurable: true });
+      try {
+        console.error = () => {};
+        let authorizeArgs = null;
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: (o) => { authorizeArgs = o; return Promise.resolve({ response: { identityToken: 't' } }); },
+          } : null,
+        };
+        _supa.auth.signInWithIdToken = () => Promise.resolve({ error: null });
+        window._applePluginCache = null;
+        setUA('Mozilla/5.0 (iPhone) TradeDeskShell TradeDeskStore');
+        const isStore = _tdShellIsStore();
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        const storeClientId = authorizeArgs && authorizeArgs.clientId;
+        window._obNativeApple = () => Promise.resolve(false);
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const storeStale = errEl.textContent;
+        setUA('Mozilla/5.0 (iPhone) TradeDeskShell');
+        const betaIsStore = _tdShellIsStore();
+        return { isStore, betaIsStore, storeClientId, storeStale };
+      } finally {
+        if (uaDesc) Object.defineProperty(navigator, 'userAgent', uaDesc); else delete navigator.userAgent;
+        console.error = savedCE; window.Capacitor = realCap; window._obNativeApple = savedNative;
+        _supa.auth.signInWithIdToken = realIdToken;
+        window._applePluginCache = null; window._nativeSocialAuthPending = null;
+        errEl.remove();
+      }
+    });
+    expect(r.isStore).toBe(true);
+    expect(r.betaIsStore).toBe(false);
+    expect(r.storeClientId).toBe('app.tradedesk');
+    expect(r.storeStale).toContain('Update TradeDesk in the App Store');
+    expect(r.storeStale).not.toContain('TestFlight');
+  });
+
   test('browser Apple sign-in is untouched: still the OAuth redirect flow', async () => {
     const r = await page.evaluate(async () => {
       const realCap = window.Capacitor, realOAuth = _supa.auth.signInWithOAuth;

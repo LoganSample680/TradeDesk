@@ -1861,50 +1861,37 @@ test.describe('bids.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    // Tap-to-pay slot reserved for the native app (owner decision 2026-07-10), must
-    // not be a dead button (CLAUDE.md §14.1): tapping it shows an honest message
-    // pointing to what works today, not a silent no-op.
-    //
-    // Behaviour change 2026-08-15 (owner rule): tap to pay is now GATED on Stripe,
-    // same as the client hub, because both charge the card through the connected
-    // account. Previously the button always said "coming soon" and always called
-    // _tapToPaySoon(). Now that is the CONNECTED case; with Stripe off it reads
-    // "Locked" and routes to Connect. Neither state is a dead button, which is what
-    // this test has always existed to prove, so both states are asserted.
-    test('Tap to pay is present in both Stripe states and is never a dead button', async () => {
+    // Tap to pay used to sit here as a greyed "Coming soon" slot. Removed
+    // 2026-10-01 for App Store review (guideline 2.1: no placeholder features).
+    // CLAUDE.md §7.1: prove the old entry point is gone in both Stripe states.
+    test('Tap to pay is gone from the pay panel, and its coming-soon handler with it', async () => {
       const r = await page.evaluate(() => {
         const orig = window._stripeConnectStatus;
         const probe = (connected) => {
           window._stripeConnectStatus = connected ? { charges_enabled: true } : null;
           document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
           try { openPayPanel(77702, 'final'); } catch (_) {}
-          const btn = [...document.querySelectorAll('.pay-modal-overlay button')]
-            .find(b => /Tap to pay/.test(b.textContent));
-          const out = { found: !!btn, label: btn ? btn.textContent : '', onclick: btn ? btn.getAttribute('onclick') : '' };
-          btn && btn.click();
-          const modal = document.querySelector('.zmodal-overlay .zmodal-msg');
-          out.modalText = modal ? modal.textContent : '';
+          const panel = document.querySelector('.pay-modal-overlay');
+          const out = {
+            panel: !!panel,
+            tapBtn: panel ? [...panel.querySelectorAll('button')].some(b => /tap to pay/i.test(b.textContent)) : null,
+            tapAttr: panel ? panel.querySelectorAll('[data-plocked="tap"],[data-pmethod="tap"]').length : null,
+            comingSoon: panel ? /coming soon/i.test(panel.textContent) : null,
+          };
           document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
           return out;
         };
         const on = probe(true), off = probe(false);
         window._stripeConnectStatus = orig;
-        return { on, off };
+        return { on, off, fn: typeof window._tapToPaySoon };
       });
-      // Stripe connected: honest "coming soon", never a claim that a card was charged
-      expect(r.on.found, 'Tap to pay must be present in the pay panel').toBe(true);
-      expect(r.on.label).toContain('Tap to pay');
-      // No status badge on the control since 2026-08-15 (owner: an unavailable route
-      // is just grey). The TAP is what explains itself, which is what this test is
-      // really for, so the not-a-dead-button assertions below carry the weight now.
-      expect(r.on.onclick).toBe('_tapToPaySoon()');
-      expect(r.on.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
-      expect(r.on.modalText.toLowerCase()).not.toContain('charged');
-      // Stripe off: locked, and tapping walks to Connect rather than doing nothing
-      expect(r.off.found, 'Tap to pay must still be visible when Stripe is off').toBe(true);
-      expect(r.off.onclick).toBe('_mpayNeedStripe()');
-      expect(r.off.modalText.toLowerCase()).toContain('stripe');
-      expect(r.off.modalText.toLowerCase()).not.toContain('charged');
+      for (const st of [r.on, r.off]) {
+        expect(st.panel, 'the pay panel still opens').toBe(true);
+        expect(st.tapBtn).toBe(false);
+        expect(st.tapAttr).toBe(0);
+        expect(st.comingSoon).toBe(false);
+      }
+      expect(r.fn).toBe('undefined');
     });
 
     test('sets activePayBidId', async () => {

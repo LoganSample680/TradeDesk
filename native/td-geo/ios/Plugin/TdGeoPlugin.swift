@@ -791,15 +791,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // JS names the tier (3.2), unknown falls back to best so a bad string
         // can never quietly downgrade a route to something unusable.
         let accuracy = (call.getString("accuracy") ?? "best").lowercased()
+        // Which motion kinds END a drive, named by JS (_GEO_REST_KINDS in
+        // geo-track.js). Absent on JS that predates the key, and then
+        // selfCloseDrive does nothing, exactly as before. Strings only: a
+        // junk entry is dropped rather than believed.
+        let restKinds = TdGeoPlugin.restKindsOf(call.getArray("restKinds"))
         let reason = reasonOf(call)
         DispatchQueue.main.async {
             // The recipe outlives the window. Written on every drive assert,
             // never cleared when one closes, and read by nothing but
-            // selfArmDrive. See driveCfgKey.
-            UserDefaults.standard.set(["maxMs": maxMs, "filter": filter,
-                                       "flushMs": flushMs, "accuracy": accuracy,
-                                       "atMs": Date().timeIntervalSince1970 * 1000],
-                                      forKey: self.driveCfgKey)
+            // selfArmDrive and selfCloseDrive. See driveCfgKey.
+            var cfg: [String: Any] = ["maxMs": maxMs, "filter": filter,
+                                      "flushMs": flushMs, "accuracy": accuracy,
+                                      "atMs": Date().timeIntervalSince1970 * 1000]
+            if !restKinds.isEmpty { cfg["restKinds"] = restKinds }
+            UserDefaults.standard.set(cfg, forKey: self.driveCfgKey)
             self.armDrive(maxMs: maxMs, filter: filter, flushMs: flushMs,
                           accuracy: accuracy, reason: reason, trigger: "js")
             call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs,
@@ -912,6 +918,34 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                  accuracy: c.accuracy, reason: "motion: automotive", trigger: "native")
     }
 
+    // ── AND THE STOP TURNS IT OFF (owner 2026-10-02: "it all needs to be at
+    // 100 percent in 10 seconds with battery cut") ─────────────────────────
+    // selfArmDrive moved the drive window's START here because the WebView is
+    // suspended in the background and never sees the flip. Its END stayed
+    // JS's alone, so it inherited the same blindness the other way round: the
+    // rest flip at the job site reached nobody, and the window ran on to the
+    // cap with the GPS at ten metres in a parked truck. Measured over eight
+    // days: Jack's drive window was on 21.6 hours for about 8 hours of real
+    // driving, and 18 of his 27 long windows ended on "cap", not on a stop.
+    //
+    // Same bargain as the arm, mirrored. JS names which kinds end a drive
+    // (restKinds in the recipe, _GEO_REST_KINDS in geo-track.js) and this only
+    // acts on that list; a recipe without one does nothing. JS awake already
+    // closes on the same flip (_geoDriveWindowClose 'rest-<kind>'), and the
+    // close is idempotent, so the two can only ever agree.
+    static func restKindsOf(_ raw: Any?) -> [String] {
+        guard let arr = raw as? [Any] else { return [] }
+        return arr.compactMap { $0 as? String }.filter { !$0.isEmpty }
+    }
+
+    private func selfCloseDrive(kind: String) {
+        guard driveSamplingOn() else { return }
+        guard let c = UserDefaults.standard.dictionary(forKey: driveCfgKey) else { return }
+        let rest = TdGeoPlugin.restKindsOf(c["restKinds"])
+        guard rest.contains(kind) else { return }
+        endDriveSampling(reason: "self-rest-" + kind)
+    }
+
     // samplingState() : what the radio is actually doing, for a JS layer that
     // has just been relaunched and has no memory of what it asked for.
     @objc func samplingState(_ call: CAPPluginCall) {
@@ -958,8 +992,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         countWake("drive-off-" + reason)
         record(["type": "sampling", "mode": "coarse", "reason": reason,
                 "ts": Double(Date().timeIntervalSince1970 * 1000)])
-        // "cap" is this file's own timer; everything else came in on a call.
-        radioLog("drive", on: false, reason: reason, trigger: reason == "cap" ? "native" : "js")
+        // "cap" is this file's own timer and "self-rest-*" is selfCloseDrive;
+        // everything else came in on a call.
+        radioLog("drive", on: false, reason: reason,
+                 trigger: (reason == "cap" || reason.hasPrefix("self-")) ? "native" : "js")
         restoreBaselineRadio()
         // A stream still moving with the window gone is back on the clock.
         if wakeMovingOpen() { armWakeMovingCap() }
@@ -1670,6 +1706,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // the shape motionEvent(startMs:kind:prev:) already uses.
     var driveCfgKeyForTest: String { driveCfgKey }
     func selfArmDriveForTest(kind: String) { selfArmDrive(kind: kind) }
+    func selfCloseDriveForTest(kind: String) { selfCloseDrive(kind: kind) }
     func driveCfgStoredForTest() -> Bool { driveCfg() != nil }
     func driveCfgForTest() -> (maxMs: Double, filter: Double, flushMs: Double, accuracy: String)? { driveCfg() }
     func expireSamplingCapForTest() { endDriveSampling(reason: "cap") }
@@ -2658,6 +2695,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // only moment the receiver can be turned up at all; the tape row
             // goes out in the same flush either way. See selfArmDrive.
             self.selfArmDrive(kind: kind)
+            self.selfCloseDrive(kind: kind)
             self.record(ev)
         }
     }

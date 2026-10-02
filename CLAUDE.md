@@ -464,6 +464,17 @@ and replay logic are all in `js/geo-track.js`, tunable forever without a
 rebuild. Putting logic in Swift that could live in JS is a rule violation,
 it converts free UAT iterations into paid builds.
 
+**Two apps, one workflow (owner 2026-10-01).** `ios-beta.yml` takes a
+`channel` input: `beta` (default, and what the monthly cron builds) is
+`app.tradedesk.beta` loading UAT for TestFlight; `store` is `app.tradedesk`
+loading production (`tradedeskpro.app`, i.e. `main`) for the App Store, iPhone
+and iPad. Nothing may hardcode the beta bundle where the channel should
+decide: the scripts read `TD_BUNDLE_ID`, the Swift derives its App Group and
+background session from `Bundle.main.bundleIdentifier`, push tries both topics
+(`_shared/apns.ts`), and universal links list both apps. The store shell adds
+`TradeDeskStore` to its user agent (`_tdShellIsStore()` in js/settings.js).
+Firing either channel is still a build under the rule above: owner says go.
+
 **The floor is ~1 build/month:** TestFlight builds expire after 90 days, and
 the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
 Batch pending native changes into the next needed build rather than firing
@@ -611,6 +622,15 @@ trip and a failure the owner had to watch land.
   real backend and can exhaust the daily proxy quota in one run.
 - `--reporter=line` and `| tail` are load-bearing. The default reporter is what
   made "hundreds of lines" true in the first place.
+
+**CI does the same on every PR** (owner 2026-10-02: "only run tests that
+have something to do with what code was changed"). `scripts/ci/test-scope.sh`
+picks the specs named after each changed file plus every spec that names a
+function the diff touched, and runs the full suite only when a shared file
+(`js/cloud.js`, `js/utils.js`, `js/data.js`, `index.html`, `tests/helpers.js`,
+`playwright.config.js`) really changed. A version stamp alone is not a change:
+it used to send every PR to the full ~8,900 tests. Pushes to `main` and the
+nightly run still run everything.
 
 **Why this matters more than it sounds.** CI stops being where bugs are
 discovered and becomes where they are confirmed. A red shard then means
@@ -1269,6 +1289,25 @@ the whole drive. Two phones cannot do that unless they share the truck.
 - **Parked on purpose:** the owner has larger plans for mileage and time log
   intelligence and wants this designed inside that, not as a one-off rule.
   Do not build until he brings it back.
+
+### 9.12 Subscription Billing Through the Website, Not Apple (owner 2026-10-01, build after App Store approval)
+
+Pricing: $29.99/mo for the first 10 TestFlight users, then $99.99/mo for
+everyone, after a 14-day free trial. Today NOTHING in the app charges or
+locks; the prices live only on the marketing site, which is why the 1.0
+store submission needs no in-app purchase.
+
+- **Route chosen: US external purchase link** (App Store guideline change
+  after the 2025 Epic ruling): the store app may show a Subscribe button that
+  opens our own Stripe checkout on tradedeskpro.app, with no Apple
+  commission. The store app is US-only (availability), which is what makes
+  this allowed. Not Apple in-app purchase (15% small-business rate).
+- **Never ship a paywall, trial timer or price inside the store app without
+  this in place**, or the next review rejects under 3.1.1.
+- Design with the owner (§16) before building: trial start (signup), what
+  locks at day 14, Stripe Billing customer/subscription per contractor
+  account, the founder price for the first 10, and how the shell detects the
+  store app (`_tdShellIsStore()`).
 
 ---
 

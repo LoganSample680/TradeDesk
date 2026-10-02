@@ -3481,6 +3481,141 @@ extension TdGeoPluginTests {
         clearSelfArmState()
     }
 
+    // ── The stop turns it off (owner 2026-10-02) ────────────────────────────
+    // "it all needs to be at 100 percent in 10 seconds with battery cut". The
+    // window the plugin opened asleep could only be closed by JS, which was
+    // asleep too, so it ran to the cap in a parked truck: Jack's drive window
+    // was on 21.6 hours in eight days for about 8 hours of driving.
+    // selfCloseDrive mirrors selfArmDrive: JS names the kinds, Swift only
+    // acts on the list it was given.
+
+    private var restList: [String] { ["walking", "running", "onFoot", "still", "stationary", "cycling"] }
+
+    /// The recipe as setSampling stores it from JS that sends restKinds.
+    private func seedRecipeWithRest(_ kinds: [Any]?) {
+        seedDriveRecipe()
+        var cfg = UserDefaults.standard.dictionary(forKey: driveCfgKey) ?? [:]
+        if let kinds = kinds { cfg["restKinds"] = kinds } else { cfg.removeValue(forKey: "restKinds") }
+        UserDefaults.standard.set(cfg, forKey: driveCfgKey)
+    }
+
+    func testSelfClose_aRestFlipClosesTheWindowItOpenedAndSaysNative() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+
+        plugin.selfCloseDriveForTest(kind: "still")
+
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "a still flip on JS's list ends the drive window")
+        let rows = radio("drive")
+        XCTAssertEqual(onOff(rows), [true, false])
+        XCTAssertEqual(rows.last?["reason"] as? String, "self-rest-still")
+        XCTAssertEqual(rows.last?["trigger"] as? String, "native",
+                       "the ledger must say which side turned the radio off")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_everyKindOnTheListCloses() {
+        for kind in restList {
+            seedRecipeWithRest(restList)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            plugin.selfCloseDriveForTest(kind: kind)
+            XCTAssertFalse(plugin.driveSamplingOnForTest(), "\(kind) is on the list and must close")
+        }
+        clearSelfArmState()
+    }
+
+    func testSelfClose_setSamplingStoresTheListAndDropsJunk() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: armedKeyForSelfArm)
+        // A JSArray, the type the bridge actually delivers (see region() above
+        // for why a plain [Any] would fail the cast silently).
+        let kinds: JSArray = ["still", "", 7, "walking"]
+        let on = expectation(description: "js arms with a rest list")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "maxMs": 25 * 60_000.0,
+                                              "distanceFilter": 30.0, "flushMs": 20_000.0,
+                                              "accuracy": "ten", "restKinds": kinds,
+                                              "reason": "seed"],
+                                    onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let cfg = UserDefaults.standard.dictionary(forKey: driveCfgKey)
+        XCTAssertEqual(cfg?["restKinds"] as? [String], ["still", "walking"],
+                       "strings only, empty ones dropped, order kept")
+        plugin.selfCloseDriveForTest(kind: "walking")
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        UserDefaults.standard.removeObject(forKey: driveCfgKey)
+        clearSelfArmState()
+    }
+
+    // ── No list, no invention (3.2) ─────────────────────────────────────────
+
+    func testSelfClose_aRecipeWithNoListNeverClosesAnything() {
+        // JS that predates restKinds. The plugin must not decide what a stop is.
+        seedRecipeWithRest(nil)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for kind in restList { plugin.selfCloseDriveForTest(kind: kind) }
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "no list means the cap and JS still own the close")
+        XCTAssertEqual(onOff(radio("drive")), [true])
+        plugin.expireSamplingCapForTest()
+        clearSelfArmState()
+    }
+
+    func testSelfClose_junkListOrKindsOffTheListDoNothing() {
+        for junk: [Any]? in [[], [1, 2], ["", ""]] {
+            seedRecipeWithRest(junk)
+            plugin.clearBufferForTest()
+            plugin.selfArmDriveForTest(kind: "automotive")
+            plugin.selfCloseDriveForTest(kind: "still")
+            XCTAssertTrue(plugin.driveSamplingOnForTest(), "a junk list is no list: \(String(describing: junk))")
+            plugin.expireSamplingCapForTest()
+        }
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for kind in ["automotive", "unknown", "", "STILL"] { plugin.selfCloseDriveForTest(kind: kind) }
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "only an exact kind on the list closes")
+        plugin.expireSamplingCapForTest()
+        clearSelfArmState()
+    }
+
+    // ── Boundary, concurrency, post-error ───────────────────────────────────
+
+    func testSelfClose_withNoWindowOpenWritesNothing() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfCloseDriveForTest(kind: "still")
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+        XCTAssertTrue(radio("drive").isEmpty, "an OFF with no ON would be a lie on the ledger")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_tenFlipsInARowCloseOnce() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        for _ in 0..<10 { plugin.selfCloseDriveForTest(kind: "still") }
+        XCTAssertEqual(onOff(radio("drive")), [true, false], "one close, however many flips")
+        clearSelfArmState()
+    }
+
+    func testSelfClose_afterTheCapAlreadyClosedItIsANoOp_andTheNextDriveStillArms() {
+        seedRecipeWithRest(restList)
+        plugin.clearBufferForTest()
+        plugin.selfArmDriveForTest(kind: "automotive")
+        plugin.expireSamplingCapForTest()
+        plugin.selfCloseDriveForTest(kind: "still")
+        XCTAssertEqual(onOff(radio("drive")), [true, false])
+        // The close never takes the recipe with it: drive, stop, drive.
+        plugin.selfArmDriveForTest(kind: "automotive")
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        plugin.selfCloseDriveForTest(kind: "walking")
+        XCTAssertEqual(onOff(radio("drive")), [true, false, true, false])
+        XCTAssertTrue(plugin.driveCfgStoredForTest(), "the recipe outlives every close")
+        clearSelfArmState()
+    }
+
     // ── The half-hourly ping pulls the tape (owner 2026-09-14) ──────────────
     // Every other wake already pulled the coprocessor's history on the way
     // past. This one did not, and it is the only wake that arrives on a
