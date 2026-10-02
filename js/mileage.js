@@ -2779,6 +2779,13 @@ function renderAllMileage(){
             '<div class="mil-action-icon">'+svgIcon('📊',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Export mileage log</div><div class="mil-action-sub">IRS trip log · Excel</div></div>'+
           '</button>'+
+          // Gas money for supply runs (js/gas-money.js): only once a supply
+          // house is saved, since it has nothing to add up before that.
+          ((typeof _gmStores==='function'&&_gmStores().length)?
+          '<button class="mil-action" id="mil-gas-btn" onclick="openGasMoney()">'+
+            '<div class="mil-action-icon">'+svgIcon('⛽',{size:20})+'</div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Gas money</div><div class="mil-action-sub">Supply runs · pick the days</div></div>'+
+          '</button>':'')+
         '</div>'+
       '</div>';
     }
