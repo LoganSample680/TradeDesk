@@ -1281,6 +1281,25 @@ the whole drive. Two phones cannot do that unless they share the truck.
   intelligence and wants this designed inside that, not as a one-off rule.
   Do not build until he brings it back.
 
+### 9.12 Subscription Billing Through the Website, Not Apple (owner 2026-10-01, build after App Store approval)
+
+Pricing: $29.99/mo for the first 10 TestFlight users, then $99.99/mo for
+everyone, after a 14-day free trial. Today NOTHING in the app charges or
+locks; the prices live only on the marketing site, which is why the 1.0
+store submission needs no in-app purchase.
+
+- **Route chosen: US external purchase link** (App Store guideline change
+  after the 2025 Epic ruling): the store app may show a Subscribe button that
+  opens our own Stripe checkout on tradedeskpro.app, with no Apple
+  commission. The store app is US-only (availability), which is what makes
+  this allowed. Not Apple in-app purchase (15% small-business rate).
+- **Never ship a paywall, trial timer or price inside the store app without
+  this in place**, or the next review rejects under 3.1.1.
+- Design with the owner (§16) before building: trial start (signup), what
+  locks at day 14, Stripe Billing customer/subscription per contractor
+  account, the founder price for the first 10, and how the shell detects the
+  store app (`_tdShellIsStore()`).
+
 ---
 
 ## 10. Patch-Chain Prohibition: No House-of-Cards Fixing
