@@ -288,7 +288,7 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
       <!-- Out of ops and back into your own app, WITHOUT signing out. Sign out
            was the only way off this page and it dropped you at a login screen,
            which is not what "go back" means. -->
-      <a class="btn btn-primary" id="to-app" href="index.html?app=1">My app ›</a>
+      <a class="btn btn-primary" id="to-app" href="/?app=1">My app ›</a>
       <button class="btn" id="signout" hidden>Sign out</button>
     </div>
   </header>
@@ -296,7 +296,7 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
   <div id="gate" hidden>
     <div class="card">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px">Sign in</div>
-      <div class="muted" style="margin-bottom:12px">Use the account on the ops allowlist, or <a href="index.html?app=1" style="color:var(--accent)">go to the app</a>.</div>
+      <div class="muted" style="margin-bottom:12px">Use the account on the ops allowlist, or <a href="/?app=1" style="color:var(--accent)">go to the app</a>.</div>
       <form class="signin" id="signin-form">
         <input type="email" id="email" placeholder="Email" autocomplete="username" required>
         <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
@@ -309,7 +309,7 @@ form.signin input{background:var(--field);border:1px solid var(--line2);color:va
   <div id="denied" hidden>
     <div class="card">
       <div id="denied-title" style="font-size:16px;font-weight:800;margin-bottom:4px">Not authorized</div>
-      <div id="denied-body" class="muted">This login is not on the ops allowlist, so there is nothing to show. Every ops function returns empty for anyone else. <a href="index.html?app=1" style="color:var(--accent)">Go to the app</a>.</div>
+      <div id="denied-body" class="muted">This login is not on the ops allowlist, so there is nothing to show. Every ops function returns empty for anyone else. <a href="/?app=1" style="color:var(--accent)">Go to the app</a>.</div>
     </div>
   </div>
 
@@ -1383,9 +1383,18 @@ $('biz-people').addEventListener('click',e=>{
 /* ── The support view ─────────────────────────────────────────────────────── */
 let VIEW=null;
 
+// The app at "/", never "index.html": the server answers index.html with a
+// redirect to "/", and a service worker that hands a redirected page to a
+// frame gets it refused by WebKit, which left the view black inside the
+// iPhone app (2026-10-02, see sw.js). Asking for the real address skips the
+// hop, so the view loads even on a phone still running an older worker.
+function viewUrl(row){
+  return '/?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
+}
+
 function openView(row){
   VIEW=row;
-  $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
+  $('view-frame').src=viewUrl(row);
   $('view').classList.add('on');
   $('view').setAttribute('aria-hidden','false');
   document.body.style.overflow='hidden';
@@ -1412,7 +1421,7 @@ $('view-people').addEventListener('click',e=>{
   if(sameAccount){
     $('view-frame').contentWindow.postMessage({source:'td-ops-portal',type:'switch',contractor_user_id:row.contractor_user_id,person_user_id:row.person_user_id},location.origin);
   }else{
-    $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(row.contractor_user_id)+'&p='+encodeURIComponent(row.person_user_id);
+    $('view-frame').src=viewUrl(row);
   }
 });
 
@@ -1439,7 +1448,7 @@ window.addEventListener('message',ev=>{
   if(d.type==='entered'){ $('view-note').hidden=true; }
   // The frame said it cannot switch in place (a different account); reload it.
   if(d.type==='needs-reload'&&VIEW){
-    $('view-frame').src='index.html?ops=1&t='+encodeURIComponent(VIEW.contractor_user_id)+'&p='+encodeURIComponent(VIEW.person_user_id);
+    $('view-frame').src=viewUrl(VIEW);
   }
 });
 </script>
