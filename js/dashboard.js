@@ -1539,6 +1539,24 @@ function renderDash(){
           '</div>'+
         '</div>';
       const _svgClk=(c)=>'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="'+c+'" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+      // THE ON SITE CARD (owner 2026-10-02: "the on site card has like 3
+      // different views, I only want to see the arrival one with the proposal
+      // button"). One layout for being at a customer, whatever noticed it
+      // first: the deriver's open stop, or a GPS fix next to the customer before
+      // the deriver has caught up. Name, address, when he got there and how
+      // long, and Proposal. sinceIso null means nobody has measured the arrival
+      // yet, and the card says "On site now" rather than inventing a time.
+      const _arrivalCard=(title,addr,sinceIso,sinceTs,clientId,below)=>{
+        const _when=sinceIso&&sinceTs>0
+          ?'Arrived '+_fmtClk(sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+sinceTs+'">'+_fmtDur(sinceTs)+'</span> on site'
+          :'On site now';
+        const _ex='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>'+_when+'</div>';
+        const _btn=clientId!=null?'<div style="display:flex;gap:9px;padding:4px 14px 15px"><button onclick="_nearbyStartWork('+Number(clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button></div>'
+          // No customer (the shop) closes the card at the head rather than
+          // leaving an empty padded strip.
+          :'<div style="height:14px"></div>';
+        return _cardShell(_cardHead(title,addr,_ex)+(below||'')+_btn);
+      };
       const _dayEndP=(typeof _dayEndPending==='function')?_dayEndPending():null;
       if(_dayEndP){
         // YOUR DAY: the phone proposes, the person confirms (js/day-end.js,
@@ -1598,23 +1616,13 @@ function renderDash(){
       } else if(_openDwell){
         const _od=_openDwell,_f=_od.fence||{};
         const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
-        const _odExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_od.sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+_od.sinceTs+'">'+_fmtDur(_od.sinceTs)+'</span> on site</div>';
         // NO Clock in button here (owner 2026-09-03: "since we have auto
         // tracking now we dont need the click in button since it already
         // shows when I arrived and how long im on site for"). The arrival
-        // stamp and the running duration above ARE the clock: the deriver
-        // already owns this dwell and will write the time row for it
-        // (CLAUDE.md 17), so a manual clock on top of it is a second
-        // observer of the same physical event and the exact overlap the
-        // one-deriver rule exists to prevent. Manual clock-in still lives
-        // on the pre-arrival geofence card and the job sheet, for time
-        // the deriver cannot see.
-        const _odBtns=[];
-        if(_f.clientId!=null)_odBtns.push('<button onclick="_nearbyStartWork('+Number(_f.clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
-        // No buttons at all (a dwell with no client, e.g. the shop) closes
-        // the card at the head rather than leaving an empty padded strip.
-        const _odBtnRow=_odBtns.length?'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>':'<div style="height:14px"></div>';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+_odBtnRow);
+        // stamp and the running duration ARE the clock: the deriver owns this
+        // dwell and writes its time row (CLAUDE.md 17), so a manual clock on
+        // top would be a second observer of the same physical event.
+        _nearbyEl.innerHTML=_arrivalCard(_od.name||_kindLabel,(_f.addr||_kindLabel),_od.sinceIso,_od.sinceTs,_f.clientId);
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in
@@ -1675,20 +1683,22 @@ function renderDash(){
         _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
           '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
       } else if(_nearbyJob){
-        // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
+        // A GPS fix puts him at a customer before the deriver has published the
+        // stop (the phone can hold an arrival until the app is opened). This
+        // used to be its own card, Clock in, Proposal and Collect with the
+        // balance owed, and the owner saw it take the place of the arrival card
+        // he wanted (2026-10-02, at John Doe). It is the same card now. The
+        // arrival time is the live engine's own fence crossing for this
+        // customer when it has one; otherwise the card says "On site now" until
+        // the deriver catches up and the open stop takes over.
         const nb=_nearbyJob;
-        const clockTarget=nb.jobId||nb.fallbackJobId;
-        const hasBalance=nb.balance>0.01;
-        // Field note surfaces on arrival too, before clocking in (gate code etc).
-        const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===clockTarget):null;
+        const _clk=(typeof _geoCurrentClient!=='undefined'&&_geoCurrentClient!=null&&String(_geoCurrentClient)===String(nb.clientId)&&typeof _geoClientArrivedAt!=='undefined')?_geoClientArrivedAt:null;
+        const _clkTs=_clk?Date.parse(_clk):0;
+        // Field note on arrival (gate code, dog), when the job has one.
+        const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===(nb.jobId||nb.fallbackJobId)):null;
         const _nbNoteHtml=_jobFieldNote(_nbJob,{editable:true});
         const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
-        const nbBtns=[];
-        nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
-        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
-        if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
-        const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+        _nearbyEl.innerHTML=_arrivalCard(nb.clientName,nb.addr,_clkTs>0?_clk:null,_clkTs,nb.clientId,_nbNoteBlock);
       } else {
         // No rich state (not on the clock, not driving, no nearby/known-place
         // prompt). Before falling back to the plain manual card, give an

@@ -83,8 +83,15 @@ test.describe('Dashboard filter and pipeline functions', () => {
   // past the deadline the tiles drop to local data and any late load repaints.
   test('the skeleton watchdog drops a stalled cloud load to real tiles', async () => {
     const r = await page.evaluate(async () => {
-      const realMax = _dashSkelMaxMs;
+      // The skeleton is only drawn while the cloud load has NOT landed
+      // (_supaCloudLoaded false, js/dashboard.js). This test used to inherit
+      // that from boot, so it passed only while the page's own mocked load was
+      // still in flight and failed on a slow WebKit runner where it had
+      // finished (PR #162, twice). It sets the state it needs, as the test
+      // above it already does, and puts it back.
+      const realMax = _dashSkelMaxMs, realLoaded = _supaCloudLoaded;
       try {
+        _supaCloudLoaded = false;
         _dashSkelMaxMs = 60;
         _dashAwaitingCloud = true;
         _dashArmSkelWatchdog();
@@ -96,7 +103,7 @@ test.describe('Dashboard filter and pipeline functions', () => {
         const skelAfter = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
         const realAfter = document.querySelectorAll('#dash-mets-inner .met').length;
         return { skelBefore, flagAfter, skelAfter, realAfter };
-      } finally { _dashSkelMaxMs = realMax; _dashAwaitingCloud = false; clearTimeout(_dashSkelTimer); renderDash(); }
+      } finally { _dashSkelMaxMs = realMax; _supaCloudLoaded = realLoaded; _dashAwaitingCloud = false; clearTimeout(_dashSkelTimer); renderDash(); }
     });
     expect(r.skelBefore, 'skeletons up while waiting').toBe(6);
     expect(r.flagAfter, 'the watchdog clears the stalled flag').toBe(false);
