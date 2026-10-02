@@ -21,8 +21,13 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 
 # `supabase migration list` prints "Local | Remote | Time" rows. A row with a
 # remote version and no local one is the case this handles.
+#
+# THE CLI DRAWS ITS TABLE WITH BOX CHARACTERS (2026-10-02). The columns are
+# split by "│" (U+2502), not "|", so this read every row as one field, found
+# nothing, said "No live-only migrations", and db push then refused main's
+# deploy over 20261064 anyway (#154's merge). Both separators are read now.
 live_only() {
-  awk -F'|' 'NF >= 3 {
+  sed 's/│/|/g' | awk -F'|' 'NF >= 3 {
     l = $1; r = $2; gsub(/[[:space:]]/, "", l); gsub(/[[:space:]]/, "", r);
     if (l == "" && r ~ /^[0-9]+$/) print r
   }'
