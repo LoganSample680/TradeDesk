@@ -910,12 +910,21 @@ function bizTime(iso){
 // Proposals, the client hub, agreements, invoices and photo shares are JSON
 // files in the proposals bucket that a link opens. data is an object or an
 // already-built string. Resolves to {error}, never throws.
-function _tdStoreDoc(key,data,o){
+//
+// An async function that awaits the upload, the shape every one of the ten
+// copies had. It was first written as a returned Promise.resolve().then()
+// .catch() chain, and a photo's background hub refresh runs through it in the
+// same task the shot finishes in. With the chain, Chromium reported the shot's
+// own pending promise as "Promise was collected" about 1 shot in 25 (Playwright
+// shows that as "Execution context was destroyed"; no navigation happened and
+// the photo had saved). Measured 2026-10-02, first shot after boot: chain 18
+// in 420, chain with the hub refresh stubbed 0 in 180, this shape 0 in 180.
+async function _tdStoreDoc(key,data,o){
   o=o||{};
   try{
-    if(typeof _supa==='undefined'||!_supa||!key)return Promise.resolve({error:new Error('not signed in')});
+    if(typeof _supa==='undefined'||!_supa||!key)return {error:new Error('not signed in')};
     const body=typeof data==='string'?data:JSON.stringify(data);
-    return Promise.resolve(_supa.storage.from('proposals').upload(key,body,{contentType:'application/json',upsert:o.upsert!==false,cacheControl:o.cache||'0'}))
-      .then(r=>({error:(r&&r.error)||null})).catch(e=>({error:e}));
-  }catch(e){return Promise.resolve({error:e});}
+    const r=await _supa.storage.from('proposals').upload(key,body,{contentType:'application/json',upsert:o.upsert!==false,cacheControl:o.cache||'0'});
+    return {error:(r&&r.error)||null};
+  }catch(e){return {error:e};}
 }

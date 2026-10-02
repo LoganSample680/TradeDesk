@@ -135,6 +135,36 @@ test.describe('Photo capture: the shared writer', () => {
   });
 });
 
+// ── The first shot after boot (2026-10-02) ─────────────────────────────────
+// A shot of a customer's house refreshes their hub in the background
+// (_uploadClientHub, through _tdStoreDoc). When _tdStoreDoc returned a
+// hand-built Promise.resolve().then().catch() chain, about 1 first shot in 25
+// came back from page.evaluate as "Execution context was destroyed" with no
+// navigation at all: the protocol error underneath was "Promise was
+// collected", after the shot itself had finished (CI shard 6, twice). Each
+// round here is a fresh page and the shot is the first thing it does, which
+// is exactly where it failed.
+test.describe('Photo capture: the first shot after boot', () => {
+  test('shooting a customer right after boot comes back, and their hub refreshes', async ({ browser }) => {
+    test.setTimeout(60000);
+    for (let round = 0; round < 3; round++) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+      const page = await ctx.newPage();
+      await mockAllExternal(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(page);
+      await page.evaluate(seed());
+      const r = await shoot(page, { type: 'before', bidId: 901 });
+      expect(r, 'round ' + round).not.toBeNull();
+      expect(r.client_id).toBe(501);
+      await expect.poll(() => page.evaluate(() => (clients.find(c => c.id === 501) || {}).clientHubKey || ''),
+        { timeout: 5000 }).toMatch(/^client-hub\//);
+      assertNoErrors(page, 'first shot after boot');
+      await ctx.close();
+    }
+  });
+});
+
 test.describe('Photo capture: the bid carries its photos into the job', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -3046,6 +3076,13 @@ test.describe('TrueShot: the redesign', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Same park as the sheet block. The reconnect probe (_probeAndSync, every
+    // 5s on a cache boot) runs supaLoadFromCloud against the mock, which
+    // empties photos[] in place. openAlbum seeds and opens in one evaluate and
+    // the test acts in a second one, so a load between the two left nothing to
+    // select ("Whose photo?" for two, WebKit; 0 deleted for 3, Chromium).
+    // Nothing in this block tests cloud loading.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => { }; });
   });
   test.afterAll(async () => { await page.context().close(); });
   // Page-owned, so a cloud pull landing mid-test cannot swap the arrays out
@@ -3295,6 +3332,22 @@ test.describe('TrueShot: the redesign', () => {
       expect(r.after.undo).toBe(true);
       expect(r.back).toBe(6);
       expect(r.cells).toBe(6);
+    });
+
+    test('a reconnect between opening the album and selecting leaves the selection to act on', async () => {
+      await openAlbum();
+      // The background probe's work, landing in the gap between two evaluates.
+      await page.evaluate(async () => { await _onReconnect(); });
+      const r = await page.evaluate(() => {
+        tdSelectMode(true);
+        [7100, 7102].forEach(id => tdSelToggle(id));
+        const n = tdSelDelete();
+        const out = { n, left: photos.length };
+        tdReviewUndo(); tdReviewClose();
+        return out;
+      });
+      expect(r.n).toBe(2);
+      expect(r.left).toBe(4);
     });
 
     test('a mass delete reaches storage only once the album is closed', async () => {
