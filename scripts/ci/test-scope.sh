@@ -34,7 +34,8 @@ MAX_FILES="${TEST_SCOPE_MAX:-80}"
 MAX_PER_NAME="${TEST_SCOPE_MAX_PER_NAME:-25}"
 
 # True when the file's diff touches nothing but the version stamp lines the
-# hook rewrites (scripts/bump-version.js) or the sitemap lastmod stamps.
+# old hook rewrote (now stamped at build, scripts/stamp-version.js) or the
+# sitemap lastmod stamps.
 stamp_only() {
   local body
   body="$(git diff -U0 "$BASE" "$HEAD" -- "$1" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ')"

@@ -31,13 +31,17 @@ jobs:
 
       - name: Wait for UAT to serve this build, then wake every phone
         run: |
-          WANT=$(node -e "console.log(require('./version.json').version)")
-          echo "rolled version: $WANT"
+          # The version is stamped by Cloudflare's build, not committed
+          # (scripts/stamp-version.js), and the build writes the commit it
+          # built into version.json next to it. So wait for THIS commit, then
+          # take the version from what UAT serves.
+          echo "rolled commit: $GITHUB_SHA"
           for i in $(seq 1 48); do
-            GOT=$(curl -sS -m 10 "https://uat.tradedesk-cyp.pages.dev/version.json?_=$(date +%s)" \
-              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version)}catch(e){console.log('')}})")
-            if [ "$GOT" = "$WANT" ]; then
-              echo "UAT is serving $GOT"
+            READ=$(curl -sS -m 10 "https://uat.tradedesk-cyp.pages.dev/version.json?_=$(date +%s)" \
+              | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);console.log((j.sha||'')+' '+(j.version||''))}catch(e){console.log(' ')}})")
+            GOT=${READ%% *}; WANT=${READ#* }
+            if [ "$GOT" = "$GITHUB_SHA" ]; then
+              echo "UAT is serving $WANT"
               OUT=$(curl -sS -m 30 -X POST \
                 "https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/push-geo-ping" \
                 -H "Content-Type: application/json" -d '{"reason":"deploy"}') || { echo "::warning::push-geo-ping unreachable"; exit 0; }
@@ -53,7 +57,7 @@ jobs:
               echo "retry: $RETRY"
               exit 0
             fi
-            echo "UAT still serving '${GOT}', waiting"
+            echo "UAT still serving '${GOT:0:7} ${WANT}', waiting"
             sleep 15
           done
-          echo "::warning::UAT never served $WANT within 12 minutes; no wake sent"
+          echo "::warning::UAT never served ${GITHUB_SHA:0:7} within 12 minutes; no wake sent"

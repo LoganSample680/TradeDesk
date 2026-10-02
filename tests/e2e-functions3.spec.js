@@ -10416,7 +10416,7 @@ test.describe('Version consistency', () => {
   // poll saw a mismatch and reloaded the app on a 15s loop. Two long
   // page.evaluate blocks died with "execution context was destroyed" in CI,
   // which is how it was found, and the owner's phone would have reloaded
-  // forever. bump-version.js writes all three together; this proves they
+  // forever. scripts/stamp-version.js writes all three together at build; this proves they
   // stayed together.
   test('sw.js CACHE carries the same version as version.json', async () => {
     const result = await page.evaluate(async () => {

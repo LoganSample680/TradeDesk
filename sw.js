@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-10.02.26.12';
+const CACHE = 'tradedesk-00.00.00.0';   // stamped at build: scripts/stamp-version.js
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.

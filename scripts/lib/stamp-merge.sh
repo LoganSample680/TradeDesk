@@ -4,17 +4,20 @@
 # "how do we write in multiple sessions but ensure everything makes it to main
 # and everything rolls UAT with a version bump."
 #
-# The pre-commit hook (scripts/bump-version.js) rewrites the same three lines
-# on every branch, so ANY two branches conflict on them: every roll to uat and
-# every PR that main moved under. The content of those lines never matters, a
-# fresh bump follows every merge, so they are resolved by machine. Everything
-# else in those files, and every other file, is still a person's call.
+# The pre-commit hook used to rewrite the same three lines on every branch, so
+# ANY two branches conflicted on them: every roll to uat and every PR that main
+# moved under. Since 2026-10-02 Cloudflare stamps the version as it builds
+# (scripts/stamp-version.js) and the committed lines are a placeholder that
+# never changes, so new branches do not clash here at all. A branch cut before
+# that still does, once, and its content never matters because the build
+# overwrites it, so it is resolved by machine. Everything else in those files,
+# and every other file, is still a person's call.
 #
 # Sourced by scripts/uat-roll.sh (merging a branch into uat) and
 # scripts/pr-sync.sh (merging main into a PR branch). One resolver, two users,
 # so a fix to one is a fix to both.
 
-# EXACTLY what scripts/bump-version.js rewrites.
+# EXACTLY what scripts/stamp-version.js writes.
 STAMPED="version.json sw.js js/cloud.js"
 
 # True when every conflicted hunk in the file is only the version stamp.

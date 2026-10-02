@@ -7,7 +7,7 @@
 // history instead of letting anyone type one in: the file's last commit date,
 // or today when this commit is the one changing it.
 //
-// Runs from the pre-commit hook next to bump-version.js and stages its result,
+// Runs from the pre-commit hook and stages its result,
 // so the dates track reality without anybody remembering they exist.
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +17,7 @@ const root = execSync('git rev-parse --show-toplevel').toString().trim();
 const smFile = path.join(root, 'sitemap.xml');
 let xml = fs.readFileSync(smFile, 'utf8');
 
-// Same convention as bump-version.js: the business runs on US Central, so
+// Same convention as the app version (scripts/stamp-version.js): the business runs on US Central, so
 // "today" means today there, not wherever a runner happens to live.
 //
 // Every date this script emits goes through here, which is the point. It used to
