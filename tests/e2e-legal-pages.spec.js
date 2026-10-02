@@ -146,7 +146,7 @@ test.describe('support page', () => {
     const resp = await page.goto('/support.html', { waitUntil: 'domcontentloaded' });
     expect(resp && resp.status()).toBeLessThan(400);
     expect(await page.evaluate(() => !!document.getElementById('pg-dash'))).toBe(false);
-    expect(await page.getAttribute('#support-email', 'href')).toBe('mailto:support@tradedeskpro.app');
+    expect(await page.getAttribute('#support-email', 'href')).toBe('mailto:tradedeskprosupport@gmail.com');
     await assertNoErrors(page);
   });
 
