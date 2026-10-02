@@ -20,6 +20,10 @@ insert into _fx_expect values
     ('client-c2','client','Unscheduled Client (11 B St)',39.11::double precision,-95.81::double precision,false,false,true,false),
     ('client-c6','client','Mom (14 F St)',39.14::double precision,-95.84::double precision,false,true,false,false),
     ('client-c7','client','Dad, mid-job (14 F St)',39.14::double precision,-95.84::double precision,false,true,true,false),
+    ('client-c8','client','Tagen Lindstrom (1733 SW Burnett Rd)',39.05::double precision,-95.7::double precision,false,false,false,false),
+    ('client-c8-p0','client','Tagen Lindstrom (1238 SW Collins Ave)',39.051::double precision,-95.701::double precision,false,false,false,false),
+    ('client-c8-p1','client','Tagen Lindstrom (2437 SW 24th St)',39.052::double precision,-95.702::double precision,false,false,false,false),
+    ('client-c8-p2','client','Tagen Lindstrom (5713 SW 14th St)',39.053::double precision,-95.703::double precision,false,false,false,false),
     ('job-9001','job','Scheduled Client (20 Job Rd)',39.2::double precision,-95.9::double precision,null::boolean,null::boolean,null::boolean,false),
     ('place-p1','supply','Home Depot',39.06::double precision,-95.71::double precision,null::boolean,null::boolean,null::boolean,false),
     ('place-p2','home_office','House',39.07::double precision,-95.72::double precision,null::boolean,null::boolean,null::boolean,false),
@@ -38,6 +42,7 @@ insert into td_clients(id,user_id,data) values ('c4','00000000-0000-4000-8000-00
 insert into td_clients(id,user_id,data) values ('c5','00000000-0000-4000-8000-0000000000fe','{"id": "c5", "name": "No Address", "lat": 39.13, "lon": -95.83, "geoAddr": ""}');
 insert into td_clients(id,user_id,data) values ('c6','00000000-0000-4000-8000-0000000000fe','{"id": "c6", "name": "Mom", "addr": "14 F St", "lat": 39.14, "lon": -95.84, "geoAddr": "14 F St", "personal": true}');
 insert into td_clients(id,user_id,data) values ('c7','00000000-0000-4000-8000-0000000000fe','{"id": "c7", "name": "Dad, mid-job", "addr": "14 F St", "lat": 39.14, "lon": -95.84, "geoAddr": "14 F St", "personal": true}');
+insert into td_clients(id,user_id,data) values ('c8','00000000-0000-4000-8000-0000000000fe','{"id": "c8", "name": "Tagen Lindstrom", "addr": "1733 SW Burnett Rd, Topeka, KS 66604", "lat": 39.05, "lon": -95.7, "geoAddr": "1733 SW Burnett Rd, Topeka, KS 66604", "extraAddresses": [{"addr": "1238 SW Collins Ave, Topeka, KS 66604", "label": "1238 SW Collins Ave", "lat": 39.051, "lon": -95.701, "geoAddr": "1238 SW Collins Ave, Topeka, KS 66604"}, {"addr": "2437 SW 24th St, Topeka, KS 66611", "label": "Rental", "lat": 39.052, "lon": -95.702, "geoAddr": "2437 SW 24th St, Topeka, KS 66611"}, {"addr": "5713 SW 14th St, Topeka, KS 66604", "label": "Rental", "lat": 39.053, "lon": -95.703, "geoAddr": "5713 SW 14th St, Topeka, KS 66604"}]}');
 insert into td_jobs(id,user_id,data) values ('9001','00000000-0000-4000-8000-0000000000fe','{"id": "9001", "client_id": "c1", "name": "Live job", "start": "2026-09-01", "days": 2, "status": "upcoming", "lat": 39.2, "lon": -95.9, "addr": "20 Job Rd"}');
 insert into td_jobs(id,user_id,data) values ('9002','00000000-0000-4000-8000-0000000000fe','{"id": "9002", "client_id": "c2", "name": "Old job", "start": "2026-08-20", "days": 1, "status": "upcoming", "lat": 39.21, "lon": -95.91}');
 insert into td_jobs(id,user_id,data) values ('9003','00000000-0000-4000-8000-0000000000fe','{"id": "9003", "client_id": "c2", "name": "Canceled", "start": "2026-09-01", "days": 1, "status": "canceled", "lat": 39.22, "lon": -95.92}');

@@ -947,7 +947,9 @@ test.describe('Receipt-gated supply runs', () => {
         const shell = document.getElementById('dash-hold');
         const widgets = document.getElementById('dash-widget-root');
         const above = !!(widgets && (shell.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
-        const src = _dashApplySkeletons.toString();
+        // The targets moved into their own function (owner 2026-10-01, the
+        // placeholder became a copy of each target's own markup).
+        const src = _dashSkelTargets.toString();
         return { above, targetsShell: /#dash-hold\b/.test(src) && !/#dash-supply-hold/.test(src) && !/#dash-visit-hold/.test(src) };
       });
       expect(r.above).toBe(true);

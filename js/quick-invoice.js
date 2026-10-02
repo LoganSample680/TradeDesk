@@ -205,9 +205,11 @@ function _qiPlaceNames(c,addr){
   const out=new Set();
   if(!c||!c.name)return out;
   if(_qiSameAddr(c.addr,addr))out.add(nm(c.name,st(c.addr)));
+  // The street, never the label (owner 2026-10-02: "always the address, no
+  // exceptions"). Tagen Lindstrom has two cards labelled Rental, and a label
+  // two houses share cannot say which house a row was.
   (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
     if(!a||!a.addr||!_qiSameAddr(a.addr,addr))return;
-    out.add(nm(c.name,(a.label&&String(a.label).trim())||st(a.addr)));
     out.add(nm(c.name,st(a.addr)));
   });
   _qiJobsAt(c.id,addr).forEach(j=>out.add(nm(c.name,st(j.addr||j.address))));
@@ -1971,9 +1973,16 @@ function _tbTap(){
 }
 function _renderToBill(){
   const el=document.getElementById('dash-to-bill');if(!el)return;
+  // Whether the row was there last time, so a boot does not draw a loading
+  // bar for a row that is about to vanish (owner 2026-10-01: the home screen
+  // must not jump while it loads; a placeholder that disappears shoves every
+  // card below it up).
+  const was=v=>{try{localStorage.setItem('zp3_tb_shown',v?'1':'0');}catch(_e){}};
   const hide=()=>{el.innerHTML='';el._tbHtml='';el.style.display='none';};
   if(!_tbCan()||!_tbOnline())return hide();
   if(!_tb){
+    let last=null;try{last=localStorage.getItem('zp3_tb_shown');}catch(_e){}
+    if(last==='0'){hide();_tbLoad();return;}
     el.style.display='';
     el._tbHtml='';el.innerHTML='<div class="ios-sec"><div class="ios-group"><div class="ios-row tb-sum" style="display:block">'+(typeof _tdSkelRows==='function'?_tdSkelRows(1,14):'')+'</div></div></div>';
     _tbLoad();return;
@@ -1981,6 +1990,7 @@ function _renderToBill(){
   if(_tb.stale||Date.now()-_tb.at>5*60000){_tb.stale=false;_tbLoad();}
   const rows=_tb.lab?_tbRows(_tb.lab):[];
   _tbLast=rows;
+  was(rows.length>0);
   if(!rows.length)return hide();
   const old=dateKey(new Date(Date.now()-14*86400000));
   const late=rows[0].oldest<old;

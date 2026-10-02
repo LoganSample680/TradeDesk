@@ -62,7 +62,7 @@
     "said": "Alright so we're gonna repipe the whole house in PEX with you pan or expansion fittings, three bathrooms, kitchen and laundry. Will be opening up the drywall in the hallway ceiling and the closets to run the lines, and then patch the drywall after. Pressure test before we close up. Texture's on the homeowner.",
     "expect": [
       "Repipe the whole house in PEX with Uponor expansion fittings, 3 bathrooms, kitchen and laundry",
-      "Opening up the drywall in the hallway ceiling and the closets to run the lines",
+      "Open up the drywall in the hallway ceiling and the closets to run the lines",
       "Patch the drywall after",
       "Pressure test before we close up",
       "Texture's on the homeowner"
@@ -181,7 +181,7 @@
     "trade": "plumbing",
     "said": "Water pressure's at 110. We're putting in a new what's LF25AUB PRV set it to 60 and then add a Watts expansion tank on the cold side",
     "expect": [
-      "Putting in a new Watts LF25AUB PRV",
+      "Put in a new Watts LF25AUB PRV",
       "Set it to 60",
       "Add a Watts expansion tank on the cold side"
     ],
@@ -543,7 +543,7 @@
     "trade": "hvac",
     "said": "Will be replacing the seized blower motor with a new ECM motor, new run capacitor, clean the blower wheel while it's out. $650 installed.",
     "expect": [
-      "Replacing the seized blower motor with a new ECM motor",
+      "Replace the seized blower motor with a new ECM motor",
       "New run capacitor",
       "Clean the blower wheel while it's out"
     ],

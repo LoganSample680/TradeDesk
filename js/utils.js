@@ -736,6 +736,79 @@ function _tdSkelRows(n,h){
   return out;
 }
 
+// ── Redacted placeholder: the real layout, with the words taken out ──────────
+// Owner 2026-10-01: "the skeleton shimmers don't match up the tiles, it should
+// be like shuffling from the top down like iOS does." iOS does it with
+// .redacted(reason: .placeholder): the real view, laid out for real, with each
+// run of text drawn as a rounded bar. A hand-drawn skeleton can only ever
+// approximate the screen it stands in for; this one IS that screen, so the
+// swap to content moves nothing by construction.
+//
+// src is the live markup (measured, never changed), dst is the copy that
+// becomes the placeholder (src itself to redact in place). Same tree shape,
+// node for node. Rules, in order:
+//   - icons and pictures keep their box and go invisible;
+//   - something animating with no words in it (a ping ring, a live dot) goes;
+//   - a coloured shape with no words (the pin badge) becomes a shimmer blob;
+//   - a small coloured shape with words (a pill) becomes one shimmer blob;
+//   - a big coloured surface (a green card, a dark button) turns neutral;
+//   - every run of text becomes a shimmer bar exactly the width it takes.
+function _tdRedactColored(c){
+  const m=/rgba?\(([^)]+)\)/.exec(String(c||''));
+  if(!m)return false;
+  const p=m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+  if(p.length>3&&!(p[3]>0.05))return false;
+  const [r,g,b]=p;
+  if(!(r>=0&&g>=0&&b>=0))return false;
+  if(Math.max(r,g,b)-Math.min(r,g,b)>24)return true;          // a hue
+  return (0.2126*r+0.7152*g+0.0722*b)/255<0.6;                // a dark surface
+}
+function _tdRedact(src,dst){
+  try{
+    if(!src||!dst||src.nodeType!==1||dst.nodeType!==1)return dst;
+    const se=[src,...src.querySelectorAll('*')],de=[dst,...dst.querySelectorAll('*')];
+    if(se.length!==de.length)return dst;
+    // Measure everything first: redacting in place must not read its own writes.
+    const plan=se.map((s,i)=>{
+      const tag=s.tagName.toLowerCase();
+      if(s.closest('svg')&&tag!=='svg')return '';
+      if(tag==='svg'||tag==='img'||tag==='canvas'||tag==='video'||tag==='picture')return 'hide';
+      const cs=getComputedStyle(s);
+      const words=/\S/.test(s.textContent||'');
+      // (A shimmer bar animates too, and is exactly what must stay.)
+      if(!words&&!s.classList.contains('td-skel')&&cs.animationName&&cs.animationName!=='none')return 'hide';
+      const colored=(cs.backgroundImage&&cs.backgroundImage!=='none')||_tdRedactColored(cs.backgroundColor);
+      if(!colored)return '';
+      if(i===0)return 'plain';
+      if(!words)return 'blob';
+      return s.offsetHeight&&s.offsetHeight<=30?'pill':'plain';
+    });
+    de.forEach((d,i)=>{
+      const p=plan[i];
+      if(!p)return;
+      if(p==='hide'){d.style.visibility='hidden';return;}
+      d.style.boxShadow='none';
+      if(p==='plain'){d.style.background='var(--bg-card,#fff)';d.style.borderColor='var(--border)';return;}
+      d.style.background='';d.style.borderColor='transparent';
+      d.classList.add('td-skel');
+      if(p==='pill')d.classList.add('td-rx-pill');
+    });
+    // Then the words. A pill is already one bar, its text just goes clear.
+    const texts=[];
+    const w=document.createTreeWalker(dst,NodeFilter.SHOW_TEXT);
+    for(let n=w.nextNode();n;n=w.nextNode())if(/\S/.test(n.nodeValue))texts.push(n);
+    texts.forEach(n=>{
+      const par=n.parentElement;
+      if(!par||par.closest('svg')||par.classList.contains('td-rx'))return;
+      const span=document.createElement('span');
+      span.className=par.closest('.td-rx-pill')?'td-rx':'td-skel td-rx';
+      par.insertBefore(span,n);
+      span.appendChild(n);
+    });
+  }catch(_e){}
+  return dst;
+}
+
 // ── The business's clock (owner rule 2026-08-24) ──────────────────────────────
 // "It needs fixed to contractor time zone when setup off the shop business
 // address, that should solve it permanently."

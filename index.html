@@ -225,13 +225,6 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-bar{from{width:0}to{width:68%}}
 @keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1}}
 @keyframes td-dash-enter{from{opacity:0;transform:scale(.988)}to{opacity:1}}
-/* THE stat-tile reveal, one constant for EVERY .met (dashboard KPIs, client
-   totals, mileage/income/expense summaries, proposal funnel, anywhere .mets/
-   .met is used). These blocks are rebuilt via innerHTML on every render, an
-   unanimated swap reads as the numbers JUMPING (owner report 2026-08-07:
-   "jarring"). Living on the shared class means every current AND future
-   .met tile gets this for free, never a per-feature CSS fix. */
-@keyframes td-met-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 /* THE accordion reveal, one constant for EVERY collapsible section (Properties,
    Notes, Activity timeline, Client risk, and any future accordion). When a bar is
    expanded, wrap its revealed body in class="td-acc-body" so it eases open the same
@@ -324,24 +317,22 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
-/* Boot waterfall (owner request): while the boot overlay fades, the home header +
-   widget cards ripple in top-to-bottom, 60ms apart, each sliding up 14px. The
-   .boot-cascade class is added ONLY by _removeBootOverlay (boot reveal), never on
-   normal navigation, and is removed after the ripple settles so renderDash's
-   innerHTML updates can never re-trigger it. */
-/* Gentle fade-up (owner: "smoother, fade in more"): mostly opacity with a small
-   14px rise, NO scale (scaling large cards blurs text mid-flight → the "choppy"
-   look). Ease-out-cubic decelerates softly instead of the abrupt expo snap. */
-/* Owner-approved 2026-09-24: the page WATERFALLS DOWN, each card drops 16px into
-   place with a whisper of spring. Still no scale (it blurs text mid-flight). */
-@keyframes td-card-cascade{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
-/* Cards cascade RIGHT AFTER the boot overlay lifts, and BEHIND any boot popup
-   (owner: a blank white backdrop behind a popup looks odd), so the dashboard
-   fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
-   over VISIBLE cards only, inline animation-delay wins, so no fixed nth-child
-   holes. Backwards `both` fill keeps each card invisible until its turn. */
-#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .62s cubic-bezier(.3,1.22,.55,1) both;will-change:opacity,transform}
-@media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
+/* THE boot waterfall (owner 2026-10-01: "it should be like shuffling from the
+   top down like iOS does"). ONE per page load, added only by _armBootCascade
+   (js/cloud.js) and removed once it settles, so no later render can replay it.
+   Each block (greeting, period row, each row of tiles, the ON SITE card, each
+   card below) fades in and rises 8px on its own beat, 45ms apart in reading
+   order; --wf-d is the beat, set from the block's row (js/dashboard.js
+   _dashWfBlocks). Backwards fill keeps a block clear until its turn. The boot
+   placeholder's matching piece fades out on the same beat, so the shimmer
+   hands over row by row. No scale: it blurs text mid-flight. */
+@keyframes td-wf-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes td-wf-fade{from{opacity:0}to{opacity:1}}
+@keyframes td-wf-out{from{opacity:1}to{opacity:0}}
+#pg-dash.boot-cascade [data-wf]{animation:td-wf-in .2s cubic-bezier(.22,1,.36,1) both;animation-delay:var(--wf-d,0ms)}
+#pg-dash.boot-cascade .td-boot-skel [data-wf]{animation:td-wf-out .2s ease both;animation-delay:var(--wf-d,0ms)}
+/* Reduced motion: the same order, as a plain cross-fade with no travel. */
+@media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade [data-wf]{animation-name:td-wf-fade}#pg-dash.boot-cascade .td-boot-skel [data-wf]{animation-name:td-wf-out}}
 /* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
    hide the grid holding for the async weather fetch; the grid paints instantly
    with td-skel weather chips and repaints once when weather lands (§8.3). */
@@ -904,16 +895,6 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 /* ── Metric tiles ── */
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
 .met{background:var(--bg-card);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;box-shadow:var(--shadow-card);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer}
-/* The tile entrance plays ONLY during the boot waterfall. It used to live on
-   .met itself, so every innerHTML rebuild (sync echoes, a mileage measurement
-   landing) replayed six tile animations: the KPI flashing on the owner's
-   2026-08-11 screen recording, caught by the boot-churn recorder. */
-#pg-dash.boot-cascade .met{animation:td-met-enter .22s cubic-bezier(.22,1,.36,1) both}
-/* A staggered start per tile (nth-child) reads as the row settling in
-   together rather than one flat block popping, still cheap CSS-only. */
-.met:nth-child(1){animation-delay:0ms}.met:nth-child(2){animation-delay:20ms}
-.met:nth-child(3){animation-delay:40ms}.met:nth-child(4){animation-delay:60ms}
-.met:nth-child(5){animation-delay:80ms}.met:nth-child(6){animation-delay:100ms}
 /* Sign-in skeletons (§8.4): pulsing placeholders inside the same .met tiles
    until the first cloud load lands, so the dashboard never flashes $0. */
 /* Shimmer skeleton, THE app-wide loading treatment (owner mandate 2026-08-09):
@@ -963,20 +944,27 @@ body.dark .tim-atwork-mark img{filter:invert(1)}
 .met-skel-lbl{height:10px;width:60%;border-radius:4px;margin-bottom:10px}
 .met-skel-bar{height:22px;width:80%}
 /* One clean boot: while the first sync of a signed-in page load is in flight,
-   each dashboard widget hides its real children behind an appended
-   .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
-   one swap when the sync settles. Non-destructive: the real markup stays. */
-#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+   each dashboard widget's real children stay LAID OUT but unseen, under a
+   redacted copy of themselves (.td-boot-skel, js/dashboard.js
+   _dashApplySkeletons) pinned exactly on top. Visibility, never display: the
+   real layout is what holds every box in place, so the swap moves nothing. */
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){visibility:hidden!important}
+.td-skel-host{position:relative}
+/* A run of text in a placeholder: the bar is as wide as the words, the words clear. */
+.td-rx{color:transparent!important;-webkit-text-fill-color:transparent;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+/* An ellipsis is painted in the line's own colour, not the words', so a
+   placeholder clips instead of leaving three dots behind its bar. */
+.td-boot-skel *,.td-nb-skel *{text-overflow:clip!important}
+/* The ON SITE placeholder fills the height the card took last time. */
+.td-nb-skel>div{height:100%;box-sizing:border-box}
 /* The boot shimmer is ONE light band sweeping the whole screen on a diagonal
    (owner-approved 2026-09-24), not each bar flickering on its own. The gradient
    is anchored to the page: _dashApplySkeletons sets --sx (the bar's page x plus a
    share of its y) and a delay that phase-locks every bar to one clock. The
-   td-skel-sweep and td-data-in keyframes live in js/brand-look.js (shared with
-   the client hub). */
-#pg-dash .td-boot-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
-/* Data lands: each card's real content comes into focus where its shimmer was. */
-#pg-dash .td-data-in>*{animation:td-data-in .3s cubic-bezier(.22,1,.36,1) both}
-@media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel{animation:none}#pg-dash .td-data-in>*{animation:none}}
+   td-skel-sweep keyframes live in js/brand-look.js (shared with the client
+   hub). */
+#pg-dash .td-boot-skel .td-skel,#dash-nearby .td-nb-skel .td-skel{background:linear-gradient(90deg,var(--border) 0,var(--border) 40%,var(--bg) 50%,var(--border) 60%,var(--border) 100%);background-size:900px 100%;animation:td-skel-sweep 1.3s linear infinite}
+@media (prefers-reduced-motion:reduce){#pg-dash .td-boot-skel .td-skel,#dash-nearby .td-nb-skel .td-skel{animation:none}}
 /* Team: what each person bills an hour, on their own row (owner 2026-09-29) */
 #team-page-list .td-rate-row{margin-top:8px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 #team-page-list .td-rate-chips{display:flex;flex-wrap:wrap;gap:8px}

@@ -714,8 +714,8 @@ function _geoClearOpen(){try{localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}
 // and the card fell through to "Not clocked in" until the boot rebuild
 // finished, seconds later at best.
 //
-// The card already had a rescue for this, zp3_nearby_snap, but it is a frozen
-// copy of the card's HTML and it is skipped the moment a fix has been seen
+// The card had a rescue for this, zp3_nearby_snap, but it was a frozen
+// copy of the card's HTML (retired 2026-10-01) and it was skipped the moment a fix had been seen
 // (js/dashboard.js). A parked phone gets a fix from the significant-change
 // wake almost immediately on boot, so on exactly the reboot the owner is
 // describing the snapshot is cancelled and the rebuild is not done yet.
@@ -755,6 +755,45 @@ function _geoRestoreDwell(){
     return true;
   }catch(_e){return false;}
 }
+// ── And so does the fact that today WAS answered (owner 2026-10-01) ─────────
+// "It's not a smooth waterfall down load from top to bottom with the on site
+// card coming in so late." The card waits for the deriver's verdict on today
+// (js/dashboard.js _nearbyGeoPending) so it never paints "Not clocked in" and
+// then flips to ON SITE. But that verdict lived only in memory: a dwell was
+// persisted above, "nobody is on site" was not, so on every boot the phone
+// could not tell "the deriver said nobody" from "the deriver has not spoken",
+// and the card sat in its shimmer until the boot rebuild answered again,
+// seconds after the rest of the screen had landed. Kept the same way the
+// dwell is (login, day, 45-minute freshness): the deriver's last word, painted
+// early, and replaced in place the moment it speaks again. Never invented:
+// with no fresh record the card still waits.
+const _GEO_DAYANS_KEY='zp3_geo_dayans';
+function _geoPersistDayAnswer(){
+  try{localStorage.setItem(_GEO_DAYANS_KEY,JSON.stringify({at:Date.now(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()}));}catch(_e){}
+}
+function _geoRestoreDayAnswer(){
+  try{
+    const s=JSON.parse(localStorage.getItem(_GEO_DAYANS_KEY)||'null');
+    if(!s||s.uid!==((_supaUser&&_supaUser.id)||null)||s.day!==todayKey())return false;
+    if(!(Date.now()-Number(s.at)<_GEO_DWELL_MAX_AGE_MS))return false;
+    window._geoDayKnown=true;
+    return true;
+  }catch(_e){return false;}
+}
+// The first render of the home screen comes BEFORE the cloud load that runs
+// _geoRestoreOpen, and that render is the one the boot placeholder copies. So
+// the card's own state (the dwell, and whether today was answered) is read
+// back the first time the card is drawn for this login. Same reads, same
+// rules, just early; once per login.
+function _geoRestoreEarly(){
+  try{
+    const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+    if(!uid||window._geoEarlyFor===uid)return;
+    window._geoEarlyFor=uid;
+    _geoRestoreDwell();
+    _geoRestoreDayAnswer();
+  }catch(_e){}
+}
 function _geoRestoreOpen(){
   // One-shot per session, same pattern as the mileage sweeps (js/mileage.js
   // _milePersonalStopSweep/_mileMotionHealSweep): this used to only ever get
@@ -778,6 +817,7 @@ function _geoRestoreOpen(){
   // not the fence machine's, and it must come back even on a day the fence
   // machine had nothing open.
   _geoRestoreDwell();
+  _geoRestoreDayAnswer();
   // Park state, for the same reason and at the same moment: the plugin's side
   // of park survived the reload, so JS's side has to as well or the off-switch
   // is unreachable (see _geoParkRestore).
@@ -3206,9 +3246,14 @@ async function _geoPermissionBanner(){
       if(!p._tdBound){p._tdBound=true;p.onchange=()=>_geoPermissionBanner();}
     }
   }catch(_e){}
-  if(state==='granted'){el.style.display='none';return;}
+  // Everything past the await lands AFTER the render that called this, so the
+  // home screen's boot placeholder and its waterfall were already laid out
+  // without it (js/dashboard.js _dashLateBlock tells them). Caught on WebKit,
+  // where the permission query answers later than the render finishes.
+  const late=()=>{try{if(typeof _dashLateBlock==='function')_dashLateBlock();}catch(_e){}};
+  if(state==='granted'){el.style.display='none';late();return;}
   // The await above is a gap the checklist can repaint in.
-  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _setupTodoShowsLocation==='function'&&_setupTodoShowsLocation()){el.style.display='none';el.innerHTML='';late();return;}
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML=_geoBannerHtml('Location is off',
@@ -3217,6 +3262,7 @@ async function _geoPermissionBanner(){
       ?'Turn it back on in your phone: Settings → TradeDesk → Location → While Using the App.'
       :'Tap below, then pick Allow While Using.'),
     denied?null:'Turn on location');
+  late();
 }
 // One banner shell for every state, so the copy is the only thing that varies.
 // The button is sized to its words, left, not full width: a full-width button's
@@ -7694,7 +7740,8 @@ const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1}
 // ── A FENCE NAMED FOR A PERSON SAYS WHICH ADDRESS (Jack, 2026-09-21) ───────
 // "He asked if all onsites could mint the address in parenthesis."
 //
-// The SQL half is geo_street_line + the three name expressions in 20261030,
+// The SQL half is geo_street_line + the three name expressions in 20261030
+// (the extra-property arm restated in 20261064),
 // and these two are its mirror. They are a PAIR by contract: CI runs
 // scripts/ci/geo-fences-equivalence.sql against the same
 // tests/fixtures/geo-fences-case.json this file is checked against, so the two
@@ -7793,8 +7840,18 @@ function _geoDeriveFences(dayKey){
       //
       // Its own id so the deriver can tell two of his properties apart, and
       // c.id still on clientId so every rule that asks "whose is this" gets
-      // the same answer it always did. The label is the name, because that is
-      // what he typed to tell them apart, and "Primary" is not a place.
+      // the same answer it always did.
+      //
+      // THE STREET IS THE NAME, NEVER THE LABEL (owner 2026-10-02, on Jack's
+      // Tagen Lindstrom: "why is Tagen saying rental, it should show the
+      // property address"). The label used to win, on the reasoning that it is
+      // what he typed to tell them apart. It is not: the label field is a
+      // category ("Rental", "Additional property"), and Tagen has two
+      // properties both labelled Rental, so his rail read "Tagen Lindstrom
+      // (Rental)" for two different houses. Jack's 2026-09-21 rule is that
+      // every on-site row mints the ADDRESS in parenthesis, and the street is
+      // the only thing that is always unique to the house. The SQL mirror is
+      // 20261064 (geo_fences_for), changed identically.
       (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach((a,i)=>{
         if(!a||!a.addr)return;
         // The same two-copy rule the primary has, and the same guard: a
@@ -7802,7 +7859,7 @@ function _geoDeriveFences(dayKey){
         // editing the address retires the fence until it is geocoded again.
         if(!(a.lat!=null&&a.lon!=null&&a.geoAddr===a.addr))return;
         out.push({id:'client-'+c.id+'-p'+i,kind:'client',
-          name:_geoFenceName(c.name||'Client',(a.label&&String(a.label).trim())||_geoStreetLine(a.addr)),
+          name:_geoFenceName(c.name||'Client',_geoStreetLine(a.addr)),
           lat:Number(a.lat),lng:Number(a.lon),addr:a.addr,clientId:c.id,
           scheduled,personal:!!c.personal,onBooks});
       });
@@ -8994,7 +9051,9 @@ function _geoDeriveRebuildDays(){
 let _geoDeriveRebuildP=null;
 function _geoDeriveRebuild(){
   if(_geoDeriveRebuildP)return _geoDeriveRebuildP;
-  _geoDeriveRebuildP=_geoDeriveRebuildRun().finally(()=>{_geoDeriveRebuildP=null;});
+  // However it ends, the day has had its answer: a rebuild that found
+  // nothing to publish still means nobody is on site (_geoDayAnsweredMark).
+  _geoDeriveRebuildP=_geoDeriveRebuildRun().finally(()=>{_geoDeriveRebuildP=null;if(_geoDayAnsweredMark())_geoDashRepaint();});
   return _geoDeriveRebuildP;
 }
 async function _geoDeriveRebuildRun(){
@@ -9032,6 +9091,20 @@ function _geoDeriveRebuildIfStale(){
   }catch(_e){return false;}
 }
 
+// ── Has today been answered yet? ───────────────────────────────────────────
+// The home screen's on-site card holds a shimmer until the deriver has said
+// where the person is today (js/dashboard.js _nearbyGeoPending), so it paints
+// once with the right card instead of "Not clocked in" first and ON SITE a
+// second later (owner 2026-10-01). True the FIRST time only, so the caller
+// knows to repaint even when the answer itself did not change.
+function _geoDayAnsweredMark(){
+  if(window._geoDayAnswered)return false;
+  window._geoDayAnswered=true;
+  return true;
+}
+function _geoDashRepaint(){
+  try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+}
 // ── The open dwell, for the screens ────────────────────────────────────────
 // The deriver reports where the person is right now (a dwell with an arrival
 // and no departure yet) and never writes it, so the dashboard card and the
@@ -9051,6 +9124,8 @@ function _geoOpenDwellPublish(dayKey,res){
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
     _geoPersistDwell(next);
+    _geoPersistDayAnswer();
+    const firstAnswer=_geoDayAnsweredMark();
     // Report the DERIVER'S VERDICT, not just what the card did with it.
     // Standing inside a fence with no on-site card and no Live Activity, the
     // liveact_* events said only that nothing asked for a card; they could not
@@ -9105,7 +9180,7 @@ function _geoOpenDwellPublish(dayKey,res){
       :null;
     try{if(typeof _liveActRail==='function')_liveActRail(next,window._geoOpenPending);}catch(_e){}
     if(same){
-      if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
+      if(deNew||firstAnswer)_geoDashRepaint();
       return;
     }
     try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}

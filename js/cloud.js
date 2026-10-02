@@ -758,7 +758,7 @@ function _supaAdoptAuthKey(){
   return false;
 }
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='10.01.26.18';
+const APP_VERSION='10.01.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 // _rtPocketed: the realtime socket is closed because the screen is in a pocket (_rtPocket).
 let _rtPocketT=null,_rtPocketed=false;
@@ -1975,71 +1975,44 @@ let _sessionRestoreInProgress=false;
 // Demo mode (?demo=1) has no backend at all: supaInit() returns on this, and
 // so does every other cloud entry point that asks the same question.
 function supaEnabled(){return !window.__TD_DEMO&&!!(SUPA_URL&&SUPA_KEY);}
-// Boot waterfall arming, popup-gated. Cards start hidden (boot-hold); ~220ms in
-// we sample for an open popup (boot-time alerts spawn right around overlay
-// removal). None → pour immediately. One up → hold until the LAST popup closes
-// (debounced 220ms so chained popups stay first), then pour. 20s failsafe so a
-// detection miss can never leave the dashboard permanently hidden.
+// The boot waterfall: ONE per page load, top to bottom, block by block.
+// Owner 2026-10-01: "it should be like shuffling from the top down like iOS
+// does." The greeting, the Month/Quarter/Year row, each row of money tiles, the
+// ON SITE card and each card below fade in and rise 8px in reading order, 45ms
+// apart, 200ms each (CSS: #pg-dash.boot-cascade [data-wf] in index.html; the
+// beats come from js/dashboard.js _dashWfBlocks). When the boot placeholder is
+// up (_dashApplySkeletons), each of its pieces fades out on the same beat its
+// content fades in, so the shimmer hands over row by row rather than all at
+// once. It plays behind a boot popup too: the dashboard fills in under the
+// scrim instead of sitting blank behind it.
 function _armBootCascade(){
   const d=document.getElementById('pg-dash');
   if(!d||!d.classList.contains('active'))return;
   // ONE pour per page load (owner 2026-08-10: "the tiles at the top are
-  // waterfalling 3 times"). Boot re-renders (local paint, cloud load,
-  // settings apply) each re-armed the ripple, so the cards visibly restarted
-  // their entrance mid-flight. The first arm wins; later renders just update
-  // content in place.
+  // waterfalling 3 times"). Later renders just update content in place.
   if(window._bootCascadeRan)return;
+  // While the first sync is still in flight the screen is the placeholder, and
+  // the pour belongs to the moment the data lands (_bootSyncSettled), not to
+  // the overlay lifting onto shimmer.
+  if(typeof _dashSkelMode==='function'&&_dashSkelMode())return;
   window._bootCascadeRan=true;
-  // Cascade plays RIGHT AWAY as the boot overlay lifts, including BEHIND a boot
-  // popup (owner: blank white behind a popup looks odd; the dashboard should be
-  // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
-  // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
-  // gaps: the ripple flows smoothly over exactly what's on screen.
-  // Backwards `both` fill keeps each card invisible until its own delay elapses,
-  // so no boot-hold class (and no blank-hold) is needed.
-  //
-  // DIRECTION: top → bottom (owner 2026-08-15, after seeing the bottom-up build
-  // on UAT: "I don't want bottom up, want top down"). The greeting bar goes
-  // first, then each card in page order, so the page fills the way it is read.
-  // Each card does a gentle fade + 14px rise; scale was rejected earlier for
-  // blurring text mid-flight.
-  let count=0;
+  let beats=1;
   try{
-    const root=d.querySelector('#dash-widget-root');
-    const tbar=d.querySelector('.tbar');
-    // The waterfall SPANS the same 1.2s beat the shimmer holds for (owner
-    // 2026-08-15: "drop skeleton shimmer and iOS load to 1.2 seconds"), so the
-    // boot reads as one continuous piece of choreography instead of a long wait
-    // followed by a quick flick. The stagger is COMPUTED from the card count
-    // rather than fixed, because a fixed step makes the span depend on how many
-    // widgets happen to be visible: four cards would finish in half the time
-    // seven do. Clamped so a very short dashboard does not crawl and a very long
-    // one does not machine-gun. The greeting bar is the first beat of the wave,
-    // so it is counted here too. _travel MUST match the td-card-cascade duration
-    // in index.html, it is the tail every card still has to fly after it starts.
-    const base=60,_travel=620,_target=1200;
-    const cards=root?[...root.children].filter(el=>el.nodeType===1&&el.classList.contains('td-dw')):[];
-    const vis=cards.filter(el=>el.offsetHeight>2);   // read BEFORE the class → natural layout height
-    const _n=vis.length+1;                           // +1 for the tbar, which leads the wave
-    // FLOOR, not round: rounding a fractional step up pushes the last card past
-    // the target beat by a frame or two.
-    const step=Math.floor(Math.min(240,Math.max(50,(_target-base-_travel)/Math.max(1,_n-1))));
-    // The header is the top of the page, so the falling wave starts there.
-    if(tbar)tbar.style.animationDelay=base+'ms';
-    // Then page order. Hidden widgets take the delay of the visible one above
-    // them, so an empty crew/alerts card leaves no gap in the ripple.
-    cards.forEach(el=>{
-      const idx=vis.indexOf(el);
-      el.style.animationDelay=(base+((idx>=0?idx:vis.length-1)+1)*step)+'ms';
-    });
-    count=vis.length;
+    const w=_dashWfStamp(0);
+    beats=Math.max(1,w.beats);
   }catch(_e){}
+  window._bootWfT0=performance.now();
+  try{if(typeof _dashSkelLift==='function')_dashSkelLift();}catch(_e){}
   d.classList.add('boot-cascade');
-  const total=60+(Math.max(1,count)+1)*240+620+260;   // last starter + travel + slack, at the widest stagger
+  // The last beat starts at (beats-1)*45ms and travels 200ms. The placeholder
+  // copies go the moment their last piece has faded; the class a beat later.
+  const _last=(beats-1)*45+200;
+  setTimeout(()=>{try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}},_last+20);
   setTimeout(()=>{try{
     d.classList.remove('boot-cascade');
-    d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
-  }catch(_e){}},total);
+    window._bootWfT0=null;
+    if(typeof _dashWfClear==='function')_dashWfClear();
+  }catch(_e){}},_last+260);
 }
 // The moment the boot's first cloud sync lands: end the shimmer, render the
 // real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
@@ -2109,14 +2082,13 @@ function _bootSyncSettled(){
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
-  // Render the real content underneath the shimmer, then let each card swap
-  // over (js/dashboard.js _dashRevealSkeletons).
+  // Render the real content underneath the placeholder, then swap: the one
+  // waterfall carries it, row by row (js/dashboard.js _dashRevealSkeletons).
+  // Under a boot overlay that has not lifted yet the placeholder just goes and
+  // the lift pours instead (skel mode is off now, so the lift arms it), or the
+  // once-guard would burn the cascade invisibly behind the overlay.
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
-  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();else if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
-  // Pour only if the boot overlay already lifted. A fast sync that settles
-  // while the overlay is still up must leave the pour to _removeBootOverlay
-  // (skel mode is off now, so the lift arms it), or the once-guard would burn
-  // the cascade invisibly behind the overlay.
+  try{if(typeof _dashRevealSkeletons==='function')_dashRevealSkeletons();}catch(_e){}
   const _o=document.getElementById('supa-boot-overlay');
   if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
   // A logo with no brand colour yet: take it from the logo, read at boot by
@@ -2181,16 +2153,12 @@ function _removeBootOverlay(immediate){
         }
       }
     }catch(_e){}
-    // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
-    // no popups → after boot load"). _armBootCascade holds the cards invisible,
-    // waits out any boot popup (collect alert, verdicts), then pours them in.
-    // A signed-in fresh boot stays in skeleton until the first sync settles;
-    // _bootSyncSettled pours the cascade then. Everything else pours now.
-    // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
-    // if no render has run yet this boot.
-    // Owner-approved 2026-09-24: the page waterfalls in as the overlay lifts
-    // EVEN while the first sync is in flight, as shimmer cards; the data then
-    // lands in place (_bootSyncSettled). One pour either way.
+    // The overlay lifts onto the home screen. While the first sync is still
+    // in flight that screen is its own placeholder, standing still in exactly
+    // the layout the data will fill (applied HERE so the lift never shows a
+    // bare frame), and the one waterfall waits for the data
+    // (_bootSyncSettled). Everything else pours now (owner 2026-10-01: one
+    // top-down pour, never a pour of shimmer and then a second of content).
     if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
       try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
     }
@@ -2621,7 +2589,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._geoDayAnswered=false;window._geoDayKnown=false;window._geoEarlyFor=null;window._nbWaitT0=null;window._nbBootWait=false;window._nearbyLiveRendered=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
