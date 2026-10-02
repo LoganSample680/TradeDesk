@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-10.02.26.9';
+const CACHE = 'tradedesk-10.02.26.10';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -77,7 +77,15 @@ self.addEventListener('fetch', e => {
         // used" on every navigation (matches the working static-asset path below).
         const toCache = safeClone(r);
         caches.open(CACHE).then(c => c.put('/index.html', toCache));
-        return r;
+        // The live answer gets the same treatment as the cached one. Cloudflare
+        // answers /index.html with a 308 to /, the fetch above follows it, and
+        // the response comes back marked redirected. WebKit refuses to show a
+        // redirected response for a navigation, so the page never loads and
+        // never runs a line of script. That is the black support view on the
+        // iPhone app (2026-10-02): build 69 turned on app-bound domains, which
+        // is what lets this worker run inside the app at all, and the portal's
+        // frame was opened at index.html?ops=1.
+        return r.redirected ? safeClone(r) : r;
       }).catch(() => caches.match('/index.html'))
     );
     return;
