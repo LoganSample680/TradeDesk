@@ -30,10 +30,12 @@ jobs:
         # 2026-10-01. The script copies those files in from the branch that
         # has them, for this run only; they are already applied, so nothing
         # runs twice.
-        # 2>&1: the table must reach the script whichever stream the CLI
-        # prints it on; the progress lines it also writes have no columns and
-        # are ignored.
-        run: supabase migration list 2>&1 | bash scripts/ci/live-migrations-from-branches.sh
+        # Two witnesses, read by the same script: the migration table, and a
+        # dry run of db push, whose refusal names each live-only version in a
+        # fixed sentence. 2>&1 on both: the CLI's stream choice is not ours.
+        run: |
+          { supabase migration list 2>&1; supabase db push --include-all --dry-run 2>&1 || true; } \
+            | bash scripts/ci/live-migrations-from-branches.sh
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
