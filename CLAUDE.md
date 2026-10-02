@@ -623,6 +623,15 @@ trip and a failure the owner had to watch land.
 - `--reporter=line` and `| tail` are load-bearing. The default reporter is what
   made "hundreds of lines" true in the first place.
 
+**CI does the same on every PR** (owner 2026-10-02: "only run tests that
+have something to do with what code was changed"). `scripts/ci/test-scope.sh`
+picks the specs named after each changed file plus every spec that names a
+function the diff touched, and runs the full suite only when a shared file
+(`js/cloud.js`, `js/utils.js`, `js/data.js`, `index.html`, `tests/helpers.js`,
+`playwright.config.js`) really changed. A version stamp alone is not a change:
+it used to send every PR to the full ~8,900 tests. Pushes to `main` and the
+nightly run still run everything.
+
 **Why this matters more than it sounds.** CI stops being where bugs are
 discovered and becomes where they are confirmed. A red shard then means
 something real broke, not that Claude fumbled an assertion, which is the only

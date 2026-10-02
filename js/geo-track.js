@@ -4345,12 +4345,22 @@ let _geoDriveConfirmFix=null;// {lat,lng} position at the last 30-minute confirm
 // Short enough that a walk past a parked truck at 10:00 and a passenger ride
 // at 10:30 can never pair with each other.
 const _GEO_DRIVE_PAIR_MS=3*60000;
-// The NATIVE cap. Deliberately generous against a real drive and still far
-// short of a night: an open window re-asserts itself off its own fixes and off
+// The NATIVE cap. An open window re-asserts itself off its own fixes and off
 // the 30-minute confirmation long before this, so this only ever fires when
-// nothing is confirming anything, and then it costs 45 minutes of radio
-// instead of eight hours.
-const _GEO_DRIVE_WIN_CAP_MS=45*60000;
+// nothing is confirming anything.
+//
+// 45 -> 25 MINUTES (owner 2026-10-02: "it all needs to be at 100 percent in
+// 10 seconds with battery cut"). "Only ever fires" turned out to be most of
+// the time: the plugin opens the window by itself on an automotive flip
+// while the WebView is asleep (selfArmDrive), and until selfCloseDrive ships
+// in a build nothing asleep can close it, so it ran to the cap in a parked
+// truck. Eight days of Jack: the window was on 21.6 hours for about 8 hours
+// of driving, and 18 of his 27 long windows ended on "cap". Two weeks of
+// drive rows for both phones topped out at 26 minutes, median 8 to 9, so 25
+// still covers a real drive and gives back twenty minutes of GPS per window.
+// JS awake re-asserts every five minutes, so a long drive with the app
+// running never meets it.
+const _GEO_DRIVE_WIN_CAP_MS=25*60000;
 // How often JS re-asserts, which is what refreshes that cap. Comfortably
 // inside both the cap and the 30-minute confirmation.
 const _GEO_DRIVE_WIN_REASSERT_MS=5*60000;
@@ -4402,9 +4412,12 @@ function _geoEvFresh(ev){
 // deliberately differs from the server's AUTO_KINDS, and the difference is
 // documented rather than accidental.
 function _geoKindDrives(k){const s=String(k||'');return s==='automotive'||s==='driving';}
+// The kinds that end a drive, in ONE list: _geoKindRests reads it here and
+// the plugin reads it from the drive recipe (setSampling restKinds), so the
+// phone asleep closes the window on exactly the flips JS awake does.
+const _GEO_REST_KINDS=['walking','running','onFoot','still','stationary','cycling'];
 function _geoKindRests(k){
-  const s=String(k||'');
-  return s==='walking'||s==='running'||s==='onFoot'||s==='still'||s==='stationary'||s==='cycling';
+  return _GEO_REST_KINDS.indexOf(String(k||''))>=0;
 }
 function _geoDriveWindowOn(){return _geoDriveWinAt>0;}
 // The correlation, from either side. `half` is 'motion' or 'fix'; whichever
@@ -4519,7 +4532,7 @@ function _geoDriveWindowOpen(why){
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
   // `reason` rides every call that can turn the receiver on (owner 2026-09-08,
   // the radio ledger): the plugin writes the row, JS says why. 3.2 both ways.
-  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY,reason:String(why||'')})).catch(()=>{});}catch(_e){}
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY,restKinds:_GEO_REST_KINDS.slice(),reason:String(why||'')})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
   // The island shows the drive from the first second of the window, not from
   // the first fix that moves the tally (js/live-activity.js).

@@ -1862,12 +1862,20 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.driving, 'and nothing is on the road').toBe(null);
     });
 
-    test('his 13:01:22 derive is still a drive: 85 seconds is a red light, not a stop', async () => {
-      // The server writes a mileage leg once and never rewrites it, so a drive
-      // ended at a stoplight inside a fence would keep that end for good.
+    // AMENDED 2026-10-02. This test used to say "his 13:01:22 derive is still
+    // a drive: 85 seconds is a red light, not a stop", and assert the drive
+    // stayed open with nobody at the yard. That was right for the LEG, which
+    // the server writes once and never rewrites. It was wrong for the time
+    // rows, which heal on the next derive (geo_replace_day step 5c), and it
+    // cost every stop on 1 October three to six minutes (owner: "everything
+    // needs to hit in 10 seconds or less"). The leg half of the old assertion
+    // lives on, unchanged in meaning, in 'rule 21 before gate 4' below.
+    test('his 13:01:22 derive: the yard opens at the crossing, 85 seconds in', async () => {
       const r = await at(T(13, 1, 22));
-      expect(lastJ(r).endTs).toBe(null);
-      expect(r.open).toBe(null);
+      expect(lastJ(r).endTs, 'the drive ends at the crossing').toBe(T(12, 59, 57));
+      expect(lastJ(r).provisional, 'before gate 4: time rows only').toBe(true);
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(12, 59, 57)));
     });
 
     test('a drive-by with a lost exit, tape still automotive, does not end the drive', async () => {
@@ -1888,6 +1896,138 @@ test.describe('geo-derive: the day deriver', () => {
     test('no proof fix inside the circle, no arrival', async () => {
       const r = await at(T(13, 10), { fixes: fixesUpTo(T(12, 59, 57), realFixes) });
       expect(lastJ(r).endTs).toBe(null);
+    });
+  });
+
+  // ── THE STOP NOW, THE MILES AT FOUR MINUTES (owner 2026-10-02) ───────────
+  // "write the stop's time row the moment the saved place is entered and the
+  // phone stops reading as driving; the mileage leg keeps its 4-minute wait."
+  // Rows, not just the result, because the rows are what reach the server and
+  // the keys are what let a later derive land on them instead of beside them.
+  test.describe('rule 21 before gate 4: the stop row now, the leg later', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const LOT = { lat: 39.0420, lng: -95.7511 };
+    const ROAD = { lat: 39.0440, lng: -95.7230 };
+    const GATE = { lat: 39.04405070853869, lng: -95.71664236756777 };
+    const IN1 = { lat: 39.04473446570101, lng: -95.7148052246708 };
+    const IN2 = { lat: 39.04573864320676, lng: -95.71482328783864 };
+    // A customer on the way, where he sits at a light inside the fence.
+    const CORNER = { id: 'client-77', kind: 'client', name: 'Corner customer', clientId: 77, lat: 39.0436, lng: -95.7330 };
+    const AT_LIGHT = { lat: 39.04362, lng: -95.73295 };      // inside CORNER
+    const PAST_LIGHT = { lat: 39.0438, lng: -95.7262 };      // 0.36 mi on, outside it
+    const rowsAt = (nowMs, inp) => page.evaluate((x) => {
+      const res = geoDeriveDay(x);
+      const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return JSON.parse(JSON.stringify({ journeys: res.journeys, open: res.open, rows }));
+    }, base(Object.assign({}, inp, {
+      tape: inp.tape.filter(t => t.ts <= nowMs), fixes: inp.fixes.filter(f => f.ts <= nowMs),
+      regions: inp.regions.filter(g => g.ts <= nowMs), nowMs, crew: false,
+    })));
+    const allTime = rows => rows.job_time_entries.concat(rows.shop_time_entries, rows.open);
+    const keyed = (rows, k) => allTime(rows).filter(t => t.client_key === k);
+
+    // Jack, 1 October, off his own phone (see rule 21 above).
+    const jack = {
+      fences: [YARD],
+      tape: [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(13, 1, 20), 'still')],
+      fixes: [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 55), ROAD),
+        fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 4, 34), IN2)],
+      regions: [{ ts: T(12, 59, 57), id: YARD.id, enter: true }],
+    };
+
+    test('Jack 13:01:22: the yard row starts 12:59:57, and there is no leg yet', async () => {
+      const r = await rowsAt(T(13, 1, 22), jack);
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      const yard = keyed(r.rows, 'd-' + J);
+      expect(yard.length, 'one stop row, keyed by the journey that arrived').toBe(1);
+      expect(yard[0]._table).toBe('shop_time_entries');
+      expect(yard[0].arrived_at).toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(yard[0].departed_at, 'still there: open').toBe(null);
+      const drive = keyed(r.rows, J);
+      expect(drive.length, 'the drive row, on its own key').toBe(1);
+      expect(drive[0].departed_at, 'closed at the crossing').toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(r.rows.td_mileage.length, 'the leg waits for gate 4').toBe(0);
+    });
+
+    test('Jack 13:04:40: four minutes on, the leg lands on the same keys', async () => {
+      const early = await rowsAt(T(13, 1, 22), jack);
+      const r = await rowsAt(T(13, 4, 40), jack);
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      expect(String(early.journeys[early.journeys.length - 1].id), 'same journey id').toBe(J);
+      expect(r.rows.td_mileage.map(m => String(m.id)), 'the leg, under the drive key').toEqual([J]);
+      expect(keyed(r.rows, 'd-' + J).length, 'the same stop row').toBe(1);
+      expect(keyed(r.rows, J).length, 'the same drive row').toBe(1);
+      const keys = allTime(early.rows).map(t => t.client_key);
+      for (const k of keys) expect(allTime(r.rows).map(t => t.client_key), 'lands on ' + k).toContain(k);
+    });
+
+    // A light inside a customer's fence on the way to the yard: in, still for
+    // 40 seconds, automotive, out. The stop row appears at the still, is gone
+    // the first derive after the exit, the drive is one row the whole way, and
+    // no leg is written until he actually arrives.
+    const light = {
+      fences: [CORNER, YARD],
+      tape: [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(12, 55, 10), 'still'),
+        mo(T(12, 55, 50), 'automotive'), mo(T(13, 1, 20), 'walking')],
+      fixes: [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 53), { lat: 39.0428, lng: -95.7420 }),
+        fix(T(12, 55, 5), AT_LIGHT), fix(T(12, 55, 52), AT_LIGHT), fix(T(12, 56, 20), PAST_LIGHT),
+        fix(T(12, 58), ROAD), fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 1, 30), IN2),
+        fix(T(13, 10), IN2)],
+      regions: [{ ts: T(12, 55, 0), id: CORNER.id, enter: true }, { ts: T(12, 56, 10), id: CORNER.id, enter: false },
+        { ts: T(12, 59, 57), id: YARD.id, enter: true }],
+    };
+
+    test('a red light: the stop row comes at the still and goes at the exit, no leg mid-drive', async () => {
+      const atStill = await rowsAt(T(12, 55, 12), light);
+      const J = String(atStill.journeys[atStill.journeys.length - 1].id);
+      const stop = keyed(atStill.rows, 'd-' + J);
+      expect(stop.length, 'the stop row at the still').toBe(1);
+      expect(stop[0].arrived_at).toBe(new Date(T(12, 55, 0)).toISOString());
+      expect(atStill.rows.td_mileage.length, 'no leg at a light').toBe(0);
+
+      // Automotive again, newest fix still inside: the row holds rather than
+      // blinking with every flip, and the leg still waits.
+      const rolling = await rowsAt(T(12, 55, 53), light);
+      expect(keyed(rolling.rows, 'd-' + J).length).toBe(1);
+      expect(rolling.rows.td_mileage.length).toBe(0);
+
+      // Out the far side: the OS closed the crossing. Not resent, so
+      // geo_replace_day step 5c retires it, and the drive row re-opens on the
+      // key it always had.
+      const out = await rowsAt(T(12, 56, 12), light);
+      expect(keyed(out.rows, 'd-' + J).length, 'the stop row is not sent').toBe(0);
+      const live = keyed(out.rows, J);
+      expect(live.length).toBe(1);
+      expect(live[0].departed_at, 'the drive is open again').toBe(null);
+      expect(out.rows.td_mileage.length, 'and still no leg').toBe(0);
+
+      // He reaches the yard: one drive row from 12:50:06 to the crossing, one
+      // leg, and nothing at the corner.
+      const done = await rowsAt(T(13, 20), light);
+      const drives = keyed(done.rows, J);
+      expect(drives.length, 'one continuous drive row').toBe(1);
+      expect(drives[0].arrived_at).toBe(new Date(T(12, 50, 6)).toISOString());
+      expect(drives[0].departed_at).toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(done.rows.td_mileage.map(m => String(m.id))).toEqual([J]);
+      expect(allTime(done.rows).some(t => t.dest_place === 'Corner customer'), 'no row at the corner').toBe(false);
+      const yard = keyed(done.rows, 'd-' + J);
+      expect(yard.length).toBe(1);
+      expect(yard[0].arrived_at, 'the stop key now names the yard').toBe(new Date(T(12, 59, 57)).toISOString());
+    });
+
+    test('Menards: a drive-by with the tape on automotive writes no stop row', async () => {
+      // His 08:08: two readings inside, the tape never left automotive, the
+      // exit lost. A live drive row, no stop, no leg.
+      const r = await rowsAt(T(13, 5), {
+        fences: [YARD], regions: jack.regions,
+        tape: jack.tape.slice(0, 2),
+        fixes: jack.fixes.filter(f => f.ts <= T(13, 0, 39)).concat([fix(T(13, 0, 45), IN2)]),
+      });
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      expect(keyed(r.rows, 'd-' + J).length).toBe(0);
+      expect(r.rows.shop_time_entries.length + r.rows.open.filter(o => o._table === 'shop_time_entries').length).toBe(0);
+      expect(keyed(r.rows, J).map(t => t.departed_at), 'still on the road').toEqual([null]);
+      expect(r.rows.td_mileage.length).toBe(0);
     });
   });
 
