@@ -397,6 +397,7 @@ function _dayEndConfirm(){
     _dayEndWrite(null);
     try{_notifyCancel(['dayend','dayend2']);}catch(_e){}
     saveAll();
+    if(typeof _tlClockRederive==='function')_tlClockRederive(e.date);
     _dayEndToast('Clocked out at '+_dayEndWhen(endMs)+', '+_fmtMin(e.minutes)+' logged');
     try{renderDash&&renderDash();}catch(_e){}
     return true;
@@ -429,6 +430,7 @@ function _dayEndUndo(){
     try{const j=(Array.isArray(jobs)?jobs:[]).find(x=>x&&x.id===e.job_id);if(j&&e.minutes)j.actualHours=Math.max(0,Math.round(((j.actualHours||0)-e.minutes/60)*10)/10);}catch(_e){}
     e.end_time=l.prev.end_time;e.minutes=l.prev.minutes;e.open=l.prev.open;
     if(typeof _rehydrateActiveTimer==='function')_rehydrateActiveTimer();
+    if(typeof _tlClockRederive==='function')_tlClockRederive(e.date);
   }else if(l.kind==='start'){
     if(typeof _activeTimer!=='undefined'&&_activeTimer&&_activeTimer.entryId===l.entryId){
       clearInterval(_activeTimer.timerInterval);_activeTimer=null;

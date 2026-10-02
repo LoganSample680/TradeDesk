@@ -840,7 +840,12 @@ test.describe('Ops portal: the support view, embedded', () => {
       await page.locator('#biz-people .row', { hasText: 'Jack Rivera' }).click();
       await expect(page.locator('#view')).toHaveClass(/on/);
       const src = await page.locator('#view-frame').getAttribute('src');
-      expect(src).toContain('index.html?ops=1');
+      // The app's real address. AMENDED 2026-10-02: this used to pin
+      // index.html?ops=1, which the server answers with a redirect to "/", and
+      // a redirected page from the service worker is refused by WebKit: the
+      // view went black inside the iPhone app. Same page, no hop.
+      expect(src.startsWith('/?ops=1')).toBe(true);
+      expect(src).not.toContain('index.html');
       expect(src).toContain('t=biz-a');
       expect(src).toContain('p=u-jack');
       await expect(page.locator('#view-bar')).toContainText('READ ONLY');
@@ -959,7 +964,9 @@ test.describe('Ops portal: the support view, embedded', () => {
       // is not what "go back" means (owner, on a phone).
       const link = page.locator('#to-app');
       await expect(link).toBeVisible();
-      expect(await link.getAttribute('href')).toBe('index.html?app=1');
+      // "/" rather than index.html (AMENDED 2026-10-02): the redirect from
+      // index.html is the hop the iPhone app's service worker could not pass.
+      expect(await link.getAttribute('href')).toBe('/?app=1');
       // ?app=1 matters: the "/" gate reads a query string as "the app, please",
       // so this cannot land on the marketing page.
       await expect(page.locator('#signout')).toBeVisible();     // still there, just not the only door
@@ -1087,6 +1094,122 @@ test.describe('Ops portal: the support view, embedded', () => {
     expect(await row.isVisible()).toBe(true);
     expect(await row.getAttribute('href')).toBe('ops.html');
     assertNoErrors(page, 'ops row in settings');
+    await ctx.close();
+  });
+});
+
+// ── Inside the iPhone app: the view was black (owner 2026-10-02, build 69) ──
+//
+// The portal opened, tapping into Jack showed a black screen, and the server
+// saw not one request from the frame: its page never ran. Build 69 turned on
+// app-bound domains, which is the switch that lets a service worker run inside
+// the app at all. sw.js answers navigations to "/" and "/index.html" itself,
+// and the frame was opened at index.html?ops=1, which Cloudflare redirects to
+// "/". The worker followed the redirect and handed the result straight back,
+// still marked redirected, and WebKit refuses a redirected page for a
+// navigation. So the frame never loaded, and the dark portal showed through.
+// The same hop would have killed a full-page open just the same, which is why
+// the fix is in the worker and the URL, not in how the view is opened.
+test.describe('Ops portal: the support view inside the iPhone app', () => {
+  const SHELL_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 TradeDeskShell';
+  const ROOT = path.join(__dirname, '..');
+
+  // sw.js run against stand-ins, the same harness tests/e2e-security-lockdown
+  // uses. A navigation event carries mode 'navigate', which a constructed
+  // Request cannot, so the event's request is a plain object.
+  function loadWorker(fetchImpl) {
+    const src = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+    const handlers = {};
+    const self = { location: { origin: 'https://app.test' }, addEventListener: (t, f) => { handlers[t] = f; }, skipWaiting() {}, clients: { claim: async () => {}, matchAll: async () => [] } };
+    const put = [];
+    const cachesStub = { match: async () => undefined, open: async () => ({ put: async (k, v) => { put.push({ k, v }); } }), keys: async () => [], delete: async () => true };
+    new Function('self', 'caches', 'fetch', src)(self, cachesStub, fetchImpl);
+    const navigate = (url) => {
+      let served = null;
+      handlers.fetch({ request: { url, method: 'GET', mode: 'navigate' }, respondWith: (p) => { served = p; } });
+      return served;
+    };
+    return { navigate, put };
+  }
+
+  // What the network gives the worker for /index.html: the app, after a hop.
+  const redirectedApp = async () => {
+    const r = new Response('<html><body>the app</body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    Object.defineProperty(r, 'redirected', { value: true });
+    return r;
+  };
+
+  test('the worker never hands a redirected page to a navigation', async () => {
+    const { navigate, put } = loadWorker(redirectedApp);
+    const served = navigate('https://app.test/index.html?ops=1&t=biz-a&p=u-jack');
+    expect(served, 'the worker answers this navigation itself').toBeTruthy();
+    const res = await served;
+    // The exact property WebKit checks. True here is the black screen.
+    expect(res.redirected).toBe(false);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(await res.text()).toContain('the app');
+    // And the offline copy is still written, as before.
+    await new Promise(r => setTimeout(r, 20));
+    expect(put.map(x => x.k)).toEqual(['/index.html']);
+    expect(put[0].v.redirected).toBe(false);
+  });
+
+  test('a page that came without a hop is passed through untouched', async () => {
+    let original = null;
+    const { navigate } = loadWorker(async () => { original = new Response('<html>app</html>', { status: 200 }); return original; });
+    const res = await navigate('https://app.test/?ops=1&t=biz-a&p=u-jack');
+    expect(res).toBe(original);
+  });
+
+  test('the portal opens the frame at "/" and nowhere names index.html for it', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'ops.html'), 'utf8');
+    const script = html.slice(html.indexOf('/* ── The support view'));
+    // One builder, used by all three places the frame is pointed somewhere:
+    // open, switching to another account, and the frame asking to be reloaded.
+    expect(script).toMatch(/function viewUrl\(row\)\{\s*return '\/\?ops=1&t='/);
+    expect((script.match(/\$\('view-frame'\)\.src=viewUrl\(/g) || []).length).toBe(3);
+    expect(html).not.toMatch(/index\.html\?ops=1/);
+    expect(html).not.toMatch(/href="index\.html\?app=1"/);
+  });
+
+  test('on the iPhone app, tapping a person boots the app in the frame as them', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true, userAgent: SHELL_UA });
+    const page = await ctx.newPage();
+    await mockAllExternal(page);
+    await stubRpc(page);
+    await page.goto('/ops.html', { waitUntil: 'domcontentloaded' });
+    expect(await page.evaluate(() => navigator.userAgent)).toContain('TradeDeskShell');
+    await page.locator('#trades .row', { hasText: 'Plumbing' }).click();
+    await page.locator('#trade-biz .row', { hasText: 'Sample Plumbing' }).click();
+    await page.locator('#biz-people .row', { hasText: 'Jack Rivera' }).click();
+    await expect(page.locator('#view')).toHaveClass(/on/);
+
+    // The frame is the app at "/", reached with no hop, and its script RAN:
+    // the support view was decided on its first line and the identity loaded
+    // is Jack's. On build 69 none of this happened.
+    let frame = null;
+    await expect.poll(() => { frame = page.frames().find(f => /[?&]ops=1/.test(f.url())) || null; return !!frame; }, { timeout: 10000 }).toBe(true);
+    expect(new URL(frame.url()).pathname).toBe('/');
+    await frame.waitForFunction(() => window._opsView && window._opsView.personUid === 'u-jack', null, { timeout: 15000 });
+    const r = await frame.evaluate(() => ({
+      boot: window._OPS_BOOT,
+      readOnly: opsReadOnly(),
+      embedded: _opsEmbedded(),
+      role: window._opsView.role,
+      business: window._opsView.business,
+    }));
+    expect(r.boot).toEqual({ target: 'biz-a', person: 'u-jack' });
+    expect(r.readOnly).toBe(true);
+    expect(r.embedded).toBe(true);
+    expect(r.role).toBe('crew');
+    expect(r.business).toBe('Sample Plumbing');
+
+    // Exit still hands back exactly as on a desktop.
+    await page.locator('#view-exit').click();
+    await expect(page.locator('#view')).not.toHaveClass(/on/);
+    await expect.poll(() => page.locator('#view-frame').getAttribute('src')).toBe('about:blank');
+    assertNoErrors(page, 'ops view inside the iPhone app');
     await ctx.close();
   });
 });
