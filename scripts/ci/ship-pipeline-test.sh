@@ -89,6 +89,23 @@ git fetch -q origin
 [ "$rc" = 2 ] && [ "$(git rev-parse origin/claude/two)" = "$before" ] && ok "a real conflict stops the sync and pushes nothing" || bad "a real conflict stops the sync and pushes nothing (rc=$rc)"
 [ -z "$(git status --porcelain)" ] && ok "a stopped sync leaves the checkout clean" || bad "a stopped sync leaves the checkout clean"
 
+echo "pr sync, the way CI runs it"
+new_repo
+mkdir -p "$T/tools2"; cp -r "$SRC/scripts" "$T/tools2/"
+for b in one two; do
+  git checkout -q -B claude/$b main; echo "$b" > "js/$b.js"; stamp 10.01.26.4 "$b"; git push -q origin claude/$b
+done
+git checkout -q main; sed -i 's/return 1/return 4/' js/cloud.js; stamp 10.01.26.9 "main moves"; git push -q origin main
+start=$(git rev-parse HEAD); git checkout -q --detach "$start"
+rcs=""; for b in one two; do
+  rc=0; bash "$T/tools2/scripts/pr-sync.sh" claude/$b --push --only-if-conflicted >/dev/null 2>&1 || rc=$?
+  rcs="$rcs$rc"; [ "$(git rev-parse HEAD)" = "$start" ] || bad "after claude/$b the checkout is back where it started"
+done
+git fetch -q origin
+[ "$rcs" = "00" ] && git merge-base --is-ancestor origin/main origin/claude/one && git merge-base --is-ancestor origin/main origin/claude/two \
+  && ok "two PRs in a row sync from a detached start, run from a copy" || bad "two PRs in a row sync from a detached start (rcs=$rcs)"
+v=$(git show origin/claude/two:version.json); [ "$v" != '{"version":"10.01.26.9"}' ] && [ "$v" != '{"version":"10.01.26.4"}' ] && ok "the copy still bumps the repo's own stamp ($v)" || bad "the copy still bumps the repo's own stamp ($v)"
+
 echo "uat roll, end to end"
 new_repo
 mkdir -p "$T/tools/lib"; cp "$SRC/scripts/uat-roll.sh" "$T/tools/"; cp "$SRC/scripts/lib/"*.sh "$T/tools/lib/"

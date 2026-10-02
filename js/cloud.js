@@ -196,7 +196,13 @@ async function startStripeConnect(){
     });
     const data=await res.json();
     if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}return;}
-    window.location.href=data.url;
+    // NO LINK, NO NAVIGATION (2026-10-02). A reply with neither an error nor
+    // a url used to set location.href to undefined, which sends the app to
+    // "/undefined" and drops whatever screen he was on. Only a Stripe https
+    // link leaves the app; anything else says so and leaves him where he is.
+    const url=(data&&typeof data.url==='string'&&/^https:\/\//.test(data.url))?data.url:'';
+    if(!url){zAlert('Stripe did not send back a sign-up link. Try again in a minute.');if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}return;}
+    window.location.href=url;
   }catch(e){
     zAlert('Could not start Stripe Connect: '+e.message);
     if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}
