@@ -7734,7 +7734,8 @@ const _GEO_OPEN_BID={Pending:1,sent:1,Sent:1,opportunity:1,Won:1,'Closed Won':1}
 // ── A FENCE NAMED FOR A PERSON SAYS WHICH ADDRESS (Jack, 2026-09-21) ───────
 // "He asked if all onsites could mint the address in parenthesis."
 //
-// The SQL half is geo_street_line + the three name expressions in 20261030,
+// The SQL half is geo_street_line + the three name expressions in 20261030
+// (the extra-property arm restated in 20261064),
 // and these two are its mirror. They are a PAIR by contract: CI runs
 // scripts/ci/geo-fences-equivalence.sql against the same
 // tests/fixtures/geo-fences-case.json this file is checked against, so the two
@@ -7833,8 +7834,18 @@ function _geoDeriveFences(dayKey){
       //
       // Its own id so the deriver can tell two of his properties apart, and
       // c.id still on clientId so every rule that asks "whose is this" gets
-      // the same answer it always did. The label is the name, because that is
-      // what he typed to tell them apart, and "Primary" is not a place.
+      // the same answer it always did.
+      //
+      // THE STREET IS THE NAME, NEVER THE LABEL (owner 2026-10-02, on Jack's
+      // Tagen Lindstrom: "why is Tagen saying rental, it should show the
+      // property address"). The label used to win, on the reasoning that it is
+      // what he typed to tell them apart. It is not: the label field is a
+      // category ("Rental", "Additional property"), and Tagen has two
+      // properties both labelled Rental, so his rail read "Tagen Lindstrom
+      // (Rental)" for two different houses. Jack's 2026-09-21 rule is that
+      // every on-site row mints the ADDRESS in parenthesis, and the street is
+      // the only thing that is always unique to the house. The SQL mirror is
+      // 20261064 (geo_fences_for), changed identically.
       (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach((a,i)=>{
         if(!a||!a.addr)return;
         // The same two-copy rule the primary has, and the same guard: a
@@ -7842,7 +7853,7 @@ function _geoDeriveFences(dayKey){
         // editing the address retires the fence until it is geocoded again.
         if(!(a.lat!=null&&a.lon!=null&&a.geoAddr===a.addr))return;
         out.push({id:'client-'+c.id+'-p'+i,kind:'client',
-          name:_geoFenceName(c.name||'Client',(a.label&&String(a.label).trim())||_geoStreetLine(a.addr)),
+          name:_geoFenceName(c.name||'Client',_geoStreetLine(a.addr)),
           lat:Number(a.lat),lng:Number(a.lon),addr:a.addr,clientId:c.id,
           scheduled,personal:!!c.personal,onBooks});
       });

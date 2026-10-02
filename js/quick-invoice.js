@@ -205,9 +205,11 @@ function _qiPlaceNames(c,addr){
   const out=new Set();
   if(!c||!c.name)return out;
   if(_qiSameAddr(c.addr,addr))out.add(nm(c.name,st(c.addr)));
+  // The street, never the label (owner 2026-10-02: "always the address, no
+  // exceptions"). Tagen Lindstrom has two cards labelled Rental, and a label
+  // two houses share cannot say which house a row was.
   (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
     if(!a||!a.addr||!_qiSameAddr(a.addr,addr))return;
-    out.add(nm(c.name,(a.label&&String(a.label).trim())||st(a.addr)));
     out.add(nm(c.name,st(a.addr)));
   });
   _qiJobsAt(c.id,addr).forEach(j=>out.add(nm(c.name,st(j.addr||j.address))));

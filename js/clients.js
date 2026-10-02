@@ -3783,14 +3783,11 @@ function saveAddClientAddress(editIdx){
   if(!c.extraAddresses)c.extraAddresses=[];
   const ptype=document.getElementById('_aa-ptype')?.value||'';
   const _edit=(editIdx!=null&&editIdx!==''&&Number(editIdx)>=0)?Number(editIdx):null;
-  let was='',wasLabel='';
+  let was='';
   if(_edit!=null){
     const cur=clientAddresses(c)[_edit];
     if(!cur)return;
     was=cur.addr||'';
-    // Captured BEFORE the write below: the rename pass needs the label the
-    // fence was named with, and by then the record already holds the new one.
-    wasLabel=String(cur.label||'').trim();
     if(_edit===0)c.addr=addr;
     else{
       const e=c.extraAddresses[_edit-1];
@@ -3843,17 +3840,16 @@ function saveAddClientAddress(editIdx){
   // the address precisely because it is wrong, and asking whether they also
   // meant the trips it is on is a question with only one answer.
   //
-  // The name is rebuilt exactly as _geoDeriveFences builds it: the primary is
-  // the client name over the street line, an extra property is the client name
-  // over its label. Two places computing one name is how they drift, so if a
-  // third case ever appears, it belongs in _geoFenceName's callers, not here.
+  // The name is rebuilt exactly as _geoDeriveFences builds it: the client name
+  // over the street line, for the primary and every extra property alike (a
+  // label is a category, never the name: owner 2026-10-02). Two places
+  // computing one name is how they drift, so if a third case ever appears, it
+  // belongs in _geoFenceName's callers, not here.
   if(_edit!=null&&was&&was!==addr){
     const _street=(v)=>(typeof _geoStreetLine==='function')?_geoStreetLine(v):String(v||'').split(',')[0].trim();
     const _fn=(w)=>(typeof _geoFenceName==='function')?_geoFenceName(c.name||'Client',w)
       :((c.name||'Client')+(w?' ('+w+')':''));
-    const _wasWhere=(_edit===0)?_street(was):(wasLabel||_street(was));
-    const _nowWhere=(_edit===0)?_street(addr):(label||_street(addr));
-    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_wasWhere),_fn(_nowWhere),was,addr);}catch(_e){}
+    try{if(typeof _mileRenamePlace==='function')_mileRenamePlace(_fn(_street(was)),_fn(_street(addr)),was,addr);}catch(_e){}
   }
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();

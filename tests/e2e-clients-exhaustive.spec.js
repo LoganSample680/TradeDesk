@@ -3402,35 +3402,56 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.rows[0].segEnds[1].to, 'the other end was never this client').toBe('Shop');
     });
 
-    test('a labelled property: the address moves, the name does not', async () => {
-      // _geoDeriveFences names an extra property with its LABEL when it has
-      // one, so correcting only its street changes what the mileage log prints
-      // and nothing the rail says. Asking the rail to rename anyway would be a
-      // write with no rows behind it.
+    // A PROPERTY IS NAMED FOR ITS STREET, NEVER ITS LABEL (owner 2026-10-02,
+    // on Jack's Tagen Lindstrom: "why is Tagen saying rental, it should show
+    // the property address"). Until then the label won, so these two tests
+    // asserted the opposite: correcting a labelled card's street moved no
+    // name, and only a label change did. The fence is named for the street
+    // now (_geoDeriveFences, 20261064), so the rename follows the street.
+    test('a labelled property: the address moves, and so does the name', async () => {
       const r = await renameSetup({ idx: 1, newAddr: '99 Rental Ave, Topeka, KS 66614',
         client: { id: 970154, name: 'Rental Co', addr: '1 Main St, Topeka, KS 66614',
           extraAddresses: [{ label: 'Duplex', addr: '99 Rentel Ave, Topeka, KS 66614' }] },
         mileage: [{ id: 'leg-r', legKey: 'leg-r', date: '2026-09-19', gps: true, miles: 4,
           from: '1 Main St, Topeka, KS 66614', from_name: 'Rental Co (1 Main St)',
-          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (Duplex)' }] });
+          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (99 Rentel Ave)' }] });
       expect(r.rows[0].to).toBe('99 Rental Ave, Topeka, KS 66614');
-      expect(r.rows[0].to_name, 'the label is the name, and it did not change').toBe('Rental Co (Duplex)');
-      expect(r.updates.filter(u => u.tbl === 'job_time_entries').length,
-        'no name moved, so no rail write').toBe(0);
+      expect(r.rows[0].to_name, 'the street is the name').toBe('Rental Co (99 Rental Ave)');
+      const t = r.updates.filter(u => u.tbl === 'job_time_entries');
+      expect(t.length).toBe(2);
+      expect(t[0].patch.origin_place || t[0].patch.dest_place).toBe('Rental Co (99 Rental Ave)');
     });
 
-    test('renaming the label moves the name the rail shows', async () => {
-      const r = await renameSetup({ idx: 1, newAddr: '99 Rental Ave, Topeka, KS 66614',
+    test('renaming only the label moves no name the rail shows', async () => {
+      const r = await renameSetup({ idx: 1, newAddr: '99 Rentel Ave, Topeka, KS 66614',
         newLabel: 'Back unit',
         client: { id: 970155, name: 'Rental Co', addr: '1 Main St, Topeka, KS 66614',
           extraAddresses: [{ label: 'Duplex', addr: '99 Rentel Ave, Topeka, KS 66614' }] },
         mileage: [{ id: 'leg-r', legKey: 'leg-r', date: '2026-09-19', gps: true, miles: 4,
           from: '1 Main St, Topeka, KS 66614', from_name: 'Rental Co (1 Main St)',
-          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (Duplex)' }] });
-      expect(r.rows[0].to_name).toBe('Rental Co (Back unit)');
+          to: '99 Rentel Ave, Topeka, KS 66614', to_name: 'Rental Co (99 Rentel Ave)' }] });
+      expect(r.rows[0].to_name).toBe('Rental Co (99 Rentel Ave)');
+      expect(r.updates.filter(u => u.tbl === 'job_time_entries').length,
+        'the label is not the name, so nothing to rename').toBe(0);
+    });
+
+    test('a label two properties share is never renamed as if it were one house', async () => {
+      // Tagen Lindstrom's two Rentals. Rows derived before 2026-10-02 say
+      // "Tagen Lindstrom (Rental)" for BOTH houses; correcting one street must
+      // not rewrite the other house's rows, which the old label rename did.
+      const r = await renameSetup({ idx: 2, newAddr: '2439 SW 24th St, Topeka, KS 66611',
+        client: { id: 970158, name: 'Tagen Lindstrom', addr: '1733 SW Burnett Rd, Topeka, KS 66604',
+          extraAddresses: [{ label: 'Rental', addr: '5713 SW 14th St, Topeka, KS 66604' },
+                           { label: 'Rental', addr: '2437 SW 24th St, Topeka, KS 66611' }] },
+        mileage: [{ id: 'leg-t', legKey: 'leg-t', date: '2026-09-29', gps: true, miles: 5,
+          from: '7402 SW 22nd Ct, Topeka, KS 66614', from_name: '7402 SW 22nd Ct',
+          to: '5713 SW 14th St, Topeka, KS 66604', to_name: 'Tagen Lindstrom (Rental)' }] });
+      expect(r.rows[0].to, 'the other house').toBe('5713 SW 14th St, Topeka, KS 66604');
+      expect(r.rows[0].to_name).toBe('Tagen Lindstrom (Rental)');
       const t = r.updates.filter(u => u.tbl === 'job_time_entries');
-      expect(t.length).toBe(2);
-      expect(t[0].patch.origin_place || t[0].patch.dest_place).toBe('Rental Co (Back unit)');
+      expect(t.every(u => (u.patch.origin_place || u.patch.dest_place) === 'Tagen Lindstrom (2439 SW 24th St)')).toBe(true);
+      expect(t.flatMap(u => u.eqs).some(([, v]) => v === 'Tagen Lindstrom (Rental)'),
+        'never matched on the shared label').toBe(false);
     });
 
     test('adding a property renames nothing, and neither does saving it unchanged', async () => {

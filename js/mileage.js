@@ -1390,8 +1390,9 @@ function _supplyRunClient(key){
     if(c.addr)names.push(nm(c.name,st(c.addr)));
     (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
       if(!a||!a.addr)return;
+      // The street, never the label: a property's fence is named for where it
+      // is (owner 2026-10-02, "always the address, no exceptions").
       names.push(nm(c.name,st(a.addr)));
-      if(a.label)names.push(nm(c.name,String(a.label).trim()));
     });
     if(names.some(n=>ends.has(n)))hits.add(c.id);
   });
