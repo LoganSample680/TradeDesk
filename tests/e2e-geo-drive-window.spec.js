@@ -118,7 +118,12 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.calls.length).toBe(1);
     expect(r.calls[0].mode).toBe('drive');
     expect(r.calls[0].distanceFilter).toBe(30);
-    expect(r.calls[0].maxMs).toBe(45 * 60000);
+    // 45 -> 25 minutes (owner 2026-10-02, battery): the cap is what a window
+    // the plugin opened by itself runs to when nothing asleep can close it.
+    expect(r.calls[0].maxMs).toBe(25 * 60000);
+    // And the list of kinds that end a drive rides along, so the plugin can
+    // close the window itself on the same flips JS would (selfCloseDrive).
+    expect(r.calls[0].restKinds).toEqual(['walking', 'running', 'onFoot', 'still', 'stationary', 'cycling']);
     expect(r.why).toContain('motion+fix');
   });
 
@@ -1292,6 +1297,31 @@ test.describe('The native half of the drive window', () => {
     const body = s.slice(i, i + 400);
     expect(body.includes('default:        return kCLLocationAccuracyBest'),
       'an unrecognised tier must never silently downgrade a route').toBe(true);
+  });
+
+  // ── The plugin closes the window itself (owner 2026-10-02) ───────────────
+  // "it all needs to be at 100 percent in 10 seconds with battery cut".
+  // Jack's drive window was on 21.6 hours in eight days for about 8 hours of
+  // driving: the plugin opened it asleep and only JS could close it. The
+  // behaviour is proven in native/tests (3.3); this pins the contract.
+  test('a rest flip closes the drive window in Swift, on the kinds JS named', () => {
+    const s = swiftSrc();
+    expect(s.includes('private func selfCloseDrive(kind: String)')).toBe(true);
+    const i = s.indexOf('private func selfCloseDrive(kind: String)');
+    const body = s.slice(i, i + 600);
+    expect(body.includes('guard driveSamplingOn() else { return }'), 'nothing to close, nothing done').toBe(true);
+    expect(body.includes('restKindsOf(c["restKinds"])'), 'the kinds come from the recipe JS pushed').toBe(true);
+    expect(body.includes('endDriveSampling(reason: "self-rest-" + kind)'), 'the one exit every closer uses').toBe(true);
+    expect(s.includes('self.selfArmDrive(kind: kind)\n            self.selfCloseDrive(kind: kind)'),
+      'called from the live stream, beside the arm').toBe(true);
+    expect(s.includes('if !restKinds.isEmpty { cfg["restKinds"] = restKinds }'), 'stored with the recipe').toBe(true);
+  });
+
+  test('JS has ONE list of the kinds that end a drive, and the plugin is sent it', async () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    expect(js.includes("const _GEO_REST_KINDS=['walking','running','onFoot','still','stationary','cycling'];")).toBe(true);
+    expect(js.includes('return _GEO_REST_KINDS.indexOf(String(k||\'\'))>=0;')).toBe(true);
+    expect(js.includes('restKinds:_GEO_REST_KINDS.slice()')).toBe(true);
   });
 
   test('the safety cap exists, is bounded, and reverts without being asked', () => {
