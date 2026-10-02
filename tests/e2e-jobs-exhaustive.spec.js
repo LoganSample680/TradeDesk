@@ -1161,7 +1161,14 @@ test.describe('jobs.js: exhaustive coverage', () => {
           timeEntries = timeEntries.filter(e => !e.open);
           const other = 9911020;
           timeEntries.push({ id: other, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 17 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
-          clockIn(77701, null, null);                // this device is running something else
+          // This device is running something else. It used to get there by
+          // calling clockIn with the other row still open; clockIn now adopts
+          // an open row first (one clock at a time, 2026-09-30), so the second
+          // clock is set up the way a row from another device arrives: saved,
+          // then adopted.
+          const live = { id: 9911021, job_id: 77701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 5 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' };
+          timeEntries.push(live);
+          _adoptOpenEntry(live);
           const liveId = _activeTimer.entryId;
           clockOutEntry(other);
           const a = timeEntries.find(e => e.id === other), b = timeEntries.find(e => e.id === liveId);
@@ -1170,7 +1177,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
         finally {
           window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
           if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
-          timeEntries = timeEntries.filter(e => e.id !== 9911020);
+          timeEntries = timeEntries.filter(e => e.id !== 9911020 && e.id !== 9911021);
         }
       });
       expect(r.ok).toBe(true);
@@ -1178,6 +1185,54 @@ test.describe('jobs.js: exhaustive coverage', () => {
       expect(r.targetMin).toBe(17);
       expect(r.otherClosed).toBe(true);   // banked, never abandoned open
       expect(r.stillOpen).toBe(0);
+    });
+
+    // ── ONE CLOCK, WHATEVER THIS COPY OF THE APP REMEMBERS (owner 2026-09-30) ──
+    // Jack clocked in at 9:10; an update loaded a fresh copy of the app at 10:01
+    // that never adopted that row, and the Home Clock in button started a second
+    // clock at 10:05. The saved open row decides, not the memory.
+    test('Clock in with a saved open row and nothing in memory starts no second clock', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origRender = window.renderDash;
+        window.showClockBanner = () => {}; window.renderDash = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          _activeTimer = null;
+          const row = { id: 9911030, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 55 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: _tlLoggedByInfo().loggedByUid, logged_by_name: 'Jack' };
+          timeEntries.push(row);
+          _dashManualClockIn();                      // the fresh copy's tap
+          return { ok: true, open: timeEntries.filter(e => e.open).length, running: _activeTimer && _activeTimer.entryId };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.renderDash = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911030 && !e.open);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.open, 'still exactly one clock').toBe(1);
+      expect(r.running, 'the tap picked up the clock already running').toBe(9911030);
+    });
+
+    test('with no open row at all, Clock in still starts a clock', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origRender = window.renderDash;
+        window.showClockBanner = () => {}; window.renderDash = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          _activeTimer = null;
+          _dashManualClockIn();
+          return { ok: true, open: timeEntries.filter(e => e.open).length, running: !!_activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.renderDash = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
+          timeEntries = timeEntries.filter(e => !e.open);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.open).toBe(1);
+      expect(r.running).toBe(true);
     });
 
     test('clockOutEntry on an unknown, already-closed, or junk id does not throw', async () => {
@@ -1806,6 +1861,18 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
+    // _clockAddTaskConfirm clocks in 60ms after it returns; wait for that and
+    // clear it, or it lands in the next test (same leak as e2e-exhaustive,
+    // which turned "clockIn null jobId" red in CI on #134 and #136).
+    test.afterEach(async () => {
+      await page.evaluate(async () => {
+        await new Promise(r => setTimeout(r, 150));
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        timeEntries = timeEntries.filter(e => !e.open);
+      });
+    });
+
     test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
@@ -1944,9 +2011,27 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // clockIn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('clockIn', () => {
-    test.afterEach(async () => {
-      await page.evaluate(() => { _activeTimer = null; });
+    // Each test starts from NO running clock. Resetting _activeTimer alone left
+    // the saved open rows behind, and clockIn now adopts a saved open row
+    // before starting a new one (one clock at a time, 2026-09-30), so a row a
+    // previous test left open would be picked up instead of a fresh clock.
+    // Closed IN PLACE as well as filtered out, before and after each test: a
+    // copy of the list saved while a row was open can come back on a later
+    // load and be adopted, which is how the golden path below picked up the
+    // General clock the test before it opened (CI shard 5, 2026-10-01).
+    // Defined on the page so a test can call it in the SAME evaluate as its
+    // clockIn: closing in beforeEach alone left a gap a background load could
+    // fill with the open row again (CI shard 5, twice on 2026-10-01).
+    const noClock = () => page.evaluate(() => {
+      window.__noOpenClock = () => {
+        if (_activeTimer && _activeTimer.timerInterval) clearInterval(_activeTimer.timerInterval);
+        _activeTimer = null;
+        (timeEntries || []).forEach(e => { if (e && e.open) { e.open = false; if (!e.end_time) e.end_time = e.start_time; } });
+      };
+      window.__noOpenClock();
     });
+    test.beforeEach(noClock);
+    test.afterEach(noClock);
 
     // Old contract: null was just another invalid id, jobs.find() found
     // nothing, clockIn() bailed. New contract (owner 2026-08-19, "ability
@@ -1957,6 +2042,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
     test('null jobId, starts General time (no job/client required)', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
+        // clockIn adopts a saved OPEN row before trusting an empty memory (PR
+        // #130, one clock at a time). This page is shared across the file, so
+        // an open row an earlier test left was adopted here on the midnight
+        // run (2026-10-01) and the test stopped being about a fresh General
+        // clock. Start from no open clock, which is its premise.
+        (timeEntries || []).forEach(e => { if (e && e.open) e.open = false; });
         try {
           clockIn(null, 'sand', 'Sanding');
           return { ok: true, timerSet: _activeTimer !== null, jobIdNull: _activeTimer && _activeTimer.jobId === null, jobName: _activeTimer && _activeTimer.jobName };
@@ -1989,6 +2080,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           const t = _activeTimer;
           clearInterval(t && t.timerInterval);
@@ -2006,6 +2098,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           const firstTimer = _activeTimer;
           clockIn(77701, 'sand', 'Sanding'); // same job+scope → toast, no change
@@ -2022,6 +2115,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, 'sand', 'Sanding');
           clockIn(77701, 'prime', 'Primer coat');
           const newScope = _activeTimer && _activeTimer.scopeId;
@@ -2038,6 +2132,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77701, null, null);
           const sid = _activeTimer && _activeTimer.scopeId;
           clearInterval(_activeTimer && _activeTimer.timerInterval);
@@ -2052,6 +2147,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
     test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
+        window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { clockIn(77701, 'sand', 'Sanding'); ok++; } catch (_) {}
@@ -2070,6 +2166,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
         try {
           _activeTimer = null;
           timeEntries = timeEntries.filter(e => e.job_id !== 77704);
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77704, 'sand', 'Sanding');
           return {
             timerSet: !!_activeTimer,
@@ -2090,6 +2187,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
         try {
           _activeTimer = null;
           timeEntries = timeEntries.filter(e => e.job_id !== 77705);
+          window.__noOpenClock();   // in the same step as the clock-in: a load in between can bring an open row back
           clockIn(77705, 'sand', 'Sanding');
           return { timerSet: !!_activeTimer, entryCreated: timeEntries.some(e => e.job_id === 77705) };
         } finally { window.showToast = origToast; }

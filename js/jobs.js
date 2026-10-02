@@ -545,6 +545,14 @@ function clockIn(jobId,scopeId,scopeLabel){
   // closed job, but clockIn() is reachable directly too, never let a
   // completed/cancelled job accept a new time entry either way.
   if(j&&_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
+  // ONE CLOCK, WHATEVER THIS COPY OF THE APP REMEMBERS (owner 2026-09-30).
+  // Jack's Wednesday: Clock in at 9:10, then an update loaded a fresh copy of
+  // the app at 10:01 while the old one was still running, and the fresh copy
+  // had never adopted the 9:10 row. _activeTimer was null, so this let a
+  // second clock start at 10:05 and his day showed two running at once. The
+  // saved open row is the truth (see the note on clockIn's persistence below),
+  // so it is asked before the memory is trusted to be empty.
+  if(!_activeTimer&&typeof _rehydrateActiveTimer==='function')_rehydrateActiveTimer();
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
@@ -986,6 +994,9 @@ function updateClockTimer(){
 
 function showClockBanner(){
   const b=document.getElementById('clock-banner');if(!b)return;
+  // A read-only support view (ops portal) is looking, not working: no clock
+  // bar, and no Next / Done / clock-out buttons that would act on a clock.
+  if(typeof opsReadOnly==='function'&&opsReadOnly()){hideClockBanner();return;}
   const jn=document.getElementById('clock-banner-job');
   if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
   const bt=document.getElementById('clock-banner-time');
@@ -1510,7 +1521,7 @@ function renderJobsPage(){
     if(!primaryBtn&&nextJob&&_jobDueForDone(nextJob,tk))primaryBtn='<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm btn-g" style="border-radius:20px">✓ Mark done</button>';
     const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
-    return '<div class="tf-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
+    return '<div class="tf-card" onclick="'+_jobsCardOpen(b)+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
       '<div class="tf-icon '+(st.stage==='active'?'t-green':st.stage==='balance_due'?'t-red':'t-blue')+'" style="font-size:14px">'+
         (st.stage==='active'?svgIcon('🔨'):st.stage==='balance_due'?svgIcon('💰'):st.stage==='signed'?svgIcon('✍'):svgIcon('📅'))+
       '</div>'+
@@ -1527,6 +1538,17 @@ function renderJobsPage(){
   }).join('')+'</div>'+_looseHtml;
 }
 
+// WHAT A JOBS CARD OPENS (hotfix, error_log 287/288, 2026-10-02). Both job
+// boards draw a proposal whose customer is not on this device with a stand-in
+// ({id:b.client_id}), and the card still called openJobSheet with that id,
+// which finds no customer and returns without a word: a dead tap on a card
+// that looks perfectly live. The proposal is the thing on the card and
+// openBidDetail already copes with a missing customer, so that is what opens.
+function _jobsCardOpen(b){
+  if(!b)return 'void(0)';
+  const c=getClientById(b.client_id);
+  return c?'openJobSheet('+c.id+')':'openBidDetail('+b.id+')';
+}
 function _renderJobsKanban(el,tk,wonBidsList){
   const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
   const cols=[
@@ -1574,7 +1596,7 @@ function _renderJobsKanban(el,tk,wonBidsList){
             chipLabel=paidDate?paidDate+' paid':'Paid';
             chipCls='sf-won';
           }
-          return '<div class="k-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'" style="margin-bottom:8px">'+
+          return '<div class="k-card" onclick="'+_jobsCardOpen(b)+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'" style="margin-bottom:8px">'+
             '<div class="k-name">'+escHtml(c.name)+'</div>'+
             '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
             '<div class="k-foot">'+
@@ -2497,10 +2519,13 @@ async function _compressPhoto(fileOrBlob,opts){
     if(wantFull&&Math.max(bmp.width,bmp.height)>maxEdge){
       // Only worth keeping when there is more picture than the view copy holds.
       // A 1200px shot IS its own full size, and storing it twice is waste.
-      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.82);
+      // Every pixel is kept; only the encoding is tighter (egress, 2026-10-02).
+      // JPEG at 0.86 was 3 to 5.7 MB a shot on an iPhone, which cannot encode
+      // WebP; 0.75 is about 40% of that and reads the same on a serial plate.
+      let full=await draw(Math.max(bmp.width,bmp.height),'image/webp',0.78);
       let fullMime='image/webp',fullExt='webp';
       if(!full||!full.size||full.type!=='image/webp'){
-        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.86);
+        full=await draw(Math.max(bmp.width,bmp.height),'image/jpeg',0.75);
         fullMime='image/jpeg';fullExt='jpg';
       }
       if(full&&full.size){out.full=full;out.fullMime=fullMime;out.fullExt=fullExt;}

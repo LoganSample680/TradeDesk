@@ -34,7 +34,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
-import { centralDayKey, daysToDerive, deriveDayServer, workSettings } from "../_shared/derive-day.mjs";
+import { arrivalWatchDays, centralDayKey, daysToDerive, deriveDayServer, workSettings } from "../_shared/derive-day.mjs";
 import { railCardFor } from "../_shared/live-card.mjs";
 import { pushLiveCard } from "../_shared/live-push.ts";
 import { sendSilentWake } from "../_shared/silent-push.ts";
@@ -134,6 +134,100 @@ function lifecycleDetail(e: any): Record<string, unknown> | null {
   if (typeof e.bgSec === "number" && isFinite(e.bgSec) && e.bgSec >= 0) out.bgSec = Math.round(e.bgSec);
   if (typeof e.mb === "number" && isFinite(e.mb) && e.mb >= 0) out.mb = Math.round(e.mb);
   return Object.keys(out).length ? out : null;
+}
+
+// A stretch the phone was asleep (TdGeoPlugin.motionPollTick): when it went
+// quiet, how long, and whether iOS ended the app rather than pausing it.
+function sleepDetail(e: any): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  if (typeof e.fromMs === "number" && isFinite(e.fromMs) && e.fromMs > 0) out.fromMs = Math.round(e.fromMs);
+  if (typeof e.gapSec === "number" && isFinite(e.gapSec) && e.gapSec >= 0) out.gapSec = Math.round(e.gapSec);
+  if (e.relaunched === true) out.relaunched = true;
+  return Object.keys(out).length ? out : null;
+}
+
+// ── HOW THE PHONE IS DOING (owner 2026-10-01) ────────────────────────────
+// TdGeoPlugin.deviceStats rides on the push-ping and the heartbeat: Low Power
+// Mode, Background App Refresh, iOS's heat word, battery, charging, and this
+// app's own CPU and memory. Kept field by field, typed and bounded, like every
+// other detail here; anything else on the event is dropped.
+const THERMAL = new Set(["nominal", "fair", "serious", "critical", "unknown"]);
+const BGR = new Set(["on", "off", "restricted", "unknown"]);
+function statsDetail(e: any): Record<string, unknown> | null {
+  const s = e && typeof e.stats === "object" && e.stats ? e.stats : null;
+  if (!s) return null;
+  const out: Record<string, unknown> = {};
+  if (typeof s.lp === "boolean") out.lp = s.lp;
+  if (typeof s.bgr === "string" && BGR.has(s.bgr)) out.bgr = s.bgr;
+  if (typeof s.th === "string" && THERMAL.has(s.th)) out.th = s.th;
+  if (typeof s.batt === "number" && isFinite(s.batt) && s.batt >= 0 && s.batt <= 100) out.batt = Math.round(s.batt);
+  if (typeof s.chg === "boolean") out.chg = s.chg;
+  if (typeof s.cpu === "number" && isFinite(s.cpu) && s.cpu >= 0 && s.cpu < 10000) out.cpu = Math.round(s.cpu * 10) / 10;
+  if (typeof s.mem === "number" && isFinite(s.mem) && s.mem > 0 && s.mem < 100000) out.mem = Math.round(s.mem * 10) / 10;
+  // Everything else iOS lets an app read (owner 2026-10-01, "allllll the
+  // data I can pull from Apple that they allow"): on the charger and full,
+  // on screen or not, locked or not, the location permission as it stands,
+  // the network and radio it is on, and how long the app has been alive.
+  if (s.full === true) out.full = true;
+  if (typeof s.app === "string" && APP_STATE.has(s.app)) out.app = s.app;
+  if (typeof s.locked === "boolean") out.locked = s.locked;
+  if (typeof s.loc === "string" && LOC_AUTH.has(s.loc)) out.loc = s.loc;
+  if (s.acc === "full" || s.acc === "reduced") out.acc = s.acc;
+  if (typeof s.net === "string" && NET.has(s.net)) out.net = s.net;
+  if (typeof s.exp === "boolean") out.exp = s.exp;
+  if (typeof s.lowData === "boolean") out.lowData = s.lowData;
+  if (typeof s.radio === "string" && RADIO.has(s.radio)) out.radio = s.radio;
+  if (typeof s.up === "number" && isFinite(s.up) && s.up >= 0 && s.up < 525600) out.up = Math.round(s.up);
+  return Object.keys(out).length ? out : null;
+}
+const APP_STATE = new Set(["active", "inactive", "background", "unknown"]);
+const LOC_AUTH = new Set(["always", "whenInUse", "denied", "restricted", "notDetermined", "unknown"]);
+const NET = new Set(["none", "wifi", "cell", "wired", "other"]);
+const RADIO = new Set(["5g", "lte", "3g", "2g"]);
+
+// ── APPLE'S OWN DAILY REPORT ON THE APP (MetricKit, owner 2026-10-01) ─────
+// TdGeoPlugin copies what iOS measured for the app over about a day: CPU,
+// GPS time at each accuracy, foreground and background time, data sent,
+// memory peak, signal bars, and how many times iOS ended the app and why.
+// Only these names, only finite non-negative numbers; anything else is
+// dropped. "from" is the start of Apple's window, the row's ts its end.
+const MX_KEYS = new Set([
+  "cpu_s", "gpu_s", "fg_s", "bg_s", "bg_loc_s", "bg_audio_s",
+  "loc_nav_s", "loc_best_s", "loc_10m_s", "loc_100m_s", "loc_1km_s", "loc_3km_s",
+  "wifi_up_b", "wifi_down_b", "cell_up_b", "cell_down_b", "mem_peak_b", "disk_write_b", "apl", "bars",
+  "bgx_normal", "bgx_mem_limit", "bgx_cpu_limit", "bgx_mem_pressure", "bgx_bad_access", "bgx_abnormal",
+  "bgx_illegal", "bgx_watchdog", "bgx_locked_file", "bgx_task_timeout",
+  "fgx_normal", "fgx_mem_limit", "fgx_bad_access", "fgx_abnormal", "fgx_illegal", "fgx_watchdog",
+]);
+function metricDetail(e: any): Record<string, unknown> | null {
+  const mx = e && typeof e.mx === "object" && e.mx ? e.mx : null;
+  if (!mx) return null;
+  const out: Record<string, number> = {};
+  for (const k of Object.keys(mx)) {
+    const v = mx[k];
+    if (MX_KEYS.has(k) && typeof v === "number" && isFinite(v) && v >= 0 && v < 1e13) out[k] = Math.round(v * 10) / 10;
+  }
+  if (!Object.keys(out).length) return null;
+  const from = typeof e.from === "number" && isFinite(e.from) && e.from > 0 && e.from < e.ts ? Math.round(e.from) : null;
+  return { from, mx: out };
+}
+// Crashes, hangs and resource exceptions Apple recorded, with the first
+// crash's own reason.
+function diagDetail(e: any): Record<string, unknown> | null {
+  const n = (v: unknown) => (typeof v === "number" && isFinite(v) && v >= 0 && v < 100000) ? Math.round(v) : 0;
+  const out: Record<string, unknown> = {
+    crashes: n(e.crashes), hangs: n(e.hangs), cpuEx: n(e.cpuEx), diskEx: n(e.diskEx),
+  };
+  if (!(out.crashes as number) && !(out.hangs as number) && !(out.cpuEx as number) && !(out.diskEx as number)) return null;
+  if (typeof e.why === "string" && e.why) out.why = e.why.slice(0, 120);
+  if (typeof e.from === "number" && isFinite(e.from) && e.from > 0 && e.from < e.ts) out.from = Math.round(e.from);
+  return out;
+}
+// The wake reloaded a stale web app (TdGeoPlugin.checkForUpdate).
+function reloadDetail(e: any): Record<string, unknown> | null {
+  const v = (x: unknown) => (typeof x === "string" && x.length > 0 && x.length <= 20) ? x : null;
+  const from = v(e.from), to = v(e.to);
+  return (from || to) ? { from, to } : null;
 }
 
 function motionDetail(e: any): Record<string, unknown> | null {
@@ -307,10 +401,19 @@ Deno.serve(async (req) => {
           ? motionDetail(e)
           : e.type === "app-terminate" || e.type === "memory-warning"
           ? lifecycleDetail(e)
-          : (typeof e.staleMs === "number" || e.blind === true
+          : e.type === "asleep"
+          ? sleepDetail(e)
+          : e.type === "native-reload"
+          ? reloadDetail(e)
+          : e.type === "metrickit"
+          ? metricDetail(e)
+          : e.type === "mx-diag"
+          ? diagDetail(e)
+          : (typeof e.staleMs === "number" || e.blind === true || statsDetail(e)
             ? {
               ...(typeof e.staleMs === "number" ? { staleMs: Math.round(e.staleMs) } : {}),
               ...(e.blind === true ? { blind: true } : {}),
+              ...(statsDetail(e) ? { stats: statsDetail(e) } : {}),
             }
             : null),
         // What the coprocessor actually said: onFoot / still / driving. The
@@ -390,6 +493,8 @@ Deno.serve(async (req) => {
     const STATE_CAS_TRIES = 4;
     let derived = 0;
     let casWon = false;
+    // When the state machine's open dwell began, for arrivalWatchDays below.
+    let openSince: number | null = null;
     for (let attempt = 0; attempt < STATE_CAS_TRIES && !casWon; attempt++) {
       // ── The state machine ───────────────────────────────────────────────────
       // The first pass starts from the state geo_ingest_begin already read; a
@@ -653,6 +758,7 @@ Deno.serve(async (req) => {
       // invocation has moved it and this pass is working from stale state.
       const nextUpdatedAt = new Date().toISOString();
       const nextState = { dwell, leg, pending, lastTs: newLastTs };
+      openSince = dwell ? Number(dwell.arrivedTs) : null;
       if (prevUpdatedAt) {
         const { data: swapped } = await svc.from("geo_device_state")
           .update({ state: nextState, contractor_user_id: cid, updated_at: nextUpdatedAt })
@@ -692,7 +798,12 @@ Deno.serve(async (req) => {
     const route = makeRoute(svc, cid);
 
     const derivedDays = [];
-    for (const day of daysToDerive(evs, Date.now())) {
+    // A batch of nothing but fixes derives too while an arrival is waiting on
+    // one (arrivalWatchDays, ../_shared/derive-day.mjs): one indexed read, and
+    // only when the batch has no trigger of its own.
+    const deriveNow = daysToDerive(evs, Date.now());
+    const days = deriveNow.length ? deriveNow : await arrivalWatchDays(svc, uid, evs, Date.now(), openSince);
+    for (const day of days) {
       try { derivedDays.push(await deriveDayServer(svc, cid, uid, day, Date.now(), route)); }
       catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
     }

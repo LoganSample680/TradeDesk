@@ -491,7 +491,7 @@ async function renderLifecycleFunnel(mountId){
     mine=r[0];bench=r[1]||bench;
   }catch(_e){}
   if(!mine){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Your timings are unavailable right now.</div>';
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Your numbers did not load. Try again in a minute.</div>';
     return;
   }
 

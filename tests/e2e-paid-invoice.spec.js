@@ -72,14 +72,16 @@ test.describe('Paid invoice: contractor side', () => {
     const r = await page.evaluate(async () => {
       document.querySelectorAll('.zmodal-overlay,[style*="slideDown"]').forEach(e => e.remove());
       await _sendPaidInvoice(950100);
+      // The address is not printed on the send screen any more (owner
+      // 2026-09-29); it rides in the message the buttons send.
       const box = document.querySelector('.zmodal-overlay .zmodal');
       const txt = box ? box.textContent : '';
-      const url = (txt.match(/https?:\/\/\S+/) || [''])[0];
+      const url = (box && box.dataset.url) || '';
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       return { url, hasHash: /#invoice-950100$/.test(url), title: txt.slice(0, 40) };
     });
     expect(r.hasHash, `deep link must end in #invoice-950100, got ${r.url}`).toBe(true);
-    expect(r.title).toMatch(/Paid invoice ready/i);
+    expect(r.title).toMatch(/Paid in full/i);
   });
 });
 
@@ -118,6 +120,45 @@ test.describe('Paid invoice: what the client sees', () => {
   // Owner 2026-08-16 asked whether unpaid gets a red stamp. It does, but only once
   // it is LATE. Every invoice starts unpaid, and a red stamp on the day it is handed
   // over accuses a client who has not had a chance to pay.
+  // Owner 2026-10-01: the invoice's note to them ("a good way to thank them")
+  // shows on their copy, signed; and the tax line is the tax the invoice
+  // charged (parts only on a Kansas repair), not one backed out of the total.
+  test('their copy shows his note, signed, and the tax the invoice charged', async () => {
+    const r = await page.evaluate(() => {
+      _hub.signerName = 'John Schonfeldt'; _hub.salesTaxRate = 9.15;
+      _hub.bids = [{ id: 7030, amount: 1157.65, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14',
+        note: 'Thanks for having us out. Call anytime.', salesTax: 9.15, salesTaxRate: 9.15 }];
+      _hub.payments = [];
+      openInvoice(7030);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(r).toContain('Thanks for having us out. Call anytime.');
+    expect(r).toContain('John Schonfeldt');
+    expect(r).toMatch(/Sales tax \(9\.15%\)\s*\$9\.15/);
+    expect(r).toMatch(/Contract price\s*\$1,148\.50/);
+  });
+
+  // Owner 2026-10-01: the invoice's Materials switch. Their copy draws the
+  // rows the bill saved, amounts and all, so "Items and prices" shows prices
+  // and "Just the total" shows none.
+  test('a quick invoice prints its own rows: what he did, the day, labor and priced parts', async () => {
+    const r = await page.evaluate(() => {
+      _hub.salesTaxRate = 0;
+      _hub.bids = [{ id: 7040, amount: 486, type: 'Invoice', kind: 'quick_invoice', completion_date: '2026-08-14',
+        work: ['Replaced the water heater supply lines'],
+        rows: [{ text: 'Thu, Aug 13', amount: 486, head: true }, { text: 'Labor · 3 hrs on site', amount: 450, sub: true },
+          { text: '2 × Supply line', amount: 36, sub: false }] }];
+      _hub.payments = [];
+      openInvoice(7040);
+      const el = document.getElementById('inv-content');
+      return { txt: el.textContent, cols: el.querySelectorAll('.inv-table th').length };
+    });
+    expect(r.cols).toBe(2);
+    expect(r.txt).toContain('Replaced the water heater supply lines');
+    expect(r.txt).toMatch(/2 × Supply line\s*\$36\.00/);
+    expect(r.txt).toMatch(/Labor · 3 hrs on site\s*\$450\.00/);
+  });
+
   test('an unpaid invoice within terms carries no stamp at all', async () => {
     const txt = await page.evaluate(() => {
       _hub.bids = [{ id: 7020, amount: 2375, type: 'Repaint', completion_date: '2026-08-14', daysOverdue: 0 }];

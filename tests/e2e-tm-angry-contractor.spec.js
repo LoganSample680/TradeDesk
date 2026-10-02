@@ -49,6 +49,11 @@ test.describe('Earl, 58, hates technology', () => {
   const visibleText = () => page.evaluate(() => document.getElementById('gei-tm-page').innerText + ' ' + (document.getElementById('tm-dock') || {}).innerText);
   const junk = (t) => /\bNaN\b|\bundefined\b|\bInfinity\b|\[object|null\b/.test(t);
   const bar = () => page.evaluate(() => [...document.querySelectorAll('#tm-dock .ios-btn')].map(b => b.textContent.trim()));
+  // Getting paid is one line until he taps it (owner 2026-09-29): the limit,
+  // up front and how often it bills are behind that one tap.
+  const openPay = async () => {
+    if (!(await page.evaluate(() => document.getElementById('tm-pay-group').classList.contains('open')))) await page.locator('#tm-pay-btn').tap();
+  };
 
   // ── FIRST LOOK ────────────────────────────────────────────────────────────
 
@@ -115,6 +120,7 @@ test.describe('Earl, 58, hates technology', () => {
 
   test('None and Amount, tapped back and forth ten times, end where he left them', async () => {
     await fresh();
+    await openPay();
     for (let i = 0; i < 10; i++) {
       await page.locator('#tm-dep-seg button', { hasText: i % 2 ? 'None' : 'Amount' }).tap();
     }
@@ -198,6 +204,7 @@ test.describe('Earl, 58, hates technology', () => {
     await fresh();
     await say('set a tankless'); await page.evaluate(() => _geiScopeBuild('tm-scope-wrap'));
     await typeIn('tm-i-rate', '85');
+    await openPay();
     await typeIn('tm-i-nte', '3000');
     await page.locator('#tm-dep-seg button', { hasText: 'Amount' }).tap();
     await typeIn('tm-i-dep-flat', '5000');
@@ -214,7 +221,7 @@ test.describe('Earl, 58, hates technology', () => {
     // recommendations"). Send now waits until Tim's leftovers are answered and
     // the rate and people are checked; e2e-tm-guided.spec.js covers that walk.
     // Typing the rate is checking it; Tim's leftovers are answered here.
-    await page.evaluate(() => { _geiScopeMissed.length = 0; _tmRenderSteps(); });
+    await page.evaluate(() => { _geiScopeMissed.length = 0; /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; _tmRenderSteps(); });
     expect(await bar()).toEqual(['Sign here', 'Send it']);
     await page.locator('#tm-i-rate').fill('');
     await page.locator('#tm-i-rate').dispatchEvent('input');
@@ -373,7 +380,7 @@ test.describe('Earl, 58, hates technology', () => {
     await page.evaluate(() => _geiScopeBuild('tm-scope-wrap'));
     await page.evaluate(() => { _geiScopeChips.slice().forEach(l => _tmDelStep(l)); });
     expect(await page.evaluate(() => !!document.getElementById('gei-scope-say'))).toBe(true);
-    expect(await bar()).toEqual(['Build the steps']);
+    expect(await bar()).toEqual(['Write it up']);
     expect(junk(await visibleText())).toBe(false);
   });
 
@@ -413,6 +420,7 @@ test.describe('Earl, 58, hates technology', () => {
 
   test('junk in the up-front box never shows as junk or goes on a contract', async () => {
     await fresh();
+    await openPay();
     await page.locator('#tm-dep-seg button', { hasText: 'Amount' }).tap();
     for (const t of ['abc', '1,2,3', '-500', '$$$', '12.5.6']) {
       await typeIn('tm-i-dep-flat', t);
@@ -440,6 +448,7 @@ test.describe('Earl, 58, hates technology', () => {
 
   test('Tim, opened and closed ten times, never leaves a sheet stuck over the job', async () => {
     await fresh();
+    await openPay();
     for (let i = 0; i < 10; i++) {
       await page.evaluate(() => { if (typeof openTim === 'function') openTim(); });
       await page.evaluate(() => { if (typeof closeTim === 'function') closeTim(); else document.querySelectorAll('#_tim-sheet,#_tim-ov').forEach(e => e.remove()); });

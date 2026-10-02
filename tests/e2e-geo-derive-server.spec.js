@@ -371,6 +371,91 @@ test.describe('the deriver on the server', () => {
       }
     });
 
+    // ── THE FIRST STOP OF THE DAY REACHES THE TIMESHEET (owner 2026-09-29) ──
+    // Jack, 29 September: home office to the shop, arrived 7:35, clocked in
+    // 7:38, still there. The commute from a home office is not a mileage leg
+    // and no stop had closed, so the open shop row was the ONLY row, and the
+    // "nothing to add" guard counted closed arrays alone and skipped the
+    // writer. The shop never showed on his day until he left it.
+    const firstStopTables = () => {
+      const HOMEOFF = { lat: 39.0123292, lon: -95.7464936 };
+      const fences = [
+        FENCES[0],
+        { id: 'place-home', kind: 'home_office', name: 'Home', lat: HOMEOFF.lat, lng: HOMEOFF.lon, addr: '1 Home Rd',
+          job_id: null, place_id: 'home', client_id: null, radius_ft: null, scheduled: null },
+      ];
+      return {
+        ...TABLES, __fences: fences,
+        geo_events: [
+          ...sit(HOMEOFF, at(6, 0), at(7, 21), 6),
+          { ts: at(7, 21), type: 'motion', kind: 'automotive', lat: null, lon: null },
+          ...line(HOMEOFF, SHOP, at(7, 21), at(7, 35), 20),
+          { ts: at(7, 43), type: 'motion', kind: 'walking', lat: null, lon: null },
+          ...sit(SHOP, at(7, 36), at(8, 5), 12),
+        ].sort((a, b) => a.ts - b.ts).map((e) => ({ ...e, ts: iso(e.ts) })),
+      };
+    };
+
+    test('arrived and still there: the open stop is written on the ingest path', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 6), null);
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(r.reason, 'not "nothing to add"').toBeUndefined();
+      expect(write, 'the writer is reached with the open stop').toBeTruthy();
+      expect(write.args.p_miles, 'a home office commute is not mileage').toEqual([]);
+      expect(write.args.p_time).toEqual([]);
+      expect(write.args.p_shop.length).toBe(1);
+      expect(write.args.p_shop[0].arrived_at, 'at the shop since the arrival').toBe(iso(at(7, 35)));
+      expect(write.args.p_shop[0].departed_at, 'still there: no departure yet').toBeNull();
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(r.wrote).toBe(true);
+    });
+
+    test('the open stop is written exactly once per derive, never beside itself', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 6), null);
+      await deriveDayServer(fakeSvc(firstStopTables(), rpc), 'cid-1', 'uid-1', DAY, at(8, 20), null);
+      const writes = rpc.filter((c) => c.name === 'geo_replace_day');
+      expect(writes.length).toBe(2);
+      expect(writes.map((w) => w.args.p_shop.length)).toEqual([1, 1]);
+      expect(writes[0].args.p_shop[0].client_key, 'the same row each time, so the writer replaces it')
+        .toBe(writes[1].args.p_shop[0].client_key);
+    });
+
+    // ── AND THE DRIVE THAT LEAVES IT (owner 2026-09-29) ──────────────────
+    // "If a drive starts it ends the shop time and starts the drive time
+    // right away with no end." Same morning, and at 9:00 he pulls out. The
+    // derive a few minutes later must close the shop row at the flip and send
+    // the drive as a row with no end, in the same write.
+    const leavingTables = () => {
+      const t = firstStopTables();
+      const MID = { lat: (SHOP.lat + 39.0123292) / 2, lon: (SHOP.lon + -95.7464936) / 2 };
+      const more = [
+        { ts: at(9, 0), type: 'motion', kind: 'automotive', lat: null, lon: null },
+        ...line(SHOP, MID, at(9, 1), at(9, 3), 6),
+      ].map((e) => ({ ...e, ts: iso(e.ts) }));
+      return { ...t, geo_events: t.geo_events.filter((e) => Date.parse(e.ts) < at(9, 0)).concat(more)
+        .sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts)) };
+    };
+
+    test('a drive under way: the shop row closes at the flip and the drive goes up with no end', async () => {
+      const { deriveDayServer } = await import(SHARED);
+      const rpc = [];
+      const r = await deriveDayServer(fakeSvc(leavingTables(), rpc), 'cid-1', 'uid-1', DAY, at(9, 4), null);
+      const write = rpc.find((c) => c.name === 'geo_replace_day');
+      expect(write, 'written on the ingest path, mid-drive').toBeTruthy();
+      expect(write.args.p_shop.length).toBe(1);
+      expect(write.args.p_shop[0].departed_at, 'the shop ends when the drive starts').toBe(iso(at(9, 0)));
+      const live = write.args.p_time.filter((x) => x.departed_at === null);
+      expect(live.length, 'exactly one row with no end').toBe(1);
+      expect(live[0].source).toBe('drive');
+      expect(live[0].arrived_at).toBe(iso(at(9, 0)));
+      expect(write.args.p_miles, 'no mileage until the drive has two ends').toEqual([]);
+      expect(r.wrote).toBe(true);
+    });
+
     test('an empty day with no tape covering it is still refused', async () => {
       // "No evidence" outranks everything: a day nobody uploaded is not an
       // empty day, and asking for a sweep cannot turn it into one.
@@ -523,6 +608,108 @@ test.describe('the deriver on the server', () => {
     expect((dst.end - dst.start) / 3600000, 'the 25-hour day').toBe(25);
     expect(centralDayKey(centralDayBounds(DAY).start)).toBe(DAY);
     expect(centralDayKey(centralDayBounds(DAY).end - 1)).toBe(DAY);
+  });
+});
+
+// ── A FIX IS A TRIGGER WHILE AN ARRIVAL IS WAITING ON ONE (owner 2026-10-02) ─
+// "everything needs to hit in 10 seconds or less." The fix that proves an
+// arrival is often the last piece to land, and a breadcrumb was never a
+// trigger, so the stop waited for the next flip or the half-hourly ping.
+// arrivalWatchDays makes a fix batch derive, but only inside an arrival
+// window, and only after one indexed read of crossings and flips.
+test.describe('arrivalWatchDays: a fix batch derives while an arrival waits on it', () => {
+  const ENTER = at(12, 59) + 57000;                     // Jack's yard, 12:59:57
+  const NOW = at(13, 1) + 30000;
+  const svcWith = (events, calls) => ({
+    from(table) {
+      const q = { f: [] };
+      const b = {
+        select() { return b; },
+        eq(k, v) { q.f.push(['eq', k, v]); return b; },
+        in(k, v) { q.f.push(['in', k, v]); return b; },
+        gte(k, v) { q.f.push(['gte', k, v]); return b; },
+        order() { return b; },
+        limit(n) { q.limit = n; return b; },
+        then(res, rej) {
+          calls.push({ table, f: q.f, limit: q.limit });
+          const types = (q.f.find((x) => x[0] === 'in') || [])[2] || [];
+          const since = Date.parse((q.f.find((x) => x[0] === 'gte') || [])[2]);
+          const data = events.filter((e) => types.includes(e.type) && Date.parse(e.ts) >= since)
+            .sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
+          return Promise.resolve({ data, error: null }).then(res, rej);
+        },
+      };
+      return b;
+    },
+  });
+  const ev = (type, ms, extra) => Object.assign({ type, ts: iso(ms), kind: null, region_id: null }, extra || {});
+  const fixAt = (ms) => ({ type: 'fix', ts: ms, lat: 39.0457, lng: -95.7148, detail: null });
+  const arrived = [
+    ev('motion', at(12, 50), { kind: 'automotive' }),
+    ev('regionEnter', ENTER, { region_id: 'place-1788216906515011' }),
+    ev('motion', at(13, 1) + 20000, { kind: 'still' }),
+  ];
+
+  test('the arrival is waiting on this fix: derive the day', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    const days = await arrivalWatchDays(svcWith(arrived, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER);
+    expect(days).toEqual([DAY]);
+    expect(calls.length, 'one read').toBe(1);
+    expect(calls[0].table).toBe('geo_events');
+    expect(calls[0].f).toContainEqual(['eq', 'employee_user_id', 'uid-1']);
+    expect(calls[0].limit, 'bounded').toBeGreaterThan(0);
+  });
+
+  test('outside an arrival window the read never happens', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    const svc = svcWith(arrived, calls);
+    // Nobody standing in a fence, by ingest-geo's own state machine.
+    expect(await arrivalWatchDays(svc, 'uid-1', [fixAt(NOW - 1000)], NOW, null)).toEqual([]);
+    // Standing in one for longer than the window: the tape has had its chance.
+    expect(await arrivalWatchDays(svc, 'uid-1', [fixAt(NOW - 1000)], ENTER + 11 * 60000, ENTER)).toEqual([]);
+    // A batch with a trigger in it derives anyway, through daysToDerive.
+    expect(await arrivalWatchDays(svc, 'uid-1', [{ type: 'motion', ts: NOW - 1000 }], NOW, ENTER)).toEqual([]);
+    // No fresh fix in the batch: nothing new to read.
+    expect(await arrivalWatchDays(svc, 'uid-1', [{ type: 'fix', ts: NOW - 1000, lat: 39, lng: -95, detail: { staleMs: 600000 } }], NOW, ENTER)).toEqual([]);
+    expect(await arrivalWatchDays(svc, 'uid-1', [], NOW, ENTER)).toEqual([]);
+    expect(calls.length, 'none of those cost a query').toBe(0);
+  });
+
+  test('the deriver could not end the drive: no derive', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const calls = [];
+    // Tape still automotive since the crossing (Menards, 08:08): gate 3 fails.
+    const driving = arrived.slice(0, 2);
+    expect(await arrivalWatchDays(svcWith(driving, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // Back on automotive after the still.
+    const rolling = arrived.concat([ev('motion', NOW - 5000, { kind: 'automotive' })]);
+    expect(await arrivalWatchDays(svcWith(rolling, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // He already left: the exit closed the crossing.
+    const left = arrived.concat([ev('regionExit', NOW - 5000, { region_id: 'place-1788216906515011' })]);
+    expect(await arrivalWatchDays(svcWith(left, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    // The fix predates the crossing: it cannot prove the arrival.
+    expect(await arrivalWatchDays(svcWith(arrived, calls), 'uid-1', [fixAt(ENTER - 5000)], NOW, ENTER)).toEqual([]);
+    // The anonymous 'fence' twin names no place.
+    const anon = [arrived[0], ev('regionEnter', ENTER, { region_id: 'fence' }), arrived[2]];
+    expect(await arrivalWatchDays(svcWith(anon, calls), 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+  });
+
+  test('a read that fails derives nothing and throws nothing', async () => {
+    const { arrivalWatchDays } = await import(SHARED);
+    const broken = { from() { throw new Error('db down'); } };
+    expect(await arrivalWatchDays(broken, 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+    const errored = { from() { const b = { select: () => b, eq: () => b, in: () => b, gte: () => b, order: () => b, limit: () => b,
+      then: (res) => Promise.resolve({ data: null, error: { message: 'x' } }).then(res) }; return b; } };
+    expect(await arrivalWatchDays(errored, 'uid-1', [fixAt(NOW - 1000)], NOW, ENTER)).toEqual([]);
+  });
+
+  test('ingest-geo asks it only when the batch has no trigger, with its own open dwell', async () => {
+    const fs = require('fs');
+    const ig = fs.readFileSync(path.join(ROOT, 'supabase/functions/ingest-geo/index.ts'), 'utf8');
+    expect(ig).toContain('deriveNow.length ? deriveNow : await arrivalWatchDays(svc, uid, evs, Date.now(), openSince)');
+    expect(ig).toContain('openSince = dwell ? Number(dwell.arrivedTs) : null;');
   });
 });
 
@@ -1091,5 +1278,158 @@ test.describe('the kept day derives exactly what a fresh read derives', () => {
     expect(sql).toContain('or (p_after_id is not null and id > p_after_id)');
     expect(sql).toContain('or (p_since is not null and created_at >= p_since)');
     expect(sql).toContain('order by ts asc, id asc');
+  });
+});
+
+// ── PINGS AND CLOCKS ARE KEPT TOO, AND STILL DERIVE THE SAME DAY (2026-10-01) ─
+//
+// After the evidence stopped travelling whole, location_pings and the
+// account's clocks were most of what was left: every trigger upload re-read
+// both. They are now kept and topped up off location_pings.created_at and
+// td_time_entries.updated_at (migration 20261059). Same bar as above: the kept
+// copy must write exactly what a whole fresh read writes, including a clock
+// edited or deleted since the last read.
+test.describe('kept pings and clocks derive exactly what a fresh read derives', () => {
+  // A table that honours the filters derive-day uses, with insert/update times.
+  const rowsDb = () => {
+    const t = { location_pings: [], td_time_entries: [] };
+    const log = [];
+    const q = (name) => {
+      const f = [];
+      let sel = '*', lo = 0, hi = Infinity;
+      const run = () => {
+        let out = t[name].filter((r) => f.every((fn) => fn(r)));
+        if (name === 'location_pings') out = out.slice().sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+        out = out.slice(lo, hi + 1);
+        log.push({ name, sel, n: out.length, delta: f.some((fn) => fn.delta) });
+        const cols = sel.split(',');
+        return { data: out.map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))), error: null };
+      };
+      const o = {
+        select: (s) => { sel = s; return o; },
+        eq: (c, v) => { f.push((r) => r[c] === v); return o; },
+        is: (c, v) => { f.push((r) => (r[c] ?? null) === v); return o; },
+        lt: (c, v) => { f.push((r) => Date.parse(r[c]) < Date.parse(v)); return o; },
+        gte: (c, v) => {
+          const fn = (r) => r[c] != null && Date.parse(r[c]) >= Date.parse(v);
+          if (c === 'created_at' || c === 'updated_at') fn.delta = true;
+          f.push(fn); return o;
+        },
+        order: () => o,
+        range: async (a, b) => { lo = a; hi = b; return run(); },
+        then: (res, rej) => Promise.resolve(run()).then(res, rej),
+      };
+      return o;
+    };
+    return { t, log, q };
+  };
+  const svcFor = (db, rpcLog) => {
+    const base = fakeSvc({ ...TABLES, location_pings: [], td_time_entries: [] }, rpcLog);
+    return { from: (name) => (db.t[name] ? db.q(name) : base.from(name)), rpc: base.rpc };
+  };
+  const writes = (log) => JSON.stringify(log.filter((c) => c.name === 'geo_replace_day').map((c) => c.args));
+  let pid = 0;
+  const ping = (ms, createdMs) => ({ id: 'p' + (++pid), employee_user_id: 'uid-9', ts: iso(ms),
+    lat: CLIENT.lat + (ms % 997) * 1e-9, lon: CLIENT.lon, accuracy: 8, created_at: iso(createdMs) });
+  const clock = (id, s, e, updMs, extra = {}) => ({ id, user_id: 'cid-9', deleted_at: null, updated_at: iso(updMs),
+    data: { start_time: iso(s), end_time: iso(e), logged_by_uid: 'uid-9' }, ...extra });
+
+  test('pings and clocks arriving, edited and deleted: kept and fresh write the same', async () => {
+    const { deriveDayServer, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = rowsDb();
+    const old = Date.now() - 5 * 60000;
+    for (let m = 0; m < 60; m += 5) db.t.location_pings.push(ping(at(8, m), old));
+    db.t.td_time_entries.push(clock('c1', at(7, 0), at(15, 0), old), clock('c2', at(7, 0), at(9, 0), old, { data: { start_time: iso(at(6, 0)), end_time: iso(at(6, 30)), logged_by_uid: 'uid-9' } }));
+
+    const k1 = [];
+    await deriveDayServer(svcFor(db, k1), 'cid-9', 'uid-9', DAY, at(23, 0));
+    const f1 = [];
+    await deriveDayServer(svcFor(db, f1), 'cid-9', 'uid-9', DAY, at(23, 0), null, { sweep: false });
+    expect(writes(k1)).toBe(writes(f1));
+
+    // New pings land, one clock is edited, one is soft-deleted.
+    const now = Date.now();
+    for (let m = 0; m < 30; m += 5) db.t.location_pings.push(ping(at(13, m), now));
+    db.t.td_time_entries[0].data = { start_time: iso(at(7, 30)), end_time: iso(at(16, 0)), logged_by_uid: 'uid-9' };
+    db.t.td_time_entries[0].updated_at = iso(now);
+    db.t.td_time_entries[1].deleted_at = iso(now);
+    db.t.td_time_entries[1].updated_at = iso(now);
+    db.t.td_time_entries.push(clock('c3', at(17, 0), at(18, 0), now));
+
+    const n0 = db.log.length;
+    const k2 = [];
+    await deriveDayServer(svcFor(db, k2), 'cid-9', 'uid-9', DAY, at(23, 0));
+    const warm = db.log.slice(n0);
+    expect(warm.filter((c) => c.name === 'location_pings').every((c) => c.delta), 'pings topped up, not re-read').toBe(true);
+    expect(warm.filter((c) => c.name === 'td_time_entries').every((c) => c.delta), 'clocks topped up, not re-read').toBe(true);
+    expect(warm.find((c) => c.name === 'location_pings').n).toBe(6);
+    expect(warm.find((c) => c.name === 'td_time_entries').n).toBe(3);
+
+    _dayCacheClear();
+    const f2 = [];
+    await deriveDayServer(svcFor(db, f2), 'cid-9', 'uid-9', DAY, at(23, 0));
+    expect(writes(f2).length).toBeGreaterThan(10);
+    expect(writes(k2)).toBe(writes(f2));
+  });
+
+  test('the kept clocks hand the deriver the same set a whole read returns', async () => {
+    const { accountClocks, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = rowsDb();
+    const old = Date.now() - 5 * 60000;
+    db.t.td_time_entries.push(clock('a', at(7, 0), at(8, 0), old), clock('b', at(9, 0), at(10, 0), old),
+      clock('x', at(1, 0), at(2, 0), old, { user_id: 'someone-else' }));
+    const svc = svcFor(db, []);
+    await accountClocks(svc, 'cid-9');
+    db.t.td_time_entries[1].deleted_at = iso(Date.now());
+    db.t.td_time_entries[1].updated_at = iso(Date.now());
+    db.t.td_time_entries.push(clock('c', at(11, 0), at(12, 0), Date.now()));
+    const kept = await accountClocks(svc, 'cid-9');
+    const fresh = await accountClocks(svc, 'cid-9', { fresh: true });
+    const ids = (r) => r.data.map((x) => x.data.start_time).sort();
+    expect(ids(kept)).toEqual(ids(fresh));
+    expect(ids(kept)).toEqual([iso(at(7, 0)), iso(at(11, 0))]);
+  });
+
+  test('a failed top-up, a full page and rows without ids all fall back to the whole read', async () => {
+    const { dayPings, accountClocks, _dayCacheClear } = await import(SHARED);
+    _dayCacheClear();
+    const db = rowsDb();
+    const old = Date.now() - 5 * 60000;
+    for (let m = 0; m < 10; m++) db.t.location_pings.push(ping(at(8, m), old));
+    const from = iso(at(0, 0)), to = iso(at(24, 0));
+    await dayPings(svcFor(db, []), 'uid-9', from, to);
+
+    // The column is not deployed yet: the top-up errors, the whole day comes back.
+    const broken = { from: (name) => {
+      const o = db.q(name);
+      const g = o.gte;
+      o.gte = (c, v) => { if (c === 'created_at') { o.range = async () => ({ data: null, error: { message: 'no column' } }); } return g(c, v); };
+      return o;
+    }, rpc: async () => ({ data: null }) };
+    expect((await dayPings(broken, 'uid-9', from, to)).length).toBe(10);
+
+    // A backfill dump fills the top-up page: whole read.
+    await dayPings(svcFor(db, []), 'uid-9', from, to);
+    for (let i = 0; i < 1000; i++) db.t.location_pings.push(ping(at(9, 0) + i * 1000, Date.now()));
+    const n0 = db.log.length;
+    expect((await dayPings(svcFor(db, []), 'uid-9', from, to)).length).toBe(1010);
+    expect(db.log.slice(n0).some((c) => !c.delta), 'fell back to a whole read').toBe(true);
+
+    // Old shape rows (no id) are used as read and never kept.
+    _dayCacheClear();
+    const bare = fakeSvc({ ...TABLES, td_time_entries: [{ data: { start_time: iso(at(7, 0)), end_time: iso(at(8, 0)) } }] }, []);
+    expect((await accountClocks(bare, 'cid-9')).data.length).toBe(1);
+    expect((await accountClocks(bare, 'cid-9')).data.length).toBe(1);
+  });
+
+  test('the migration adds the columns the top-ups read, additively', () => {
+    const fs = require('fs');
+    const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261059_changed_since_columns.sql'), 'utf8');
+    expect(sql).toContain('alter table public.location_pings add column if not exists created_at timestamptz default now()');
+    expect(sql).toContain('alter table public.job_time_entries add column if not exists updated_at');
+    expect(sql).toContain('alter table public.shop_time_entries add column if not exists updated_at');
+    expect(sql).not.toMatch(/drop column|rename (column|to)/i);
   });
 });

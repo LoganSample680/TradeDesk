@@ -377,6 +377,25 @@ test.describe('supply list: on a BYO estimate', () => {
     if (r.rowShown) expect(parseFloat(r.tax.replace(/[^0-9.]/g, '')) || 0).toBe(0);
   });
 
+  test('a lump price under Work is labor: Kansas taxes only the materials (Jack, $2,800 drew $182)', async () => {
+    const r = await page.evaluate(() => {
+      const nid = Math.max(0, ..._byoItems.map(x => x.id || 0)) + 1;
+      _byoItems.push({ id: nid, section: 'Work', label: 'Rough in washer box, drain, water and vent', qty: 1, unit: 'ea', rate: 2800, price: 2800, on: true, notes: '' });
+      _geiClientTaxRate = { rate: 10, source: 'db_zip' };
+      _byoUpdateRail();
+      const mat = _byoItems.find(x => x._supply).price;
+      const tax = parseFloat(String(document.getElementById('byo-rail-tax-amt')?.textContent || '').replace(/[^0-9.]/g, ''));
+      const saved = calcGeiTotal().salesTax;
+      const types = [_geiTaxLineType({ _byoSection: 'Work' }), _geiTaxLineType({ _byoSection: 'Materials' }), _geiTaxLineType({ _supply: true, _byoSection: 'Other' }),
+        _geiTaxLineType({ _taxPaid: true, _supply: true }), _geiTaxLineType({ _byoSection: 'Add-ons' }), _geiTaxLineType({})];
+      _byoItems = _byoItems.filter(x => x.id !== nid); _byoUpdateRail();
+      return { mat, tax, saved, types };
+    });
+    expect(r.tax).toBeCloseTo(Math.round(r.mat * 0.10 * 100) / 100, 2);
+    expect(r.saved).toBeCloseTo(r.tax, 2);
+    expect(r.types).toEqual(['labor', 'materials', 'materials', 'taxpaid', null, null]);
+  });
+
   test('it saves with the estimate: the list lives on the saved BYO item', async () => {
     const r = await page.evaluate(() => {
       _byoAutosave();

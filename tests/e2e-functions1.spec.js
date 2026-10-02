@@ -567,6 +567,45 @@ test.describe('Mileage tracking functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // A person's pick is stamped, so the server can tell it from the purpose
+  // the deriver writes on every leg (20261062: a re-described drive's old leg
+  // is retired unless a PERSON answered it).
+  test('a purpose a person picks is stamped purposeAt; one the code fills is not', async () => {
+    const r = await page.evaluate(() => {
+      mileage.push({ id: 'm-stamp', date: '2026-10-01', miles: 3.3, purpose: 'Shop', gps: true });
+      const before = 'purposeAt' in mileage.find(m => m.id === 'm-stamp');
+      editMilePurpose('m-stamp', 'Client Consult');
+      const rec = mileage.find(m => m.id === 'm-stamp');
+      const stamped = typeof rec.purposeAt === 'string' && !isNaN(Date.parse(rec.purposeAt));
+      // The edit modal: a save that leaves the purpose as it was is no answer.
+      // An earlier test in this block may have left the trip editor open, so
+      // its own fields are used when they exist and put back afterwards.
+      const restore = [];
+      const mk = (id, v) => {
+        let el = document.getElementById(id);
+        if (el) restore.push([el, el.value]);
+        else { el = document.createElement('input'); el.id = id; el.dataset.tmp = '1'; document.body.appendChild(el); }
+        el.value = v;
+      };
+      mileage.push({ id: 'm-same', date: '2026-10-01', miles: 2, purpose: 'Shop', to: 'Shop', gps: true });
+      mk('lm-to', 'Shop'); mk('lm-purpose', 'Shop'); mk('lm-date', '2026-10-01'); mk('lm-vehicle', ''); mk('lm-from', ''); mk('lm-notes', ''); mk('lm-miles-val', '2'); mk('lm-client', '');
+      updateLoggedTrip('m-same');
+      const same = 'purposeAt' in mileage.find(m => m.id === 'm-same');
+      // The save closes the editor, so its fields are set up again.
+      mk('lm-to', 'Shop'); mk('lm-purpose', 'Supply run'); mk('lm-date', '2026-10-01'); mk('lm-vehicle', ''); mk('lm-from', ''); mk('lm-notes', ''); mk('lm-miles-val', '2'); mk('lm-client', '');
+      updateLoggedTrip('m-same');
+      const changed = typeof mileage.find(m => m.id === 'm-same').purposeAt === 'string';
+      document.querySelectorAll('[data-tmp="1"]').forEach(e => e.remove());
+      restore.forEach(([el, v]) => { el.value = v; });
+      mileage = mileage.filter(m => m.id !== 'm-stamp' && m.id !== 'm-same');
+      return { before, stamped, same, changed };
+    });
+    expect(r.before).toBe(false);
+    expect(r.stamped).toBe(true);
+    expect(r.same, 'saving the same purpose is not an answer').toBe(false);
+    expect(r.changed).toBe(true);
+  });
+
   test('delMileage: removes mileage record after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof delMileage !== 'function') return { skip: true };
@@ -1922,16 +1961,11 @@ test.describe('Generic estimate, trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoToggle: toggles BYO item state without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _byoToggle !== 'function') return { skip: true };
-      try {
-        if (!window._byoItems) window._byoItems = [{ id: 1, label: 'Test Item', price: 100, on: false, required: false }];
-        _byoToggle(0);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // The tick on a BYO row is gone (owner 2026-10-01: the three lists draw one
+  // row); on or off the proposal is a switch in the line's own sheet now.
+  test('_byoToggle is gone; the edit sheet carries On the proposal', async () => {
+    const r = await page.evaluate(() => ({ gone: typeof _byoToggle === 'undefined', sheet: typeof _byaOnOffable === 'function' }));
+    expect(r).toEqual({ gone: true, sheet: true });
   });
 
   test('_geiRenderTemplates: renders service templates without throwing', async () => {

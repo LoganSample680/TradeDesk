@@ -160,9 +160,9 @@ function _renderDashSetupTodo(){
   const hasPlaces=typeof places!=='undefined'&&(places||[]).some(p=>p&&(p.kind==='home_office'||p.kind==='supply'||p.confirmedBy==='manual'));
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
-      sub:'Mileage writes itself off at tax time, and it turns on the Drive button.',cta:'Add vehicle'},
+      sub:'Your miles come off your taxes. Add a truck and they log themselves.',cta:'Add vehicle'},
     {id:'places',done:hasPlaces,icon:'🏡',title:'Mark your home office & supply stops',
-      sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
+      sub:'Save your home, shop and supply houses so drives log themselves. A home office makes your first drive of the day a write-off.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     // Venmo (owner 2026-09-26): skippable, a business that doesn't take Venmo
@@ -1352,6 +1352,7 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   try{if(typeof _renderWhBoard==='function')_renderWhBoard();}catch(_e){}
+  try{if(typeof _renderToBill==='function')_renderToBill();}catch(_e){}
   _renderDashSupplyHold();
   _renderDashVisitHold();
   try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
@@ -2159,7 +2160,7 @@ function renderDashToday(){
       '<div style="text-align:center;padding:12px 0">'+
         '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?svgIcon('🛋',{size:22}):svgIcon('🎯',{size:22}))+'</div>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+msgs[dow]+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day, check Make Money Today</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Nothing booked. See Make money today below.</div>'+
       '</div>';
     return;
   }
@@ -3720,8 +3721,8 @@ function renderPipeline(){
     action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
-    healthMsg='Pipeline is thin, book proposals now.';
-    action='You need <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
+    healthMsg='Not much work lined up. Send some proposals.';
+    action='Send <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay busy. Best days to send: Tuesday and Thursday evening.';
   }
 
   const w1label=parseD(thisMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
@@ -3731,7 +3732,7 @@ function renderPipeline(){
   el.innerHTML=
     '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--text)">Pipeline</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">Work lined up</div>'+
         '<div style="font-size:11px;font-weight:700;color:'+healthColor+'">'+healthMsg+'</div>'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:60px 1fr auto;gap:6px 10px;align-items:center;margin-bottom:10px">'+
@@ -4052,7 +4053,7 @@ function renderProposalsPage(){
   if(mets)mets.innerHTML=
     '<div class="met" onclick="setProposalFilter(\'all\',document.getElementById(\'pft-all\'))" style="cursor:pointer"><div class="met-l">Sent</div><div class="met-v">'+fmt(totalSent)+'</div><div class="met-s">'+sentBids.length+' proposals</div></div>'+
     '<div class="met" onclick="setProposalFilter(\'signed\',document.getElementById(\'pft-signed\'))" style="cursor:pointer"><div class="met-l">Signed</div><div class="met-v" style="color:var(--green)">'+fmt(signedAmt)+'</div><div class="met-s up">'+signed.length+' clients</div></div>'+
-    '<div class="met" onclick="setProposalFilter(\'awaiting_sig\',document.getElementById(\'pft-awaiting_sig\'))" style="cursor:pointer"><div class="met-l">Awaiting sig</div><div class="met-v" style="color:var(--amber)">'+fmt(awaitingAmt)+'</div><div class="met-s">'+awaiting.length+' clients</div></div>'+
+    '<div class="met" onclick="setProposalFilter(\'awaiting_sig\',document.getElementById(\'pft-awaiting_sig\'))" style="cursor:pointer"><div class="met-l">Waiting to sign</div><div class="met-v" style="color:var(--amber)">'+fmt(awaitingAmt)+'</div><div class="met-s">'+awaiting.length+' clients</div></div>'+
     '<div class="met"><div class="met-l">Close rate</div><div class="met-v">'+closeRate+'<span class="unit">%</span></div><div class="met-s">of sent</div></div>';
   const f=_proposalFilter;
   const filtered=f==='all'?allBids:f==='draft'?draftBids:f==='signed'?signed:f==='awaiting_sig'?awaiting:declined;
@@ -4139,7 +4140,7 @@ function renderProposalsPage(){
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';
-    if(b.signingToken)return '<span class="bdg-soft sf-pending">AWAITING SIG</span>';
+    if(b.signingToken)return '<span class="bdg-soft sf-pending">WAITING TO SIGN</span>';
     return '<span class="bdg-soft sf-done">PENDING</span>';
   };
   const typeChip=b=>{
@@ -4222,7 +4223,7 @@ function renderEstimatesPage(){
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';
-    if(b.signingToken)return '<span class="bdg-soft sf-pending">AWAITING SIG</span>';
+    if(b.signingToken)return '<span class="bdg-soft sf-pending">WAITING TO SIGN</span>';
     return '<span class="bdg-soft sf-done">PENDING</span>';
   };
   const rows=filtered.map(b=>{

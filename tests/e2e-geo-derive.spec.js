@@ -1829,6 +1829,263 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 21 ON A DRIVE THE TAPE HAS NOT CLOSED (owner 2026-10-01) ─────────
+  // "I want to see on time shit within 10 seconds 100% of the time." Jack's
+  // 1 October, off his own phone: regionEnter at the yard 12:59:57, a fix
+  // inside at 13:00:39, the tape still at 13:01:20, another fix inside at
+  // 13:04:34. The shop row first reached the server at 13:08:47, because rule
+  // 21 only ever trimmed a drive the tape had already ended.
+  test.describe('rule 21: an arrival ends a drive that is still open', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const LOT = { lat: 39.0420, lng: -95.7511 };          // where he left from, saved nowhere
+    const ROAD = { lat: 39.0440, lng: -95.7230 };
+    const GATE = { lat: 39.04405070853869, lng: -95.71664236756777 };   // 725 ft out: the OS boundary
+    const IN1 = { lat: 39.04473446570101, lng: -95.7148052246708 };     // 348 ft
+    const IN2 = { lat: 39.04573864320676, lng: -95.71482328783864 };    // 87 ft
+    const PAST = { lat: 39.0444, lng: -95.7050 };          // out the far side
+    const tapeStill = [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(13, 1, 20), 'still')];
+    const fixesUpTo = (t, list) => list.filter(f => f.ts <= t);
+    const realFixes = [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 55), ROAD),
+      fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 4, 34), IN2)];
+    const regions = [{ ts: T(12, 59, 57), id: YARD.id, enter: true }];
+    const at = (nowMs, over) => run(page, base(Object.assign({
+      fences: [YARD], crew: false, tape: tapeStill, regions,
+      fixes: fixesUpTo(nowMs, realFixes), nowMs,
+    }, over)));
+    const lastJ = r => r.journeys[r.journeys.length - 1];
+
+    test('his 13:04:35 derive: the drive ends at the crossing and the yard opens there', async () => {
+      const r = await at(T(13, 4, 35));
+      expect(lastJ(r).endTs, 'no longer open').toBe(T(12, 59, 57));
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(hm(r.open.sinceTs), 'from the crossing, not the 13:01 flip').toBe(hm(T(12, 59, 57)));
+      expect(r.driving, 'and nothing is on the road').toBe(null);
+    });
+
+    // AMENDED 2026-10-02. This test used to say "his 13:01:22 derive is still
+    // a drive: 85 seconds is a red light, not a stop", and assert the drive
+    // stayed open with nobody at the yard. That was right for the LEG, which
+    // the server writes once and never rewrites. It was wrong for the time
+    // rows, which heal on the next derive (geo_replace_day step 5c), and it
+    // cost every stop on 1 October three to six minutes (owner: "everything
+    // needs to hit in 10 seconds or less"). The leg half of the old assertion
+    // lives on, unchanged in meaning, in 'rule 21 before gate 4' below.
+    test('his 13:01:22 derive: the yard opens at the crossing, 85 seconds in', async () => {
+      const r = await at(T(13, 1, 22));
+      expect(lastJ(r).endTs, 'the drive ends at the crossing').toBe(T(12, 59, 57));
+      expect(lastJ(r).provisional, 'before gate 4: time rows only').toBe(true);
+      expect(r.open && r.open.kind).toBe('shop');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(12, 59, 57)));
+    });
+
+    test('a drive-by with a lost exit, tape still automotive, does not end the drive', async () => {
+      // His 08:08 that morning: Menards and Lowe's entered mid-drive.
+      // Two readings inside, seconds apart, and the phone quiet after them.
+      const r = await at(T(13, 5), { tape: tapeStill.slice(0, 2),
+        fixes: fixesUpTo(T(13, 0, 39), realFixes).concat([fix(T(13, 0, 45), IN2)]) });
+      expect(lastJ(r).endTs, 'the tape never left automotive').toBe(null);
+      expect(r.open).toBe(null);
+    });
+
+    test('a pass out the far side, newest fix outside, does not end the drive', async () => {
+      const r = await at(T(13, 10), { fixes: realFixes.concat([fix(T(13, 8), PAST)]) });
+      expect(lastJ(r).endTs).toBe(null);
+      expect(r.open).toBe(null);
+    });
+
+    test('no proof fix inside the circle, no arrival', async () => {
+      const r = await at(T(13, 10), { fixes: fixesUpTo(T(12, 59, 57), realFixes) });
+      expect(lastJ(r).endTs).toBe(null);
+    });
+  });
+
+  // ── THE STOP NOW, THE MILES AT FOUR MINUTES (owner 2026-10-02) ───────────
+  // "write the stop's time row the moment the saved place is entered and the
+  // phone stops reading as driving; the mileage leg keeps its 4-minute wait."
+  // Rows, not just the result, because the rows are what reach the server and
+  // the keys are what let a later derive land on them instead of beside them.
+  test.describe('rule 21 before gate 4: the stop row now, the leg later', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const LOT = { lat: 39.0420, lng: -95.7511 };
+    const ROAD = { lat: 39.0440, lng: -95.7230 };
+    const GATE = { lat: 39.04405070853869, lng: -95.71664236756777 };
+    const IN1 = { lat: 39.04473446570101, lng: -95.7148052246708 };
+    const IN2 = { lat: 39.04573864320676, lng: -95.71482328783864 };
+    // A customer on the way, where he sits at a light inside the fence.
+    const CORNER = { id: 'client-77', kind: 'client', name: 'Corner customer', clientId: 77, lat: 39.0436, lng: -95.7330 };
+    const AT_LIGHT = { lat: 39.04362, lng: -95.73295 };      // inside CORNER
+    const PAST_LIGHT = { lat: 39.0438, lng: -95.7262 };      // 0.36 mi on, outside it
+    const rowsAt = (nowMs, inp) => page.evaluate((x) => {
+      const res = geoDeriveDay(x);
+      const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return JSON.parse(JSON.stringify({ journeys: res.journeys, open: res.open, rows }));
+    }, base(Object.assign({}, inp, {
+      tape: inp.tape.filter(t => t.ts <= nowMs), fixes: inp.fixes.filter(f => f.ts <= nowMs),
+      regions: inp.regions.filter(g => g.ts <= nowMs), nowMs, crew: false,
+    })));
+    const allTime = rows => rows.job_time_entries.concat(rows.shop_time_entries, rows.open);
+    const keyed = (rows, k) => allTime(rows).filter(t => t.client_key === k);
+
+    // Jack, 1 October, off his own phone (see rule 21 above).
+    const jack = {
+      fences: [YARD],
+      tape: [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(13, 1, 20), 'still')],
+      fixes: [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 55), ROAD),
+        fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 4, 34), IN2)],
+      regions: [{ ts: T(12, 59, 57), id: YARD.id, enter: true }],
+    };
+
+    test('Jack 13:01:22: the yard row starts 12:59:57, and there is no leg yet', async () => {
+      const r = await rowsAt(T(13, 1, 22), jack);
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      const yard = keyed(r.rows, 'd-' + J);
+      expect(yard.length, 'one stop row, keyed by the journey that arrived').toBe(1);
+      expect(yard[0]._table).toBe('shop_time_entries');
+      expect(yard[0].arrived_at).toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(yard[0].departed_at, 'still there: open').toBe(null);
+      const drive = keyed(r.rows, J);
+      expect(drive.length, 'the drive row, on its own key').toBe(1);
+      expect(drive[0].departed_at, 'closed at the crossing').toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(r.rows.td_mileage.length, 'the leg waits for gate 4').toBe(0);
+    });
+
+    test('Jack 13:04:40: four minutes on, the leg lands on the same keys', async () => {
+      const early = await rowsAt(T(13, 1, 22), jack);
+      const r = await rowsAt(T(13, 4, 40), jack);
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      expect(String(early.journeys[early.journeys.length - 1].id), 'same journey id').toBe(J);
+      expect(r.rows.td_mileage.map(m => String(m.id)), 'the leg, under the drive key').toEqual([J]);
+      expect(keyed(r.rows, 'd-' + J).length, 'the same stop row').toBe(1);
+      expect(keyed(r.rows, J).length, 'the same drive row').toBe(1);
+      const keys = allTime(early.rows).map(t => t.client_key);
+      for (const k of keys) expect(allTime(r.rows).map(t => t.client_key), 'lands on ' + k).toContain(k);
+    });
+
+    // A light inside a customer's fence on the way to the yard: in, still for
+    // 40 seconds, automotive, out. The stop row appears at the still, is gone
+    // the first derive after the exit, the drive is one row the whole way, and
+    // no leg is written until he actually arrives.
+    const light = {
+      fences: [CORNER, YARD],
+      tape: [mo(T(12, 48, 4), 'still'), mo(T(12, 50, 6), 'automotive'), mo(T(12, 55, 10), 'still'),
+        mo(T(12, 55, 50), 'automotive'), mo(T(13, 1, 20), 'walking')],
+      fixes: [fix(T(12, 48), LOT), fix(T(12, 50, 6), LOT), fix(T(12, 53), { lat: 39.0428, lng: -95.7420 }),
+        fix(T(12, 55, 5), AT_LIGHT), fix(T(12, 55, 52), AT_LIGHT), fix(T(12, 56, 20), PAST_LIGHT),
+        fix(T(12, 58), ROAD), fix(T(12, 59, 57), GATE), fix(T(13, 0, 39), IN1), fix(T(13, 1, 30), IN2),
+        fix(T(13, 10), IN2)],
+      regions: [{ ts: T(12, 55, 0), id: CORNER.id, enter: true }, { ts: T(12, 56, 10), id: CORNER.id, enter: false },
+        { ts: T(12, 59, 57), id: YARD.id, enter: true }],
+    };
+
+    test('a red light: the stop row comes at the still and goes at the exit, no leg mid-drive', async () => {
+      const atStill = await rowsAt(T(12, 55, 12), light);
+      const J = String(atStill.journeys[atStill.journeys.length - 1].id);
+      const stop = keyed(atStill.rows, 'd-' + J);
+      expect(stop.length, 'the stop row at the still').toBe(1);
+      expect(stop[0].arrived_at).toBe(new Date(T(12, 55, 0)).toISOString());
+      expect(atStill.rows.td_mileage.length, 'no leg at a light').toBe(0);
+
+      // Automotive again, newest fix still inside: the row holds rather than
+      // blinking with every flip, and the leg still waits.
+      const rolling = await rowsAt(T(12, 55, 53), light);
+      expect(keyed(rolling.rows, 'd-' + J).length).toBe(1);
+      expect(rolling.rows.td_mileage.length).toBe(0);
+
+      // Out the far side: the OS closed the crossing. Not resent, so
+      // geo_replace_day step 5c retires it, and the drive row re-opens on the
+      // key it always had.
+      const out = await rowsAt(T(12, 56, 12), light);
+      expect(keyed(out.rows, 'd-' + J).length, 'the stop row is not sent').toBe(0);
+      const live = keyed(out.rows, J);
+      expect(live.length).toBe(1);
+      expect(live[0].departed_at, 'the drive is open again').toBe(null);
+      expect(out.rows.td_mileage.length, 'and still no leg').toBe(0);
+
+      // He reaches the yard: one drive row from 12:50:06 to the crossing, one
+      // leg, and nothing at the corner.
+      const done = await rowsAt(T(13, 20), light);
+      const drives = keyed(done.rows, J);
+      expect(drives.length, 'one continuous drive row').toBe(1);
+      expect(drives[0].arrived_at).toBe(new Date(T(12, 50, 6)).toISOString());
+      expect(drives[0].departed_at).toBe(new Date(T(12, 59, 57)).toISOString());
+      expect(done.rows.td_mileage.map(m => String(m.id))).toEqual([J]);
+      expect(allTime(done.rows).some(t => t.dest_place === 'Corner customer'), 'no row at the corner').toBe(false);
+      const yard = keyed(done.rows, 'd-' + J);
+      expect(yard.length).toBe(1);
+      expect(yard[0].arrived_at, 'the stop key now names the yard').toBe(new Date(T(12, 59, 57)).toISOString());
+    });
+
+    test('Menards: a drive-by with the tape on automotive writes no stop row', async () => {
+      // His 08:08: two readings inside, the tape never left automotive, the
+      // exit lost. A live drive row, no stop, no leg.
+      const r = await rowsAt(T(13, 5), {
+        fences: [YARD], regions: jack.regions,
+        tape: jack.tape.slice(0, 2),
+        fixes: jack.fixes.filter(f => f.ts <= T(13, 0, 39)).concat([fix(T(13, 0, 45), IN2)]),
+      });
+      const J = String(r.journeys[r.journeys.length - 1].id);
+      expect(keyed(r.rows, 'd-' + J).length).toBe(0);
+      expect(r.rows.shop_time_entries.length + r.rows.open.filter(o => o._table === 'shop_time_entries').length).toBe(0);
+      expect(keyed(r.rows, J).map(t => t.departed_at), 'still on the road').toEqual([null]);
+      expect(r.rows.td_mileage.length).toBe(0);
+    });
+  });
+
+  // ── THE STOP IS A ROW BEFORE THE CHAIN IS A LEG (owner 2026-10-01) ────────
+  // "he was def on a job site because he took photos there." Jack's afternoon:
+  // out of the yard 14:38:23, out of the truck 15:01:38 at an address nobody
+  // saved, on the road again 15:25:10. While that drive was open the stop had
+  // no row and the Time Log called it Unaccounted.
+  test.describe('a pending chain writes its closed drives and stops now', () => {
+    const YARD = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const BILL = { id: 'client-1789402572284', kind: 'client', name: 'Bill Lorson', clientId: 1789402572284, lat: 39.1071357709932, lng: -95.6648294064381 };
+    const STOP = { lat: 39.0700, lng: -95.6900 };
+    const tape = [mo(T(14, 34, 49), 'walking'), mo(T(14, 38, 23), 'automotive'), mo(T(15, 1, 38), 'cycling'),
+      mo(T(15, 25, 10), 'automotive'), mo(T(15, 45), 'onFoot')];
+    const fixes = [fix(T(14, 30), YARD), fix(T(14, 38, 20), YARD), fix(T(14, 50), { lat: 39.058, lng: -95.703 }),
+      fix(T(15, 2), STOP), fix(T(15, 10), STOP), fix(T(15, 20), STOP), fix(T(15, 25), STOP),
+      fix(T(15, 35), { lat: 39.090, lng: -95.677 }), fix(T(15, 45, 5), BILL), fix(T(16, 0), BILL)];
+    const rowsAt = (nowMs) => page.evaluate((inp) => {
+      const res = geoDeriveDay(inp);
+      const rows = geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' });
+      return JSON.parse(JSON.stringify({ res: { pending: res.pending, legs: res.legs.map(l => l.id) }, rows }));
+    }, base({ fences: [YARD, BILL], crew: false, tape: tape.filter(t => t.ts <= nowMs),
+      fixes: fixes.filter(f => f.ts <= nowMs), regions: [], nowMs,
+      clocks: [{ start: T(13, 0), end: T(18, 0) }] }));
+    const keyed = (rows, k) => rows.job_time_entries.filter(t => t.client_key === k);
+
+    test('15:30, next drive still open: the 14:38 drive and the 15:01 stop are rows', async () => {
+      const { res, rows } = await rowsAt(T(15, 30));
+      expect(res.pending, 'the chain is still pending').toBeTruthy();
+      const id = res.pending.id;
+      const drive = keyed(rows, id);
+      expect(drive.length).toBe(1);
+      expect(hm(Date.parse(drive[0].arrived_at))).toBe(hm(T(14, 38, 23)));
+      expect(drive[0].source).toBe('drive');
+      const stop = keyed(rows, 'd-' + id);
+      expect(stop.length, 'the stop has its row before the chain resolves').toBe(1);
+      expect(hm(Date.parse(stop[0].arrived_at))).toBe(hm(T(15, 1, 38)));
+      expect(hm(Date.parse(stop[0].departed_at))).toBe(hm(T(15, 25, 10)));
+      expect(stop[0].source).toBe('unsaved');
+      expect(rows.td_mileage.find(m => m.id === id), 'mileage still waits for both ends').toBeFalsy();
+    });
+
+    test('16:30, resolved at Bill Lorson: one row per key, one leg, same keys as before', async () => {
+      const before = await rowsAt(T(15, 30));
+      const after = await rowsAt(T(16, 30));
+      const id = before.res.pending.id;
+      expect(after.res.pending).toBe(null);
+      expect(after.rows.td_mileage.filter(m => m.id === id).length, 'one leg').toBe(1);
+      expect(keyed(after.rows, 'd-' + id).length, 'one stop row, on the same key').toBe(1);
+      expect(keyed(after.rows, id).length, 'one row for the first drive').toBe(1);
+      const keys = after.rows.job_time_entries.map(t => t.client_key);
+      expect(new Set(keys).size, 'no key written twice').toBe(keys.length);
+      for (const t of before.rows.job_time_entries) {
+        expect(keys, 'the resolved leg lands on ' + t.client_key).toContain(t.client_key);
+      }
+    });
+  });
+
   test.describe('rule 20: the commute', () => {
     const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
     // No flag on it. The shop IS the place you report to (owner 2026-09-15:
@@ -4910,6 +5167,147 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── THE DRIVE IS A FACT THE MOMENT IT STARTS (owner 2026-09-29) ─────────
+  //
+  // "If Jack arrives at dad's shop, it shows the arrival time with no end. If
+  // a drive starts it ends the shop time and starts the drive time right away
+  // with no end."
+  //
+  // The arrival half is the block above. Before this, a journey still on the
+  // road wrote nothing until it ended, so the timesheet had a hole for the
+  // whole drive: his 29 September drives reached the server 12 to 36 minutes
+  // after they began.
+  test.describe('the drive under way is a row with no end', () => {
+    const YARD = { id: 'place-jsyard', kind: 'shop', name: 'Plumbing Solutions By JS shop', lat: 39.0456577, lng: -95.7151106 };
+    const ROAD = { lat: 39.0400, lng: -95.7250 };
+    const F = FENCES.concat([YARD]);
+    const CLOCK = [{ start: T(7, 30), end: T(17, 0) }];
+    const AT_YARD = {
+      fences: F, clocks: CLOCK,
+      tape: [mo(T(7, 20), 'automotive'), mo(T(7, 35), 'onFoot'), mo(T(10, 3), 'automotive')],
+      fixes: [fix(T(7, 19), HOME), fix(T(7, 35, 10), YARD), fix(T(8, 30), YARD), fix(T(9, 30), YARD),
+        fix(T(10, 2), YARD), fix(T(10, 4, 30), ROAD)],
+    };
+    const derive = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e', clocks: i.clocks });
+      return JSON.parse(JSON.stringify({ rows, driving: r.driving || null, open: r.open || null }));
+    }, base(inp));
+
+    test('a minute into the drive: the shop row has an end and the drive row has none', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const shop = r.rows.shop_time_entries.find(x => x.arrived_at === new Date(T(7, 35)).toISOString() ||
+        Date.parse(x.arrived_at) <= T(7, 36));
+      expect(shop, 'the morning at the shop is a closed row').toBeTruthy();
+      expect(shop.departed_at).toBe(new Date(T(10, 3)).toISOString());
+      expect(r.rows.open.length, 'exactly one live row').toBe(1);
+      const d = r.rows.open[0];
+      expect(d._table).toBe('job_time_entries');
+      expect(d.source).toBe('drive');
+      expect(d.arrived_at).toBe(new Date(T(10, 3)).toISOString());
+      expect(d.departed_at).toBeNull();
+      expect(d.minutes).toBeNull();
+      expect(d.origin_place).toBe('Plumbing Solutions By JS shop');
+      expect(d.dest_place).toBeNull();
+    });
+
+    test('no mileage is written for a drive that has not ended', async () => {
+      // The morning run from the house is a finished leg and stays; the one
+      // still on the road has no second end, so it has no mileage (rule 6).
+      const r = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const key = r.rows.open[0].client_key;
+      expect(r.rows.td_mileage.filter(m => String(m.id) === key).length).toBe(0);
+      expect(r.rows.td_mileage.filter(m => Date.parse(m.startedIso || m.data && m.data.startedIso || 0) >= T(10, 3)).length).toBe(0);
+    });
+
+    test('when he gets there the finished drive lands on the same row, and the stop is the live one', async () => {
+      const live = await derive(Object.assign({}, AT_YARD, { nowMs: T(10, 5) }));
+      const key = live.rows.open[0].client_key;
+      const r = await derive(Object.assign({}, AT_YARD, {
+        tape: AT_YARD.tape.concat([mo(T(10, 22), 'onFoot')]),
+        fixes: AT_YARD.fixes.concat([fix(T(10, 22, 10), DOE), fix(T(10, 40), DOE)]),
+        nowMs: T(10, 45),
+      }));
+      const drive = r.rows.job_time_entries.find(x => x.client_key === key);
+      expect(drive, 'the closed drive must carry the live drive key').toBeTruthy();
+      expect(drive.source).toBe('drive');
+      expect(drive.departed_at).toBe(new Date(T(10, 22)).toISOString());
+      expect(r.rows.open.length).toBe(1);
+      expect(r.rows.open[0].source).toBe('open');
+      expect(r.rows.open[0].client_key).not.toBe(key);
+    });
+
+    test('a flip that went nowhere is not a drive, and the shop stays the live row', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, {
+        fixes: AT_YARD.fixes.slice(0, 5).concat([fix(T(10, 5), YARD), fix(T(10, 10), YARD), fix(T(10, 14), YARD)]),
+        nowMs: T(10, 15),
+      }));
+      expect(r.driving).toBeNull();
+      expect(r.rows.open.filter(x => x.source === 'drive').length).toBe(0);
+      expect(r.rows.open.length).toBe(1);
+      expect(r.rows.open[0]._table).toBe('shop_time_entries');
+    });
+
+    // AMENDED 2026-10-01. This test used to assert that a drive out of his
+    // own driveway wrote NO live row, because rule 20 may make it a commute.
+    // That was right about pay and wrong about the timesheet: Jack's 8:02 drive
+    // from home reached the server at 8:12, when he stopped, as a paid drive
+    // after all. Now the row goes up the second the drive starts, HELD (in no
+    // total), and the arrival decides: a paid drive lands on the same key, a
+    // commute closes into no row and geo_replace_day ends the live one (5c).
+    test('the drive out of his own driveway is on the road at once, held until it is judged (rule 20)', async () => {
+      const r = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD)], nowMs: T(7, 23) });
+      expect(r.rows.open.length, 'a live row the moment the drive starts').toBe(1);
+      expect(r.rows.open[0].source, 'held: in no total until the arrival decides').toBe('drive-held');
+      expect(r.rows.open[0].departed_at).toBeNull();
+      expect(r.rows.open[0].arrived_at).toBe(new Date(T(7, 20)).toISOString());
+      const held = await page.evaluate(() => _geoIsHeldSource('drive-held'));
+      expect(held, 'and the money totals already skip a -held source').toBe(true);
+    });
+
+    test('a driveway drive that turns out to be paid closes onto the same row as a paid drive', async () => {
+      const live = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD)], nowMs: T(7, 23) });
+      const key = live.rows.open[0].client_key;
+      const done = await derive({ fences: F, clocks: CLOCK,
+        tape: [mo(T(7, 20), 'automotive'), mo(T(7, 35), 'onFoot')],
+        fixes: [fix(T(7, 19), HOME), fix(T(7, 22), ROAD), fix(T(7, 35, 10), DOE), fix(T(7, 50), DOE)], nowMs: T(7, 55) });
+      const all = done.rows.job_time_entries;
+      const same = all.find(x => x.client_key === key);
+      // Either it is a paid drive on the same key, or it is a commute and no
+      // row carries the key (geo_replace_day then ends the live one). Never a
+      // second drive under a different key for the same minutes.
+      const others = all.filter(x => /^drive/.test(x.source) && x.client_key !== key && Date.parse(x.arrived_at) < T(7, 35));
+      expect(others.length).toBe(0);
+      if (same) expect(same.departed_at).toBe(new Date(T(7, 35)).toISOString());
+    });
+
+    // AMENDED 2026-10-01, same reason: a Time off day used to show no live
+    // drive at all. It shows one now, held, which is what time off means
+    // everywhere else (rule 25: held, never dropped).
+    test('a Time off day with no clock running shows the drive live, held', async () => {
+      const r = await derive(Object.assign({}, AT_YARD, { clocks: [], timeOff: [{ start: DAY, end: DAY }], nowMs: T(10, 5) }));
+      expect(r.rows.open.filter(x => x.source === 'drive').length, 'never as paid').toBe(0);
+      expect(r.rows.open.filter(x => x.source === 'drive-held').length).toBe(1);
+    });
+
+    test('never two live rows: a derive at every minute of the morning has one at most', async () => {
+      const counts = [];
+      for (let m = 0; m <= 40; m += 5) {
+        const r = await derive(Object.assign({}, AT_YARD, {
+          tape: AT_YARD.tape.concat([mo(T(10, 22), 'onFoot')]),
+          fixes: AT_YARD.fixes.concat([fix(T(10, 22, 10), DOE), fix(T(10, 40), DOE)]),
+          nowMs: T(10, 5 + m),
+        }));
+        counts.push(r.rows.open.length);
+      }
+      expect(Math.max.apply(null, counts)).toBeLessThanOrEqual(1);
+    });
+  });
+
   // ── THE SAME DAY, TOLD IN INSTALMENTS (owner 2026-09-18) ────────────────
   //
   // "I want to know that we won't eat rows or miss mileage or miss how
@@ -5226,6 +5624,227 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── RULE 26: THE GYM IS NOT DON'S (owner 2026-09-30) ───────────────────
+  // Jack's real coordinates. Don's building (a customer with a job on it) and
+  // the gym in front of it are one 600 ft circle apart from nothing. His gym
+  // mornings cluster 276 ft from Don's pin; his real visit today clustered
+  // 95 ft from it. "You can tell."
+  test.describe('rule 26: the cluster names the building, not the circle', () => {
+    const DON = { id: 'job-don', kind: 'job', name: 'Don Ixshu', jobId: 9901, lat: 39.0306563, lng: -95.7598769 };
+    const GYM_AT = { lat: 39.031371, lng: -95.759558 };            // his gym mornings
+    const DON_AT = { lat: 39.030763, lng: -95.759567 };            // his visit at Don's
+    const GYM = { id: 'place-gym', kind: 'personal', name: 'Colaw gym', lat: GYM_AT.lat, lng: GYM_AT.lng };
+    const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const visit = (at, fences, clocks) => base({
+      fences: [JHOME].concat(fences),
+      tape: [mo(T(8, 0), 'automotive'), mo(T(8, 11), 'onFoot'), mo(T(9, 52), 'automotive'), mo(T(10, 5), 'onFoot')],
+      fixes: [fix(T(7, 58), JHOME),
+        fix(T(8, 11, 10), at), fix(T(8, 30), at), fix(T(9, 0), at), fix(T(9, 30), at), fix(T(9, 50), at),
+        fix(T(10, 5, 10), JHOME), fix(T(10, 30), JHOME)],
+      clocks: clocks || [{ start: T(7, 55), end: T(12, 0) }],
+      nowMs: T(12, 0),
+    });
+    const names = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c', clocks: i.clocks });
+      const d = r.dwells.find(x => x.startTs >= Date.parse('2026-09-01T13:00:00Z') && x.kind !== 'home_office' && x.kind !== 'office');
+      const row = rows.job_time_entries.find(t => !/^drive/.test(t.source) && t.source !== 'place-office');
+      return JSON.parse(JSON.stringify({ name: d && d.name, far: !!(d && d.farFromFence),
+        source: row && row.source, dest: row && row.dest_place, job: row && row.job_id,
+        offJob: row ? _geoIsOffJobSource(row.source) : null }));
+    }, inp);
+
+    test('a gym morning 276 ft from Don\'s pin is not Don\'s', async () => {
+      const r = await names(visit(GYM_AT, [DON]));
+      // The dwell keeps the fence it arrived in for the day's other rules
+      // (rule 22), so the NAME is judged on the row, which is what every
+      // screen reads.
+      expect(r.far, 'it is somewhere nobody saved yet').toBe(true);
+      expect(r.source, 'an unsaved stop with a Save button').toMatch(/^unsaved/);
+      expect(r.job, 'no row lands on Don\'s job').toBe(null);
+      expect(r.dest, 'and none carries his name').toBe(null);
+    });
+
+    test('a real visit 95 ft from the pin is still Don\'s', async () => {
+      const r = await names(visit(DON_AT, [DON]));
+      expect(r.name).toBe('Don Ixshu');
+      expect(r.source).toBe('geofence');
+      expect(r.job).toBe('9901');
+    });
+
+    test('with the gym saved as Personal, the gym morning is the gym, and never paid', async () => {
+      const r = await names(visit(GYM_AT, [DON, GYM]));
+      expect(r.name).toBe('Colaw gym');
+      expect(r.source).toBe('place-personal');
+      expect(r.offJob, 'a personal place earns nothing').toBe(true);
+    });
+
+    test('with both saved, a visit at Don\'s is still Don\'s, not the gym next door', async () => {
+      const r = await names(visit(DON_AT, [DON, GYM]));
+      expect(r.name).toBe('Don Ixshu');
+      expect(r.job).toBe('9901');
+    });
+
+    test('a customer whose pin is geocoded 217 ft off where he parks is still that customer', async () => {
+      // Tagen Lindstrom, 28 September: four visits at 159 to 217 ft from a pin
+      // rule 23 has not learned yet. The threshold is set above them.
+      const r = await page.evaluate(() => {
+        const tagen = { id: 'c-t', kind: 'client', name: 'Tagen Lindstrom', clientId: 5, lat: 39.0354693, lng: -95.7319935 };
+        return (_gdNameAt({ lat: 39.035566, lng: -95.731237 }, [tagen], 600) || {}).name || null;
+      });
+      expect(r).toBe('Tagen Lindstrom');
+    });
+
+    test('the yard and the house keep their rank, four metres apart', async () => {
+      // Rank still decides whenever a base kind is in range: his shop and his
+      // home office share a lot on purpose and are paid differently.
+      const r = await page.evaluate(() => {
+        const shop = { id: 's', kind: 'shop', name: 'Shop', lat: 39.0307066, lng: -95.7112082 };
+        const home = { id: 'h', kind: 'home_office', name: 'Home', lat: 39.0307378, lng: -95.7112674 };
+        const at = { lat: 39.0307378, lng: -95.7112674 };     // standing on the home pin
+        return _gdNameAt(at, [home, shop], 600).name;
+      });
+      expect(r, 'the shop outranks the house, as it always has').toBe('Shop');
+    });
+
+    test('a place with its own typed radius keeps it', async () => {
+      const r = await page.evaluate(() => {
+        const big = { id: 'j', kind: 'job', name: 'Mall reroof', jobId: 1, lat: 39.0, lng: -95.0, radiusFt: 900 };
+        return (_gdNameAt({ lat: 39.0 + 0.002, lng: -95.0 }, [big], 600) || {}).name || null;   // ~730 ft
+      });
+      expect(r, 'a person said how big it is').toBe('Mall reroof');
+    });
+
+    test('junk in, nothing out', async () => {
+      const r = await page.evaluate(() => [
+        _gdNameAt(null, [], 600), _gdNameAt({ lat: 1, lng: 1 }, null, 600),
+        _gdNameAt({ lat: null, lng: 1 }, [{ lat: 1, lng: 1, kind: 'client' }], 600),
+      ]);
+      expect(r).toEqual([null, null, null]);
+    });
+
+    test('a Personal place does not offer "I report here"', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 39.031371, -95.759558);
+        const row = () => document.getElementById('place-commute-row').style.display;
+        _placeKindChanged('personal'); const personal = row();
+        _placeKindChanged('supply'); const supply = row();
+        document.getElementById('place-modal')?.remove();
+        return { personal, supply };
+      });
+      expect(r).toEqual({ personal: 'none', supply: 'flex' });
+    });
+
+    test('Personal is a place kind the Save chooser offers', async () => {
+      const r = await page.evaluate(() => ({ label: PLACE_KINDS.personal, icon: _PLACE_KIND_ICON.personal,
+        paid: _geoIsOffJobSource('place-personal'), word: _tlSourceLabel('place-personal') }));
+      expect(r).toEqual({ label: 'Personal', icon: '🙋', paid: true, word: 'Personal' });
+    });
+  });
+
+  // ── RULE 27: A DRIVE TO YOUR OWN PLACE IS YOUR OWN (owner 2026-09-30) ──
+  // "Still got a problem with drive time now showing as Don, and Jack going
+  // from his house to the shop, that's supposed to be unpaid." His real
+  // 29 September morning: house to the gym at 05:20, the gym until 06:19,
+  // home at 06:25, then out to his dad's yard at 07:21. He answered the gap
+  // 06:25 to 07:35 as "Personal time (unpaid)".
+  test.describe('rule 27: the gym run and the drive in are his own time', () => {
+    const DON = { id: 'job-don', kind: 'job', name: 'Don Ixshu', jobId: 9901, lat: 39.0306563, lng: -95.7598769 };
+    const GYM_AT = { lat: 39.031371, lng: -95.759558 };
+    const GYM = { id: 'place-gym', kind: 'personal', name: 'Colaw gym', lat: GYM_AT.lat, lng: GYM_AT.lng };
+    const JHOME = { id: 'jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const YARD = { id: 'place-js', kind: 'shop', name: 'JS shop', lat: 39.0900, lng: -95.6800, commute: true };
+    const CUST = { id: 'c-bill', kind: 'client', name: 'Bill Lorson', clientId: 77, lat: 39.0700, lng: -95.7000 };
+    const morning = (clocks, fences) => base({
+      fences: fences || [JHOME, DON, GYM, YARD, CUST],
+      tape: [mo(T(5, 20), 'automotive'), mo(T(5, 34), 'onFoot'),
+        mo(T(6, 19), 'automotive'), mo(T(6, 25), 'onFoot'),
+        mo(T(7, 21), 'automotive'), mo(T(7, 35), 'onFoot'),
+        mo(T(10, 3), 'automotive'), mo(T(10, 22), 'onFoot'),
+        mo(T(12, 43), 'automotive'), mo(T(13, 0), 'onFoot')],
+      fixes: [fix(T(5, 0), JHOME), fix(T(5, 19), JHOME),
+        fix(T(5, 34, 10), GYM_AT), fix(T(5, 50), GYM_AT), fix(T(6, 5), GYM_AT), fix(T(6, 18), GYM_AT),
+        fix(T(6, 25, 10), JHOME), fix(T(6, 50), JHOME), fix(T(7, 20), JHOME),
+        fix(T(7, 35, 10), YARD), fix(T(8, 30), YARD), fix(T(9, 30), YARD), fix(T(10, 2), YARD),
+        fix(T(10, 22, 10), CUST), fix(T(11, 30), CUST), fix(T(12, 42), CUST),
+        fix(T(13, 0, 10), YARD), fix(T(14, 0), YARD)],
+      clocks: clocks || [{ start: T(7, 38), end: T(16, 48) }],
+      nowMs: T(17, 0),
+    });
+    const run = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'c', clocks: i.clocks });
+      const at = (h, m) => Date.parse('2026-09-01T05:00:00Z') + h * 3600000 + m * 60000;
+      const legAt = (h, m) => r.legs.find(l => Math.abs(l.startTs - at(h, m)) < 60000) || null;
+      const drives = rows.job_time_entries.filter(t => /^drive/.test(t.source))
+        .map(t => new Date(Date.parse(t.arrived_at) - 5 * 3600000).toISOString().slice(11, 16));
+      const gym = rows.job_time_entries.find(t => t.dest_place === 'Colaw gym') || null;
+      const home = legAt(6, 19);
+      return JSON.parse(JSON.stringify({ drives, mileageCount: rows.td_mileage.length,
+        gymSource: gym && gym.source,
+        homeFrom: home && home.from && home.from.name,
+        anyDon: rows.job_time_entries.some(t => /Don/.test(String(t.origin_place || '') + String(t.dest_place || ''))) }));
+    }, inp);
+
+    test('no drive time for the gym run, the drive home from it, or the drive in', async () => {
+      const r = await run(morning());
+      expect(r.drives, 'only the drive between the yard and the customer bills').toEqual(['10:03', '12:43']);
+      expect(r.gymSource).toBe('place-personal');
+    });
+
+    test('the drive home from the gym is from the gym, not from Don', async () => {
+      const r = await run(morning());
+      expect(r.homeFrom).toBe('Colaw gym');
+      expect(r.anyDon, 'no row on the day names Don').toBe(false);
+    });
+
+    test('no mileage for any of the three morning drives', async () => {
+      const r = await run(morning());
+      expect(r.mileageCount, 'yard to customer and back only').toBe(2);
+    });
+
+    test('with no gym saved, the drive in is still the commute', async () => {
+      // The first drive out of the house was the gym run. Skipping it is what
+      // keeps the drive to the yard the commute, even with no Personal place.
+      const r = await run(morning(null, [JHOME, DON, YARD, CUST]));
+      expect(r.drives).not.toContain('07:21');
+    });
+
+    test('a real clock over the gym run still outranks it, as it does the commute', async () => {
+      const r = await run(morning([{ start: T(6, 0), end: T(16, 48) }]));
+      expect(r.drives).toContain('06:19');
+    });
+
+    test('rule 27 helpers: a personal end is only a Personal place', async () => {
+      const r = await page.evaluate(() => ({
+        place: _gdPersonalEnd({ kind: 'personal', name: 'Gym' }),
+        client: _gdPersonalEnd({ kind: 'client', personal: true }),
+        unsaved: _gdPersonalEnd({ kind: 'personal', unsaved: true }),
+        none: _gdPersonalEnd(null),
+        legs: _gdPersonalLegs(null, []),
+        seats: _gdLegsFollowSeats(null, []),
+      }));
+      expect(r).toEqual({ place: true, client: false, unsaved: false, none: false, legs: null, seats: null });
+    });
+
+    test('a "Personal time" answer is never a clock the deriver sees', async () => {
+      const r = await page.evaluate(() => {
+        const keep = { timeEntries: window.timeEntries, user: window._supaUser };
+        try {
+          window._supaUser = { id: 'u-jack' };
+          timeEntries.length = 0;
+          timeEntries.push(
+            { id: 1, start_time: '2026-09-01T11:25:00Z', end_time: '2026-09-01T12:35:00Z', personal: true, unpaid: true, fromGap: true, logged_by_uid: 'u-jack' },
+            { id: 2, start_time: '2026-09-01T12:38:00Z', end_time: '2026-09-01T21:48:00Z', logged_by_uid: 'u-jack' });
+          return _geoDeriveClocks(Date.parse('2026-09-01T05:00:00Z'), Date.parse('2026-09-02T05:00:00Z'))
+            .map(c => new Date(c.start).toISOString().slice(11, 16));
+        } finally { timeEntries.length = 0; (keep.timeEntries || []).forEach(e => timeEntries.push(e)); window._supaUser = keep.user; }
+      });
+      expect(r).toEqual(['12:38']);
+    });
+  });
+
   test.describe('rule 22: a stop is named from the middle of itself', () => {
     const PIN = { lat: 39.0104968, lng: -95.7790924 };          // Laurie's saved pin
     const PARKED = { lat: 39.011155, lng: -95.779699 };          // where he actually sat
@@ -5279,11 +5898,17 @@ test.describe('geo-derive: the day deriver', () => {
     // in, and still refuses to name one at all when the cluster is on no
     // fence. What it cannot do is separate two houses closer together than
     // the radius, and no re-seating rule can.
-    test('at 600 ft the house up the street is inside her circle, and says so', async () => {
+    // ── AND WHAT RULE 26 CHANGED (owner 2026-09-30) ──────────────────────
+    // OLD: 295 ft up the street is inside her 600 ft circle, so the stop took
+    // her name; that was the stated trade above. NEW: the circle still decides
+    // that he ARRIVED somewhere known, but a customer's name needs the cluster
+    // within GEO_NAME_FT (250 ft) of her pin. Jack's gym, 276 ft from Don's
+    // building, is the case that made the owner call it: "you can tell".
+    test('295 ft up the street is inside her circle but is not her house (rule 26)', async () => {
       const r = await stop(day(PARKED));
-      expect(r.far, '295 ft is well inside a 600 ft fence').toBe(false);
-      expect(r.source).toBe('client');
-      expect(r.dest, 'save the real address and the next stop there names itself').toBe('Laurie Schonfeldt');
+      expect(r.far, 'inside the circle, outside the name').toBe(true);
+      expect(r.source).toBe('unsaved');
+      expect(r.dest, 'it asks for a name instead of borrowing hers').toBe(null);
     });
 
     test('a cluster on no fence at all is still an unsaved stop, not a borrowed name', async () => {
@@ -5339,20 +5964,18 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dest).toBe('Ray Finsbury');
     });
 
-    // The one caveat, stated as a test so nobody has to remember it: rank
-    // beats distance ACROSS kinds. A job saved at the neighbour's outranks a
-    // client (job 0, client 3) and takes the stop even parked in the client's
-    // driveway. Two fences of the SAME kind are always decided by distance,
-    // which is the case the owner asked about.
-    test('a job at the neighbour outranks a client he is parked at', async () => {
+    // OLD: rank beat distance across kinds, so a job saved at the neighbour's
+    // (job 0, client 3) took the stop even parked in the client's driveway;
+    // this test called that the known trade. NEW (rule 26, owner 2026-09-30):
+    // between two named places the nearer pin wins, whatever their kinds.
+    // Rank still decides only when the yard or the house is one of them.
+    test('a job at the neighbour no longer takes a stop parked at the client (rule 26)', async () => {
       const inp = day(ODD);
       inp.fences = inp.fences.concat([{ id: 'job-6713', kind: 'job', name: 'Ray Finsbury reroof',
         jobId: 6713, lat: EVEN.lat, lng: EVEN.lng }]);
       const r = await stop(inp);
-      // A job dwell is named by the job and carries job_id rather than a
-      // client's dest_place, so the fence name is what says who took it.
-      expect(r.name, 'kind rank wins across kinds: this is the known trade').toBe('Ray Finsbury reroof');
-      expect(r.source).toBe('geofence');
+      expect(r.name, 'the nearer pin wins').toBe('Laurie Schonfeldt');
+      expect(r.source).toBe('client');
     });
 
     test('parked in her driveway: still her house, nothing changes', async () => {

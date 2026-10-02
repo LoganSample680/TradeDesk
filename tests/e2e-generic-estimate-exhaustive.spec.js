@@ -2249,13 +2249,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.pct).toBe(10);
     });
 
-    test('_geiDepositPct: defaults to 25 when the field is missing from the DOM', async () => {
+    test('_geiDepositPct: falls back to his standard when the field is missing from the DOM', async () => {
       const r = await page.evaluate(() => {
         // Clear the whole wrap (not just the input), _geiRenderDepositField is
         // idempotent on wrap.children.length, so a partial removal would leave it
         // permanently unable to rebuild the field for later tests.
         const wrap = document.getElementById('tm-deposit-wrap');
         if (wrap) wrap.innerHTML = '';
+        S.depositPct = 25;         // his standard
         _geiIsTM = true;
         const pct = _geiDepositPct();
         _geiIsTM = false;
@@ -2787,7 +2788,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         goGeiStep(2);                                       // mount the BYO page
         const bidId = _geiEditBidId;
         _editByoTitle();                                    // tap the pencil
-        const inp = document.querySelector('#byo-tbar-title input');
+        const inp = document.querySelector('#byo-pname input');
         inp.value = 'Kitchen Remodel Quote';
         inp.dispatchEvent(new Event('blur'));               // click out, no Save click
         const saved = bids.find(x => x.id === bidId);
@@ -3037,6 +3038,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const c = { id: clientId, name: 'Parity Client', addr: '1 Parity Rd, Wichita KS 67202' };
       clients = clients.filter(x => x.id !== clientId).concat([c]);
       bids = bids.filter(x => x.client_id !== clientId);
+      S.depositPct = 25;   // a deposit to show; with none set there is no deposit line (2026-09-30)
       openGenericEstimate(c, null, 'general');
       if (isTM) {
         _geiIsTM = true; _geiIsFreeForm = false;
@@ -3055,6 +3057,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
           { id: 1, section: 'Interior', label: 'Work', price: 400, on: true },
           { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
         ];
+        // Its own deposit: the box no longer starts at a built-in 25%, so this
+        // test only passed after another test had left 25 in it.
+        const dep = document.getElementById('byo-deposit-pct'); if (dep) dep.value = '25';
+        // And a total to take it of: a $0 deposit is no longer printed.
+        _byoUpdateRail();
       }
       // T&C is no longer part of the proposal document/preview at all, it
       // only shows in the accordion under the signature at the actual sign
@@ -3493,7 +3500,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const html = wrap.innerHTML;
         wrap.remove();
         return { composer: html.includes('Tell me what you are doing'),
-          build: html.includes('Build the steps'),
+          build: html.includes('Write it up'),
           picker: html.includes('Or pick from a list') };
       });
       // CHANGED 2026-09-22 (§10.4). The empty scope used to be a dashed
@@ -4567,9 +4574,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       if (!r.skip) expect(r.shown).toBe('33');
     });
 
-    test('a contractor who never set one still gets 25', async () => {
-      const r = await openFor({ ptype: 'Single family home' }, { depositPct: 0 });
-      expect(r.deposit).toBe(25);
+    test('a contractor who never set one gets no deposit; one who set 0 keeps 0', async () => {
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      const zero = await openFor({ ptype: 'Single family home' }, { depositPct: 0 });
+      expect(zero.deposit).toBe(0);
+      const never = await openFor({ ptype: 'Single family home' }, { depositPct: undefined });
+      expect(never.deposit).toBe(0);
+      await page.evaluate(() => { S.depositPct = 25; });
     });
 
     test('a junk stored deposit is ignored rather than trusted', async () => {
@@ -4579,7 +4591,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         S.depositPct = 25;
         return out;
       });
-      expect(r).toEqual([25, 25, 25, 25, 25]);
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      expect(r).toEqual([0, 0, 0, 0, 0]);
     });
 
     test('changing the deposit teaches it, so the next estimate opens there', async () => {
@@ -4946,7 +4960,10 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
   });
 
   test.describe('the proposal names itself', () => {
-    test('one item names it, several add "+N more", nothing falls back to the trade label', async () => {
+    // Changed 2026-09-30 (owner): the name was the first scope line "+N more",
+    // which was often Tim's first step ("Shut the water off +13 more"). It is
+    // the street and the trade's proposal label now, whatever the lines are.
+    test('the name is the street and the trade, not the first line of scope', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90202, name: 'Auto Name Client', addr: '12 Name Rd' };
         clients = clients.filter(x => x.id !== 90202).concat([c]);
@@ -4964,10 +4981,11 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const twoOn = _geiAutoName();
         return { none, one, three, twoOn, label: _tradeProposalLabel('plumbing') };
       });
-      expect(r.none).toBe(r.label);
-      expect(r.one).toBe('Water heater replacement');
-      expect(r.three).toBe('Water heater replacement +2 more');
-      expect(r.twoOn).toBe('Water heater replacement +1 more');
+      const named = '12 Name Rd · ' + r.label;
+      expect(r.none).toBe(named);
+      expect(r.one).toBe(named);
+      expect(r.three).toBe(named);
+      expect(r.twoOn).toBe(named);
     });
 
     test('the auto name lands on the bid, and a name he typed is never overwritten', async () => {
@@ -4981,14 +4999,14 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         _geiSyncAutoName();
         const auto = document.getElementById('gei-desc').value;
         _editByoTitle();
-        const inp = document.querySelector('#byo-tbar-title input');
+        const inp = document.querySelector('#byo-pname input');
         inp.value = 'Smith job, phase 1';
         inp.dispatchEvent(new Event('blur'));
         _byoItems.push({ id: 2, section: 'Work', label: 'Add EV charger', price: 900, on: true });
         _geiSyncAutoName();
         return { auto, after: document.getElementById('gei-desc').value, userSet: _geiDescUserSet };
       });
-      expect(r.auto).toBe('Panel upgrade');
+      expect(r.auto).toMatch(/^13 Name Rd · /);
       expect(r.userSet).toBe(true);
       expect(r.after).toBe('Smith job, phase 1');
     });
@@ -5018,12 +5036,12 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
           liveDesc: document.getElementById('gei-desc').value
         };
       });
-      expect(r.beforeName).toBe('Panel upgrade');
-      expect(r.aType).toBe('Panel upgrade, Option A');
+      expect(r.beforeName).toMatch(/^16 Option Rd · /);
+      expect(r.aType).toBe(r.beforeName + ', Option A');
       expect(r.aUserSet).toBe(true);
-      expect(r.bType).toBe('Panel upgrade, Option B');
+      expect(r.bType).toBe(r.beforeName + ', Option B');
       expect(r.bUserSet).toBe(true);
-      expect(r.liveDesc, 'adding work to Option B must not rename it').toBe('Panel upgrade, Option B');
+      expect(r.liveDesc, 'adding work to Option B must not rename it').toBe(r.beforeName + ', Option B');
     });
 
     test('_geiAutoName survives junk state', async () => {
@@ -5404,7 +5422,9 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.blank, 'a blank field still takes his own standard').toBe(40);
       expect(r.typed).toBe(33);
       expect(r.junk).toBe(40);
-      expect(r.noDefault).toBe(25);
+      // Changed 2026-09-30 (owner: "Not everybody wants money upfront"): no
+      // standard set means no deposit, and a 0 he set is kept, not swapped for 25.
+      expect(r.noDefault).toBe(0);
     });
 
     // The client he signs at the kitchen table is usually BRAND NEW, and the

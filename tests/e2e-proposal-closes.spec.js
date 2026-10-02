@@ -266,6 +266,7 @@ test.describe('the proposal closes: Hetty and Barry', () => {
       openTMEstimate(getClientById(97001));
       document.getElementById('gei-scope-say').value = 'pressure wash the house and paint two coats';
       _geiScopeBuild('tm-scope-wrap');
+      /* he picked when he bills (never a default, owner 2026-09-29) */ _tmBillingCycle = 'weekly'; 
       const on = document.getElementById('tm-nte-on'); if (on) { on.checked = true; on.dispatchEvent(new Event('change')); }
       const c = document.getElementById('tm-nte-cap'); if (c) { c.value = '6800'; c.dispatchEvent(new Event('input')); }
       let d = ''; const real = window._showProposalPreviewOverlay;

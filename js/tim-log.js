@@ -397,6 +397,31 @@ function timLogKept(ref,lines,surface){
   }catch(_e){return null;}
 }
 
+// ── A LINE TIM MADE, FIXED BY HAND (owner 2026-09-29: "Tim is only going to
+// get smarter the more he's used") ────────────────────────────────────────
+// The moment a man retypes a line Tim wrote, that pair is the most useful
+// thing Tim will ever be told: what he made, and what it should have been.
+// One 'fix' row, same queue, same scrub: `said` is Tim's line, `made` is
+// {field, tim, kept}. The nightly retrain (scripts/ops/tim-fixes.sql) reads
+// these; nothing on the phone changes because of them.
+const _timFixSent=new Set();
+function timLogFix(field,tim,kept,surface,ref){
+  try{
+    const a=String(tim==null?'':tim).trim(),b=String(kept==null?'':kept).trim();
+    if(!a||a===b)return null;
+    const key=String(field||'')+'|'+a+'|'+b;
+    if(_timFixSent.has(key))return null;
+    _timFixSent.add(key);
+    const t=_timScrubAll(a).slice(0,240),k=_timScrubAll(b).slice(0,240);
+    return _timQueueRich({
+      said:t,kind:'fix',family:String(field||'').slice(0,40)||null,
+      page:(()=>{try{return (document.querySelector('.pg.active')||{}).id||'';}catch(_e){return '';}})(),
+      made:{field:String(field||''),tim:t,kept:k},surface:String(surface||'').slice(0,12)||null,
+      ref:ref==null||ref===''?null:String(ref).slice(0,64),at:new Date().toISOString(),
+    });
+  }catch(_e){return null;}
+}
+
 let _timFlushing=false;
 async function timLearnFlush(){
   if(_timFlushing)return 0;

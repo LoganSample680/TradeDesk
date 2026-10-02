@@ -3079,6 +3079,19 @@ function openInvoice(bidId){
   const _scope=(bid.scope&&bid.scope.length)?bid.scope
     :(bid.lineItems&&bid.lineItems.length)?bid.lineItems.map(function(it){return it.desc||it.name||'Work';})
     :null;
+  // A quick invoice carries its own rows: the days, the labor, the parts
+  // the way he chose to show them (just the total, listed, or priced), the
+  // charges. Drawn as the preview draws them, so what he saw is what they get.
+  if(Array.isArray(bid.rows)&&bid.rows.length){
+    html+='<table class="inv-table"><thead><tr><th>Work performed</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+    (bid.work||[]).forEach(function(w){html+='<tr><td colspan="2">'+esc(w)+'</td></tr>';});
+    bid.rows.forEach(function(r){
+      const amt=r.amount!=null?fmt(r.amount):'';
+      if(r.sub)html+='<tr class="inv-sub"><td style="padding-left:22px;color:#555;border-bottom:0">'+esc(r.text)+'</td><td class="amt" style="color:#555;font-weight:500;border-bottom:0">'+amt+'</td></tr>';
+      else html+='<tr><td>'+(r.head?'<strong>'+esc(r.text)+'</strong>':esc(r.text))+'</td><td class="amt">'+amt+'</td></tr>';
+    });
+    html+='</tbody></table>';
+  }else{
   html+='<table class="inv-table"><thead><tr><th>Work performed</th></tr></thead><tbody>';
   if(_scope){
     _scope.forEach(function(line){
@@ -3088,12 +3101,23 @@ function openInvoice(bidId){
     html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td></tr>';
   }
   html+='</tbody></table>';
+  }
+  // His note to them, signed, the way the proposal prints it.
+  if(bid.note&&String(bid.note).trim()){
+    html+='<div style="margin:16px 0;padding:16px 18px;border-radius:12px;background:#F6F7F9;border:1px solid #E6E8EC">'+
+      '<div style="font-size:15px;line-height:1.6;color:#1e293b;white-space:pre-line">'+esc(bid.note)+'</div>'+
+      (h.signerName?'<div style="margin-top:10px;font-size:14px;font-weight:700;color:#0b1220">'+esc(h.signerName)+'</div>':'')+
+    '</div>';
+  }
   // TOTALS. Subtotal, tax when the contractor charges it, then payments applied,
   // then the balance. Tax gets its own line because a lump sum with tax baked in
   // is the other thing clients query.
-  const _taxRate=parseFloat(h.salesTaxRate)||0;
+  // The tax the invoice charged, when it says (the quick invoice taxes parts,
+  // not hours, so backing it out of the total would be wrong); otherwise the
+  // old way, from his rate.
+  const _taxRate=bid.salesTax>0?(parseFloat(bid.salesTaxRate)||0):(parseFloat(h.salesTaxRate)||0);
   const _gross=bid.amount||0;
-  const _sub=_taxRate>0?Math.round((_gross/(1+_taxRate/100))*100)/100:_gross;
+  const _sub=bid.salesTax>0?Math.round((_gross-bid.salesTax)*100)/100:(_taxRate>0?Math.round((_gross/(1+_taxRate/100))*100)/100:_gross);
   const _tax=Math.round((_gross-_sub)*100)/100;
   // Tax stays broken out even under the one-price rule: sales tax is a legal line
   // the client is entitled to see, and it is not a number anyone haggles over.

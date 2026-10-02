@@ -19,6 +19,31 @@ test.describe('traced trips', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    await page.evaluate(() => { window.__tracedRealSupa = window._supa; });
+  });
+  // Several tests swap in a hand-made _supa that knows only update(). A save
+  // they trigger is debounced two seconds, so on a slow engine it fired in a
+  // LATER test against that stub and logged "select is not a function"
+  // (webkit, PR #129). Each test puts the real client back and drops the
+  // pending save it started, so no test's stub outlives the test.
+  // Clearing the timer after the test was not enough: seed() itself schedules
+  // a save two seconds out, the test then swaps in its stub and awaits, and on
+  // a slow WebKit runner that save fired MID-test against the stub (PR #128,
+  // 2026-09-30, same "select is not a function"). No test here needs a real
+  // cloud save, so for the length of each test the save does nothing, and the
+  // real one comes back after it.
+  test.beforeEach(async () => {
+    await page.evaluate(() => {
+      if (window.__tracedRealFlush === undefined && typeof _flushSaveNow === 'function') window.__tracedRealFlush = window._flushSaveNow;
+      window._flushSaveNow = () => Promise.resolve();
+    });
+  });
+  test.afterEach(async () => {
+    await page.evaluate(() => {
+      if (typeof _syncTimer !== 'undefined' && _syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+      if (window.__tracedRealSupa !== undefined) window._supa = window.__tracedRealSupa;
+      if (window.__tracedRealFlush !== undefined) window._flushSaveNow = window.__tracedRealFlush;
+    });
   });
   test.afterAll(async () => { await page.context().close(); });
 

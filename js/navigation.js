@@ -242,6 +242,10 @@ function _applyEmployeeNavGating(){
   if(_brand)_brand.onclick=_multiHat
     ?()=>{if(typeof _hatSwitcherMenu==='function')_hatSwitcherMenu();}
     :()=>{if(typeof _eggLogoTap==='function')_eggLogoTap();};
+  // The egg is SEVEN taps and the first six do nothing on purpose, so the
+  // dead-control detector must not watch it (hotfix, error_log 284/286,
+  // 2026-10-02). The hat switcher opens a menu on one tap, so it is watched.
+  if(_brand)_brand.toggleAttribute('data-obs-quiet',!_multiHat);
   if(_chev)_chev.style.display=_multiHat?'':'none';
   if(_multiHat)_hatTeachOnce();
 }

@@ -6332,7 +6332,9 @@ test.describe('BYO estimate, auto-save, auto-fill cost, gauge dollars, scope pro
     expect(r.isFreeForm).toBe(true);
   });
 
-  test('_byoUpdateRail auto-fills cost field from Materials section total', async () => {
+  // Changed 2026-09-30 (owner: "your cost should always default to 0"): the
+  // cost field used to fill itself from materials, crew pay and the drive.
+  test('_byoUpdateRail leaves Your cost at 0: it never fills itself from materials', async () => {
     const r = await page.evaluate(() => {
       if (typeof openGenericEstimate !== 'function') return null;
       const c = { id: 78002, name: 'Mat Client', addr: '2 Mat St' };
@@ -6352,7 +6354,7 @@ test.describe('BYO estimate, auto-save, auto-fill cost, gauge dollars, scope pro
       return { costVal };
     });
     if (r === null) return;
-    expect(r.costVal).toBe(45);
+    expect(r.costVal).toBe(0);
   });
 
   test('_injectRrpItems restores RRP items when client.rrpDisturb=yes (resume scenario)', async () => {
@@ -6916,7 +6918,7 @@ test.describe('Crew labor cost in profit gauge', () => {
     expect(r).toBe(130); // 2 hrs × ($39 Joe + $26 Maria)
   });
 
-  test('crew payroll feeds the BYO expected cost as an added expense', async () => {
+  test('crew payroll shows beside the BYO cost but never fills it (owner 2026-09-30: cost defaults to 0)', async () => {
     const r = await page.evaluate((setup) => {
       if (typeof _byoUpdateRail !== 'function') return null;
       eval('(' + setup + ')()');
@@ -6929,7 +6931,7 @@ test.describe('Crew labor cost in profit gauge', () => {
       return { cost: costEl ? parseFloat(costEl.value) : null, display: wrap ? wrap.style.display : 'missing' };
     }, setupCrew.toString());
     if (r === null) return;
-    expect(r.cost).toBe(278);          // $200 materials + $78 crew payroll
+    expect(r.cost || 0).toBe(0);       // was $200 materials + $78 crew payroll
     expect(r.display).not.toBe('none');
   });
 

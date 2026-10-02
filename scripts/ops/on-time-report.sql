@@ -52,3 +52,51 @@ from flips f
 left join auth.users u on u.id = f.uid
 group by f.d, who
 order by who, f.d;
+
+-- ── ROWS ON TIME (owner 2026-09-30) ─────────────────────────────────────
+-- Second query. Did the TIMESHEET and MILEAGE rows reach the server within 10
+-- seconds of the moment they describe? Same window (6am to 6pm Central, last
+-- seven days), one row per person per day per kind:
+--   drive    = a drive row's first write minus the drive's start (the live
+--              drive row, PR #129)
+--   stop     = an arrival row's first write minus the arrival
+--   mileage  = a mileage leg's first write (td_mileage.created_at,
+--              migration 20261057) minus the drive's end. Rows written
+--              before that migration have no first write and are skipped.
+with days as (
+  select generate_series(
+    (now() at time zone 'America/Chicago')::date - 6,
+    (now() at time zone 'America/Chicago')::date,
+    interval '1 day')::date as d
+),
+rows as (
+  select j.employee_user_id uid,
+         case when j.source ~ '^drive' then 'drive' else 'stop' end kind,
+         j.arrived_at at_ts,
+         extract(epoch from (j.created_at - j.arrived_at)) lag_s
+    from job_time_entries j
+   where j.arrived_at > now() - interval '8 days'
+  union all
+  select s.employee_user_id, 'stop', s.arrived_at,
+         extract(epoch from (s.created_at - s.arrived_at))
+    from shop_time_entries s
+   where s.arrived_at > now() - interval '8 days'
+  union all
+  select m.user_id, 'mileage', (m.data->>'endedIso')::timestamptz,
+         extract(epoch from (m.created_at - (m.data->>'endedIso')::timestamptz))
+    from td_mileage m
+   where m.created_at is not null and m.data->>'gps' = 'true'
+     and (m.data->>'endedIso') is not null
+     and m.created_at > now() - interval '8 days'
+)
+select (r.at_ts at time zone 'America/Chicago')::date d,
+       coalesce(u.raw_user_meta_data->>'full_name', u.email) who,
+       r.kind, count(*) n,
+       round(100.0 * avg((r.lag_s <= 10)::int)) pct_10s,
+       round(percentile_cont(0.5) within group (order by r.lag_s)::numeric) med_s
+  from rows r
+  join days on days.d = (r.at_ts at time zone 'America/Chicago')::date
+  left join auth.users u on u.id = r.uid
+ where extract(hour from r.at_ts at time zone 'America/Chicago') between 6 and 17
+ group by 1, 2, 3
+ order by who, d, kind;

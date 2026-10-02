@@ -658,8 +658,11 @@ function _closeStylePicker(){
 // get back to home page"). There it saves the draft and goes home.
 function _stylePickCancel(){
   const onEst=document.querySelector('.pg.active')?.id==='pg-est-generic';
+  // Going home: the picker goes now, not after a fade on a timer. The save
+  // that follows can hold the main thread past the fade on a slow phone, and
+  // the picker would sit over Home until it lets go.
+  if(onEst){document.getElementById('_style-pick-ov')?.remove();if(typeof _geiSaveAndExit==='function')_geiSaveAndExit();return;}
   _closeStylePicker();
-  if(onEst&&typeof _geiSaveAndExit==='function')_geiSaveAndExit();
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
@@ -746,7 +749,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     const lines=_getTradeLines();
     if(lines.length>1){
       _showTradePicker('Which trade is this job for?',t=>{
-        _activeTrade=t;_renderNavTradeSwitcher();
+        _activeTrade=t;if(typeof _rememberTrade==='function')_rememberTrade(t);_renderNavTradeSwitcher();
         _showEstimateStylePicker(c,_overrideAddr);
       });
       return;
@@ -1804,7 +1807,7 @@ function renderClientDetail(){
   const _ltv=_wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
   const _tier=getClientTier(c);
   const _lastContactStr=(()=>{
-    const d=c.last_contact_date;if(!d)return '-';
+    const d=c.last_contact_date;if(!d)return 'never';
     const days=Math.floor((Date.now()-new Date(d+'T12:00').getTime())/86400000);
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
@@ -1856,7 +1859,7 @@ function renderClientDetail(){
       '</div>';
     const _div='<div style="width:1px;background:var(--border2);margin:3px 0;flex:0 0 auto"></div>';
     _heroMets.innerHTML='<div style="display:flex;align-items:stretch;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:12px 4px">'+
-      _cell('Lifetime value',_ltv>0?fmt(_ltv):'-')+_div+
+      _cell('Spent with you',_ltv>0?fmt(_ltv):'-')+_div+
       _cell('Jobs',_wonBids.length?String(_wonBids.length):'-')+_div+
       _cell('Last contact',_lastContactStr)+
     '</div>';
@@ -1950,7 +1953,18 @@ function renderClientDetail(){
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>'+_newPropBtn;
     }else{
-      _cdActions.innerHTML=_newPropBtn;
+      // NEXT (owner 2026-09-29): "a Next button on each customer pointing at
+      // the single next step." The big button is whatever this customer is
+      // waiting on; New proposal stays one tap away underneath it.
+      const nx=_clientNext(c.id);
+      _cdActions.innerHTML=nx
+        ?('<button id="cd-next" onclick="'+nx.fn+'" style="width:100%;padding:13px 16px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left">'+
+            '<span style="flex:1;min-width:0"><span style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.75">Next</span>'+
+              '<span style="display:block;font-size:16px;font-weight:800">'+escHtml(nx.label)+'</span>'+
+              (nx.sub?'<span style="display:block;font-size:12.5px;font-weight:500;opacity:.8;margin-top:1px">'+escHtml(nx.sub)+'</span>':'')+
+            '</span><span aria-hidden="true" style="font-size:22px;opacity:.8">\u203a</span></button>'+
+          '<button onclick="openEstimateForClient()" style="width:100%;margin-top:8px;padding:11px;border-radius:var(--r-lg);border:0;background:none;color:var(--denim);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer'+(_lock?';opacity:.55':'')+'">'+(_lock?svgIcon('🔒',{size:14})+' ':'')+'New proposal</button>')
+        :_newPropBtn;
     }
   }
   renderCDTimeline();
@@ -1962,6 +1976,46 @@ function renderClientDetail(){
   renderCDAddresses();
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
+}
+// THE ONE THING THIS CUSTOMER IS WAITING ON, or null when it is a new
+// proposal (the plain button already says that). Money first: work done and
+// not billed, then money billed and not collected, then the paperwork that
+// gets to money. Each answer is an action he can take from here in one tap.
+function _clientNext(cid){
+  const c=getClientById(cid);if(!c)return null;
+  const same=v=>String(v)===String(cid);
+  const money=n=>'$'+Math.round(n).toLocaleString('en-US');
+  // 1 Worked, not billed: the same rows Ready to bill shows on Home.
+  const ready=(typeof _tb!=='undefined'&&_tb&&_tb.lab&&typeof _tbRows==='function')?_tbRows(_tb.lab).find(r=>same(r.cid)):null;
+  if(ready&&ready.total>0){
+    const n=(ready.days&&ready.days.length)||0;
+    return {k:'bill',label:'Bill '+money(ready.total),sub:n?(n+' day'+(n>1?'s':'')+' of work not billed yet'):'Work not billed yet',
+      fn:'openQuickInvoice('+JSON.stringify(ready.cid).replace(/"/g,'&quot;')+','+JSON.stringify(ready.pick||'').replace(/"/g,'&quot;')+')'};
+  }
+  const cb=getClientBids(cid);
+  const won=cb.filter(b=>b.status==='Closed Won');
+  // 2 Billed, not collected.
+  const owed=won.reduce((s,b)=>s+Math.max(0,getBidBalance(b)),0);
+  const tk=todayKey();
+  const jobs=getClientJobs(cid).filter(j=>j.eventType!=='estimate');
+  const unsched=won.find(b=>getBidBalance(b)>0.01&&!b.completion_date&&!jobs.some(j=>j.bid_id===b.id));
+  if(owed>0.01&&!unsched)return {k:'collect',label:'Collect '+money(owed),sub:'Balance on signed work',fn:'openQuickPayFromOverview()'};
+  // 3 Signed, not on the calendar.
+  if(unsched)return {k:'schedule',label:'Schedule the job',sub:'Signed, not on the calendar yet',fn:'schedFromBid('+unsched.id+')'};
+  // 4 Work done with nothing to bill it against.
+  const st=getClientStage(cid).stage;
+  if(st==='work_done')return {k:'invoice',label:'Send the invoice',sub:'The work is done',fn:'openQuickInvoice('+JSON.stringify(cid).replace(/"/g,'&quot;')+')'};
+  // 5 A proposal: finish it, or chase it.
+  const pend=cb.filter(b=>b.status==='Pending');
+  const draft=pend.find(b=>!b.signingToken);
+  if(draft&&!pend.some(b=>b.signingToken))return {k:'send',label:'Send the proposal',sub:'Saved, not sent',fn:'openBidDetail('+draft.id+')'};
+  const out=pend.filter(b=>b.signingToken).sort((a,b)=>String(a.bid_date||'').localeCompare(String(b.bid_date||'')))[0];
+  if(out){
+    const d=out.bid_date?Math.round((new Date(tk+'T12:00:00')-new Date(out.bid_date+'T12:00:00'))/86400000):0;
+    if(c.phone&&d>=3)return {k:'follow',label:'Follow up',sub:'Proposal out '+d+' days, not signed',fn:'textClient()'};
+    return {k:'wait',label:'Proposal is out',sub:'Waiting on their signature'+(d>0?(', sent '+d+' day'+(d>1?'s':'')+' ago'):''),fn:'openBidDetail('+out.id+')'};
+  }
+  return null;
 }
 // Site-access note (gate code, dog, parking), saved PER PROPERTY from inside that
 // property's accordion row. Internal only: the crew sees it on this address's job
@@ -3543,7 +3597,7 @@ function _cdPropCardHtml(c,a,idx,total){
     const openHtml=
       (attnRows?_secHdr('Needs attention')+attnRows:'')+
       (openJobs.length?_secHdr('On the calendar')+openJobs.map(jobRow).join(''):'')+
-      (pipeline.length?_secHdr('In the pipeline')+pipeline.map(pipeRow).join(''):'');
+      (pipeline.length?_secHdr('Not signed yet')+pipeline.map(pipeRow).join(''):'');
     const items={length:needsAttention.length+openJobs.length+pipeline.length}; // section count for the layout decisions below
     const workBlock=items.length?`<div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">

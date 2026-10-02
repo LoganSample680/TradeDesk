@@ -158,6 +158,79 @@ function freshFix(e) {
   return !(stale > 0);
 }
 
+// ── A FIX IS A TRIGGER WHILE AN ARRIVAL IS WAITING ON ONE (owner 2026-10-02) ─
+// "everything needs to hit in 10 seconds or less." An arrival ends an open
+// drive on three pieces of evidence (_gdArrivalSettled, js/geo-derive.js): the
+// fence crossing, a fix inside the fence after it, and the tape leaving
+// automotive. The first and the last are triggers above; the fix is not, so
+// when the fix landed LAST the stop waited for whatever trigger came next, up
+// to the half-hourly ping. The leg's four-minute wait has the same shape: it
+// passes on the clock, and only a derive can notice.
+//
+// So a batch of fixes derives too, but only inside that window, and the rule
+// is the deriver's own gates read off the cheapest evidence there is: one
+// indexed read (geo_events_dedupe_uq leads on employee_user_id, type, ts) of
+// this person's crossings and motion flips over the last ARRIVAL_WATCH_MS.
+//   - the newest crossing of a named region is an ENTER with no exit since;
+//   - the tape has left automotive since that enter and is still off it
+//     (gate 3: without it the derive cannot end the drive, so it is wasted);
+//   - the batch carries a fresh fix taken after the enter.
+// Outside that window a fix is still the breadcrumb it always was. The window
+// is stillEndMs (js/geo-derive.js GEO_DERIVE_DEFAULTS), the deriver's own "a
+// truck that sits this long has parked": past it the tape ends the drive by
+// itself and the next ordinary trigger finds it.
+//
+// location_pings cannot use this: the phone inserts them straight into the
+// table and no server code sees the insert. The same reading reaches this
+// function as a `fix` in the next flush, which is the door this watches.
+const ARRIVAL_WATCH_MS = 10 * 60000;
+const WATCH_TYPES = ["regionEnter", "regionExit", "motion"];
+// The deriver's own reading of the tape (_gdKind): anything else says nothing.
+const AUTO_KINDS = new Set(["automotive", "driving"]);
+const OFF_KINDS = new Set(["onFoot", "walking", "running", "cycling", "still", "stationary"]);
+//
+// `openSince` is the caller's free answer to "is anybody standing in a fence
+// right now": ingest-geo's own state machine already opens a dwell on every
+// enter and closes it on the exit (geo_device_state, read on every flush
+// anyway). Passed, it keeps the read off every flush that is not inside an
+// arrival window, which is nearly all of them. Left out, the read decides.
+export async function arrivalWatchDays(svc, uid, evs, nowMs, openSince) {
+  try {
+    if (!Array.isArray(evs) || daysToDerive(evs, nowMs).length) return [];
+    if (openSince !== undefined && !(nowMs - Number(openSince) <= ARRIVAL_WATCH_MS)) return [];
+    const fx = evs.filter((e) => e && FRESH_FIX_TYPES.includes(e.type) && freshFix(e) &&
+      e.ts > 0 && e.ts <= nowMs + TWO_HOURS && e.lat != null);
+    if (!fx.length) return [];
+    const { data, error } = await svc.from("geo_events")
+      .select("type,kind,region_id,ts")
+      .eq("employee_user_id", uid).in("type", WATCH_TYPES)
+      .gte("ts", new Date(nowMs - ARRIVAL_WATCH_MS).toISOString())
+      .order("ts", { ascending: false }).limit(200);
+    if (error || !Array.isArray(data)) return [];
+    // Newest first. 'fence' is the OS's anonymous twin of a named crossing
+    // (see ingest-geo, ONE CROSSING, ONE EVENT) and names no place.
+    const exited = new Set();
+    let enter = null, tape = null;
+    for (const r of data) {
+      const ts = Date.parse(r && r.ts);
+      if (!(ts > 0)) continue;
+      if (r.type === "motion") {
+        const k = String(r.kind || "");
+        if (tape == null && (AUTO_KINDS.has(k) || OFF_KINDS.has(k))) tape = { ts, auto: AUTO_KINDS.has(k) };
+        continue;
+      }
+      const rid = String(r.region_id || "");
+      if (!rid || rid === "fence") continue;
+      if (r.type === "regionExit") { exited.add(rid); continue; }
+      if (!exited.has(rid)) { enter = { ts, rid }; break; }
+    }
+    if (!enter || !tape || !(tape.ts > enter.ts) || tape.auto) return [];
+    const after = fx.filter((e) => e.ts > enter.ts);
+    if (!after.length) return [];
+    return [centralDayKey(Math.max(...after.map((e) => e.ts)))];
+  } catch { return []; }
+}
+
 // ── A CACHED FIX RE-SENT IS NOT A NEW FIX (owner 2026-09-18, on Jack) ──────
 // The twin of the guard in _geoFixLogPush (js/geo-track.js), and it has to
 // exist on BOTH sides: that one protects the phone's own log, this one is what
@@ -270,10 +343,12 @@ async function pageAll(build) {
 //
 // If the RPC is not deployed yet the paged read still runs.
 const DAY_CACHE = new Map();
+const PING_CACHE = new Map();
+const CLOCK_CACHE = new Map();
 const DAY_CACHE_TTL_MS = 10 * 60000;
 const DAY_OVERLAP_MS = 2 * 60000;
 const DAY_CACHE_MAX = 64;
-export function _dayCacheClear() { DAY_CACHE.clear(); }
+export function _dayCacheClear() { DAY_CACHE.clear(); PING_CACHE.clear(); CLOCK_CACHE.clear(); }
 
 function decodeEvidence(data) {
   const out = [];
@@ -344,6 +419,125 @@ function sliceDay(byId, cap) {
     .sort((x, y) => (x.ms - y.ms) || (x.id - y.id))
     .slice(0, cap)
     .map((e) => e.row);
+}
+
+// The day's location_pings and the account's clocks, kept the same way as
+// the evidence above (egress, 2026-10-01).
+//
+// After dayEvents stopped re-reading the day, these two were most of what was
+// left: every trigger upload pulled the person's whole day of pings and every
+// non-deleted clock the account has ever written. Both are kept here while
+// the worker stays warm and topped up with only what changed since the last
+// read, using location_pings.created_at and td_time_entries.updated_at
+// (migration 20261059 adds the first; the second has always existed). A clock
+// edited or deleted since the last read comes back in the top-up and replaces
+// or drops the kept row, so the set handed to the deriver is the set a whole
+// read would return.
+//
+// The same escape hatches as dayEvents: no copy, an old one, an error (the
+// column not deployed yet included), a top-up that fills its page, a whole
+// read that hit its cap, or a fresh read asked for. Each falls back to the
+// exact read this used to make.
+const CLOCK_CAP = 1000;
+
+function keepIn(map, key, val) {
+  if (map.size >= DAY_CACHE_MAX) map.delete(map.keys().next().value);
+  map.set(key, val);
+}
+
+function pingsWhole(svc, uid, fromIso, toIso, sel) {
+  return pageAll((f, t) => svc.from("location_pings")
+    .select(sel)
+    .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+    .order("ts", { ascending: true }).range(f, t));
+}
+
+function pingOut(r) { return { ts: r.ts, lat: r.lat, lon: r.lon, accuracy: r.accuracy }; }
+
+function pingSlice(byId, cap) {
+  return [...byId.values()]
+    .sort((x, y) => (Date.parse(x.ts) - Date.parse(y.ts)) || String(x.id).localeCompare(String(y.id)))
+    .slice(0, cap)
+    .map(pingOut);
+}
+
+export async function dayPings(svc, uid, fromIso, toIso, opts = null) {
+  const cap = PAGE * MAX_PAGES;
+  const key = uid + "|" + fromIso + "|" + toIso;
+  const now = Date.now();
+  try {
+    const hit = (opts && opts.fresh) ? null : PING_CACHE.get(key);
+    if (hit && now - hit.readAt < DAY_CACHE_TTL_MS) {
+      const { data, error } = await svc.from("location_pings")
+        .select("id,ts,lat,lon,accuracy")
+        .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
+        .gte("created_at", new Date(hit.readAt - DAY_OVERLAP_MS).toISOString())
+        .order("ts", { ascending: true }).range(0, PAGE - 1);
+      if (!error && Array.isArray(data) && data.length < PAGE && data.every((r) => r && r.id)) {
+        for (const r of data) hit.byId.set(String(r.id), r);
+        hit.readAt = now;
+        return pingSlice(hit.byId, cap);
+      }
+      PING_CACHE.delete(key);
+    }
+    const rows = await pingsWhole(svc, uid, fromIso, toIso, "id,ts,lat,lon,accuracy");
+    if (rows.length && rows.every((r) => r && r.id)) {
+      if (rows.length < cap) {
+        const byId = new Map();
+        for (const r of rows) byId.set(String(r.id), r);
+        keepIn(PING_CACHE, key, { byId, readAt: now });
+      }
+      return rows.map(pingOut);
+    }
+    if (!rows.length) {
+      // An empty day is worth keeping too: the next read is then a top-up.
+      keepIn(PING_CACHE, key, { byId: new Map(), readAt: now });
+      return rows;
+    }
+  } catch { PING_CACHE.delete(key); }
+  return pingsWhole(svc, uid, fromIso, toIso, "ts,lat,lon,accuracy");
+}
+
+function clocksWhole(svc, cid) {
+  return svc.from("td_time_entries").select("data").eq("user_id", cid).is("deleted_at", null);
+}
+
+export async function accountClocks(svc, cid, opts = null) {
+  const now = Date.now();
+  try {
+    const hit = (opts && opts.fresh) ? null : CLOCK_CACHE.get(cid);
+    if (hit && now - hit.readAt < DAY_CACHE_TTL_MS) {
+      const { data, error } = await svc.from("td_time_entries")
+        .select("id,data,deleted_at")
+        .eq("user_id", cid)
+        .gte("updated_at", new Date(hit.readAt - DAY_OVERLAP_MS).toISOString())
+        .range(0, CLOCK_CAP - 1);
+      if (!error && Array.isArray(data) && data.length < CLOCK_CAP && data.every((r) => r && r.id != null)) {
+        for (const r of data) {
+          if (r.deleted_at) hit.byId.delete(String(r.id));
+          else hit.byId.set(String(r.id), { data: r.data });
+        }
+        if (hit.byId.size < CLOCK_CAP) {
+          hit.readAt = now;
+          return { data: [...hit.byId.values()] };
+        }
+      }
+      CLOCK_CACHE.delete(cid);
+    }
+    const { data, error } = await svc.from("td_time_entries")
+      .select("id,data").eq("user_id", cid).is("deleted_at", null);
+    if (!error && Array.isArray(data) && data.every((r) => r && r.id != null)) {
+      // At the cap a whole read is itself truncated, so a merged copy could
+      // hold rows it would not. Not kept; used as read.
+      if (data.length < CLOCK_CAP) {
+        const byId = new Map();
+        for (const r of data) byId.set(String(r.id), { data: r.data });
+        keepIn(CLOCK_CACHE, cid, { byId, readAt: now });
+      }
+      return { data: data.map((r) => ({ data: r.data })) };
+    }
+  } catch { CLOCK_CACHE.delete(cid); }
+  return clocksWhole(svc, cid);
 }
 
 // The two settings the deriver uses, workHours and timeOff, and nothing else.
@@ -458,12 +652,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // rebuild-day is the only caller that passes opts: a person asked for
     // this day again, so it is read whole, never from the kept copy.
     dayEvents(svc, uid, fromIso, toIso, { fresh: !!opts }),
-    pageAll((f, t) => svc.from("location_pings")
-      .select("ts,lat,lon,accuracy")
-      .eq("employee_user_id", uid).gte("ts", fromIso).lt("ts", toIso)
-      .order("ts", { ascending: true }).range(f, t)),
+    dayPings(svc, uid, fromIso, toIso, { fresh: !!opts }),
     svc.rpc("geo_fences_for", { p_contractor: cid, p_day: day }),
-    svc.from("td_time_entries").select("data").eq("user_id", cid).is("deleted_at", null),
+    accountClocks(svc, cid, { fresh: !!opts }),
     workSettings(svc, cid),
   ]);
 
@@ -563,6 +754,9 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     // halves of the one deriver cannot disagree about what a clock is.
     if (!d.start_time) continue;
     if (!d.end_time && !d.open) continue;
+    // "Personal time" is a gap answered as NOT work, never a clock (rule 27).
+    // Same line as _geoDeriveClocks.
+    if (d.personal === true) continue;
     const owner = d.logged_by_uid ? String(d.logged_by_uid) === uid : uid === cid;
     if (!owner) continue;
     const s = Date.parse(d.start_time);
@@ -679,11 +873,20 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
         origin: res.pending.origin ? { name: String(res.pending.origin.name || "") } : null }
     : null;
 
-  const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open);
+  const resolvedAny = !!(res.legs.length || res.dwells.length || res.pending || res.open || res.driving);
   if (res.journeys.length && !resolvedAny) return { day, wrote: false, reason: "unresolved", open: openCard, driving: drivingCard, fixesSeen, fixesDropped };
 
   const rows = geoDeriveRows(res, { contractorId: cid, employeeId: uid, shared: false, clocks });
-  const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length;
+  // ── THE FIRST STOP OF THE DAY IS SOMETHING TO ADD (owner 2026-09-29) ─────
+  // "clocked in at 7:38 ... not seeing a time that indicates he's at JS
+  // Solutions shop." Jack drove from his home office to the shop and was still
+  // there: the deriver knew (res.open, the shop since 7:35), the commute from
+  // a home office is not a mileage leg, and no stop had closed yet. This line
+  // counted only the closed arrays, called the day empty and returned before
+  // the writer, so the open shop row that geoDeriveRows had built for exactly
+  // this moment never reached the timesheet until he left.
+  const nothing = !rows.job_time_entries.length && !rows.shop_time_entries.length && !rows.td_mileage.length &&
+    !(Array.isArray(rows.open) && rows.open.length);
   // ── AN EMPTY DAY IS AN ANSWER, WHEN THIS CALL MAY SWEEP (owner 2026-09-21) ─
   // This used to return unconditionally, and the comment on it said why:
   // "nothing to add, and this call may never retire, so a write would be a

@@ -1435,6 +1435,13 @@ function _timkHeard1(seg){
   v=v.replace(/\bin\s+DS\b/g,'NDS');
   v=v.replace(/\b(?:(?:okay|ok|so|alright)[,\s]+)*honey[\s-]+do\s+list(?:\s+here)?[,.]?\s*/gi,'');
   _TIMK_HEARD.forEach(([re,to])=>{v=v.replace(re,to);});
+  // "Holloway the old tile" is haul away (owner 2026-09-29): a street name
+  // nobody hauls, so only where something to haul follows it.
+  v=v.replace(/\b(?:holloway|hollo\s*way|hall\s+away|haul\s*way)\b(?=[,\s]+(?:the\s+|all\s+(?:the\s+)?|any\s+|of\s+(?:the\s+)?)?(?:old|debris|trash|junk|garbage|waste|scrap|it\b|them\b|everything|drywall|carpet|tile|shingles|cabinets?|fixtures?|appliances?|materials?|brush|dirt|concrete|unit|heater|toilet|tub|vanity|pad))/gi,'haul away');
+  // "PEX a pipe" is PEX-A (owner 2026-09-29), after "pecks" became PEX above.
+  // The letter is the grade only in front of what PEX is sold as, so "run
+  // PEX a few feet" is left alone.
+  v=v.replace(/\bpex[\s-]?([abc])(?=\s+(?:pipe|piping|tubing|tube|line|lines|fittings?|coil|stick|sticks)\b)/gi,(m,g)=>'PEX-'+g.toUpperCase());
   v=v.split(/(\n)/).map(x=>x==='\n'?x:_timkSoundBrands(x)).join('');
   // ", will scrape and repaint the porch floor": "we'll" lost its subject.
   v=v.replace(/,(\s+)(will|well)(\s+)([a-z]+)\b/gi,(m,sp,w,sp2,vb)=>_TIMK_VERBS.has(vb.toLowerCase())?','+sp+"we'll"+sp2+vb:m);
@@ -2031,14 +2038,196 @@ function timScopeFrom(text){
 // A man dictating his day says it in the order he will work it. So the sort
 // stays an offer (_geiPutScopeInOrder, one tap, already on the card) rather
 // than something that happens to his words while he watches.
+// ── A pasted estimate letter (Jack 2026-09-30) ─────────────────────────────
+// Contractors paste the text they already sent: "Here's my estimate $2800 to
+// rough in the washer box ... My estimate is good for 14 days. If you approve
+// I can start asap. I appreciate your faith ... John Schonfeldt Plumbing
+// Solutions by JS". The price, the days it holds and the courtesy are not
+// steps. Tim takes the price and the days as answers and leaves the rest out.
+// A signature never starts with the work: "Install GFCI" in capitals at the
+// end of a priced list is the last job, not a name.
+const _TIMK_WORKVERB=/^(?:install|replace|repair|remove|run|set|cap|seal|secure|drill|rough|hang|paint|patch|pull|swap|add|fix|move|mount|wire|tie|test|clean|haul|demo|frame|pour|reset|rewire|upgrade|service|inspect|flush|snake|clear|caulk|grout|tile|build|dig|trench|level|sand|prime|stain|stack)\b/i;
+const _TIMK_COURTESY=/^(?:if\s+you\s+(?:approve|accept|agree|want\s+to\s+move\s+forward|have\s+(?:any\s+)?questions)|i\s+(?:appreciate|look\s+forward|thank)|we\s+(?:appreciate|look\s+forward|thank)|thank(?:s|\s+you)|looking\s+forward|look\s+forward|please\s+(?:let|call|text|reach)|let\s+me\s+know|feel\s+free|call\s+(?:me|us)|text\s+(?:me|us)|hope\b|sincerely|regards|best\b|god\s+bless)/i;
+function timLetter(text){
+  let t=String(text||'');
+  let validDays=null,jobPrice=null;
+  const v=t.match(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?(\d{1,3})\s+days?\b/i);
+  if(v){const n=parseInt(v[1],10);if(n>0&&n<=365)validDays=n;}
+  // "Here's my estimate $2800 to rough in ...": the price, then the work.
+  const p=t.match(/(?:\b(?:here['’]?s|here\s+is|this\s+is)\s+)?\b(?:my|our|the)\s+(?:estimate|quote|price|bid)\s+(?:is\s+|of\s+|for\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s*(?:to\s+|for\s+)?/i);
+  if(p){const n=parseFloat(p[1].replace(/,/g,''));if(n>0){jobPrice=n;t=t.replace(p[0],'');}}
+  let letter=!!(validDays||jobPrice);
+  const bizNames=[];
+  try{if(typeof S!=='undefined'&&S){if(S.bname)bizNames.push(String(S.bname).toLowerCase());if(S.ownerName)bizNames.push(String(S.ownerName).toLowerCase());if(S.signAs)bizNames.push(String(S.signAs).toLowerCase());}}catch(_e){}
+  // A pasted email is lines, not sentences (the owner 2026-09-30: John's
+  // bulleted list came through as one line and Tim found nothing). A line
+  // break ends a sentence, a bullet mark comes off, and the greeting ("Hi
+  // Tagen,") and the lead-in ("the following work:") are not work.
+  let sents=t.split(/(?<=[.!?])\s+|\s*\n+\s*/).map(x=>x.replace(/^\s*(?:[-*\u2022\u00b7\u2013]+|\d{1,2}[.)])\s+/,'').trim()).filter(Boolean);
+  sents=sents.filter(x=>!(/^(?:hi|hey|hello|dear|good\s+(?:morning|afternoon|evening))\b/i.test(x)&&x.split(/\s+/).length<=4&&!/[.!?]$/.test(x))&&!(/:$/.test(x)&&x.split(/\s+/).length<=8));
+  // The signature block at the bottom of a pasted letter ("John Schonfeldt"
+  // then "Plumbing Solutions by JS"): short lines, no end punctuation, every
+  // word capitalised, and not a job ("Install GFCI"). Whoever's business it
+  // is, it is a name, not work. The person on it signs the note.
+  const sigBy=[];
+  if(/\n/.test(t)&&(letter||sents.some(x=>_TIMK_COURTESY.test(x)))){
+    while(sents.length>1){
+      const q=sents[sents.length-1],w=q.split(/\s+/);
+      if(/[.!?,:;]$/.test(q)||w.length>6||_TIMK_WORKVERB.test(q)||!w.every(x=>/^[A-Z&<]/.test(x)||/^(?:by|and|of|the|llc|inc)$/i.test(x)))break;
+      sigBy.unshift(sents.pop());
+    }
+    // Only when a finished sentence sits above it: a bulleted list that ends
+    // on "Install GFCI" is still work.
+    // A closing line ("Thanks," "Best regards,") counts as finished too: the
+    // name under it is the signature (owner 2026-10-01: "Thanks, John" left
+    // "John" on all three screens as a step).
+    const _above=sents[sents.length-1]||'';
+    if(sigBy.length&&!/[.!?]$/.test(_above)&&!(/,$/.test(_above)&&_TIMK_COURTESY.test(_above))){sents.push(...sigBy);sigBy.length=0;}
+  }
+  if(sents.some(x=>_TIMK_COURTESY.test(x.trim())))letter=true;
+  // The courtesy is not scope, but it is his to say: it goes on the proposal
+  // as his note, word for word (owner 2026-09-30: the faith and trust line "is
+  // very important to John"). The signature gives the note its name.
+  const note=[];let noteBy='';
+  const keep=sents.filter((x,i)=>{
+    const q=x.trim();if(!q)return false;
+    if(/\b(?:good|valid|holds?|honored)\s+(?:for\s+)?\d{1,3}\s+days?\b/i.test(q)&&/\b(?:estimate|quote|price|bid|offer|this)\b/i.test(q))return false;
+    if(_TIMK_COURTESY.test(q)){letter=true;note.push(q);return false;}
+    if(/^i\s+can\s+start\b|^we\s+can\s+start\b|^(?:i|we)\s+could\s+start\b/i.test(q)){note.push(q);return false;}
+    const low=q.toLowerCase().replace(/[.!?]+$/,'');
+    if(bizNames.some(b=>b&&low.includes(b))){if(i===sents.length-1)noteBy=_timkSigner(q,bizNames.slice(0,1));return false;}
+    // The signature: in a letter only, the last sentence, two words or more,
+    // every word capitalised. "Interconnect." on a spoken walk is a step.
+    if(letter&&i===sents.length-1&&!_TIMK_WORKVERB.test(q)&&q.split(/\s+/).length>=2&&q.split(/\s+/).length<=10&&(noteBy=_timkSigner(q,bizNames.slice(0,1)),true)&&q.replace(/[.!?]+$/,'').split(/\s+/).every(w=>/^[A-Z&]/.test(w)||/^(?:by|and|of|the|llc|inc)$/i.test(w)))return false;
+    return true;
+  });
+  const tidy=x=>x.replace(/\basap\b/gi,'ASAP').replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').replace(/,\s*or\s+/g,', or ').trim();
+  if(!noteBy)sigBy.some(x=>(noteBy=_timkSigner(x,bizNames.slice(0,1)))&&!bizNames.some(b=>b&&x.toLowerCase().includes(b)));
+  // A pasted email's line breaks were its sentence ends. Joined back with a
+  // bare space, the materials reader read across them: "a dryer receptacle"
+  // at the end of one bullet and "Drill through" at the start of the next
+  // came back as one part (owner 2026-09-30). Each line keeps its full stop.
+  const _lines=/\n/.test(String(text||''));
+  const _joined=_lines?keep.map(x=>{x=x.trim();return x&&!/[.!?:;,]$/.test(x)?x+'.':x;}).join(' '):keep.join(' ');
+  return {text:_joined.trim(),validDays,jobPrice,letter,sentences:keep.map(x=>x.trim()).filter(Boolean),
+    // A closing he ended on ("Thanks,") keeps its comma: his name prints right
+    // under the note, so it reads "Thanks, / John" the way he wrote it (owner
+    // 2026-10-01: "Thanks, John should get included in the note").
+    note:note.map((x,i,a)=>{x=tidy(x);if(i===a.length-1&&/,$/.test(x))return x;return /[.!?]$/.test(x)?x:x.replace(/[,;:]+$/,'')+'.';}).join(' '),noteBy};
+}
+// "John Schonfeldt Plumbing Solutions by JS": the person, without the business.
+function _timkSigner(line,bizNames){
+  let v=String(line||'').replace(/[.!?]+$/,'').trim();
+  (bizNames||[]).forEach(b=>{if(b)v=v.replace(new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),'');});
+  v=v.replace(/\s{2,}/g,' ').trim();
+  const w=v.split(/\s+/).filter(Boolean);
+  return (w.length>=1&&w.length<=4&&w.every(x=>/^[A-Z][a-z'.-]*$/.test(x)))?w.join(' '):'';
+}
+// A WRITTEN estimate keeps his sentences (Jack 2026-09-30: when Tim chopped
+// his letter into "Drill hole" and "Existing washer lines" it "didn't make
+// much sense"). He already wrote it in order, one thing per sentence; Tim only
+// takes the "I will" and "I have included" off the front so each reads as a
+// step. Spoken walks still go through the step splitter.
+// How a written line reads on a customer's copy (owner 2026-09-30: "Rough
+// surface mounted washer box drain and water and vent. Why can't this say
+// Rough in surface mounted washer box drain, water lines and vent pipe").
+// Rules, not a model: each one is a trade habit, checked in e2e-byo-ios.
+const _TIMK_POLISH=[
+  [/^rough\s+(?!in\b)/i,'Rough in '],
+  [/\bsurface\s+mounted\b/gi,'surface-mounted'],
+  [/\b(washer|laundry)\s+box\s+drain\b/gi,'$1 box: drain'],
+  [/\bdrain\s+and\s+water\s+and\s+vent\b/gi,'drain, water lines and vent'],
+  [/: drain and water and vent\b/gi,': drain, water lines and vent'],
+  [/^electrical\s+for\s+(?:the\s+)?(\w+)\s+receptacle\s+and\s+(?:a\s+)?receptacle\s+for\s+(?:the\s+)?(\w+)/i,'Rough in electrical outlets for the $1 and $2'],
+  [/^electrical\s+for\s+(?:the\s+)?(\w+)\s+receptacle\s+and\s+(?:a|the)\s+(\w+)\s+receptacle\b/i,'Rough in electrical outlets for the $1 and $2'],
+  [/^electrical\s+for\b/i,'Rough in electrical for'],
+  [/^drill\s+(?:a\s+)?hole\s+and\s+run\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/i,'Drill an exterior hole and run the dryer vent outside'],
+  [/\brun\s+(?:the\s+)?dryer\s+vent\s+to\s+(?:the\s+)?outside\b/gi,'run the dryer vent outside'],
+  [/^(\d+)\s+hose\s+bibs?\b/i,'Install $1 hose bibs'],
+  [/^(?:a\s+)?(?:new\s+)?(water\s+heater|toilet|faucet|sink|disposal|sump\s+pump|shut\s*off|hose\s+bib)\b/i,'Install a $1'],
+  [/\bcap\s+(?:the\s+)?gas\s+line\s+to\s+the\s+gas\s+light\s+out\s+front\b/gi,'cap the gas line to the gas light out front'],
+  [/\band\s+existing\s+/gi,'and the existing '],
+  [/^seal\s+(?:the\s+)?duct(?:s|work)?\b/i,'Seal the ductwork'],
+  [/\bexcept\s+enough\s+to\s+keep\b/gi,', leaving enough open to keep'],
+  [/,?\s+including\s+drain,\s+water,?\s+and\s+vent\b/gi,': drain, water lines and vent'],
+  [/^drill\s+through\s+and\s+run\b/i,'Drill an exterior hole and run'],
+  [/\bcrawl\s+space\b/gi,'crawlspace'],
+  [/\bcrawl(?!\s*space|space)\b/gi,'crawlspace'],
+  [/\bkeep\s+crawlspace\b/gi,'keep the crawlspace'],
+  [/\basap\b/g,'ASAP'],
+  [/\s+,/g,','],
+];
+// One sentence, two jobs ("cap the gas line ... and seal duct ..."): each is
+// its own line, split where a second work verb starts.
+const _TIMK_JOIN_SPLIT=/\s+and\s+(?=(?:cap|seal|install|replace|remove|secure|run|drill|set|hang|add|patch|repair|test|flush|tie\s+in|hook\s+up|haul)\b)/i;
+function timPolish(v){
+  let o=String(v||'').trim();
+  _TIMK_POLISH.forEach(([re,to])=>{o=o.replace(re,to);});
+  o=o.replace(/\s{2,}/g,' ').trim();
+  return o?o.charAt(0).toUpperCase()+o.slice(1):'';
+}
+function _timkStripFirst(x){
+  let v=String(x).trim().replace(/[.!?]+$/,'');
+  v=v.replace(/^(?:and\s+)?(?:i|we)(?:'ll|\s+will|\s+would|\s+can|\s+am\s+going\s+to|'m\s+going\s+to|\s+are\s+going\s+to)\s+/i,'');
+  v=v.replace(/^(?:i|we)(?:'ve|\s+have)\s+(?:also\s+)?(?:included|added|figured|priced(?:\s+in)?)\s+/i,'');
+  v=v.replace(/^(?:this\s+)?(?:includes|price\s+includes|estimate\s+includes)\s+/i,'');
+  return v.replace(/\s+as\s+well$/i,'').replace(/\s{2,}/g,' ').trim();
+}
+function timLetterSteps(sentences){
+  const parts=[];
+  // Polish first, so a phrase the rules rewrite whole ("drill hole and run the
+  // dryer vent outside") is not split in half; a split needs a real clause on
+  // each side (six words or more on the left).
+  (sentences||[]).forEach(x=>{
+    const bits=timPolish(_timkStripFirst(x)).split(_TIMK_JOIN_SPLIT);
+    const out=[];
+    bits.forEach(b=>{if(out.length&&out[out.length-1].split(/\s+/).length<6)out[out.length-1]+=' and '+b;else out.push(b);});
+    // "Cap the gas line out front and the existing washer lines": one verb,
+    // two places. Each gets its own line so each lands in its own room.
+    out.forEach(p=>{
+      const m=p.match(/^(cap|remove|replace|seal|disconnect|abandon)\s+(.+?)\s+and\s+(the\s+(?:existing|old)\s+.+)$/i);
+      if(m&&m[2].split(/\s+/).length>=3){parts.push(m[1]+' '+m[2]);parts.push(m[1]+' '+m[3]);}
+      else parts.push(p);
+    });
+  });
+  return parts.map(x=>{
+    let v=_timkStripFirst(x);
+    return timPolish(v);
+  }).filter(v=>v.replace(/[^a-z]/gi,'').length>=3);
+}
+// WHERE IN THE HOUSE (owner 2026-09-30, Jack approved the room layout): the
+// scope reads by room on the customer's copy, "Laundry room", "Outside",
+// "Crawlspace". First match wins, and a fixture outranks a direction: "run
+// the dryer vent outside" is laundry work that happens to end outdoors.
+const _TIMK_ROOMS=[
+  ['Laundry room',/\b(?:washer|dryer|laundry|washing\s+machine)\b/i],
+  ['Bathroom',/\b(?:tub|shower|toilet|vanity|bath(?:room)?|lav(?:atory)?)\b/i],
+  ['Kitchen',/\b(?:kitchen|dishwasher|disposal|range\s+hood|fridge|refrigerator|ice\s*maker)\b/i],
+  ['Crawlspace',/\bcrawl\s*space\b|\bcrawlspace\b/i],
+  ['Basement',/\bbasement\b/i],
+  ['Attic',/\battic\b/i],
+  ['Garage',/\bgarage\b/i],
+  ['Utility room',/\b(?:water\s+heater|tankless|furnace|boiler|water\s+softener|softener)\b/i],
+  ['Outside',/\b(?:outside|outdoors?|exterior|out\s+front|hose\s+bibs?|spigots?|yard|gas\s+light|sewer\s+line|curb)\b/i],
+];
+function timRoomOf(text){
+  const t=String(text||'');
+  for(const [room,re] of _TIMK_ROOMS)if(re.test(t))return room;
+  return null;
+}
 function timScopeBuild(text,opts){
-  const said=String(text||'');
+  const _letter=timLetter(text);
+  const said=_letter.text;
   // What he is buying goes to Materials, and a line that is nothing but a
   // shopping list is not a step on the contract ("figure 40 bags of Quikrete
   // and 6 sticks of rebar"). Work that uses a material stays a step.
   let materials=[];
   try{materials=timSaidMaterials(said);}catch(_e){materials=[];}
-  const priced=_timkFoldPrices(timScopeFrom(said).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
+  const _written=_letter.letter&&_letter.sentences.length>=2;
+  // In a written estimate "a dryer receptacle" is grammar, not a count of
+  // parts to buy: only a number he wrote ("3 hose bibs") makes a material.
+  if(_written)materials=materials.filter(m=>!(m&&m.kind==='list'&&/^(?:a|an|the)\s/i.test(String(m.said||'').trim())));
+  const priced=_timkFoldPrices((_written?timLetterSteps(_letter.sentences):timScopeFrom(said)).map(timStepPrice)).filter(p=>!_timkOnlyMaterials(p.text)).map(p=>{
     // "Pour the pad, figure 40 bags of Quikrete and 6 sticks of rebar": the
     // shopping list after the comma comes off the step.
     const bits=String(p.text).split(/,\s+/);
@@ -2057,8 +2246,14 @@ function timScopeBuild(text,opts){
   const mine=steps.map((t,i)=>{
     const r=byText[t]||{};
     // price: what he said the line costs, 0 when he did not say.
-    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0};
+    return {text:t,stage:r.stage||null,stageName:r.stageName||null,was:i,price:priced[i].price||0,written:_written,room:timRoomOf(t)};
   });
+  // Rooms only when the job actually spans them: two or more, and most of
+  // the steps placed. One room, or a list Tim cannot place, stays one list.
+  const _rooms=new Set(mine.map(m=>m.room).filter(Boolean));
+  const _placed=mine.filter(m=>m.room).length;
+  const byRoom=_rooms.size>=2&&_placed*2>=mine.length;
+  if(!byRoom)mine.forEach(m=>{m.room=null;});
   let implied=[];
   try{implied=timImplied(said,steps,opts)||[];}catch(_e){implied=[];}
   return {
@@ -2066,9 +2261,18 @@ function timScopeBuild(text,opts){
     steps:mine,
     materials,
     implied,
+    // From a pasted estimate letter: the days the price holds and the one
+    // price for the whole job, null when he did not say.
+    validDays:_letter.validDays,
+    jobPrice:_letter.jobPrice,
+    // His closing words, kept for the proposal as his note, and whose they are.
+    note:_letter.note||'',
+    noteBy:_letter.noteBy||'',
     // Would the sort actually change anything? If not, the card does not offer
     // it, which is the rule _geiScopeOutOfOrder already follows.
     outOfOrder:staged.some((r,i)=>r.text!==steps[i]),
+    // Steps carry their room when the job spans rooms (null otherwise).
+    byRoom,
   };
 }
 
@@ -3400,8 +3604,15 @@ function _timkQtyVal(q){
   if(/few/.test(s))return 3;
   return 1;
 }
+// Set while a sentence that swaps one thing for another is read.
+let _timkMatSwap=false;
 function _timkMatItem(t){
   let v=String(t||'').trim();
+  // "copper pipe with PEX-A pipe", said after replaced or swapped: what he
+  // bought is what went in, never what came out (owner 2026-09-29: "no way
+  // we can have copper pipe with pex a pipe, pex a is what we used, copper
+  // was replaced"). The count said before it counts the new one.
+  if(_timkMatSwap){const sw=v.match(/^(.+?)\s+(?:with|for)\s+(?:new\s+|some\s+)?(.+)$/i);if(sw)v=sw[2];}
   // What comes after the thing is not the thing: a price, "each", "for the
   // pad", "to match", a trailing "too".
   v=v.replace(/[,\s]+(?:at|for|@)\s+\$?\d[\d,.]*(?:\s+(?:a|an|per|each)\s+[a-z]+)?.*$/i,'')
@@ -3679,6 +3890,10 @@ function _timkPartsInWork(clause){
   return out;
 }
 function timSaidMaterials(text){
+  // The swap flag lives only while this reads a sentence (_timkMatItem).
+  try{return _timSaidMaterials(text);}finally{_timkMatSwap=false;}
+}
+function _timSaidMaterials(text){
   // Heard and numbers, not the scope's corrections: a correction in a list is
   // about a count, and _timkMatFix reads it against the item it corrects.
   const src=String(text||'').split(/\r?\n+/).map(seg=>_timkNumbers(_timkUnfill(_timkHeard(seg)))).join('. ').replace(/\b(?:no[,]?\s+)?scratch\s+that\b[,.]?/gi,', scratch that,')
@@ -3713,6 +3928,7 @@ function timSaidMaterials(text){
     clauses.forEach((cl0,ci)=>{
       let cl=String(cl0||'').trim();
       if(!cl)return;
+      _timkMatSwap=/\b(?:replac\w*|swap\w*|switch\w*|chang\w*\s+out|upgrad\w*|convert\w*|repip\w*)\b/i.test(sent);
       try{
       // "no, 10 of them", "three boxes actually", "make it a full box": the
       // count on the thing just said, corrected.
