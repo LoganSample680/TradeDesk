@@ -38,7 +38,7 @@ async function api(method, p, body) {
 const app = (await api('GET', `/v1/apps?filter[bundleId]=${BUNDLE}`)).data.find((a) => a.attributes.bundleId === BUNDLE);
 if (!app) { console.error(`::error::no app record for ${BUNDLE}`); process.exit(1); }
 const ver = (await api('GET', `/v1/apps/${app.id}/appStoreVersions?filter[platform]=IOS&limit=10`)).data
-  .find((v) => /PREPARE_FOR_SUBMISSION|REJECTED/.test(v.attributes.appStoreState || ''));
+  .find((v) => /PREPARE_FOR_SUBMISSION|REJECTED/.test(v.attributes.appVersionState || v.attributes.appStoreState || ''));
 if (!ver) { console.error('::error::no editable iOS version'); process.exit(1); }
 const loc = (await api('GET', `/v1/appStoreVersions/${ver.id}/appStoreVersionLocalizations`)).data
   .find((l) => l.attributes.locale === LOCALE);
