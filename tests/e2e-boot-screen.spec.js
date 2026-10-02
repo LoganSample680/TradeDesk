@@ -378,7 +378,15 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await waitForAppBoot(page);
-    await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()));
+    // Let the app's own boot pour finish first (same wait as
+    // e2e-home-waterfall): under CI load it can still be running, and its end
+    // clears the placeholder these tests put up.
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), null, { timeout: 8000 });
+    await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+      window._bootSkelTimer = null;
+    });
   });
   test.afterAll(async () => { await page.context().close(); });
 

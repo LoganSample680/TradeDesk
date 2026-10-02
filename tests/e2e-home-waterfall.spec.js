@@ -51,7 +51,20 @@ test.describe('home waterfall', () => {
   // compares a page with the banner to one without, so every measurement
   // waits for it first; the app's side of that (the late banner gets its own
   // placeholder) is its own test below.
-  const settled = () => page.evaluate(async () => { if (typeof _geoPermissionBanner === 'function') await _geoPermissionBanner(); });
+  // The permission read (_geoRefreshPermCache) is a second late painter: when
+  // it resolves it re-renders the setup checklist and the banner. Under CI load
+  // it can land after the banner call above, so wait for it too, then until
+  // the block count holds still.
+  const settled = () => page.evaluate(async () => {
+    if (typeof _geoReadPermission === 'function') { try { await _geoReadPermission(); } catch (e) {} }
+    if (typeof _geoPermissionBanner === 'function') await _geoPermissionBanner();
+    let last = -1, same = 0;
+    for (let i = 0; i < 40 && same < 3; i++) {
+      await new Promise(r => setTimeout(r, 50));
+      const n = _dashWfBlocks().real.length;
+      same = n === last ? same + 1 : 0; last = n;
+    }
+  });
   const enterSkel = async () => {
     await page.evaluate(() => {
       window._bootSyncPending = true; window._bootSkelDone = false; window._bootCascadeRan = false;
