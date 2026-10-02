@@ -359,6 +359,17 @@ jobs:
           </dict>
           </plist>
           EOF
+          # Store app (2026-10-01): these four need a MANUAL portal switch on the
+          # App ID that the API cannot flip (see the comment in the plist above),
+          # and an entitlement the App ID lacks fails signing for the whole build.
+          # The store App ID is new, so they stay off it until someone ticks them
+          # in the portal; the app runs without them (scanner mesh detail and
+          # time-sensitive alerts are the only things that change).
+          if [ "$TD_CHANNEL" = "store" ]; then
+            for k in com.apple.developer.kernel.increased-memory-limit com.apple.developer.kernel.extended-virtual-addressing com.apple.developer.background-tasks.continued-processing.gpu com.apple.developer.usernotifications.time-sensitive; do
+              /usr/libexec/PlistBuddy -c "Delete :$k" ios/App/App/App.entitlements || true
+            done
+          fi
           sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = $TD_BUNDLE_ID;|PRODUCT_BUNDLE_IDENTIFIER = $TD_BUNDLE_ID;\\n\\t\\t\\t\\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g" ios/App/App.xcodeproj/project.pbxproj
           grep -n "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj
 
@@ -663,18 +674,17 @@ jobs:
         run: |
           APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
           MISSING=0
-          for key in \
-            com.apple.developer.applesignin \
-            aps-environment \
-            com.apple.developer.associated-domains \
-            com.apple.developer.kernel.increased-memory-limit \
-            com.apple.developer.kernel.extended-virtual-addressing \
-            com.apple.developer.background-tasks.continued-processing.gpu \
-            com.apple.developer.usernotifications.time-sensitive; do
+          KEYS="com.apple.developer.applesignin aps-environment com.apple.developer.associated-domains"
+          # The store build leaves the four portal-only keys out on purpose
+          # (see the entitlements step), so it does not look for them.
+          if [ "$TD_CHANNEL" != "store" ]; then
+            KEYS="$KEYS com.apple.developer.kernel.increased-memory-limit com.apple.developer.kernel.extended-virtual-addressing com.apple.developer.background-tasks.continued-processing.gpu com.apple.developer.usernotifications.time-sensitive"
+          fi
+          for key in $KEYS; do
             if grep -q "$key" /tmp/ents.plist; then
               echo "ok: $key present in the signed binary"
             else
-              echo "::error::$key is written into App.entitlements but is MISSING from the SIGNED binary. This means the app.tradedesk.beta App ID does not have the matching capability enabled: go to developer.apple.com -> Certificates, Identifiers & Profiles -> Identifiers -> app.tradedesk.beta and turn it on (see CLAUDE.md and the 'Sign in with Apple entitlement' step's comment for which portal toggle maps to this key), then rerun the build. Do not ignore this, it is the exact failure that cost 5 days on the App Group incident."
+              echo "::error::$key is written into App.entitlements but is MISSING from the SIGNED binary. This means the $TD_BUNDLE_ID App ID does not have the matching capability enabled: go to developer.apple.com -> Certificates, Identifiers & Profiles -> Identifiers -> $TD_BUNDLE_ID and turn it on (see CLAUDE.md and the 'Sign in with Apple entitlement' step's comment for which portal toggle maps to this key), then rerun the build. Do not ignore this, it is the exact failure that cost 5 days on the App Group incident."
               MISSING=1
             fi
           done

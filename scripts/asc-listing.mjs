@@ -119,15 +119,22 @@ await step('Age rating (4+, every answer None / No)', async () => {
     if (k === 'kidsAgeBand') continue;
     attributes[k] = FREQ.test(k) && k !== 'gambling' && k !== 'unrestrictedWebAccess' ? 'NONE' : false;
   }
-  let r = await api('PATCH', `/v1/ageRatingDeclarations/${q.id}`, { data: { type: 'ageRatingDeclarations', id: q.id, attributes } });
-  if (!r.ok) {
-    // Fall back to the long-standing core set if a newer question rejected the guess.
-    const core = {};
-    for (const k of ['alcoholTobaccoOrDrugUseOrReferences', 'contests', 'gamblingSimulated', 'horrorOrFearThemes', 'matureOrSuggestiveThemes', 'medicalOrTreatmentInformation', 'profanityOrCrudeHumor', 'sexualContentGraphicAndNudity', 'sexualContentOrNudity', 'violenceCartoonOrFantasy', 'violenceRealistic', 'violenceRealisticProlongedGraphicOrSadistic']) core[k] = 'NONE';
-    core.gambling = false; core.unrestrictedWebAccess = false;
-    r = must(await api('PATCH', `/v1/ageRatingDeclarations/${q.id}`, { data: { type: 'ageRatingDeclarations', id: q.id, attributes: core } }), 'patch (core set)');
-    return 'core questions answered; check any newer ones on the page';
+  // Apple keeps adding questions and only names a missing one in the 409. So:
+  // send, read the name it asks for, answer it (No first, None if a yes/no
+  // value is refused), send again. Bounded, so a question nobody can guess
+  // ends in a clear message rather than a loop.
+  for (let i = 0; i < 25; i++) {
+    const r = await api('PATCH', `/v1/ageRatingDeclarations/${q.id}`, { data: { type: 'ageRatingDeclarations', id: q.id, attributes } });
+    if (r.ok) return Object.keys(attributes).length + ' questions answered';
+    const msg = why(r);
+    const k = (msg.match(/attribute '(\w+)'/) || [])[1];
+    if (!k) throw new Error(msg);
+    if (!(k in attributes)) attributes[k] = false;
+    else if (attributes[k] === false) attributes[k] = 'NONE';
+    else if (attributes[k] === 'NONE') delete attributes[k];
+    else throw new Error(msg);
   }
+  throw new Error('age rating: Apple kept asking for more after 25 tries');
 });
 
 // ── Price and where it is sold ───────────────────────────────────────────────
@@ -146,13 +153,23 @@ await step('Price: Free', async () => {
 });
 
 await step(`Availability (${L.territories.join(', ')})`, async () => {
-  const ids = L.territories.map((t, i) => ({ t, ref: '${t' + i + '}' }));
+  // Apple wants EVERY territory named, sold or not (a USA-only request is
+  // refused for the first one left out), so list them all and mark which sell.
+  const all = [];
+  let next = '/v1/territories?limit=200';
+  while (next) {
+    const t = must(await api('GET', next), 'territories').json;
+    all.push(...t.data.map((d) => d.id));
+    next = t.links && t.links.next ? t.links.next.replace('https://api.appstoreconnect.apple.com', '') : null;
+  }
+  const sell = new Set(L.territories);
+  const ids = all.map((t, i) => ({ t, ref: '${t' + i + '}', on: sell.has(t) }));
   must(await api('POST', '/v2/appAvailabilities', {
     data: { type: 'appAvailabilities', attributes: { availableInNewTerritories: false }, relationships: {
       app: { data: { type: 'apps', id: APP } },
       territoryAvailabilities: { data: ids.map((x) => ({ type: 'territoryAvailabilities', id: x.ref })) },
     } },
-    included: ids.map((x) => ({ type: 'territoryAvailabilities', id: x.ref, attributes: { available: true }, relationships: { territory: { data: { type: 'territories', id: x.t } } } })),
+    included: ids.map((x) => ({ type: 'territoryAvailabilities', id: x.ref, attributes: { available: x.on }, relationships: { territory: { data: { type: 'territories', id: x.t } } } })),
   }), 'availability');
 });
 
