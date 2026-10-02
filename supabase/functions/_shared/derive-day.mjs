@@ -762,7 +762,8 @@ export async function deriveDayServer(svc, cid, uid, day, nowMs = Date.now(), ro
     const s = Date.parse(d.start_time);
     const e = d.end_time ? Date.parse(d.end_time) : Math.min(nowMs, b.end);
     if (!(s > 0 && e > s)) continue;
-    if (e > b.start && s < b.end) clocks.push({ start: s, end: e });
+    // open and gap for rule 28, exactly as _geoDeriveClocks sends them.
+    if (e > b.start && s < b.end) clocks.push({ start: s, end: e, open: !d.end_time, gap: d.fromGap === true });
     // Rule 19 learns from FINISHED days only: an open clock has no out time to
     // learn from, and guessing one from `now` would teach the window whatever
     // time of day the derive happened to run.
