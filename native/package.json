@@ -13,6 +13,7 @@
     "td-doc": "file:./td-doc",
     "td-geo": "file:./td-geo",
     "td-haptic": "file:./td-haptic",
+    "td-image": "file:./td-image",
     "td-intents": "file:./td-intents",
     "td-live": "file:./td-live",
     "td-lock": "file:./td-lock",
