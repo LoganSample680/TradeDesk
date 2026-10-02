@@ -3232,7 +3232,11 @@ function _togMileTrip(id){
 }
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
 function delMileage(id){_userDelete(()=>{mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();});if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
-function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();_flushSaveNow();}
+// A purpose a PERSON picked carries purposeAt, so the server can tell it from
+// the purpose the deriver writes on every leg it resolves (20261062): only a
+// person's answer keeps an old leg from being replaced by the drive's newer
+// description.
+function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;m.purposeAt=new Date().toISOString();saveAll();_flushSaveNow();}
 // ── THE ROUTE, ON A MAP (owner ask 2026-09-01) ──────────────────────────────
 // "then overlay that on a map and you get you're true mileage down to the
 // exact route." Built on the app's ONE map renderer (tdMapRender, js/places.js,
@@ -4407,7 +4411,7 @@ function updateLoggedTrip(id){
   r.date=document.getElementById('lm-date')?.value||r.date;
   r.vehicle=document.getElementById('lm-vehicle')?.value||'';
   r.from=(document.getElementById('lm-from')?.value||'').trim();
-  r.to=to;r.purpose=purpose;
+  r.to=to;if(r.purpose!==purpose)r.purposeAt=new Date().toISOString();r.purpose=purpose;
   r.notes=document.getElementById('lm-notes')?.value||'';
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
   if(miles>0)r.miles=miles;
