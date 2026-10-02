@@ -34,7 +34,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Plain ESM, not .ts, so Deno and the Node test harness load the exact same
 // file: tests/e2e-geo-derive-server.spec.js drives this module directly.
-import { centralDayKey, daysToDerive, deriveDayServer, workSettings } from "../_shared/derive-day.mjs";
+import { arrivalWatchDays, centralDayKey, daysToDerive, deriveDayServer, workSettings } from "../_shared/derive-day.mjs";
 import { railCardFor } from "../_shared/live-card.mjs";
 import { pushLiveCard } from "../_shared/live-push.ts";
 import { sendSilentWake } from "../_shared/silent-push.ts";
@@ -493,6 +493,8 @@ Deno.serve(async (req) => {
     const STATE_CAS_TRIES = 4;
     let derived = 0;
     let casWon = false;
+    // When the state machine's open dwell began, for arrivalWatchDays below.
+    let openSince: number | null = null;
     for (let attempt = 0; attempt < STATE_CAS_TRIES && !casWon; attempt++) {
       // ── The state machine ───────────────────────────────────────────────────
       // The first pass starts from the state geo_ingest_begin already read; a
@@ -756,6 +758,7 @@ Deno.serve(async (req) => {
       // invocation has moved it and this pass is working from stale state.
       const nextUpdatedAt = new Date().toISOString();
       const nextState = { dwell, leg, pending, lastTs: newLastTs };
+      openSince = dwell ? Number(dwell.arrivedTs) : null;
       if (prevUpdatedAt) {
         const { data: swapped } = await svc.from("geo_device_state")
           .update({ state: nextState, contractor_user_id: cid, updated_at: nextUpdatedAt })
@@ -795,7 +798,12 @@ Deno.serve(async (req) => {
     const route = makeRoute(svc, cid);
 
     const derivedDays = [];
-    for (const day of daysToDerive(evs, Date.now())) {
+    // A batch of nothing but fixes derives too while an arrival is waiting on
+    // one (arrivalWatchDays, ../_shared/derive-day.mjs): one indexed read, and
+    // only when the batch has no trigger of its own.
+    const deriveNow = daysToDerive(evs, Date.now());
+    const days = deriveNow.length ? deriveNow : await arrivalWatchDays(svc, uid, evs, Date.now(), openSince);
+    for (const day of days) {
       try { derivedDays.push(await deriveDayServer(svc, cid, uid, day, Date.now(), route)); }
       catch (e) { derivedDays.push({ day, wrote: false, reason: String((e as Error)?.message || e) }); }
     }

@@ -442,25 +442,49 @@ function _gdSettledAway(fixes, fix, reg, fences, radiusFt) {
 //   1. rule 21's own proof: a fix after the crossing, inside the fence;
 //   2. the newest fix is STILL inside it, by this file's radius, so a pass
 //      whose exit was lost reads as driving the moment it is out the far side;
-//   3. the tape has left automotive since the crossing, and has not gone back
-//      (Jack's 08:08 that morning: Menards and Lowe's entered while the tape
+//   3. the tape has left automotive since the crossing, and (for the leg)
+//      has not gone back (Jack's 08:08 that morning: Menards and Lowe's entered while the tape
 //      still said automotive, and without this line his drive ended at
 //      Menards);
-//   4. parkedStillMs has passed since the crossing. A red light inside a
-//      fence passes 1 to 3. It does not pass this, and it has to be stopped
-//      here rather than corrected later: the server writes a mileage leg
+//   4. parkedStillMs has passed since the crossing, FOR THE LEG (amended
+//      2026-10-02, below). A red light inside a fence passes 1 to 3. It
+//      does not pass this, and the leg has to be stopped here rather than
+//      corrected later: the server writes a mileage leg
 //      once and never rewrites it (geo_replace_day, 20261060, the miles
 //      loop under p_sweep false), so a drive ended at a stoplight would keep
 //      that end forever. Time rows would heal on the next derive; the leg
 //      would not.
 // Jack's shop row lands at 13:04:35 instead of 13:08:47, Logan's at 12:25:54
 // instead of 13:07:23.
+//
+// ── GATE 4 HOLDS THE MILES, NOT THE STOP (owner 2026-10-02) ──────────────
+// "everything needs to hit in 10 seconds or less." On 1 October every stop
+// row reached the server 3 to 6 minutes late, and gate 4 was most of it: the
+// four minutes guarded the mileage leg and held the time rows hostage with
+// it. They do not need the guard. A time row is upserted by its key and an
+// open one the next derive does not resend is retired (geo_replace_day,
+// 20261060 step 5c), so a stop written at a red light heals by itself the
+// moment he drives on. Only the leg is written once and kept.
+//
+// So the answer has three values now, not two:
+//   'settled'      gates 1 to 4: the drive ends here, leg and all, as before;
+//   'provisional'  gates 1 and 2, and the tape left automotive since the
+//                  crossing, but not all of 3 and 4: the drive ends here for
+//                  the TIME rows (the drive row closes at the crossing, the
+//                  stop opens there) and the leg waits (see `provisional` on the leg and
+//                  geoDeriveRows). Same keys as the settled answer: the drive
+//                  row by the journey's flip, the stop by 'd-' + that flip, so
+//                  the settled derive lands on these rows, not beside them;
+//   null           not an arrival at all.
+// If he drives on, the newest fix leaves the fence (gate 2) or the OS closes
+// the crossing, the journey is open again on the next derive, the drive row
+// re-opens under its own key and the stop row is simply not sent, which is
+// what retires it.
 function _gdArrivalSettled(j, s, ctx) {
-  if (!ctx || !s || !s.unpaired || !s.f || !(s.from > j.startTs)) return false;
+  if (!ctx || !s || !s.unpaired || !s.f || !(s.from > j.startTs)) return null;
   const nowMs = Number(ctx.nowMs);
   const opts = ctx.opts || GEO_DERIVE_DEFAULTS;
   const parked = Number(opts.parkedStillMs) > 0 ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
-  if (!(nowMs - s.from >= parked)) return false;
   const maxAcc = Number(opts.maxFixAccM) > 0 ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
   let newest = null;
   for (const f of (Array.isArray(ctx.fixes) ? ctx.fixes : [])) {
@@ -468,25 +492,44 @@ function _gdArrivalSettled(j, s, ctx) {
     if (f.acc != null && Number(f.acc) > maxAcc) continue;
     if (!newest || f.ts > newest.ts) newest = f;
   }
-  if (!newest || !(newest.ts > s.from)) return false;
-  if (!_gdSameFence(geoFenceAt(newest, ctx.fences, opts.radiusFt), s.f)) return false;
-  let last = null;
+  if (!newest || !(newest.ts > s.from)) return null;
+  if (!_gdSameFence(geoFenceAt(newest, ctx.fences, opts.radiusFt), s.f)) return null;
+  let last = null, leftAuto = false;
   for (const x of (Array.isArray(ctx.tape) ? ctx.tape : [])) {
     if (!x || typeof x.ts !== 'number' || !(x.ts > s.from) || x.ts > nowMs) continue;
     const k = _gdKind(x.kind);
+    if (k && k !== 'auto') leftAuto = true;
     if (k && (!last || x.ts >= last.ts)) last = { ts: x.ts, k };
   }
-  return !!last && last.k !== 'auto';
+  if (!leftAuto) return null;
+  // Gate 3 in full (left automotive AND has not gone back) plus gate 4: the
+  // leg may be written.
+  if (last.k !== 'auto' && nowMs - s.from >= parked) return 'settled';
+  // Left automotive and then went back, with the newest fix still inside
+  // (gate 2): a truck being parked, a phone picked up off the seat, or a light
+  // turning green. The replay of 1 October says the first two are common: at
+  // his own house Jack's tape went still, automotive, still, automotive four
+  // times in thirty seconds, and a stop row that came and went with each flip
+  // would blink on the timesheet. So the time rows stand until a fix actually
+  // leaves the fence (gate 2) or the OS closes the crossing, and the leg
+  // waits for the tape to settle again, which is the one thing that cannot
+  // be taken back.
+  return 'provisional';
 }
 function _gdArrivalTrim(journeys, spans, ctx) {
   if (!Array.isArray(journeys) || !Array.isArray(spans) || !spans.length) return journeys;
   return journeys.map((j) => {
     if (j && j.open && j.endTs == null && typeof j.startTs === 'number') {
-      let best = null;
+      let best = null, how = null;
       for (const s of spans) {
-        if (_gdArrivalSettled(j, s, ctx) && (!best || s.from < best.from)) best = s;
+        const h = _gdArrivalSettled(j, s, ctx);
+        if (h && (!best || s.from < best.from)) { best = s; how = h; }
       }
-      return best ? { startTs: j.startTs, id: j.id, endTs: best.from, endFence: best.f } : j;
+      if (!best) return j;
+      const out = { startTs: j.startTs, id: j.id, endTs: best.from, endFence: best.f };
+      // Gate 4 not passed yet: the time rows are written, the leg is not.
+      if (how === 'provisional') out.provisional = true;
+      return out;
     }
     if (!j || typeof j.endTs !== 'number' || typeof j.startTs !== 'number') return j;
     let arrival = null, fence = null;
@@ -1277,7 +1320,7 @@ function geoDeriveDay(input) {
           const p = _gdPathMiles(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.maxMph);
           const miles = p > 0 ? p : _gdMiles(a, b);
           if (miles > 0) {
-            legs.push({
+            legs.push(Object.assign({
               id: j.id, from: a, to: b, startTs: j.startTs, endTs: j.endTs,
               minutes: Math.round(autoMs / 60000),
               miles: Math.round(miles * 10) / 10, milesFrom: p > 0 ? 'path' : 'straight',
@@ -1285,7 +1328,7 @@ function geoDeriveDay(input) {
               traced: true, unsavedFrom: true, unsavedTo: !toFence,
               drives: [[j.startTs, j.endTs, autoMs, j.id, j.id]],
               path: _gdPath(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
-            });
+            }, j.provisional === true ? { provisional: true } : {}));
           }
         }
         if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id, startTs: j.startTs };
@@ -1504,7 +1547,7 @@ function geoDeriveDay(input) {
         miles = p > 0 ? p : _gdMiles(a, b);
         milesFrom = p > 0 ? 'path' : 'straight';
       }
-      legs.push({
+      legs.push(Object.assign({
         id: chain.id, from: a, to: b,
         startTs: chain.startTs, endTs: j.endTs,
         minutes: Math.round(chain.autoMs / 60000),
@@ -1523,7 +1566,10 @@ function geoDeriveDay(input) {
         // which is the honest picture of where the truck went; the MILES on
         // it are the direct route, per rule 6.
         path: _gdPath(fixes, chain.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
-      });
+      // Rule 21's arrival before gate 4: every rule below still reads this
+      // leg (it is the drive's end), and geoDeriveRows writes its time rows
+      // and holds its mileage row back.
+      }, j.provisional === true ? { provisional: true } : {}));
     }
     chain = null;
     // ── A LOOP THAT WAS NOTHING LEAVES NO HOLE (2026-09-18) ──────────────
@@ -3949,6 +3995,17 @@ function geoDeriveRows(result, ids) {
         minutes: Math.round((b - a) / 60000),
         dest_place: null, client_key: stopKey(segs[i]), source: 'unsaved' + hs });
     }
+    // ── THE STOP NOW, THE MILES AT FOUR MINUTES (owner 2026-10-02) ───────
+    // "write the stop's time row the moment the saved place is entered and
+    // the phone stops reading as driving; the mileage leg keeps its 4-minute
+    // wait." A provisional leg is rule 21's arrival before gate 4 (see
+    // _gdArrivalSettled): its drive rows and stop rows above are already
+    // written under their final keys and heal on the next derive if he
+    // drives on. Its mileage row is not, because geo_replace_day writes a
+    // leg once and never rewrites it (20261060, the miles loop under p_sweep
+    // false), so a leg ended at a red light would be wrong for good. The
+    // derive after gate 4 writes it under this same id.
+    if (l.provisional === true) continue;
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
     // saved.
