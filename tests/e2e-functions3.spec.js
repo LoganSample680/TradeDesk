@@ -1003,28 +1003,25 @@ test.describe('Cloud Supabase and account functions', () => {
       document.getElementById('pg-dash').classList.add('active');
       _removeBootOverlay();
       const dash = document.getElementById('pg-dash');
-      const w = document.querySelector('#dash-widget-root > .td-dw');
-      // Inline per-card delay must be assigned (JS stagger, not fixed CSS holes).
-      const firstDelay = w ? w.style.animationDelay : '';
+      // Per BLOCK now, not per widget (owner 2026-10-01: "shuffling from the
+      // top down like iOS does"): each block carries its beat as --wf-d.
+      const w = dash.querySelector('[data-wf]');
+      const firstDelay = w ? w.style.getPropertyValue('--wf-d') : '';
       return {
         cascade: dash.classList.contains('boot-cascade'),
         noHold: !dash.classList.contains('boot-hold'),
-        anim: w ? getComputedStyle(w).animationName : 'no-widget',
+        anim: w ? getComputedStyle(w).animationName : 'no-block',
         hasInlineDelay: /ms$/.test(firstDelay),
       };
     });
     expect(r.cascade).toBe(true);            // armed immediately, no async gate
     expect(r.noHold).toBe(true);             // no boot-hold blank state
-    expect(r.anim).toContain('td-card-cascade');
+    expect(r.anim).toContain('td-wf-in');
     expect(r.hasInlineDelay).toBe(true);     // JS-assigned stagger (smooth, gap-free)
-    // Self-removal: after the ripple window the class + inline delays clear.
+    // Self-removal: after the ripple window the class + every beat clear.
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
-    const cleared = await page.evaluate(() => {
-      const w = document.querySelector('#dash-widget-root > .td-dw');
-      return { anim: w ? getComputedStyle(w).animationName : 'no-widget', delay: w ? w.style.animationDelay : '' };
-    });
-    expect(cleared.anim).not.toContain('td-card-cascade');
-    expect(cleared.delay).toBe('');          // inline stagger cleaned up
+    const cleared = await page.evaluate(() => ({ stamped: document.querySelectorAll('#pg-dash [data-wf]').length }));
+    expect(cleared.stamped).toBe(0);         // stagger cleaned up
   });
 
   // DIRECTION (owner 2026-08-15, after seeing the bottom-up build on UAT: "I
@@ -1044,29 +1041,32 @@ test.describe('Cloud Supabase and account functions', () => {
       document.body.appendChild(o);
       const dash = document.getElementById('pg-dash');
       dash.classList.add('active');
-      const heights = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.offsetHeight);
       _removeBootOverlay();
-      const ms = el => parseFloat(el.style.animationDelay) || 0;
-      const cards = [...document.querySelectorAll('#dash-widget-root > .td-dw')];
-      const visible = cards.filter((el, i) => heights[i] > 2);
-      const tbar = document.querySelector('#pg-dash > .tbar');
+      // Blocks, in page order (owner 2026-10-01: each row of tiles is its own
+      // beat, so the unit is the block, not the widget).
+      const ms = el => parseFloat(el.style.getPropertyValue('--wf-d')) || 0;
+      const blocks = [...dash.querySelectorAll('[data-wf]')].filter(el => !el.closest('.td-boot-skel'))
+        .map(el => ({ y: el.getBoundingClientRect().top, d: ms(el) })).sort((a, b) => a.y - b.y);
+      const greet = dash.querySelector('.tbar-l');
       return {
-        n: visible.length,
-        delays: visible.map(ms),
-        tbar: tbar ? ms(tbar) : null,
+        n: blocks.length,
+        delays: blocks.map(b => b.d),
+        tbar: greet ? ms(greet) : null,
+        onScreen: blocks.filter(b => b.y < innerHeight).map(b => b.d),
       };
     });
-    if (r.n < 2) return;   // a dashboard with one card has no direction to assert
-    // Each card further down the page starts LATER than the one above it
+    if (r.n < 2) return;   // a dashboard with one block has no direction to assert
+    // Each block further down the page never starts EARLIER than the one above it
     for (let i = 1; i < r.delays.length; i++) {
-      expect(r.delays[i], `card ${i} must start after card ${i - 1} (top-down)`)
-        .toBeGreaterThan(r.delays[i - 1]);
+      expect(r.delays[i], `block ${i} must not start before block ${i - 1} (top-down)`)
+        .toBeGreaterThanOrEqual(r.delays[i - 1]);
     }
-    // The header sits above every card, so it leads the wave
-    expect(r.tbar).toBeLessThan(Math.min(...r.delays));
-    // ...and the LAST card must still start early enough that its .62s flight
-    // finishes inside the 1.2s beat (owner 2026-08-15: drop it to 1.2 seconds).
-    expect(Math.max(...r.delays)).toBeLessThanOrEqual(1200 - 620 + 1);
+    expect(Math.max(...r.delays)).toBeGreaterThan(0);
+    // The greeting sits above every block, so it leads the wave
+    expect(r.tbar).toBe(0);
+    // ...and the last block on screen still lands inside the 1.2s beat
+    // (owner 2026-08-15: drop it to 1.2 seconds): its 200ms rise included.
+    expect(Math.max(...r.onScreen) + 200).toBeLessThanOrEqual(1200);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 8000 });
   });
 
@@ -1210,7 +1210,8 @@ test.describe('Cloud Supabase and account functions', () => {
         const skels = document.querySelectorAll('#dash-widget-root>.td-dw>.td-boot-skel').length;
         const on = document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length;
         const tbarSkel = document.querySelectorAll('#pg-dash>.tbar>.td-boot-skel').length;
-        const quickHidden = getComputedStyle(document.getElementById('dash-quick')).display === 'none';
+        // Laid out but unseen (owner 2026-10-01): the real layout holds the boxes.
+        const quickHidden = getComputedStyle(document.getElementById('dash-quick')).visibility === 'hidden';
         const shimmer = document.querySelectorAll('#dash-widget-root .td-boot-skel .td-skel').length;
         const modeOn = _dashSkelMode();
         const timerArmed = !!window._bootSkelTimer;
@@ -1227,7 +1228,7 @@ test.describe('Cloud Supabase and account functions', () => {
           skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
           on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
           qas: document.querySelectorAll('#dash-quick .qa').length,
-          quickVisible: getComputedStyle(document.getElementById('dash-quick')).display !== 'none',
+          quickVisible: getComputedStyle(document.getElementById('dash-quick')).visibility !== 'hidden',
           cascade: document.getElementById('pg-dash').classList.contains('boot-cascade'),
           modeOff: !_dashSkelMode(),
         };
@@ -1275,11 +1276,11 @@ test.describe('Cloud Supabase and account functions', () => {
         setupEl.innerHTML = '<div class="card" style="padding:16px">9 of 10 done</div>';
         _dashApplySkeletons();
         const covered = setupEl.classList.contains('td-boot-skel-on') && !!setupEl.querySelector(':scope>.td-boot-skel');
-        const realHidden = getComputedStyle(setupEl.querySelector('.card')).display === 'none';
+        const realHidden = getComputedStyle(setupEl.querySelector('.card')).visibility === 'hidden';
         return { covered, realHidden };
       } finally {
         setupEl.innerHTML = savedSetupHtml; setupEl.style.display = savedSetupDisplay;
-        setupEl.classList.remove('td-boot-skel-on');
+        setupEl.classList.remove('td-boot-skel-on', 'td-skel-host');
         setupEl.querySelectorAll(':scope>.td-boot-skel').forEach(s => s.remove());
         window._bootSyncPending = false; window._bootSkelDone = true;
         try { clearTimeout(window._bootSkelTimer); } catch (e) {}
@@ -1322,11 +1323,13 @@ test.describe('Cloud Supabase and account functions', () => {
   });
 
   // Behaviour changed on purpose (owner-approved boot redesign 2026-09-24):
-  // the overlay lift now pours the waterfall OVER the shimmer cards (it used to
-  // wait for the data), and the data then lands in place. What still holds from
+  // the overlay lift poured the waterfall OVER the shimmer cards, and the data
+  // then landed in place. Owner 2026-10-01 ("it should be like shuffling from
+  // the top down like iOS does"): one pour, of CONTENT. The overlay now lifts
+  // onto the placeholder standing still, and the data landing pours. What still holds from
   // the 2026-08-11 rule: the settle must not swap INSTANTLY, the shimmer gets a
   // visible beat first, so the loader never lifts onto a fully formed page.
-  test('boot cascade pours the shimmer, and the settle lets the shimmer be seen', async () => {
+  test('the overlay lifts onto a still placeholder, and the settle lets it be seen, then pours', async () => {
     const r = await page.evaluate(async () => {
       try {
         window._bootSyncPending = true; window._bootSkelDone = false;
@@ -1338,22 +1341,22 @@ test.describe('Cloud Supabase and account functions', () => {
         document.body.appendChild(o);
         document.getElementById('pg-dash').classList.add('active');
         _removeBootOverlay();
-        const shimmerPoured = document.getElementById('pg-dash').classList.contains('boot-cascade')
-          && !!document.querySelector('#pg-dash .td-boot-skel');
+        const shimmerStill = !document.getElementById('pg-dash').classList.contains('boot-cascade')
+          && !!document.querySelector('#pg-dash .td-boot-skel') && !window._bootCascadeRan;
         _bootSyncSettled();
         const swappedInstantly = window._bootSkelDone;
         let waited = 0;
         while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
         const settled = window._bootSkelDone && window._bootCascadeRan;
-        return { shimmerPoured, swappedInstantly, settled };
+        return { shimmerStill, swappedInstantly, settled };
       } finally {
         window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
         document.getElementById('supa-boot-overlay')?.remove();
       }
     });
-    expect(r.shimmerPoured, 'the overlay lifts onto the shimmer waterfalling in').toBe(true);
+    expect(r.shimmerStill, 'the overlay lifts onto the placeholder, standing still, the pour unspent').toBe(true);
     expect(r.swappedInstantly, 'the shimmer gets its visible beat before the data lands').toBe(false);
-    expect(r.settled, 'then the data lands, with the one cascade already spent').toBe(true);
+    expect(r.settled, 'then the data lands and pours the one cascade').toBe(true);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
@@ -1463,7 +1466,8 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.settledOnFix, 'the fix releases the settle immediately').toBe(true);
   });
 
-  // The KPI tile entrance (td-met-enter) plays ONLY during the boot pour.
+  // The KPI tile entrance plays ONLY during the boot pour (td-wf-in since
+  // owner 2026-10-01: a tile is a block of the one waterfall).
   // It used to live on .met itself, so every innerHTML rebuild (sync echoes,
   // a mileage measurement landing) replayed six tile animations: the KPI
   // flashing on the owner's 2026-08-11 screen recording, caught by the
@@ -1477,7 +1481,7 @@ test.describe('Cloud Supabase and account functions', () => {
       d.classList.add('active');
       d.classList.remove('boot-cascade');
       const seen = [];
-      const h = (e) => { if (e.animationName === 'td-met-enter') seen.push(e.target.className); };
+      const h = (e) => { if (e.animationName === 'td-wf-in') seen.push(e.target.className); };
       document.addEventListener('animationstart', h, true);
       try {
         renderDash();
@@ -1492,7 +1496,9 @@ test.describe('Cloud Supabase and account functions', () => {
         const met = document.querySelector('#pg-dash .met');
         const idleAnim = met ? getComputedStyle(met).animationName : 'missing';
         d.classList.add('boot-cascade');       // the pour is the one licensed moment
+        if (met) met.setAttribute('data-wf', '');   // _armBootCascade stamps each block
         const pourAnim = met ? getComputedStyle(met).animationName : 'missing';
+        if (met) met.removeAttribute('data-wf');
         return { quiet, stillQuiet, idleAnim, pourAnim, mets: document.querySelectorAll('#pg-dash .met').length };
       } finally {
         document.removeEventListener('animationstart', h, true);
@@ -1503,7 +1509,7 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.quiet, 'a plain render never animates a tile').toBe(0);
     expect(r.stillQuiet, 'nor does a rebuild').toBe(0);
     expect(r.idleAnim, 'no entrance animation outside the pour').toBe('none');
-    expect(r.pourAnim, 'the pour still carries the entrance').toContain('td-met-enter');
+    expect(r.pourAnim, 'the pour still carries the entrance').toContain('td-wf-in');
   });
 
   // renderDash re-applied the saved widget order by re-APPENDING every card,
@@ -10449,28 +10455,29 @@ test.describe('Version consistency', () => {
     expect(r.userStillNull, 'nothing invented when nothing is cached').toBe(true);
   });
 
-  test('boot skeletons are component-shaped per widget, never one generic blob', async () => {
+  test('boot skeletons are each widget\'s own shape, never one generic blob', async () => {
     // Owner 2026-08-14: every tile gets its OWN shimmer shaped like itself.
-    // The KPI widget shimmers as six metric tiles, quick actions as three
-    // round buttons, the calendar as a seven-cell week, and an unknown
-    // widget still falls back to generic rows rather than a blank hole.
+    // Owner 2026-10-01 took it the rest of the way ("the skeleton shimmers
+    // don't match up the tiles"): the placeholder is now a redacted COPY of
+    // each widget's own markup, so the KPI widget shimmers as its six real
+    // tiles, quick actions as its real buttons, the calendar as its real week.
     const r = await page.evaluate(() => {
       const saved = { pending: window._bootSyncPending, done: window._bootSkelDone, timer: window._bootSkelTimer };
       try {
         goPg('pg-dash');
         document.getElementById('pg-dash').classList.add('active');
+        renderDash();
         window._bootSyncPending = true; window._bootSkelDone = false;
         _dashApplySkeletons();
         const shape = (dw) => document.querySelector('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>.td-boot-skel');
-        const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
+        const real = (dw, sel) => document.querySelectorAll('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>:not(.td-boot-skel) ' + sel).length;
+        const kpi = shape('kpi'), quick = shape('quick');
         return {
-          // the tile grid only: the geo banner's own shimmer card follows it (2026-09-24)
-          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div:first-child>div').length : 0,
-          // style.borderRadius, not the raw attribute: the shimmer sweep sets
-          // properties on each bar, which re-serializes the attribute text.
-          quickButtons: quick ? [...quick.querySelectorAll('.td-skel')].filter(b => b.style.borderRadius === '14px').length : 0,
-          calCells: cal ? cal.querySelectorAll('div[style*="repeat(7"] .td-skel').length : 0,
-          fallbackHasRows: _tdSkelShape('никто', 120).includes('td-skel'),
+          kpiTiles: kpi ? kpi.querySelectorAll('.met').length : 0,
+          realTiles: real('kpi', '.met'),
+          quickButtons: quick ? quick.querySelectorAll('.qa').length : 0,
+          realButtons: real('quick', '.qa'),
+          bars: kpi ? kpi.querySelectorAll('.td-skel').length : 0,
         };
       } finally {
         _dashClearSkeletons();
@@ -10479,10 +10486,11 @@ test.describe('Version consistency', () => {
         window._bootSkelTimer = saved.timer;
       }
     });
-    expect(r.kpiTiles, 'the KPI skeleton is six tiles').toBe(6);
-    expect(r.quickButtons, 'quick actions skeleton is three round buttons').toBe(3);
-    expect(r.calCells, 'the calendar skeleton is a seven-cell week').toBe(7);
-    expect(r.fallbackHasRows, 'unknown widgets fall back to generic shimmer rows').toBe(true);
+    expect(r.kpiTiles, 'the KPI placeholder is the real six tiles').toBe(6);
+    expect(r.kpiTiles).toBe(r.realTiles);
+    expect(r.quickButtons, 'quick actions placeholder has every real button').toBe(r.realButtons);
+    expect(r.quickButtons).toBeGreaterThan(2);
+    expect(r.bars, 'and the words are shimmer bars').toBeGreaterThanOrEqual(12);
   });
 
   test('the boot SDK fallback calls the identity restore before rendering', () => {

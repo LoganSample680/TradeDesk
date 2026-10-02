@@ -452,12 +452,12 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
       out.absurd = _dashNearbySkelH();
       localStorage.removeItem('zp3_nearby_snap');
       out.none = _dashNearbySkelH();
-      localStorage.setItem('zp3_nearby_snap', JSON.stringify({ h: 152 }));
-      out.inKpi = _tdSkelShape('kpi', 300).includes('height:152px');
+      // The banner's own placeholder holding that height inside the KPI copy
+      // is covered by e2e-home-waterfall.spec.js (owner 2026-10-01).
       if (keep == null) localStorage.removeItem('zp3_nearby_snap'); else localStorage.setItem('zp3_nearby_snap', keep);
       return out;
     });
-    expect(r).toEqual({ remembered: 152, junk: 86, absurd: 86, none: 86, inKpi: true });
+    expect(r).toEqual({ remembered: 152, junk: 86, absurd: 86, none: 86 });
   });
 
   test('under the shimmer the banner neither waits for the pour nor slides open', async () => {
@@ -517,14 +517,17 @@ test.describe('dashboard boot: shimmer waterfall, then the data lands', () => {
     expect(h.h).toBe(h.now);
   });
 
-  test('the waterfall drops DOWN into place', async () => {
+  // Owner 2026-10-01 ("shuffling from the top down like iOS does"): each
+  // block rises 8px into place. It used to be a 16px drop per widget
+  // (td-card-cascade, 2026-09-24); the iOS shuffle is a short rise per row.
+  test('the waterfall rises 8px into place', async () => {
     const r = await page.evaluate(() => {
       for (const sh of document.styleSheets) {
-        try { for (const rule of sh.cssRules) if (rule.name === 'td-card-cascade') return rule.cssRules[0].style.transform; } catch (e) {}
+        try { for (const rule of sh.cssRules) if (rule.name === 'td-wf-in') return rule.cssRules[0].style.transform; } catch (e) {}
       }
       return null;
     });
-    expect(r).toBe('translateY(-16px)');
+    expect(r).toBe('translateY(8px)');
     assertNoErrors(page, 'dashboard boot reveal');
   });
 });

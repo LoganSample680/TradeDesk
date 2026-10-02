@@ -755,6 +755,45 @@ function _geoRestoreDwell(){
     return true;
   }catch(_e){return false;}
 }
+// ── And so does the fact that today WAS answered (owner 2026-10-01) ─────────
+// "It's not a smooth waterfall down load from top to bottom with the on site
+// card coming in so late." The card waits for the deriver's verdict on today
+// (js/dashboard.js _nearbyGeoPending) so it never paints "Not clocked in" and
+// then flips to ON SITE. But that verdict lived only in memory: a dwell was
+// persisted above, "nobody is on site" was not, so on every boot the phone
+// could not tell "the deriver said nobody" from "the deriver has not spoken",
+// and the card sat in its shimmer until the boot rebuild answered again,
+// seconds after the rest of the screen had landed. Kept the same way the
+// dwell is (login, day, 45-minute freshness): the deriver's last word, painted
+// early, and replaced in place the moment it speaks again. Never invented:
+// with no fresh record the card still waits.
+const _GEO_DAYANS_KEY='zp3_geo_dayans';
+function _geoPersistDayAnswer(){
+  try{localStorage.setItem(_GEO_DAYANS_KEY,JSON.stringify({at:Date.now(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()}));}catch(_e){}
+}
+function _geoRestoreDayAnswer(){
+  try{
+    const s=JSON.parse(localStorage.getItem(_GEO_DAYANS_KEY)||'null');
+    if(!s||s.uid!==((_supaUser&&_supaUser.id)||null)||s.day!==todayKey())return false;
+    if(!(Date.now()-Number(s.at)<_GEO_DWELL_MAX_AGE_MS))return false;
+    window._geoDayKnown=true;
+    return true;
+  }catch(_e){return false;}
+}
+// The first render of the home screen comes BEFORE the cloud load that runs
+// _geoRestoreOpen, and that render is the one the boot placeholder copies. So
+// the card's own state (the dwell, and whether today was answered) is read
+// back the first time the card is drawn for this login. Same reads, same
+// rules, just early; once per login.
+function _geoRestoreEarly(){
+  try{
+    const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+    if(!uid||window._geoEarlyFor===uid)return;
+    window._geoEarlyFor=uid;
+    _geoRestoreDwell();
+    _geoRestoreDayAnswer();
+  }catch(_e){}
+}
 function _geoRestoreOpen(){
   // One-shot per session, same pattern as the mileage sweeps (js/mileage.js
   // _milePersonalStopSweep/_mileMotionHealSweep): this used to only ever get
@@ -778,6 +817,7 @@ function _geoRestoreOpen(){
   // not the fence machine's, and it must come back even on a day the fence
   // machine had nothing open.
   _geoRestoreDwell();
+  _geoRestoreDayAnswer();
   // Park state, for the same reason and at the same moment: the plugin's side
   // of park survived the reload, so JS's side has to as well or the off-switch
   // is unreachable (see _geoParkRestore).
@@ -9067,6 +9107,7 @@ function _geoOpenDwellPublish(dayKey,res){
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
     _geoPersistDwell(next);
+    _geoPersistDayAnswer();
     const firstAnswer=_geoDayAnsweredMark();
     // Report the DERIVER'S VERDICT, not just what the card did with it.
     // Standing inside a fence with no on-site card and no Live Activity, the
