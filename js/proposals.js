@@ -795,6 +795,41 @@ function sendProposalViaEmail(){
 // orders) pass opts {title, subject, body, clientId, onSent} to reuse the
 // exact same send path (Resend edge function, same error/retry handling).
 let _ecContext=null;
+// ── WHICH ROAD AN EMAIL TAKES (owner 2026-10-03) ──────────────────────────
+// Resend exists because a company's mail filter blocked a bid Zach sent to
+// Bettis Asphalt from his own address: a company inbox wants mail from a
+// domain that proves who it is (tradedeskpro.app does). A personal inbox
+// (Gmail, Yahoo, iCloud...) takes mail from a person's own address just fine,
+// and sending it that way keeps Resend's free 100 a day for the companies.
+// So: a personal address opens the contractor's own Mail app, filled in, from
+// their real address; anything else goes through Resend as before.
+const _EMAIL_PERSONAL=new Set(['gmail.com','googlemail.com','ymail.com','rocketmail.com',
+  'msn.com','icloud.com','me.com','mac.com','aol.com','aim.com',
+  'comcast.net','att.net','sbcglobal.net','bellsouth.net','verizon.net','cox.net','charter.net',
+  'spectrum.net','earthlink.net','frontier.com','frontiernet.net','windstream.net','centurylink.net',
+  'q.com','optonline.net','juno.com','netzero.net','mail.com','gmx.com','gmx.us','proton.me',
+  'protonmail.com','pm.me','zoho.com','yandex.com','hey.com','fastmail.com','tutanota.com']);
+// Families with a domain per country (yahoo.co.uk, hotmail.fr) or per region
+// (twc's *.rr.com), matched on the name rather than listed one by one.
+const _EMAIL_PERSONAL_RE=/^(yahoo|hotmail|outlook|live|windowslive)\.[a-z.]+$|(^|\.)rr\.com$/;
+function emailIsPersonal(addr){
+  const s=String(addr==null?'':addr).trim().toLowerCase();
+  const at=s.lastIndexOf('@');
+  if(at<1||at===s.length-1)return false;
+  const dom=s.slice(at+1);
+  return _EMAIL_PERSONAL.has(dom)||_EMAIL_PERSONAL_RE.test(dom);
+}
+// Hands the filled-in message to the phone's own Mail app (the shell opens
+// mailto: outside the web view, the same way it opens sms:).
+function _ecOpenMail(href){window.location.href=href;}
+// The button says which road the address in the box will take.
+function _ecRouteLabel(){
+  const to=document.getElementById('_ec-to'),btn=document.getElementById('_ec-send-btn'),hint=document.getElementById('_ec-route');
+  if(!to||!btn)return;
+  const own=emailIsPersonal(to.value);
+  if(!btn.disabled)btn.textContent=own?'Open in Mail →':'Send Email →';
+  if(hint)hint.textContent=own?'Goes out from your own email, so it lands like a normal message.':'Sent from TradeDesk so company mail filters let it through.';
+}
 function _showEmailComposeModal(d,opts){
   // Remove any existing compose modal
   document.getElementById('_email-compose-overlay')?.remove();
@@ -815,7 +850,7 @@ function _showEmailComposeModal(d,opts){
       '</div>'+
       '<div style="margin-bottom:10px">'+
         '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">To</label>'+
-        '<input id="_ec-to" type="email" value="'+escHtml(d.cemail||'')+'" placeholder="client@email.com" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);font-family:inherit">'+
+        '<input id="_ec-to" type="email" value="'+escHtml(d.cemail||'')+'" oninput="_ecRouteLabel()" placeholder="client@email.com" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);font-family:inherit">'+
       '</div>'+
       '<div style="margin-bottom:10px">'+
         '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Subject</label>'+
@@ -825,12 +860,14 @@ function _showEmailComposeModal(d,opts){
         '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Message</label>'+
         '<textarea id="_ec-body" rows="8" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;line-height:1.5;background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical">'+escHtml(defBody)+'</textarea>'+
       '</div>'+
+      '<div id="_ec-route" style="font-size:12px;color:var(--text3);margin:-4px 0 10px"></div>'+
       '<div id="_ec-status" style="display:none;font-size:13px;color:var(--blue);margin-bottom:10px;text-align:center"></div>'+
       '<button id="_ec-send-btn" onclick="_sendEmailFromCompose()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">Send Email →</button>'+
       '<button onclick="_ecCancel()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
     '</div>';
   document.body.appendChild(ov);
   // Focus email field if empty
+  _ecRouteLabel();
   if(!d.cemail){setTimeout(()=>document.getElementById('_ec-to')?.focus(),100);}
 }
 // Closed without sending: a sender that needs to know (the invoice goes back
@@ -864,8 +901,9 @@ async function _sendEmailFromCompose(){
   const bodyText=(bodyEl.value||'').trim();
   if(sendBtn){sendBtn.disabled=true;sendBtn.textContent='Sending…';}
   if(statusEl){statusEl.style.display='block';statusEl.textContent='Sending…';}
-  // Try server-sent email (Resend). No mailto fallback, avoids double-send confusion.
-  if(supaEnabled()&&_supaUser){
+  // A company address goes through Resend (see emailIsPersonal). No mailto
+  // fallback when that fails, it avoids double-send confusion.
+  if(!emailIsPersonal(toVal)&&supaEnabled()&&_supaUser){
     try{
       const{data:{session:_propSess}}=await _supa.auth.getSession();
       const _propToken=_propSess?.access_token||SUPA_KEY;
@@ -896,9 +934,8 @@ async function _sendEmailFromCompose(){
       return;
     }
   }
-  // No Supabase, open native mail with the composed text
-  const href='mailto:'+encodeURIComponent(toVal)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(bodyText);
-  window.location.href=href;
+  // A personal address, or no Supabase: open their own Mail app, filled in.
+  _ecOpenMail('mailto:'+encodeURIComponent(toVal)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(bodyText));
   document.getElementById('_email-compose-overlay')?.remove();
   if(_ctx&&_ctx.opts.onSent){_ecContext=null;setTimeout(()=>_ctx.opts.onSent(),400);}
   else setTimeout(()=>_commitProposalSent(),400);
