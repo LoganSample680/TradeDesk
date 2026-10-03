@@ -1,0 +1,2566 @@
+{
+ "_note": "Owner 2026-10-03: 500 prompts a user could ask Tim about TradeDesk, he should know everything and take them to the source. Each 'expect' is the source he must land on: a screen id (pg-x), a screen tab (pg-x/tab), a settings section (set:key), a thing to do (do:id, @customer when one is named), an answer off the books (ask:id), a customer's page (client:Name), the build flow (build@Name), and the older kinds (lead:, newclient:, photos, timeoff, rate, help, search). tests/e2e-tim-500.spec.js reads this file.",
+ "clients": [
+  {
+   "id": 8101,
+   "name": "Rick Delaney",
+   "addr": "412 Maple St, Wichita, KS 67203",
+   "phone": "3165550101",
+   "email": "rick@example.com"
+  },
+  {
+   "id": 8102,
+   "name": "Sandra Ruiz",
+   "addr": "2100 Oak Ave, Wichita, KS 67208",
+   "phone": "3165550102",
+   "email": "sandra@example.com"
+  },
+  {
+   "id": 8103,
+   "name": "Tom Becker",
+   "addr": "77 Elm Ct, Wichita, KS 67212",
+   "phone": "3165550103",
+   "email": "tom@example.com"
+  }
+ ],
+ "book": [
+  {
+   "desc": "Replace 40 gal water heater",
+   "rate": 1850,
+   "unit": "ea"
+  },
+  {
+   "desc": "Install kitchen faucet",
+   "rate": 285,
+   "unit": "ea"
+  }
+ ],
+ "prompts": [
+  {
+   "area": "home",
+   "said": "take me home",
+   "expect": "pg-dash"
+  },
+  {
+   "area": "home",
+   "said": "go home",
+   "expect": "pg-dash"
+  },
+  {
+   "area": "home",
+   "said": "back to the home screen",
+   "expect": "pg-dash"
+  },
+  {
+   "area": "home",
+   "said": "main screen",
+   "expect": "pg-dash"
+  },
+  {
+   "area": "home",
+   "said": "open the dashboard",
+   "expect": "pg-dash"
+  },
+  {
+   "area": "leads",
+   "said": "show me my leads",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "pull up the lead list",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "where are my leads",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "any new leads",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "check my inquiries",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "where do web requests show up",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "show me prospects",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "who called in",
+   "expect": "pg-leads"
+  },
+  {
+   "area": "leads",
+   "said": "who do i need to follow up with",
+   "expect": "pg-leads/follow_up"
+  },
+  {
+   "area": "leads",
+   "said": "follow ups",
+   "expect": "pg-leads/follow_up"
+  },
+  {
+   "area": "customers",
+   "said": "customer list",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "show me all my customers",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "open clients",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "pull up my client list",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "where are my contacts",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "take me to customers",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "how do i find a customer",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "i need to look up a customer",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "customers",
+   "said": "address book",
+   "expect": "pg-clients"
+  },
+  {
+   "area": "jobs",
+   "said": "open my jobs",
+   "expect": "pg-jobs"
+  },
+  {
+   "area": "jobs",
+   "said": "show me the jobs",
+   "expect": "pg-jobs"
+  },
+  {
+   "area": "jobs",
+   "said": "work orders",
+   "expect": "pg-jobs"
+  },
+  {
+   "area": "jobs",
+   "said": "where are my jobs",
+   "expect": "pg-jobs"
+  },
+  {
+   "area": "jobs",
+   "said": "show active jobs",
+   "expect": "pg-jobs/active"
+  },
+  {
+   "area": "jobs",
+   "said": "what am i working on",
+   "expect": "pg-jobs/active"
+  },
+  {
+   "area": "jobs",
+   "said": "completed jobs",
+   "expect": "pg-jobs/completed"
+  },
+  {
+   "area": "jobs",
+   "said": "scheduled jobs",
+   "expect": "pg-jobs/scheduled"
+  },
+  {
+   "area": "jobs",
+   "said": "upcoming jobs",
+   "expect": "pg-jobs/scheduled"
+  },
+  {
+   "area": "jobs",
+   "said": "whats my next job",
+   "expect": "pg-jobs/scheduled"
+  },
+  {
+   "area": "jobs",
+   "said": "current jobs",
+   "expect": "pg-jobs/active"
+  },
+  {
+   "area": "jobs",
+   "said": "job board",
+   "expect": "pg-jobs"
+  },
+  {
+   "area": "schedule",
+   "said": "open the schedule",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "my schedule",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "when am i free",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "next open day",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "check my availability",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "when can i fit someone in",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "how do i see open dates",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "schedule",
+   "said": "schedule",
+   "expect": "pg-schedule"
+  },
+  {
+   "area": "calendar",
+   "said": "show the calendar",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "calendar",
+   "said": "open my calendar",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "calendar",
+   "said": "whats the weather",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "calendar",
+   "said": "is it going to rain",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "calendar",
+   "said": "what does my week look like",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "calendar",
+   "said": "is it supposed to snow",
+   "expect": "pg-cal"
+  },
+  {
+   "area": "proposals",
+   "said": "show my proposals",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "my quotes",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "sent estimates",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "where are my estimates",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "pending proposals",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "signed proposals",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "proposal list",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "show me my bids",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "who viewed my proposal",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "who signed",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "open bids",
+   "expect": "pg-proposals"
+  },
+  {
+   "area": "proposals",
+   "said": "whats pending",
+   "expect": "ask:out"
+  },
+  {
+   "area": "service due",
+   "said": "show service due",
+   "expect": "pg-wh-list"
+  },
+  {
+   "area": "service due",
+   "said": "water heater flush list",
+   "expect": "pg-wh-list"
+  },
+  {
+   "area": "service due",
+   "said": "whos due for maintenance",
+   "expect": "pg-wh-list"
+  },
+  {
+   "area": "service due",
+   "said": "maintenance list",
+   "expect": "pg-wh-list"
+  },
+  {
+   "area": "service due",
+   "said": "who is due for service",
+   "expect": "pg-wh-list"
+  },
+  {
+   "area": "collect",
+   "said": "collect",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "take me to collect",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "where do i see payments",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "open invoices",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "unpaid invoices",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "accounts receivable",
+   "expect": "pg-money"
+  },
+  {
+   "area": "collect",
+   "said": "overdue invoices",
+   "expect": "pg-money/overdue"
+  },
+  {
+   "area": "collect",
+   "said": "who is paying late",
+   "expect": "pg-money/overdue"
+  },
+  {
+   "area": "collect",
+   "said": "paid invoices",
+   "expect": "pg-money/paid"
+  },
+  {
+   "area": "collect",
+   "said": "partial payments",
+   "expect": "pg-money/partial"
+  },
+  {
+   "area": "collect",
+   "said": "invoices i havent sent",
+   "expect": "pg-money/unpaid"
+  },
+  {
+   "area": "collect",
+   "said": "show me what is not sent",
+   "expect": "pg-money/unpaid"
+  },
+  {
+   "area": "books",
+   "said": "show me my books",
+   "expect": "pg-tracker"
+  },
+  {
+   "area": "books",
+   "said": "books for last year",
+   "expect": "pg-tracker"
+  },
+  {
+   "area": "books",
+   "said": "2024",
+   "expect": "pg-tracker"
+  },
+  {
+   "area": "books",
+   "said": "my financials",
+   "expect": "pg-tracker"
+  },
+  {
+   "area": "books",
+   "said": "profit and loss",
+   "expect": "pg-tracker/summary"
+  },
+  {
+   "area": "books",
+   "said": "p and l",
+   "expect": "pg-tracker/summary"
+  },
+  {
+   "area": "books",
+   "said": "show me my income",
+   "expect": "pg-tracker/income"
+  },
+  {
+   "area": "books",
+   "said": "income for last year",
+   "expect": "pg-tracker/income"
+  },
+  {
+   "area": "books",
+   "said": "expenses",
+   "expect": "pg-tracker/expenses"
+  },
+  {
+   "area": "books",
+   "said": "open expenses",
+   "expect": "pg-tracker/expenses"
+  },
+  {
+   "area": "books",
+   "said": "show my receipts",
+   "expect": "pg-tracker/expenses"
+  },
+  {
+   "area": "books",
+   "said": "mileage log",
+   "expect": "pg-tracker/mileage"
+  },
+  {
+   "area": "books",
+   "said": "trip log",
+   "expect": "pg-tracker/mileage"
+  },
+  {
+   "area": "books",
+   "said": "show my trips",
+   "expect": "pg-tracker/mileage"
+  },
+  {
+   "area": "books",
+   "said": "open my mileage",
+   "expect": "pg-tracker/mileage"
+  },
+  {
+   "area": "books",
+   "said": "my saved places",
+   "expect": "pg-tracker/places"
+  },
+  {
+   "area": "books",
+   "said": "job costing",
+   "expect": "pg-tracker/jobs"
+  },
+  {
+   "area": "books",
+   "said": "profit by job",
+   "expect": "pg-tracker/jobs"
+  },
+  {
+   "area": "books",
+   "said": "hiring calculator",
+   "expect": "pg-tracker/hiring"
+  },
+  {
+   "area": "books",
+   "said": "can i afford to hire a helper",
+   "expect": "pg-tracker/hiring"
+  },
+  {
+   "area": "books",
+   "said": "show the map",
+   "expect": "pg-tracker/map"
+  },
+  {
+   "area": "books",
+   "said": "map of where i drove",
+   "expect": "pg-tracker/map"
+  },
+  {
+   "area": "books",
+   "said": "show me my expenses",
+   "expect": "ask:spent"
+  },
+  {
+   "area": "books",
+   "said": "my mileage",
+   "expect": "ask:miles"
+  },
+  {
+   "area": "taxes",
+   "said": "taxes",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "show me my taxes",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "quarterly taxes",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "write offs",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "what can i deduct",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "payroll taxes",
+   "expect": "pg-taxes/payroll"
+  },
+  {
+   "area": "taxes",
+   "said": "show payroll",
+   "expect": "pg-taxes/payroll"
+  },
+  {
+   "area": "taxes",
+   "said": "schedule c",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "how much do i owe in taxes",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "taxes",
+   "said": "what do i set aside for taxes",
+   "expect": "pg-taxes"
+  },
+  {
+   "area": "team and fleet",
+   "said": "my crew",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "pull up my crew",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "show employees",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "whos on my team",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "subcontractors",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "where are my subs",
+   "expect": "pg-team/team"
+  },
+  {
+   "area": "team and fleet",
+   "said": "my trucks",
+   "expect": "pg-team/fleet"
+  },
+  {
+   "area": "team and fleet",
+   "said": "fleet",
+   "expect": "pg-team/fleet"
+  },
+  {
+   "area": "team and fleet",
+   "said": "show me my vans",
+   "expect": "pg-team/fleet"
+  },
+  {
+   "area": "team and fleet",
+   "said": "when is my oil change due",
+   "expect": "pg-team/fleet"
+  },
+  {
+   "area": "team and fleet",
+   "said": "fleet and team",
+   "expect": "pg-team"
+  },
+  {
+   "area": "timesheet",
+   "said": "timesheet",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "open the time log",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "time cards",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "crew time",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "show me time entries",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "who clocked in today",
+   "expect": "pg-timelog"
+  },
+  {
+   "area": "timesheet",
+   "said": "where do i export the timesheet",
+   "expect": "do:export-time"
+  },
+  {
+   "area": "timesheet",
+   "said": "my hours",
+   "expect": "ask:hours"
+  },
+  {
+   "area": "timesheet",
+   "said": "timesheet for last week",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "dispatch",
+   "said": "dispatch",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "dispatch",
+   "said": "dispatch board",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "dispatch",
+   "said": "whos going where today",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "dispatch",
+   "said": "assign a job to one of my guys",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "dispatch",
+   "said": "crew assignments",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "dispatch",
+   "said": "send the crew out",
+   "expect": "pg-dispatch"
+  },
+  {
+   "area": "licensing",
+   "said": "my licenses",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "licensing",
+   "said": "when does my license expire",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "licensing",
+   "said": "permits",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "licensing",
+   "said": "show my insurance",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "licensing",
+   "said": "continuing education hours",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "licensing",
+   "said": "renew my license",
+   "expect": "pg-licensing"
+  },
+  {
+   "area": "contracts",
+   "said": "contracts",
+   "expect": "pg-contracts"
+  },
+  {
+   "area": "contracts",
+   "said": "service agreements",
+   "expect": "pg-contracts"
+  },
+  {
+   "area": "contracts",
+   "said": "maintenance plans",
+   "expect": "pg-contracts"
+  },
+  {
+   "area": "contracts",
+   "said": "show my agreements",
+   "expect": "pg-contracts"
+  },
+  {
+   "area": "client hub",
+   "said": "client hub",
+   "expect": "pg-client-hub"
+  },
+  {
+   "area": "client hub",
+   "said": "customer portal",
+   "expect": "pg-client-hub"
+  },
+  {
+   "area": "client hub",
+   "said": "what do my customers see",
+   "expect": "pg-client-hub"
+  },
+  {
+   "area": "client hub",
+   "said": "open the portal",
+   "expect": "pg-client-hub"
+  },
+  {
+   "area": "client hub",
+   "said": "take me to the client hub",
+   "expect": "pg-client-hub"
+  },
+  {
+   "area": "qr leads",
+   "said": "qr code",
+   "expect": "pg-qr-leads"
+  },
+  {
+   "area": "qr leads",
+   "said": "my yard sign",
+   "expect": "pg-qr-leads"
+  },
+  {
+   "area": "qr leads",
+   "said": "qr leads",
+   "expect": "pg-qr-leads"
+  },
+  {
+   "area": "top clients",
+   "said": "top clients",
+   "expect": "pg-checklist"
+  },
+  {
+   "area": "top clients",
+   "said": "heavy hitters",
+   "expect": "pg-checklist"
+  },
+  {
+   "area": "top clients",
+   "said": "show me the top clients",
+   "expect": "pg-checklist"
+  },
+  {
+   "area": "top clients",
+   "said": "client rankings",
+   "expect": "pg-checklist"
+  },
+  {
+   "area": "photos",
+   "said": "photos page",
+   "expect": "pg-photos"
+  },
+  {
+   "area": "photos",
+   "said": "all my photos",
+   "expect": "pg-photos"
+  },
+  {
+   "area": "photos",
+   "said": "where are my photos",
+   "expect": "pg-photos"
+  },
+  {
+   "area": "photos",
+   "said": "photo library",
+   "expect": "pg-photos"
+  },
+  {
+   "area": "photos",
+   "said": "pictures from the delaney job",
+   "expect": "photos"
+  },
+  {
+   "area": "photos",
+   "said": "show me pics of 412 maple",
+   "expect": "photos"
+  },
+  {
+   "area": "photos",
+   "said": "photos for sandra",
+   "expect": "photos"
+  },
+  {
+   "area": "settings",
+   "said": "settings",
+   "expect": "pg-settings"
+  },
+  {
+   "area": "settings",
+   "said": "open settings",
+   "expect": "pg-settings"
+  },
+  {
+   "area": "settings",
+   "said": "preferences",
+   "expect": "pg-settings"
+  },
+  {
+   "area": "settings",
+   "said": "my account",
+   "expect": "pg-settings"
+  },
+  {
+   "area": "settings",
+   "said": "app settings",
+   "expect": "pg-settings"
+  },
+  {
+   "area": "settings",
+   "said": "change my business name",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "update my business info",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "edit my company info",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "change my business address",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "where do i put my license number",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "add my contractor license number",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "google review link",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "sales tax rate",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "business hours",
+   "expect": "set:biz"
+  },
+  {
+   "area": "settings",
+   "said": "change my logo",
+   "expect": "set:branding"
+  },
+  {
+   "area": "settings",
+   "said": "upload my logo",
+   "expect": "set:branding"
+  },
+  {
+   "area": "settings",
+   "said": "brand colors",
+   "expect": "set:branding"
+  },
+  {
+   "area": "settings",
+   "said": "my branding",
+   "expect": "set:branding"
+  },
+  {
+   "area": "settings",
+   "said": "how do i put my logo on proposals",
+   "expect": "set:branding"
+  },
+  {
+   "area": "settings",
+   "said": "markup",
+   "expect": "set:rates"
+  },
+  {
+   "area": "settings",
+   "said": "change my markup",
+   "expect": "set:rates"
+  },
+  {
+   "area": "settings",
+   "said": "deposit percentage",
+   "expect": "set:rates"
+  },
+  {
+   "area": "settings",
+   "said": "how much deposit do i ask for",
+   "expect": "set:rates"
+  },
+  {
+   "area": "settings",
+   "said": "open the price book",
+   "expect": "set:pricebook"
+  },
+  {
+   "area": "settings",
+   "said": "price book",
+   "expect": "set:pricebook"
+  },
+  {
+   "area": "settings",
+   "said": "edit my prices",
+   "expect": "set:pricebook"
+  },
+  {
+   "area": "settings",
+   "said": "where are my saved prices",
+   "expect": "set:pricebook"
+  },
+  {
+   "area": "settings",
+   "said": "terms and conditions",
+   "expect": "set:legal"
+  },
+  {
+   "area": "settings",
+   "said": "warranty language",
+   "expect": "set:legal"
+  },
+  {
+   "area": "settings",
+   "said": "fine print on my proposals",
+   "expect": "set:legal"
+  },
+  {
+   "area": "settings",
+   "said": "change my trade",
+   "expect": "set:trades"
+  },
+  {
+   "area": "settings",
+   "said": "what trades am i set up for",
+   "expect": "set:trades"
+  },
+  {
+   "area": "settings",
+   "said": "code edition",
+   "expect": "set:codes"
+  },
+  {
+   "area": "settings",
+   "said": "which nec do we use",
+   "expect": "set:codes"
+  },
+  {
+   "area": "settings",
+   "said": "connect stripe",
+   "expect": "set:integrations"
+  },
+  {
+   "area": "settings",
+   "said": "set up stripe",
+   "expect": "set:integrations"
+  },
+  {
+   "area": "settings",
+   "said": "how do i take credit cards",
+   "expect": "set:integrations"
+  },
+  {
+   "area": "settings",
+   "said": "accept card payments",
+   "expect": "set:integrations"
+  },
+  {
+   "area": "settings",
+   "said": "integrations",
+   "expect": "set:integrations"
+  },
+  {
+   "area": "settings",
+   "said": "tax settings",
+   "expect": "set:taxes"
+  },
+  {
+   "area": "settings",
+   "said": "irs mileage rate",
+   "expect": "set:taxes"
+  },
+  {
+   "area": "settings",
+   "said": "turn on location",
+   "expect": "set:cloud"
+  },
+  {
+   "area": "settings",
+   "said": "location access",
+   "expect": "set:cloud"
+  },
+  {
+   "area": "settings",
+   "said": "backup my data",
+   "expect": "set:cloud"
+  },
+  {
+   "area": "settings",
+   "said": "cloud sync",
+   "expect": "set:cloud"
+  },
+  {
+   "area": "settings",
+   "said": "my location is not working",
+   "expect": "set:cloud"
+  },
+  {
+   "area": "settings",
+   "said": "notifications",
+   "expect": "set:notifications"
+  },
+  {
+   "area": "settings",
+   "said": "turn on notifications",
+   "expect": "set:notifications"
+  },
+  {
+   "area": "settings",
+   "said": "text templates",
+   "expect": "set:notifications"
+  },
+  {
+   "area": "settings",
+   "said": "change my follow up message",
+   "expect": "set:notifications"
+  },
+  {
+   "area": "settings",
+   "said": "truemeasure rates",
+   "expect": "set:truerates"
+  },
+  {
+   "area": "settings",
+   "said": "export my data",
+   "expect": "set:data"
+  },
+  {
+   "area": "settings",
+   "said": "delete all my data",
+   "expect": "set:data"
+  },
+  {
+   "area": "settings",
+   "said": "delete my account",
+   "expect": "set:data"
+  },
+  {
+   "area": "settings",
+   "said": "what version am i on",
+   "expect": "set:about"
+  },
+  {
+   "area": "settings",
+   "said": "privacy policy",
+   "expect": "set:about"
+  },
+  {
+   "area": "settings",
+   "said": "change my hourly rate",
+   "expect": "rate"
+  },
+  {
+   "area": "settings",
+   "said": "whats my rate",
+   "expect": "rate"
+  },
+  {
+   "area": "settings",
+   "said": "set my rate to 125",
+   "expect": "rate"
+  },
+  {
+   "area": "settings",
+   "said": "change my labor rate to 95 an hour",
+   "expect": "rate"
+  },
+  {
+   "area": "new customer",
+   "said": "new customer",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "add a customer",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "add a new client",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "i need to add a customer",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "how do i add a new customer",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "new lead",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "add a lead",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "put in a new lead",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "got a new lead",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "tim add a new homeowner",
+   "expect": "do:new-client"
+  },
+  {
+   "area": "new customer",
+   "said": "new lead Mike Jones 412 Oak St Wichita 316 555 1234",
+   "expect": "lead:Mike Jones"
+  },
+  {
+   "area": "new customer",
+   "said": "add a customer named Bill Pratt",
+   "expect": "lead:Bill Pratt"
+  },
+  {
+   "area": "new customer",
+   "said": "another lead Jen Cole, wants a new faucet",
+   "expect": "lead:Jen Cole"
+  },
+  {
+   "area": "new customer",
+   "said": "new customer Ray Gomez 316-555-8800",
+   "expect": "lead:Ray Gomez"
+  },
+  {
+   "area": "new customer",
+   "said": "import my contacts",
+   "expect": "do:import"
+  },
+  {
+   "area": "new customer",
+   "said": "import customers",
+   "expect": "do:import"
+  },
+  {
+   "area": "new customer",
+   "said": "bring in contacts from my phone",
+   "expect": "do:import"
+  },
+  {
+   "area": "new customer",
+   "said": "upload my customer list",
+   "expect": "do:import"
+  },
+  {
+   "area": "new customer",
+   "said": "send my intake form",
+   "expect": "do:intake"
+  },
+  {
+   "area": "new customer",
+   "said": "lead form for my website",
+   "expect": "do:intake"
+  },
+  {
+   "area": "new customer",
+   "said": "booking link",
+   "expect": "do:intake"
+  },
+  {
+   "area": "new customer",
+   "said": "wheres my intake form",
+   "expect": "do:intake"
+  },
+  {
+   "area": "estimates",
+   "said": "new estimate",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "start a proposal",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "write a bid",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "i need to write up an estimate",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "how do i make a proposal",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "create an estimate",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "start a new bid",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "draw up a proposal",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "send a quote",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "can you start an estimate",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "i need a new estimate",
+   "expect": "do:estimate"
+  },
+  {
+   "area": "estimates",
+   "said": "start a proposal for sandra ruiz",
+   "expect": "build@Sandra Ruiz"
+  },
+  {
+   "area": "estimates",
+   "said": "write rick a bid",
+   "expect": "build@Rick Delaney"
+  },
+  {
+   "area": "estimates",
+   "said": "estimate for tom becker",
+   "expect": "build@Tom Becker"
+  },
+  {
+   "area": "estimates",
+   "said": "t and m for sandra",
+   "expect": "build@Sandra Ruiz"
+  },
+  {
+   "area": "estimates",
+   "said": "quote rick by the hour",
+   "expect": "build@Rick Delaney"
+  },
+  {
+   "area": "estimates",
+   "said": "bid the delaney job",
+   "expect": "build@Rick Delaney"
+  },
+  {
+   "area": "estimates",
+   "said": "build me a time and materials for Logan Sample",
+   "expect": "newclient:Logan Sample"
+  },
+  {
+   "area": "estimates",
+   "said": "new estimate for Jim Halpert",
+   "expect": "newclient:Jim Halpert"
+  },
+  {
+   "area": "estimates",
+   "said": "true bid for the ruiz house",
+   "expect": "build@Sandra Ruiz"
+  },
+  {
+   "area": "estimates",
+   "said": "build your own for tom becker",
+   "expect": "build@Tom Becker"
+  },
+  {
+   "area": "estimates",
+   "said": "send sandra a proposal",
+   "expect": "build@Sandra Ruiz"
+  },
+  {
+   "area": "estimates",
+   "said": "make a quote for rick delaney",
+   "expect": "build@Rick Delaney"
+  },
+  {
+   "area": "invoices",
+   "said": "send an invoice",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "new invoice",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "make an invoice",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "create an invoice for rick delaney",
+   "expect": "do:invoice@Rick Delaney"
+  },
+  {
+   "area": "invoices",
+   "said": "invoice sandra",
+   "expect": "do:invoice@Sandra Ruiz"
+  },
+  {
+   "area": "invoices",
+   "said": "bill tom becker",
+   "expect": "do:invoice@Tom Becker"
+  },
+  {
+   "area": "invoices",
+   "said": "how do i invoice someone",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "i need to bill a customer",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "send rick a bill",
+   "expect": "do:invoice@Rick Delaney"
+  },
+  {
+   "area": "invoices",
+   "said": "quick invoice",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "invoice for the ruiz job",
+   "expect": "do:invoice@Sandra Ruiz"
+  },
+  {
+   "area": "invoices",
+   "said": "send the final invoice to tom",
+   "expect": "do:invoice@Tom Becker"
+  },
+  {
+   "area": "invoices",
+   "said": "send rick a bill for the water heater",
+   "expect": "do:invoice@Rick Delaney"
+  },
+  {
+   "area": "invoices",
+   "said": "invoice",
+   "expect": "do:invoice"
+  },
+  {
+   "area": "invoices",
+   "said": "what do i invoice for last week",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "invoices",
+   "said": "what can i invoice",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "invoices",
+   "said": "who do i bill",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "invoices",
+   "said": "ready to invoice",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "payments",
+   "said": "take a payment",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "collect a payment",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "record a payment",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "rick paid me",
+   "expect": "do:collect@Rick Delaney"
+  },
+  {
+   "area": "payments",
+   "said": "sandra paid cash",
+   "expect": "do:collect@Sandra Ruiz"
+  },
+  {
+   "area": "payments",
+   "said": "log a check",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "i got paid",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "run a card",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "take a credit card payment",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "customer paid me",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "collect a deposit",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "tom paid by check",
+   "expect": "do:collect@Tom Becker"
+  },
+  {
+   "area": "payments",
+   "said": "mark it paid",
+   "expect": "do:collect"
+  },
+  {
+   "area": "payments",
+   "said": "send payment reminders",
+   "expect": "do:reminders"
+  },
+  {
+   "area": "payments",
+   "said": "remind everyone who owes me",
+   "expect": "do:reminders"
+  },
+  {
+   "area": "payments",
+   "said": "send all reminders",
+   "expect": "do:reminders"
+  },
+  {
+   "area": "payments",
+   "said": "chase down payments",
+   "expect": "do:reminders"
+  },
+  {
+   "area": "change orders",
+   "said": "change order",
+   "expect": "do:change-order"
+  },
+  {
+   "area": "change orders",
+   "said": "write a change order",
+   "expect": "do:change-order"
+  },
+  {
+   "area": "change orders",
+   "said": "change order for rick",
+   "expect": "do:change-order@Rick Delaney"
+  },
+  {
+   "area": "change orders",
+   "said": "add a change order",
+   "expect": "do:change-order"
+  },
+  {
+   "area": "change orders",
+   "said": "new change order on the ruiz job",
+   "expect": "do:change-order@Sandra Ruiz"
+  },
+  {
+   "area": "change orders",
+   "said": "how do i do a change order",
+   "expect": "do:change-order"
+  },
+  {
+   "area": "change orders",
+   "said": "customer wants extra work",
+   "expect": "do:change-order"
+  },
+  {
+   "area": "clock",
+   "said": "clock in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "clock me in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "punch in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "start my day",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "start the clock",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "im here clock me in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "how do i clock in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "hey tim clock me in",
+   "expect": "do:clock-in"
+  },
+  {
+   "area": "clock",
+   "said": "clock out",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "clock me out",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "punch out",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "im done for the day",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "end my day",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "call it a day",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "how do i clock out",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "clock",
+   "said": "im off the clock",
+   "expect": "do:clock-out"
+  },
+  {
+   "area": "expenses",
+   "said": "add an expense",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "log an expense",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "new expense",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "i bought materials",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "record a purchase",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "how do i add an expense",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "log gas",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "put in an expense for lumber",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "just bought supplies at home depot",
+   "expect": "do:expense"
+  },
+  {
+   "area": "expenses",
+   "said": "scan a receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "scan receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "take a picture of a receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "snap a receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "upload a receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "where do i put receipts",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "add a receipt",
+   "expect": "do:receipt"
+  },
+  {
+   "area": "expenses",
+   "said": "what did i spend on materials",
+   "expect": "ask:spent"
+  },
+  {
+   "area": "expenses",
+   "said": "how much have i spent this year",
+   "expect": "ask:spent"
+  },
+  {
+   "area": "expenses",
+   "said": "where is my money going",
+   "expect": "ask:spent"
+  },
+  {
+   "area": "expenses",
+   "said": "my expenses",
+   "expect": "ask:spent"
+  },
+  {
+   "area": "mileage",
+   "said": "log a trip",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "log my miles",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "add mileage",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "enter a trip",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "i forgot to log a drive",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "how do i log mileage",
+   "expect": "do:trip"
+  },
+  {
+   "area": "mileage",
+   "said": "start a drive",
+   "expect": "do:drive"
+  },
+  {
+   "area": "mileage",
+   "said": "start tracking my miles",
+   "expect": "do:drive"
+  },
+  {
+   "area": "mileage",
+   "said": "start a trip",
+   "expect": "do:drive"
+  },
+  {
+   "area": "mileage",
+   "said": "start mileage",
+   "expect": "do:drive"
+  },
+  {
+   "area": "mileage",
+   "said": "heading to a job",
+   "expect": "do:drive"
+  },
+  {
+   "area": "mileage",
+   "said": "how many miles this month",
+   "expect": "ask:miles"
+  },
+  {
+   "area": "mileage",
+   "said": "whats my mileage",
+   "expect": "ask:miles"
+  },
+  {
+   "area": "mileage",
+   "said": "how many miles did i drive last week",
+   "expect": "ask:miles"
+  },
+  {
+   "area": "mileage",
+   "said": "miles this year",
+   "expect": "ask:miles"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a vehicle",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a truck",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "new truck",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add my van",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "how do i add a truck",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a trailer",
+   "expect": "do:vehicle"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add an employee",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a guy to my crew",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "hire someone",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "invite my crew",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a helper",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "how do i add a worker",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a team member",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add an apprentice",
+   "expect": "do:employee"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add a subcontractor",
+   "expect": "do:sub"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "new sub",
+   "expect": "do:sub"
+  },
+  {
+   "area": "fleet and crew actions",
+   "said": "add my electrician sub",
+   "expect": "do:sub"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "schedule a job",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "book an appointment",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "schedule an estimate",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "put a job on the calendar",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "book a job for rick",
+   "expect": "do:schedule@Rick Delaney"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "schedule sandra for tuesday",
+   "expect": "do:schedule@Sandra Ruiz"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "new appointment",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "how do i schedule a job",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "pencil in tom becker",
+   "expect": "do:schedule@Tom Becker"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "new job",
+   "expect": "do:schedule"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "mark a job done",
+   "expect": "do:complete"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "finish a job",
+   "expect": "do:complete"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "job complete",
+   "expect": "do:complete"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "we finished the ruiz job",
+   "expect": "do:complete"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "the job is done",
+   "expect": "do:complete"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "im on vacation through sunday",
+   "expect": "timeoff"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "take tomorrow off",
+   "expect": "timeoff"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "im off friday",
+   "expect": "timeoff"
+  },
+  {
+   "area": "scheduling actions",
+   "said": "show my time off",
+   "expect": "timeoff-open"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "take a photo",
+   "expect": "do:photo"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "take a picture",
+   "expect": "do:photo"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "snap a pic",
+   "expect": "do:photo"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add photos",
+   "expect": "do:photo"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "take before pictures",
+   "expect": "do:photo"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "new contract",
+   "expect": "do:contract"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "write a service agreement",
+   "expect": "do:contract"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add a maintenance plan",
+   "expect": "do:contract"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "sign someone up for a maintenance plan",
+   "expect": "do:contract"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add a license",
+   "expect": "do:license"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add my insurance",
+   "expect": "do:license"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "new permit",
+   "expect": "do:license"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add a place",
+   "expect": "do:place"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "save a supply house",
+   "expect": "do:place"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add my shop",
+   "expect": "do:place"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add my home office",
+   "expect": "do:place"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "log a cash job",
+   "expect": "do:income"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add income",
+   "expect": "do:income"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "export my books",
+   "expect": "do:export"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "send my books to my accountant",
+   "expect": "do:export"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "export for my cpa",
+   "expect": "do:export"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "export to quickbooks",
+   "expect": "do:export"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add a recurring service",
+   "expect": "do:service"
+  },
+  {
+   "area": "photos and docs actions",
+   "said": "add a flush customer",
+   "expect": "do:service"
+  },
+  {
+   "area": "app actions",
+   "said": "turn on dark mode",
+   "expect": "do:dark"
+  },
+  {
+   "area": "app actions",
+   "said": "light mode",
+   "expect": "do:light"
+  },
+  {
+   "area": "app actions",
+   "said": "turn off dark mode",
+   "expect": "do:light"
+  },
+  {
+   "area": "app actions",
+   "said": "log out",
+   "expect": "do:signout"
+  },
+  {
+   "area": "app actions",
+   "said": "sign out",
+   "expect": "do:signout"
+  },
+  {
+   "area": "app actions",
+   "said": "how do i sign out",
+   "expect": "do:signout"
+  },
+  {
+   "area": "app actions",
+   "said": "help",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "what can you do",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "what can i ask you",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "how does this work",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "i need help",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "give me a tour",
+   "expect": "help"
+  },
+  {
+   "area": "app actions",
+   "said": "search for 412 maple",
+   "expect": "search"
+  },
+  {
+   "area": "app actions",
+   "said": "search for water heater",
+   "expect": "search"
+  },
+  {
+   "area": "app actions",
+   "said": "look up the oak street job",
+   "expect": "search"
+  },
+  {
+   "area": "app actions",
+   "said": "find the kitchen remodel",
+   "expect": "search"
+  },
+  {
+   "area": "one customer",
+   "said": "show rick delaney",
+   "expect": "client:Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "open sandra ruiz",
+   "expect": "client:Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "pull up tom becker",
+   "expect": "client:Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "rick delaney",
+   "expect": "client:Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "find sandra",
+   "expect": "client:Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "take me to the delaneys",
+   "expect": "client:Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "go to ricks file",
+   "expect": "client:Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "look up tom",
+   "expect": "client:Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "what does rick owe me",
+   "expect": "client:Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "call rick",
+   "expect": "do:call@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "phone tom",
+   "expect": "do:call@Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "give rick a call",
+   "expect": "do:call@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "ring the delaneys",
+   "expect": "do:call@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "text sandra",
+   "expect": "do:text@Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "text rick",
+   "expect": "do:text@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "send tom a text",
+   "expect": "do:text@Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "message sandra",
+   "expect": "do:text@Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "shoot rick a text",
+   "expect": "do:text@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "email sandra",
+   "expect": "do:email@Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "send rick an email",
+   "expect": "do:email@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "directions to ricks",
+   "expect": "do:directions@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "navigate to sandra ruiz",
+   "expect": "do:directions@Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "how do i get to tom beckers house",
+   "expect": "do:directions@Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "get me to the delaney job",
+   "expect": "do:directions@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "directions to my next job",
+   "expect": "do:directions@next"
+  },
+  {
+   "area": "one customer",
+   "said": "text rick im on my way",
+   "expect": "do:omw@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "tell sandra im on the way",
+   "expect": "do:omw@Sandra Ruiz"
+  },
+  {
+   "area": "one customer",
+   "said": "let tom know im on my way",
+   "expect": "do:omw@Tom Becker"
+  },
+  {
+   "area": "one customer",
+   "said": "on my way to the delaneys",
+   "expect": "do:omw@Rick Delaney"
+  },
+  {
+   "area": "one customer",
+   "said": "phone number for sandra",
+   "expect": "ask:who"
+  },
+  {
+   "area": "one customer",
+   "said": "address for tom becker",
+   "expect": "ask:who"
+  },
+  {
+   "area": "one customer",
+   "said": "how do i reach rick",
+   "expect": "ask:who"
+  },
+  {
+   "area": "questions",
+   "said": "who owes me money",
+   "expect": "ask:owed"
+  },
+  {
+   "area": "questions",
+   "said": "who hasnt paid",
+   "expect": "ask:owed"
+  },
+  {
+   "area": "questions",
+   "said": "what am i owed",
+   "expect": "ask:owed"
+  },
+  {
+   "area": "questions",
+   "said": "anybody past due",
+   "expect": "ask:owed"
+  },
+  {
+   "area": "questions",
+   "said": "how much did i make this year",
+   "expect": "ask:made"
+  },
+  {
+   "area": "questions",
+   "said": "what did i make this month",
+   "expect": "ask:made"
+  },
+  {
+   "area": "questions",
+   "said": "what did i gross last year",
+   "expect": "ask:made"
+  },
+  {
+   "area": "questions",
+   "said": "my revenue",
+   "expect": "ask:made"
+  },
+  {
+   "area": "questions",
+   "said": "whats my win rate",
+   "expect": "ask:winrate"
+  },
+  {
+   "area": "questions",
+   "said": "how many bids did i win",
+   "expect": "ask:winrate"
+  },
+  {
+   "area": "questions",
+   "said": "who is my best customer",
+   "expect": "ask:best"
+  },
+  {
+   "area": "questions",
+   "said": "how many hours did we work last week",
+   "expect": "ask:hours"
+  },
+  {
+   "area": "questions",
+   "said": "hours this week",
+   "expect": "ask:hours"
+  },
+  {
+   "area": "questions",
+   "said": "who worked this week",
+   "expect": "ask:hours"
+  },
+  {
+   "area": "questions",
+   "said": "breakdown of my week",
+   "expect": "ask:sheet"
+  },
+  {
+   "area": "questions",
+   "said": "what time is it",
+   "expect": "ask:clock"
+  },
+  {
+   "area": "questions",
+   "said": "whats going on",
+   "expect": "ask:brief"
+  },
+  {
+   "area": "questions",
+   "said": "hows business",
+   "expect": "ask:brief"
+  },
+  {
+   "area": "questions",
+   "said": "catch me up",
+   "expect": "ask:brief"
+  },
+  {
+   "area": "questions",
+   "said": "whats my average job",
+   "expect": "ask:avg"
+  },
+  {
+   "area": "questions",
+   "said": "where do my leads come from",
+   "expect": "ask:source"
+  },
+  {
+   "area": "questions",
+   "said": "whats my close rate",
+   "expect": "ask:source"
+  },
+  {
+   "area": "questions",
+   "said": "what did i charge for a water heater",
+   "expect": "ask:charged"
+  },
+  {
+   "area": "questions",
+   "said": "what do i charge for a faucet",
+   "expect": "ask:charged"
+  },
+  {
+   "area": "questions",
+   "said": "what am i waiting to hear on",
+   "expect": "ask:out"
+  },
+  {
+   "area": "questions",
+   "said": "what do i charge for a sewer camera inspection",
+   "expect": "set:pricebook"
+  }
+ ],
+ "notInAppYet": [
+  {
+   "said": "go back",
+   "reason": "The app keeps no page history, so there is no back to go to. Each screen has its own back button; a global back is a new feature."
+  },
+  {
+   "said": "undo that",
+   "reason": "Nothing in the app records a last action to undo."
+  },
+  {
+   "said": "send a review request to rick",
+   "reason": "There is no review request feature, only a review link field in Business info."
+  },
+  {
+   "said": "order materials for the ruiz job",
+   "reason": "The app has no supplier ordering."
+  },
+  {
+   "said": "run payroll",
+   "reason": "Payroll runs are backlog (CLAUDE.md 9.1); only the payroll tax summary exists."
+  },
+  {
+   "said": "text all my customers",
+   "reason": "There is no bulk texting; texts go one customer at a time from their page."
+  }
+ ]
+}

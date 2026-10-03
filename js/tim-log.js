@@ -127,6 +127,10 @@ function _timLogGot(outcome,job){
   if(o.kind==='ask')return o.title?String(o.title):'Answered off your own numbers';
   if(o.kind==='nav')return o.name?('Opened '+o.name):'Opened the screen';
   if(o.kind==='newclient')return 'Started a new customer';
+  if(o.kind==='do')return o.name?String(o.name):'Done';
+  if(o.kind==='client')return o.name?('Opened '+o.name):'Opened the customer';
+  if(o.kind==='help')return 'Here is what I can do';
+  if(o.kind==='search')return 'Searched the app';
   // Not "I could not place that one." That is a dead end: it reports the
   // failure and hands the man nothing, and he is left retyping blind. Same
   // fact, plus the way out, in the words the answers are actually keyed on.
