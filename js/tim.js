@@ -31,39 +31,101 @@
 
 // Where he can take you. `say` is every way a contractor actually asks for the
 // screen, longest phrase winning, so "time log" cannot be eaten by "log".
+//
+// A row may also name a TAB on its screen (`tab`, the same id the screen's own
+// tab buttons pass to setTrTab, setFleetTab, setTaxTab, setMoneyFilter,
+// setJobFilter, setLeadFilter) or a SETTINGS section (`set`, the key
+// _openSetDetail already takes), and a control to point at (`point`). Owner
+// 2026-10-03: "500 prompts a user could ask Tim about TradeDesk, he should
+// know everything and take them to the source." The source of "my mileage
+// log" is the Mileage tab, not the top of the Books, and the source of "change
+// my logo" is the Branding section with the logo button lit, not the Settings
+// index. tests/fixtures/tim-500.json is that list, and it is the test.
 const TIM_PLACES=[
-  {pg:'pg-dash',        name:'Home',        say:['home','dashboard','home screen','the dash']},
-  {pg:'pg-leads',       name:'Leads',       say:['leads','lead','my leads','new lead']},
-  {pg:'pg-clients',     name:'Customers',   say:['clients','customers','customer list','client list']},
-  {pg:'pg-jobs',        name:'Jobs',        say:['jobs','job list','my jobs','work orders']},
-  {pg:'pg-schedule',    name:'Schedule',    say:['schedule','my schedule']},
-  {pg:'pg-cal',         name:'Calendar',    say:['calendar','the week','weather']},
+  {pg:'pg-dash',        name:'Home',        say:['home','dashboard','home screen','the dash','main screen','main page','front page','start screen','home page']},
+  {pg:'pg-leads',       name:'Leads',       say:['leads','lead','my leads','lead list','new leads','inquiries','web leads','web requests','incoming leads','prospects','people who called in','who called in']},
+  {pg:'pg-leads',       name:'Follow-ups',  tab:'follow_up', say:['follow up','follow ups','followups','need to follow up','follow up with']},
+  {pg:'pg-clients',     name:'Customers',   say:['clients','customers','customer list','client list','contacts','my contacts','address book',
+                                                 'find a customer','look up a customer','find a client','look up a client','search customers','all my customers']},
+  {pg:'pg-jobs',        name:'Jobs',        say:['jobs','job list','my jobs','work orders','projects','my projects','job board']},
+  {pg:'pg-jobs',        name:'Active jobs', tab:'active', say:['active jobs','jobs in progress','current jobs','open jobs','running jobs','jobs going on','what am i working on']},
+  {pg:'pg-jobs',        name:'Scheduled jobs', tab:'scheduled', say:['scheduled jobs','upcoming jobs','next job','my next job','jobs coming up','future jobs','booked jobs']},
+  {pg:'pg-jobs',        name:'Completed jobs', tab:'completed', say:['completed jobs','finished jobs','done jobs','past jobs','closed jobs','old jobs']},
+  {pg:'pg-schedule',    name:'Schedule',    say:['schedule','my schedule','availability','my availability','open dates','open days','when am i free',
+                                                 'next available','next opening','next open day','fit someone in','fit somebody in','booking','am i booked']},
+  {pg:'pg-cal',         name:'Calendar',    say:['calendar','the week','weather','forecast','rain','my week','week look like','week view','month view','the month','going to rain','snow']},
   // The Photos page (main, #91). Named by the page, never a bare "photos":
   // that word alone is the photo lookup below, which is what "photos at 412
   // Oak" needs it to stay.
   {pg:'pg-photos',      name:'Photos',      say:['photos page','photo page','the photos page','all photos','all my photos','photo library']},
-  {pg:'pg-proposals',   name:'Proposals',   say:['proposals','my proposals','bids','my bids','quotes','sent estimates']},
+  {pg:'pg-proposals',   name:'Proposals',   say:['proposals','my proposals','bids','my bids','quotes','my quotes','sent estimates','estimates','my estimates',
+                                                 'pending proposals','signed proposals','proposal list','bid list','quote list','who viewed','proposal status','who signed']},
   // The recurring service list (#94, widened 2026-09-27 past water heaters).
   // "Service due" is its on-screen name; the old words still land there.
-  {pg:'pg-wh-list',     name:'Service due', say:['service due','recurring service','annual service','water heater list','water heaters','flush list','water heater flushes','water filters','gutter cleaning','condenser cleanings','coil cleanings','ac tune ups','ac tune-ups','backflow tests','generator services']},
-  {pg:'pg-money',       name:'Collect',     say:['collect','invoices','payments','get paid','whats owed','who owes me']},
-  {pg:'pg-tracker',     name:'Books',       say:['books','bookkeeping','the numbers','profit','income','expenses','mileage','p and l','my money']},
-  {pg:'pg-taxes',       name:'Taxes',       say:['taxes','tax','write offs','deductions','1099s']},
-  {pg:'pg-team',        name:'Fleet & Team',say:['team','crew','my crew','fleet','trucks','vehicles','employees']},
-  {pg:'pg-timelog',     name:'Timesheet',   say:['timesheet','time sheet','time log','timelog','hours','my hours','the clock']},
-  {pg:'pg-dispatch',    name:'Dispatch',    say:['dispatch','the board','dispatch board']},
-  {pg:'pg-licensing',   name:'Licensing',   say:['licensing','my license','licenses','permits']},
-  {pg:'pg-contracts',   name:'Contracts',   say:['contracts','agreements']},
-  {pg:'pg-client-hub',  name:'Client hub',  say:['client hub','the hub']},
+  {pg:'pg-wh-list',     name:'Service due', say:['service due','recurring service','annual service','water heater list','water heaters','flush list','water heater flushes','water filters','gutter cleaning','condenser cleanings','coil cleanings','ac tune ups','ac tune-ups','backflow tests','generator services',
+                                                 'due for service','due for maintenance','maintenance list','service list','flushes']},
+  {pg:'pg-money',       name:'Collect',     say:['collect','invoices','payments','get paid','whats owed','who owes me','unpaid invoices','my invoices','open invoices','sent invoices','invoice list',
+                                                 'accounts receivable','receivables','balances','outstanding invoices','payment status','collections','unpaid']},
+  {pg:'pg-money',       name:'Not sent',    tab:'unpaid',  say:['not sent','unsent invoices','invoices i havent sent','havent sent','haven t sent','didnt send']},
+  {pg:'pg-money',       name:'Overdue',     tab:'overdue', say:['overdue','overdue invoices','late payments','late invoices','late payers','paying late']},
+  {pg:'pg-money',       name:'Paid',        tab:'paid',    say:['paid invoices','who paid','paid up','already paid']},
+  {pg:'pg-money',       name:'Part paid',   tab:'partial', say:['partial payments','partially paid','part paid','partly paid']},
+  {pg:'pg-tracker',     name:'Books',       say:['books','bookkeeping','the numbers','profit','my money','ledger','financials','finances','accounting','cash flow','reports','my books']},
+  {pg:'pg-tracker',     name:'Income',      tab:'income',   say:['income','sales','money in','money coming in','payments received']},
+  {pg:'pg-tracker',     name:'Expenses',    tab:'expenses', say:['expenses','expense','spending','costs','receipts','purchases','money out','my receipts']},
+  {pg:'pg-tracker',     name:'Mileage',     tab:'mileage',  say:['mileage','mileage log','miles log','trip log','trips','my trips','drives','my drives','drive log']},
+  {pg:'pg-tracker',     name:'Places',      tab:'places',   say:['places','my places','saved places','supply houses','suppliers']},
+  {pg:'pg-tracker',     name:'Job history', tab:'jobs',     say:['job history','job costing','profit by job','job profit','job profitability','money per job','profit per job']},
+  {pg:'pg-tracker',     name:'Summary',     tab:'summary',  say:['summary','p and l','profit and loss','monthly p and l','year summary','totals','year end','year at a glance']},
+  {pg:'pg-tracker',     name:'Hiring',      tab:'hiring',   say:['hiring calculator','hiring calc','hire calculator','afford to hire','afford another guy','afford a helper','afford a guy']},
+  {pg:'pg-tracker',     name:'Map',         tab:'map',      say:['map','the map','map view','where i drove','gps map','drive map','breadcrumbs','where i went']},
+  {pg:'pg-taxes',       name:'Taxes',       say:['taxes','tax','write offs','writeoffs','deductions','1099s','1099','quarterly taxes','quarterlies','estimated taxes','estimated tax',
+                                                 'tax estimate','irs','schedule c','tax bill','owe the irs','set aside for taxes','deduct','owe in taxes']},
+  {pg:'pg-taxes',       name:'Payroll',     tab:'payroll', say:['payroll','payroll taxes','w2','w 2','w2s','941']},
+  {pg:'pg-team',        name:'Fleet & Team',say:['fleet and team']},
+  {pg:'pg-team',        name:'Team',        tab:'team',  say:['team','crew','my crew','employees','my employees','my guys','workers','techs','technicians','helpers',
+                                                 'subs','subcontractors','my team','whos on my team','the guys','staff','my subs']},
+  {pg:'pg-team',        name:'Fleet',       tab:'fleet', say:['fleet','trucks','vehicles','my trucks','vans','my vans','my vehicles','truck maintenance','oil change','registration','my fleet']},
+  {pg:'pg-timelog',     name:'Timesheet',   say:['timesheet','time sheet','time log','timelog','hours','my hours','the clock','time cards','timecards','time card','punch card','punches',
+                                                 'crew time','time entries','clock history','who clocked in','clocked in','hours log']},
+  {pg:'pg-dispatch',    name:'Dispatch',    say:['dispatch','the board','dispatch board','who goes where','whos going where','assign','assignments','crew assignments',
+                                                 'assign a job','assign jobs','send the crew','routing','route the crew']},
+  {pg:'pg-licensing',   name:'Licensing',   say:['licensing','my license','licenses','permits','license','licence','permit','certifications','certification','insurance',
+                                                 'ce hours','continuing education','license expire','expiring','renewal','renew my license']},
+  {pg:'pg-contracts',   name:'Contracts',   say:['contracts','agreements','contract','service agreements','maintenance agreements','memberships','service plans','maintenance plans','my agreements']},
+  {pg:'pg-client-hub',  name:'Client hub',  say:['client hub','the hub','customer portal','client portal','portal','what customers see','what my customers see','what do my customers see','what do customers see','customer hub']},
   {pg:'pg-tracker',     name:'Books',       say:['receipts']},
-  {pg:'pg-qr-leads',    name:'QR leads',    say:['qr','qr code','qr leads','my sign']},
+  {pg:'pg-qr-leads',    name:'QR leads',    say:['qr','qr code','qr leads','my sign','yard sign','yard signs','qr sign','qr codes']},
   // The id says checklist and the screen says Top Clients: it was renamed and
   // the id never was. Tim goes by what is ON the screen, because that is the
   // only name the owner has ever seen. No 'best clients' here on purpose, or it
   // would steal "who is my best customer" off the answer that reads his books.
   {pg:'pg-checklist',   name:'Top clients', say:['top clients','heavy hitters','my top clients',
-                                                 'client rankings','who are my top']},
-  {pg:'pg-settings',    name:'Settings',    say:['settings','preferences','my account']},
+                                                 'client rankings','who are my top','customer rankings','client ranking']},
+  {pg:'pg-settings',    name:'Settings',    say:['settings','preferences','my account','options','app settings','account settings','my profile','profile']},
+  // Settings, by the section that holds the thing, so he lands on the field.
+  {pg:'pg-settings',    name:'Business info', set:'biz', say:['business info','business information','company info','company information','business name','company name',
+                                                 'business address','company address','business phone','business email','company phone','company email','license number',
+                                                 'contractor license','review link','google review','google reviews','sales tax','sales tax rate','business hours',
+                                                 'working hours','work hours','owner pay','labor burden','in business since']},
+  {pg:'pg-settings',    name:'Branding',    set:'branding', point:'#set-logo-btn-brand', say:['branding','brand','logo','my logo','brand color','brand colors','colors','color',
+                                                 'app color','subdomain','custom domain','website','powered by']},
+  {pg:'pg-settings',    name:'Rates',       set:'rates', say:['rates','my rates','pricing','markup','margin','profit margin','deposit','deposit percent','deposit percentage','goals','overhead','rate settings']},
+  {pg:'pg-settings',    name:'Price book',  set:'pricebook', say:['price book','pricebook','my prices','price list','prices','saved prices','service catalog','services list','my services','line item library']},
+  {pg:'pg-settings',    name:'Legal',       set:'legal', say:['legal','terms','terms and conditions','fine print','warranty','warranty language','change order clause','contract language','disclaimer']},
+  {pg:'pg-settings',    name:'Trades',      set:'trades', say:['trades','my trade','my trades','trade','business type','change trades','another trade','add a trade']},
+  {pg:'pg-settings',    name:'Code editions', set:'codes', say:['code edition','code editions','code book','codes','nec','ipc','upc','building code','plumbing code','electrical code']},
+  {pg:'pg-settings',    name:'Integrations', set:'integrations', say:['integrations','stripe','credit cards','credit card','card payments','accept cards','take cards',
+                                                 'online payments','payment setup','payments setup','apple pay','ach']},
+  {pg:'pg-settings',    name:'Tax setup',   set:'taxes', say:['tax setup','tax settings','filing status','mileage rate','irs mileage rate','tax brackets','state tax','federal tax','tax rate']},
+  {pg:'pg-settings',    name:'Location and sync', set:'cloud', point:'#location-settings-btn', say:['location','location access','location permission','location permissions',
+                                                 'location services','gps','location tracking','cloud','sync','cloud sync','backup','back up','restore']},
+  {pg:'pg-settings',    name:'Notifications', set:'notifications', say:['notifications','notification','alerts','push notifications','text templates','sms templates',
+                                                 'message templates','email templates','follow up message','follow up texts','reminder texts','templates']},
+  {pg:'pg-settings',    name:'TrueMeasure rates', set:'truerates', say:['truemeasure rates','true measure rates','truescan rates','scan rates','measure rates','rate library']},
+  {pg:'pg-settings',    name:'Your data',   set:'data', say:['export data','export my data','download my data','download everything','reset','factory reset',
+                                                 'delete my account','delete everything','delete all my data','wipe']},
+  {pg:'pg-settings',    name:'About',       set:'about', say:['about the app','about tradedesk','version','app version','what version','privacy','privacy policy','terms of service']},
 ];
 
 function _timNorm(t){
@@ -72,21 +134,42 @@ function _timNorm(t){
     .replace(/[^a-z0-9\s]/g,' ')
     .replace(/\s+/g,' ').trim()+' ';
 }
+// The same, with apostrophes closed up first, so "what's owed" reads "whats
+// owed" and "who's on my team" reads "whos on my team", the way the phrase
+// tables are written. Kept apart from _timNorm on purpose: the photo lookup
+// relies on "pepe's" arriving as "pepe s" so the s can be dropped as filler.
+function _timNormA(t){return _timNorm(String(t||'').replace(/['’]/g,''));}
 
 // Which screen he means. Scored on how much of the phrase he actually said, so
 // a two-word name beats a one-word name that happens to sit inside it.
-function timWhere(text){
-  const t=_timNorm(text);
+function _timWhereHit(text){
+  const t=_timNormA(text);
   if(t.trim()==='')return null;
-  let best=null,bestLen=0;
+  let best=null,bestLen=0,bestAt=-1,sec=null,secLen=0,secAt=-1;
   TIM_PLACES.forEach(p=>{
     p.say.forEach(phrase=>{
-      const needle=' '+phrase+' ';
-      if(t.indexOf(needle)<0)return;
-      if(phrase.length>bestLen){bestLen=phrase.length;best=p;}
+      const i=t.indexOf(' '+phrase+' ');
+      if(i<0)return;
+      if(phrase.length>bestLen){bestLen=phrase.length;best=p;bestAt=i;}
+      if(p.set&&phrase.length>secLen){secLen=phrase.length;sec=p;secAt=i;}
     });
   });
-  return best?{pg:best.pg,name:best.name}:null;
+  // A Settings section names the field; "settings", "proposals" and
+  // "invoices" around it only say where the field shows up. So "pricing
+  // settings" is Rates and "put my logo on proposals" is Branding, not the
+  // Settings index or the list of proposals.
+  if(sec&&best!==sec&&(best.pg==='pg-settings'||best.pg==='pg-proposals'||best.pg==='pg-money'))
+    return {place:sec,len:secLen,at:secAt};
+  return best?{place:best,len:bestLen,at:bestAt}:null;
+}
+function timWhere(text){
+  const h=_timWhereHit(text);
+  if(!h)return null;
+  const b=h.place,out={pg:b.pg,name:b.name};
+  if(b.tab)out.tab=b.tab;
+  if(b.set)out.set=b.set;
+  if(b.point)out.point=b.point;
+  return out;
 }
 
 // Which year. Only the three ways it gets said out loud: the year itself, last
@@ -303,6 +386,11 @@ function _timFirstHit(s,from){
 function timTimeOff(text,now){
   const t=' '+String(text||'').toLowerCase().replace(/[^a-z0-9\/\s]/g,' ').replace(/\s+/g,' ').trim()+' ';
   if(!_TIM_OFF_SAID.test(t))return null;
+  // "I'm off the clock" is the end of a shift, not a day off (js/tim.js
+  // TIM_DOES clock-out). Without this it booked today as time off.
+  if(/ off (the |my )?clock /.test(t))return null;
+  // "My location is not working" is a broken thing, not a man off work.
+  if(/ (is|isnt|s|are|arent|was|keeps) not working /.test(t)&&!/ (vacation|vacay|time off|day off|days off|pto|holiday) /.test(t))return null;
   const n=(now instanceof Date&&!isNaN(now))?now:new Date();
   const today=new Date(n.getFullYear(),n.getMonth(),n.getDate());
   const label=/ (vacation|vacay) /.test(t)?'Vacation':/ holiday /.test(t)?'Holiday':'Time off';
@@ -450,6 +538,198 @@ function timLeadJob(job,trade,book,catalog){
 }
 function _timPhoneWord(d){return d&&d.length===10?'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6):d;}
 
+// ── Things he can DO, not just places he can go (owner 2026-10-03) ─────────
+//
+// "New estimate", "clock me in", "log a trip", "add a truck", "call Rick".
+// Every one of these already has a button somewhere in the app, and every row
+// below calls the function that button calls (7.3): quickAction for the
+// dashboard's quick tiles, openNewClient for New lead, openAddVehicleModal for
+// Add vehicle, and so on. Tim adds no second way to do any of it; he only
+// knows which button a sentence means.
+//
+// How a sentence matches, the same for every row so nobody has to remember
+// a special case:
+//   - `verbs` + `objs`: the sentence STARTS with one of the verbs (after the
+//     lead-in a man says out loud, "hey tim can you", "how do I", "I need to")
+//     and names one of the objects after it. "add an expense", "how do I add
+//     a truck", "I need to write up an estimate".
+//   - `lead`: the verb IS the object, "invoice Sandra", "quote the Delaneys".
+//   - `also`: a phrase that means this one thing wherever it sits, "clock me
+//     in", "scan a receipt", "call it a day".
+//   - `re`: the contact rows, where a customer has to be named ("call Rick",
+//     "give Rick a call", "directions to the Delaneys").
+// A QUESTION never matches ("how many miles did I log", "what did I spend
+// on gas"): those are tim-ask.js's, answered off the books.
+// `who` rows take the customer the sentence names; `need` rows mean nothing
+// without one. `build` marks the proposal row, which yields to the build flow
+// and to the new-customer box when a name comes with it.
+const _TIM_MAKE=['new','add','create','make','start','write','write up','enter','put in','set up','setup','build','draw up','put together',
+  'generate','prepare','type up','fill out','input','another','do a','do an','open a new','get a new','add a new','start a new',
+  'got a','got a new','got another'];
+const _TIM_LOG=['log','record','track','enter','add','put in','input','save','write down','keep track of','new','add a new'];
+const TIM_DOES=[
+  {id:'new-client', name:'New customer', pg:'pg-clients', verbs:_TIM_MAKE, objs:['customer','client','lead','contact','homeowner','prospect']},
+  {id:'estimate', build:true, who:true, name:'New proposal', pg:'pg-proposals', verbs:_TIM_MAKE.concat(['send','price out','work up','give']),
+    objs:['estimate','proposal','bid','quote'], lead:['quote','bid','estimate','price out']},
+  {id:'invoice', who:true, name:'New invoice', pg:'pg-qi', verbs:_TIM_MAKE.concat(['send','get out','shoot']),
+    objs:['invoice','bill','quick invoice','final bill','final invoice'], lead:['invoice','bill'],
+    also:['invoice someone','bill someone','bill a customer','invoice a customer','bill a client','invoice a client','bill the customer','invoice the customer']},
+  {id:'collect', who:true, name:'Take a payment', pg:'pg-money', verbs:['take','collect','record','log','enter','add','receive','accept','got','mark','put in','run'],
+    objs:['payment','payments','deposit','check','cash payment','card payment','credit card payment','money'],
+    also:['run a card','charge a card','swipe a card','charge their card','charge his card','charge her card','tap to pay','paid me','paid cash',
+      'paid by check','paid in cash','got paid','customer paid','client paid','just paid','mark paid','mark as paid','mark it paid']},
+  {id:'change-order', who:true, name:'Change order', pg:'pg-jobs', verbs:_TIM_MAKE.concat(['send','do']), objs:['change order','change orders'],
+    also:['change order','change orders','extra work','add on work','add to the job','add to the contract','additional work','scope change']},
+  {id:'clock-in', name:'Clock in', pg:'pg-dash', also:['clock in','clock me in','clocking in','punch in','punch me in','clock on','start my day','start the clock',
+    'start my clock','start my time','start the timer','start my timer','get on the clock','start work','start working']},
+  {id:'clock-out', name:'Clock out', pg:'pg-dash', also:['clock out','clock me out','clocking out','punch out','punch me out','clock off','stop the clock','stop my clock',
+    'stop my time','stop the timer','stop my timer','done for the day','end my day','end the day','call it a day','knock off','quitting time',
+    'im out for the day','heading home for the day','wrap up the day','wrap up for the day','done for today','off the clock']},
+  {id:'expense', name:'Log an expense', pg:'pg-tracker', verbs:_TIM_LOG.concat(['make','create']),
+    objs:['expense','expenses','purchase','cost','gas','fuel','materials','supplies','lumber','fill up','gas receipt'],
+    also:['i bought','just bought','we bought','i spent','just spent','picked up materials','picked up supplies','picked up parts']},
+  {id:'receipt', name:'Scan a receipt', pg:'pg-tracker', verbs:['scan','snap','photo','photograph','upload','add','log','enter','save','put','attach','keep',
+    'take a picture of','take a pic of','take a photo of','file','track'], objs:['receipt','receipts'],
+    also:['scan a receipt','receipt scan','scan receipt','scan my receipt','scan receipts','scan this receipt']},
+  {id:'trip', name:'Log a trip', pg:'pg-tracker', verbs:_TIM_LOG, objs:['trip','trips','miles','mileage','drive','drives','mileage entry'],
+    also:['log miles','log my miles','log mileage','add miles','forgot to log a drive','forgot to log my miles','forgot to log a trip']},
+  {id:'drive', name:'Start a drive', pg:'pg-tracker', also:['start a drive','start driving','start my drive','start the drive','track this drive','track my drive now',
+    'start a trip','begin a drive','start tracking miles','start tracking my miles','start tracking mileage','start mileage','start the mileage','driving to a job',
+    'leaving for a job','heading to a job']},
+  {id:'vehicle', name:'Add a vehicle', pg:'pg-team', verbs:_TIM_MAKE.concat(['register']), objs:['vehicle','truck','van','car','trailer','work truck','box truck']},
+  {id:'employee', name:'Add a crew member', pg:'pg-team', verbs:_TIM_MAKE.concat(['hire','invite','onboard','bring on']),
+    objs:['employee','employees','worker','helper','crew member','tech','technician','apprentice','team member','laborer','journeyman','guy'],
+    also:['hire someone','hire a guy','add to my crew','add to the crew','invite my crew','invite the crew','invite my guys','invite my team',
+      'add someone to my team','add someone to the team','add my guys','put my guys in']},
+  {id:'sub', name:'Add a subcontractor', pg:'pg-team', verbs:_TIM_MAKE.concat(['hire']), objs:['sub','subcontractor','subcontractors','subs','1099 guy','1099 worker','contractor']},
+  {id:'schedule', who:true, name:'Schedule', pg:'pg-schedule', verbs:['schedule','book','set up','put','plan','line up','add','pencil in','new'],
+    objs:['job','appointment','appt','visit','estimate visit','site visit','walkthrough','walk through','service call','meeting',
+      'on the calendar','on my calendar','to the calendar','to my calendar','on the schedule'],
+    lead:['schedule','book','pencil in'],
+    also:['put it on the calendar','add to my calendar','add to the calendar','new appointment','set an appointment','set up an appointment',
+      'book a time','schedule an estimate','book an estimate','schedule a walkthrough']},
+  {id:'complete', name:'Finish a job', pg:'pg-jobs', verbs:['complete','finish','close out','close','mark','wrap up'],
+    objs:['job','the job','work order'],
+    also:['job done','job is done','job complete','job is complete','job is finished','we finished','we re done with','were done with','finished the job',
+      'finished a job','done with the job','mark complete','mark it complete','mark it done','close out a job','close out the job']},
+  {id:'photo', name:'Take a photo', pg:'pg-photos', verbs:['take','snap','shoot','add','upload','grab','new','attach','save'],
+    objs:['photo','photos','picture','pictures','pic','pics','before pictures','after pictures','before photos','after photos','before and after'],
+    also:['take a photo','take a picture','take pictures','take photos','snap a pic','snap a photo','snap a picture','open the camera','camera']},
+  {id:'contract', name:'New agreement', pg:'pg-contracts', verbs:_TIM_MAKE.concat(['sign up','sign someone up for','send']),
+    objs:['contract','agreement','service agreement','maintenance agreement','service plan','maintenance plan','membership','service contract']},
+  {id:'license', name:'Add a license', pg:'pg-licensing', verbs:_TIM_MAKE.concat(['upload','save']),
+    objs:['license','licence','permit','certification','cert','insurance','insurance certificate','coi','bond']},
+  {id:'place', name:'Add a place', pg:'pg-tracker', verbs:_TIM_MAKE.concat(['save','mark']),
+    objs:['place','location','supply house','supplier','shop','yard','home office','storage unit','warehouse']},
+  {id:'income', name:'Log income', pg:'pg-tracker', verbs:_TIM_LOG, objs:['income','cash job','cash income','side job','other income'],
+    also:['log a cash job','record cash','cash job']},
+  {id:'intake', name:'Intake form', pg:'pg-leads', also:['intake form','intake link','lead form','booking link','booking form','request form','online form','web form',
+    'website form','form for my website','link for my website','request link','contact form','quote request form']},
+  {id:'import', name:'Import contacts', pg:'pg-leads', also:['import contacts','import my contacts','import customers','import my customers','import clients',
+    'import my clients','import leads','import from my phone','contacts from my phone','pull in my contacts','bring in my contacts','bring over my contacts',
+    'import a list','import my list','upload my customer list']},
+  {id:'export', name:'Export the books', pg:'pg-tracker', also:['export my books','export the books','export for my accountant','send to my accountant',
+    'for my accountant','for my cpa','to my accountant','to my cpa','for my bookkeeper','to my bookkeeper','export to quickbooks','download my books',
+    'export a spreadsheet','spreadsheet of my books','export my expenses','export my mileage','tax export','export for taxes','send my books']},
+  {id:'export-time', name:'Export the timesheet', pg:'pg-timelog', also:['export the timesheet','export my timesheet','export timesheet',
+    'export the time sheet','download the timesheet','export hours','export the hours','timesheet to excel','timesheet spreadsheet']},
+  {id:'reminders', name:'Payment reminders', pg:'pg-money', point:'[onclick*="collSendAllReminders"]', also:['send reminders','send payment reminders','send all reminders',
+    'payment reminders','remind everyone','remind everybody','remind people to pay','remind them to pay','chase down payments','chase payments',
+    'chase people','nudge everyone']},
+  {id:'service', name:'Add to service due', pg:'pg-wh-list', verbs:_TIM_MAKE,
+    objs:['recurring service','annual service','service customer','flush customer','maintenance customer','to service due','service due','flush',
+      'tune up customer','to the flush list','filter customer']},
+  {id:'dark', name:'Dark mode', pg:'pg-settings', also:['dark mode','night mode','dark theme','make it dark','darker screen']},
+  {id:'light', name:'Light mode', pg:'pg-settings', also:['light mode','day mode','light theme','turn off dark mode','dark mode off','no dark mode','make it light','brighter screen']},
+  {id:'signout', name:'Sign out', pg:'pg-settings', point:'#set-index-view [onclick*="supaSignOut"]', also:['log out','logout','log me out','sign out','signout','sign me out','log off','switch users']},
+  // The customer's own buttons, on the customer's own page (js/clients.js
+  // callClient, textClient, emailClient, openMapsDir; js/jobs.js sendOMWText).
+  {id:'omw', who:'need', name:'On my way text', pg:'pg-client-detail',
+    re:[/ (on my way|on the way|omw|heading over|headed over|heading your way|be there soon|running late) /]},
+  {id:'call', who:'need', name:'Call', pg:'pg-client-detail',
+    re:[/^ (call|ring|dial|calling) /,/^ phone (?!num)/,/ give .+ a (call|ring|buzz) /]},
+  {id:'text', who:'need', name:'Text', pg:'pg-client-detail',
+    re:[/^ (text|message|msg|sms|texting) /,/ (send|shoot|drop) .+ a (text|message|msg) /]},
+  {id:'email', who:'need', name:'Email', pg:'pg-client-detail',
+    re:[/^ (email|e mail) /,/ (send|shoot|drop) .+ an? (email|e mail) /]},
+  {id:'directions', who:'need', name:'Directions', pg:'pg-client-detail',
+    re:[/^ (directions|navigate|drive|head|route me|route) to /,/ directions to /,/ how (do|can) i get to /,/ get me to /,/ navigate (me )?to /,/ map (me )?to /,/ directions /]},
+];
+// What a man says before the part that means anything. Stripped from the
+// front, longest first, as many times as they stack ("hey tim can you please").
+const _TIM_LEADIN=['hey','hi','yo','ok','okay','alright','so','um','uh','tim','please','can you','could you','would you','will you','can i','could i',
+  'how do i','how can i','how would i','how do we','where do i','where can i','how do you','i need to','i want to','i wanna','i have to','i gotta',
+  'i got to','id like to','i would like to','im going to','im gonna','i m going to','i m gonna','let me','lets','help me','go ahead and','just',
+  'real quick','quick','quickly','i need','i want','we need to','we gotta','need to','want to','gotta','i','we','to','me','a','an','the','and','now','for me'];
+const _TIM_LEADIN_SORTED=_TIM_LEADIN.slice().sort((a,b)=>b.length-a.length);
+function _timContent(t){
+  let s=t,again=true;
+  while(again){
+    again=false;
+    for(const w of _TIM_LEADIN_SORTED){
+      if(s.indexOf(' '+w+' ')===0){s=s.slice(w.length+1);again=true;break;}
+    }
+  }
+  return s;
+}
+// A question is tim-ask.js's to answer, never a thing to do.
+const _TIM_ASKING=/^ (what|whats|how much|how many|how long|who|whos|when|which|did|does|do i have|has|have i|was|were|is|are|am i|whose) /;
+function _timHasPhrase(t,p){return t.indexOf(' '+p+' ')>=0;}
+function timDo(text,clients){
+  const t=_timNormA(text);
+  if(t.trim()==='')return null;
+  const c=_timContent(t);
+  if(_TIM_ASKING.test(c))return null;
+  const list=Array.isArray(clients)?clients:[];
+  const who=(typeof spkClient==='function')?spkClient(String(text||''),list):null;
+  const nextJob=/ next (job|stop|appointment|appt|call|one) /.test(t);
+  let best=null;
+  // Scored on how much of the sentence the verb and the object account for
+  // (not the gap between them), so "take a picture of a receipt" is the
+  // receipt and "new change order on the Ruiz job" is the change order.
+  // `at`/`objLen` are where the object sits, which timParse weighs against a
+  // screen name that also matched.
+  const take=(a,score,objLen,at)=>{
+    // A row that means nothing without a customer cannot win without one, so
+    // "call it a day" falls through to the clock and is not a phone call.
+    if(a.who==='need'&&!who&&!(a.id==='directions'&&nextJob))return;
+    if(!best||score>best.score||(score===best.score&&objLen>best.objLen))best={a,score,objLen,at};
+  };
+  TIM_DOES.forEach(a=>{
+    const off=t.length-c.length;   // where the content starts inside t
+    (a.also||[]).forEach(p=>{const i=t.indexOf(' '+p+' ');if(i>=0)take(a,p.length+1,p.length,i);});
+    (a.re||[]).forEach(re=>{
+      const head=re.source.charAt(0)==='^';
+      const m=re.exec(head?c:t);
+      if(m)take(a,m[0].trim().length,m[0].trim().length,(head?off:0)+m.index);
+    });
+    (a.verbs||[]).forEach(v=>{
+      if(c.indexOf(' '+v+' ')!==0)return;
+      const rest=c.slice(v.length+1);
+      (a.objs||[]).forEach(o=>{
+        const i=rest.indexOf(' '+o+' ');
+        if(i<0)return;
+        take(a,v.length+o.length,o.length,off+v.length+1+i);
+      });
+    });
+    (a.lead||[]).forEach(v=>{
+      if(c.indexOf(' '+v+' ')!==0)return;
+      // A bare lead is scored a hair under a screen of the same length, so
+      // "schedule" alone is the Schedule screen. With a customer after it,
+      // the word is a verb on him and nothing else: "schedule Sandra".
+      take(a,v.length,who&&a.who?99:v.length-0.5,off);
+    });
+  });
+  if(!best)return null;
+  const a=best.a;
+  const out={id:a.id,name:a.name,pg:a.pg,score:best.score,objLen:best.objLen,at:best.at};
+  if(a.build)out.build=true;
+  if(a.point)out.point=a.point;
+  if(a.who&&who)out.client=who;
+  if(a.id==='directions'&&!who&&nextJob)out.next=true;
+  return out;
+}
+
 // The whole sentence, resolved. Pure: hand it the lists, get back a plan.
 // Order matters. Building beats looking, because a contractor who says
 // "estimate" while describing work wants the builder, not the list of ones he
@@ -472,6 +752,22 @@ function timParse(text,opts){
     return Object.assign({text:said,kind:'lead',pick},lead);
   }
 
+  // Something to DO, and not the proposal: ahead of the estimate parser, so
+  // "send Rick a bill for the water heater" is an invoice and not a bid just
+  // because it names a customer and a service. It still yields to a screen
+  // whose name is longer than the thing it matched: "add my contractor
+  // license number" is the Business info field, not a new license.
+  const where=timWhere(said);
+  const wh=where?_timWhereHit(said):null;
+  const act=timDo(said,o.clients);
+  // A screen name that sits apart from the thing to do is where it goes
+  // ("add a guy to my crew"); one that covers the same words is a rival
+  // reading, and the longer one wins ("add my contractor license number" is
+  // the Business info field, "add an expense" is the expense).
+  const apart=act&&wh&&(wh.at+wh.len+1<=act.at||act.at+act.objLen+1<=wh.at);
+  const actWins=!!act&&(!wh||apart||act.objLen>=wh.len);
+  if(actWins&&!act.build)return _timDoPlan(said,act);
+
   const est=(typeof spkParse==='function')
     ? spkParse(said,{clients:o.clients,book:o.book,catalog:o.catalog})
     : null;
@@ -481,6 +777,11 @@ function timParse(text,opts){
   if(subject&&timWantsBuild(said)&&!(est&&est.client))
     return {text:said,kind:'newclient',subject};
 
+  if(actWins)return _timDoPlan(said,act);
+
+  // The Photos page by its name is the page, before the photo lookup gets to
+  // read "photos page" as photos of a place called "page".
+  if(where&&where.pg==='pg-photos')return {text:said,kind:'nav',pg:'pg-photos',name:'Photos',year:null};
   const pho=timPhotoQuery(said);
   // No subject left ("where are my photos", "open photos"): that is the
   // Photos page, not an empty search box.
@@ -492,13 +793,103 @@ function timParse(text,opts){
     return {text:said,kind:'photos',q:pho.q,places:hits};
   }
 
-  const where=timWhere(said);
   const year=timWhen(said,o.now);
-  if(where)return {text:said,kind:'nav',pg:where.pg,name:where.name,year};
+  if(where){
+    const nav={text:said,kind:'nav',pg:where.pg,name:where.name,year};
+    if(where.tab)nav.tab=where.tab;
+    if(where.set)nav.set=where.set;
+    if(where.point)nav.point=where.point;
+    return nav;
+  }
   // A bare year is the books. Nowhere else in this app is a year the whole ask.
   if(year!==null)return {text:said,kind:'nav',pg:'pg-tracker',name:'Books',year};
 
+  if(timHelpAsk(said))return {text:said,kind:'help'};
+
+  // A customer, and nothing else he could mean: his page, where his phone
+  // number, his jobs and his money all are.
+  const cust=(typeof spkClient==='function')?spkClient(said,o.clients||[]):null;
+  if(cust)return {text:said,kind:'client',client:cust,name:cust.name};
+
+  const q=timSearchAsk(said);
+  if(q)return {text:said,kind:'search',q:q.q};
+
   return {text:said,kind:'none'};
+}
+
+// A do-row resolved into the plan timRun acts on.
+function _timDoPlan(said,act){
+  const p={text:said,kind:'do',act:act.id,name:act.name,pg:act.pg};
+  if(act.client)p.client=act.client;
+  if(act.next)p.next=true;
+  if(act.point)p.point=act.point;
+  return p;
+}
+
+// "Help", "what can you do", "how does this work". Checked last, after every
+// door and screen, so "help me add an expense" is the expense.
+const _TIM_HELP=['help','what can you do','what can i ask','what can i say','how does this work','how do you work','what do you do',
+  'what do you know','who are you','what are you','how do i use this','how do i use you','how do i use the app','what should i ask',
+  'tutorial','show me around','give me a tour','where do i start','how do i get started','getting started','im lost','i m lost','what can tim do'];
+function timHelpAsk(text){
+  const t=_timNormA(text);
+  return _TIM_HELP.some(p=>_timHasPhrase(t,p));
+}
+// "search for 412 Maple", "look up the water heater job". The app's own
+// search (openSearch / runSearch, js/settings.js) does the finding.
+function timSearchAsk(text){
+  const t=_timNormA(text);
+  const m=/^ (?:search for|search|look up|lookup|look for|find me|find) (.*)$/.exec(_timContent(t));
+  if(!m)return null;
+  const q=m[1].replace(/^(?:the|a|an|my) /,'').trim();
+  return {q};
+}
+
+// THE ORDER _timGoRun DECIDES IN, as a pure function, so the 500 sentences in
+// tests/fixtures/tim-500.json are checked against the same decision the send
+// arrow makes and not a copy of it. Build first (a door and a customer),
+// then a question about his business, then everything timParse knows. A
+// thing to DO outranks a question that happens to share words with it: "log
+// my miles" is a trip to log, not "my miles" to read back. What this cannot
+// see is the estimate page, where _timGoRun reads the sentence as work; that
+// stays in _timGoRun because it is about where he is standing, not what he
+// said.
+function timResolve(text,opts){
+  const o=opts||{};
+  const said=String(text||'');
+  if(!said.trim())return {text:said,kind:'none'};
+  const list=Array.isArray(o.clients)?o.clients:[];
+  const act=timDo(said,list);
+  const style=timStyle(said);
+  const who=(typeof spkClient==='function')?spkClient(said,list):null;
+  // "Create an invoice for Rick" is an invoice, not a proposal for Rick that
+  // happens to say create.
+  if(who&&timWantsBuild(said)&&!(act&&!act.build)){
+    if(style)return {text:said,kind:'build',style:style.id,client:who};
+    if(!/\b(hours?|hrs)\b/i.test(said))return {text:said,kind:'build',style:null,client:who};
+  }
+  // "Open my mileage" is the Mileage tab, even though "my mileage" is also a
+  // question he answers. Asked to go somewhere, he goes.
+  const goTo=/^ (open|open up|go to|take me to|bring up|pull up|navigate to|jump to) /.test(_timContent(_timNormA(said)))&&!!timWhere(said);
+  if(!act&&!goTo&&typeof timAsk==='function'){
+    const ans=timAsk(said);
+    if(ans)return {text:said,kind:'ask',ask:ans.id,answer:ans};
+  }
+  const p=timParse(said,o);
+  // A question he recognises but has nothing on the books to answer ("what do
+  // I charge for a tankless" with no tankless ever priced) goes to the page
+  // where that answer will live, instead of a shrug.
+  if(p.kind==='none'&&!act&&typeof timAskKind==='function'&&typeof TIM_ASKS!=='undefined'){
+    const k=timAskKind(said);
+    const fam=k&&TIM_ASKS.find(a=>a.id===k.id);
+    if(fam&&fam.home){
+      const h=fam.home,nav={text:said,kind:'nav',pg:h.pg,name:h.name,year:null};
+      if(h.tab)nav.tab=h.tab;
+      if(h.set)nav.set=h.set;
+      return nav;
+    }
+  }
+  return p;
 }
 
 // What Tim is about to do, in his words, so the box is never a black hole. This
@@ -506,6 +897,21 @@ function timParse(text,opts){
 function timSay(p){
   if(!p||p.kind==='none')return '';
   if(p.kind==='nav')return 'Open '+p.name+(p.year?' for '+p.year:'');
+  if(p.kind==='do'){
+    const nm=p.client&&p.client.name?p.client.name:'';
+    if(p.act==='call'||p.act==='text'||p.act==='email')return p.name+' '+nm;
+    if(p.act==='directions')return nm?'Directions to '+nm:'Directions to your next job';
+    if(p.act==='omw')return 'Tell '+nm+' you are on your way';
+    return p.name+(nm?' for '+nm:'');
+  }
+  if(p.kind==='client')return 'Open '+((p.client&&p.client.name)||'the customer');
+  if(p.kind==='build'){
+    const st=TIM_STYLES.find(s=>s.id===p.style);
+    return 'Start '+(st?'a '+st.name:'a proposal')+' for '+((p.client&&p.client.name)||'them');
+  }
+  if(p.kind==='ask')return 'Answer that off your own books';
+  if(p.kind==='help')return 'Show what I can do';
+  if(p.kind==='search')return p.q?'Search for '+p.q:'Open search';
   if(p.kind==='rate')return p.to?'Set your rate to $'+p.to.toLocaleString('en-US')+' an hour':'Change your hourly rate';
   if(p.kind==='photos'){
     const n=(p.places||[]).length;
@@ -598,13 +1004,171 @@ function timRun(text){
   if(p.kind==='nav'&&p.pg==='pg-photos'){_timWalkTo('pg-photos','mmi-photos');return p;}
   if(p.kind==='nav'&&typeof goPg==='function'){
     goPg(p.pg);
+    // The tab or the settings section, through the same function the
+    // screen's own button calls, and only once the page exists.
+    if(p.tab)_timOpenTab(p.pg,p.tab);
+    if(p.set&&typeof _openSetDetail==='function')_openSetDetail(p.set);
     // The year goes on AFTER the page exists, because setting it renders the
     // tab. A year the books have no rows for falls back to the newest on its
     // own inside populateTrackerYearSel, which is the right answer anyway.
     if(p.year&&p.pg==='pg-tracker'&&typeof setTrackerYear==='function')setTrackerYear(p.year);
+    if(p.point)_timPointAt(p.point);
+    return p;
+  }
+  if(p.kind==='do'){_timDoRun(p);return p;}
+  if(p.kind==='client'&&p.client&&typeof openClientDetail==='function'){openClientDetail(p.client.id);return p;}
+  if(p.kind==='help'){_timHelp();return p;}
+  if(p.kind==='search'&&typeof openSearch==='function'){
+    openSearch();
+    const box=document.getElementById('global-search-input');
+    if(box&&p.q){box.value=p.q;if(typeof runSearch==='function')runSearch(p.q);}
     return p;
   }
   return p;
+}
+
+// Each screen's own tab switch, by the id its buttons already pass.
+const _TIM_TAB_FN={
+  'pg-tracker':t=>{if(typeof setTrTab==='function')setTrTab(t,document.getElementById('tr-t-'+t));},
+  'pg-team':t=>{if(typeof setFleetTab==='function')setFleetTab(t);},
+  'pg-taxes':t=>{if(typeof setTaxTab==='function')setTaxTab(t,document.getElementById('tx-tab-'+t));
+    if(t==='payroll'&&typeof renderPayrollSummary==='function')renderPayrollSummary();},
+  'pg-money':t=>{if(typeof setMoneyFilter==='function')setMoneyFilter(t);},
+  'pg-jobs':t=>{if(typeof setJobFilter==='function')setJobFilter(t);},
+  'pg-leads':t=>{if(typeof setLeadFilter==='function')setLeadFilter(t);},
+};
+function _timOpenTab(pg,tab){
+  try{const fn=_TIM_TAB_FN[pg];if(fn)fn(tab);}catch(_e){}
+}
+// Light up the control he asked about, so he sees where it lives and goes
+// there himself next time (the same idea as _timWalkTo's More menu walk).
+// A class, and the class owns the motion (index.html .tim-point-at).
+function _timPointAt(sel){
+  try{
+    const el=document.querySelector(sel);
+    if(!el)return false;
+    if(typeof el.scrollIntoView==='function')el.scrollIntoView({block:'center',behavior:'smooth'});
+    el.classList.add('tim-point-at');
+    setTimeout(()=>el.classList.remove('tim-point-at'),2600);
+    return true;
+  }catch(_e){return false;}
+}
+
+// The next job on the books from now: today's first, then the soonest ahead.
+// Read the way the dashboard reads today (jobs[].start / .days, todayKey).
+function _timNextJob(){
+  const list=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
+  const tk=(typeof todayKey==='function')?todayKey():_timYmd(new Date());
+  const open=list.filter(j=>j&&!j.cancelled&&j.status!=='done'&&!j.completion_date&&(j.start||j.date));
+  const on=j=>{const s=j.start||j.date,d=parseInt(j.days,10)||1;
+    for(let i=0;i<d;i++){if((typeof addDays==='function'?addDays(s,i):s)===tk)return true;}return false;};
+  const today=open.filter(on).sort((a,b)=>String(a.time||'').localeCompare(String(b.time||'')));
+  if(today.length)return today[0];
+  return open.filter(j=>String(j.start||j.date)>tk).sort((a,b)=>String(a.start||a.date).localeCompare(String(b.start||b.date)))[0]||null;
+}
+
+// Doing it. Every branch is the function an existing button calls.
+function _timDoRun(p){
+  const has=n=>typeof window[n]==='function';
+  const go=pg=>{if(has('goPg'))goPg(pg);};
+  const c=p.client||null;
+  const onCustomer=()=>{if(c&&has('openClientDetail'))openClientDetail(c.id);};
+  switch(p.act){
+    case 'new-client':go('pg-clients');if(has('openNewClient'))openNewClient();return;
+    case 'estimate':
+      if(c&&has('_timAskStyle')){_timAskStyle(c);return;}
+      if(has('quickAction'))quickAction('estimate');return;
+    case 'invoice':
+      if(c&&has('openQuickInvoice')){openQuickInvoice(c.id);return;}
+      if(has('quickAction'))quickAction('invoice');return;
+    case 'collect':if(has('quickAction'))quickAction('collect');return;
+    case 'change-order':{
+      const won=c&&(typeof bids!=='undefined'?bids:[]).filter(b=>b&&b.client_id===c.id&&b.status==='Closed Won')
+        .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))[0];
+      if(won&&has('showChangeOrderModal')){showChangeOrderModal(won.id,c.id);return;}
+      if(c){onCustomer();}else go('pg-jobs');
+      if(has('showToast'))showToast('Change orders go on a won job. Open the job and tap Change order','📋',3200);
+      return;
+    }
+    case 'clock-in':go('pg-dash');if(has('_dashManualClockIn'))_dashManualClockIn();return;
+    case 'clock-out':
+      go('pg-dash');
+      if(typeof _activeTimer!=='undefined'&&_activeTimer&&has('clockOut')){clockOut();return;}
+      if(has('showToast'))showToast('You are not on the clock','⏱',2400);
+      return;
+    case 'expense':if(has('quickAction'))quickAction('expense');return;
+    case 'receipt':go('pg-tracker');if(has('triggerReceiptScan'))triggerReceiptScan();return;
+    case 'trip':if(has('openLogTripModal'))openLogTripModal();return;
+    case 'drive':if(has('quickAction'))quickAction('drive');return;
+    case 'vehicle':go('pg-team');_timOpenTab('pg-team','fleet');if(has('openAddVehicleModal'))openAddVehicleModal(-1);return;
+    case 'employee':go('pg-team');_timOpenTab('pg-team','team');if(has('openAddEmployeeModal'))openAddEmployeeModal();return;
+    case 'sub':go('pg-team');_timOpenTab('pg-team','team');if(has('openAddSubModal'))openAddSubModal();return;
+    case 'schedule':if(has('quickAction'))quickAction('schedule');return;
+    case 'complete':if(has('quickAction'))quickAction('complete');return;
+    case 'photo':if(has('quickAction'))quickAction('photo');return;
+    case 'contract':go('pg-contracts');if(has('openNewAgreement'))openNewAgreement();return;
+    case 'license':go('pg-licensing');if(has('openAddLicense'))openAddLicense();return;
+    case 'place':go('pg-tracker');_timOpenTab('pg-tracker','places');if(has('openPlaceModal'))openPlaceModal();return;
+    case 'income':go('pg-tracker');_timOpenTab('pg-tracker','income');if(has('openManualIncomeModal'))openManualIncomeModal();return;
+    case 'intake':go('pg-leads');if(has('openIntakeFormModal'))openIntakeFormModal();return;
+    case 'import':go('pg-leads');if(has('openImportContacts'))openImportContacts();return;
+    case 'export':go('pg-tracker');if(has('openExportPanel'))openExportPanel();return;
+    // Sending texts to everybody who owes him is not a thing to do off a
+    // misheard sentence. He lands on the button, lit, and taps it himself.
+    case 'reminders':go('pg-money');_timPointAt(p.point);return;
+    case 'export-time':go('pg-timelog');if(has('_tlExportCSV'))_tlExportCSV();return;
+    case 'service':go('pg-wh-list');if(has('openWhAdd'))openWhAdd();return;
+    case 'dark':if(has('toggleDarkMode'))toggleDarkMode(true);return;
+    case 'light':if(has('toggleDarkMode'))toggleDarkMode(false);return;
+    // Same reason: signing out off a misheard word loses his place. Settings,
+    // with the Sign out button lit.
+    case 'signout':go('pg-settings');if(has('_closeSetDetail'))_closeSetDetail();_timPointAt(p.point);return;
+    case 'call':onCustomer();if(has('callClient'))callClient();return;
+    case 'text':onCustomer();if(has('textClient'))textClient();return;
+    case 'email':onCustomer();if(has('emailClient'))emailClient();return;
+    case 'omw':onCustomer();if(c&&has('sendOMWText'))sendOMWText(c.id);return;
+    case 'directions':{
+      if(c){onCustomer();if(has('openMapsDir'))openMapsDir();return;}
+      const j=_timNextJob();
+      const cid=j&&(j.client_id!=null?j.client_id:null);
+      if(cid!=null&&has('openMapsForClient')){openMapsForClient(cid);return;}
+      go('pg-jobs');_timOpenTab('pg-jobs','scheduled');
+      if(has('showToast'))showToast('Nothing on the books coming up','📅',2400);
+      return;
+    }
+  }
+}
+
+// What he can say, shown as things to tap. Each one goes down the same door a
+// typed sentence does (_timChip), so it cannot promise what typing would not do.
+const TIM_HELP_CHIPS=[
+  {say:'new estimate',chip:'New estimate'},
+  {say:'send an invoice',chip:'Send an invoice'},
+  {say:'clock me in',chip:'Clock in'},
+  {say:'log a trip',chip:'Log a trip'},
+  {say:'scan a receipt',chip:'Scan a receipt'},
+  {say:'who owes me money',chip:'Who owes me'},
+  {say:'open the price book',chip:'Price book'},
+  {say:'take me to my taxes',chip:'Taxes'},
+];
+function _timHelpHtml(){
+  return '<div id="_tim-help" style="padding:13px 16px 4px">'+
+    '<div style="font-size:12.5px;line-height:1.5;color:var(--text2);margin-bottom:9px">'+
+      'Name a screen, a customer, or the thing you need to do, and I will take you there. A few to try:</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:7px">'+
+      TIM_HELP_CHIPS.map(c=>'<button type="button" class="tim-chip" onclick="_timChip('+
+        escHtml(JSON.stringify(c.say))+')">'+escHtml(c.chip)+'</button>').join('')+
+    '</div></div>';
+}
+function _timHelp(){
+  if(typeof openTim==='function')openTim();
+  const thread=document.getElementById('_tim-thread');
+  if(document.getElementById('_tim-help'))return;
+  const wrap=document.createElement('div');
+  wrap.innerHTML=_timHelpHtml();
+  const node=wrap.firstChild;
+  if(thread&&thread.parentNode)thread.parentNode.insertBefore(node,thread);
+  else{const sheet=document.getElementById('_tim-sheet');if(sheet)sheet.appendChild(node);}
 }
 
 // Save the lead, then go where the sentence pointed: the proposal when it named
@@ -2130,7 +2694,10 @@ function _timPreview(){
   // so a build still wins here, and an ask beats a screen.
   if(typeof timAskKind==='function'&&!_timCrew()){
     const build=p&&(p.kind==='estimate'||p.kind==='newclient');
-    if(!build&&(!line||(p&&p.kind==='nav'))&&timAskKind(el.value)){
+    // And a thing to DO outranks a question, same as timResolve: "log my
+    // miles" previews the trip it is about to open, not an answer.
+    const act=timDo(el.value,(typeof clients!=='undefined'?clients:[]));
+    if(!build&&!act&&(!line||(p&&p.kind==='nav'))&&timAskKind(el.value)){
       line='Answer that off your own books';
     }
   }
@@ -2284,22 +2851,24 @@ function _timGoRun(){
   const el=document.getElementById('_tim-say');
   const said=el?el.value:'';
   if(!String(said||'').trim())return {text:'',kind:'none'};
+  const _trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
+  const _book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[_trade]))?S.priceBook[_trade]:[];
+  const _catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[_trade]))?TRADE_JOBS[_trade]:[];
+  // timResolve makes the decision; this function only carries it out. The
+  // order inside it is the order this function always had: a build, then a
+  // question about his business, then everything else.
+  const r=timResolve(said,{clients:(typeof clients!=='undefined'?clients:[]),book:_book,catalog:_catalog,
+    photos:(typeof photos!=='undefined'?photos:[])});
 
   // ── "Build me a T and M for Dana" ─────────────────────────────────────────
   // A door and a customer is a proposal, and it outranks everything else,
   // including the estimate page he may already be standing on: a man who says
   // "build me a TrueBid for the Kellermans" while looking at Dana's T&M means
-  // a new one, not a note on this one.
-  const style=timStyle(said);
-  const who=(typeof spkClient==='function')?spkClient(said,(typeof clients!=='undefined'?clients:[])):null;
-  if(style&&who&&timWantsBuild(said)){
-    _timStartBuild(style.id,who);
-    return {text:said,kind:'build',style:style.id,clientId:who.id};
-  }
-  // A customer and a clear intent to build, but he never said which kind.
-  if(who&&timWantsBuild(said)&&!style&&!/\b(hours?|hrs)\b/i.test(said)){
-    _timAskStyle(who);
-    return {text:said,kind:'build',style:null,clientId:who.id};
+  // a new one, not a note on this one. A customer and a clear intent to build
+  // but no door named asks which door.
+  if(r.kind==='build'){
+    if(r.style)_timStartBuild(r.style,r.client);else _timAskStyle(r.client);
+    return {text:said,kind:'build',style:r.style,clientId:r.client.id};
   }
 
   // ── A question about his own business ────────────────────────────────────
@@ -2308,28 +2877,24 @@ function _timGoRun(){
   // describing work says none of them. Ahead of the navigator too, because
   // "who owes me money" deserves the figure, not the Collect screen with the
   // figure somewhere on it (js/tim-ask.js).
-  if(typeof timAsk==='function'){
-    const ans=timAsk(said);
-    // The title rides along so the thread can show what he ACTUALLY said
-    // ("$4,400"), not merely that he said something.
-    // The answer lands IN THE THREAD, it does not replace it.
-    //
-    // It used to call _timShowAsk, which swaps the whole sheet for an answer
-    // card with a headline, a CTA and NO input box. The owner asked what his
-    // mileage was, got 32.5 mi and "Open mileage", and that was the end of the
-    // conversation: no thread, nothing to type into, and the only way back was
-    // to close and reopen him. Every answer was a dead end, which is a strange
-    // thing for the one part of the app you are supposed to talk to.
-    //
-    // Everything needed to draw it as a bubble travels with the outcome. The
-    // full card with its rows is still one tap away from that bubble, so the
-    // detail is not lost, it just stopped being compulsory.
-    if(ans){
-      return {text:said,kind:'ask',ask:ans.id,title:ans.title,
-        sub:ans.sub||'',
-        goLabel:(ans.go&&ans.go.label)||'',goFn:(ans.go&&ans.go.fn)||'',
-        rows:!!(ans.rows&&ans.rows.length)};
-    }
+  // The answer lands IN THE THREAD, it does not replace it.
+  //
+  // It used to call _timShowAsk, which swaps the whole sheet for an answer
+  // card with a headline, a CTA and NO input box. The owner asked what his
+  // mileage was, got 32.5 mi and "Open mileage", and that was the end of the
+  // conversation: no thread, nothing to type into, and the only way back was
+  // to close and reopen him. Every answer was a dead end, which is a strange
+  // thing for the one part of the app you are supposed to talk to.
+  //
+  // Everything needed to draw it as a bubble travels with the outcome. The
+  // full card with its rows is still one tap away from that bubble, so the
+  // detail is not lost, it just stopped being compulsory.
+  if(r.kind==='ask'){
+    const ans=r.answer||{};
+    return {text:said,kind:'ask',ask:ans.id,title:ans.title,
+      sub:ans.sub||'',
+      goLabel:(ans.go&&ans.go.label)||'',goFn:(ans.go&&ans.go.fn)||'',
+      rows:!!(ans.rows&&ans.rows.length)};
   }
 
   // On an estimate he is describing work, not asking for a screen, so the read
@@ -2345,14 +2910,9 @@ function _timGoRun(){
   // is pure and is what timRun parses with, so peeking costs one parse and
   // yields the same kind. A sentence he cannot place still leaves the box, and
   // what was typed in it, alone.
-  const _trade=(typeof getActiveTrade==='function'?getActiveTrade():'general')||'general';
-  const _book=(typeof S!=='undefined'&&S.priceBook&&Array.isArray(S.priceBook[_trade]))?S.priceBook[_trade]:[];
-  const _catalog=(typeof TRADE_JOBS!=='undefined'&&Array.isArray(TRADE_JOBS[_trade]))?TRADE_JOBS[_trade]:[];
-  const peek=timParse(said,{clients:(typeof clients!=='undefined'?clients:[]),book:_book,catalog:_catalog,
-    photos:(typeof photos!=='undefined'?photos:[])});
-  if(!peek||peek.kind==='none'){
-    if(typeof showToast==='function')showToast('Say a screen, a year, or what the work is','🔧',2600);
-    return peek||{text:said,kind:'none'};
+  if(!r||r.kind==='none'){
+    if(typeof showToast==='function')showToast('Say a screen, a customer, or what you need to do','🔧',2600);
+    return r||{text:said,kind:'none'};
   }
   _timClose();
   return timRun(said);

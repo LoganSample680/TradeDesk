@@ -23,22 +23,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── What he is asked ─────────────────────────────────────────────────────────
+// `home` is the page that owns the answer. When he recognises the question
+// but the books hold nothing to answer it with, js/tim.js timResolve takes
+// him there instead of saying nothing (owner 2026-10-03: "take them to the
+// source"). The clock has no page, so it has no home.
 // Longest phrase wins, same rule the stage matcher uses, so "who owes me money"
 // beats a bare "money" and a man asking about one customer does not get the
 // whole ledger.
 const TIM_ASKS=[
-  {id:'owed', say:[
+  {id:'owed', home:{pg:'pg-money',name:'Collect'}, say:[
     'who owes me money','who owes me','what am i owed','who hasnt paid','who has not paid',
     'whats owed','what is owed','money owed','outstanding','who still owes','past due',
     'what am i waiting on','who is late']},
-  {id:'charged', say:[
+  {id:'charged', home:{pg:'pg-settings',set:'pricebook',name:'Price book'}, say:[
     'what did i charge','what do i charge','what did we charge','how much did i charge',
     'what did i bill','my price for','what do i get for','last time i did']},
-  {id:'source', say:[
+  {id:'source', home:{pg:'pg-leads',name:'Leads'}, say:[
     'lead source','where do my jobs come from','where do leads come from','which source',
     'best lead source','is it worth it','what is working','where are my jobs coming from',
-    'marketing','what pays for itself','close rate']},
-  {id:'who', say:[
+    'marketing','what pays for itself','close rate','where do my leads come from','where my leads come from',
+    'where are my leads coming from','where do my customers come from']},
+  {id:'who', home:{pg:'pg-clients',name:'Customers'}, say:[
     'address for','whats the address','phone number for','number for','email for',
     'how do i reach','where does','contact for']},
 
@@ -52,28 +57,28 @@ const TIM_ASKS=[
   // should I charge for a bathroom", no "is this a good job": those need an
   // opinion or a market, and he has neither. A question he answers by guessing
   // is worse than a question he declines, because the guess gets believed once.
-  {id:'made', say:[
+  {id:'made', home:{pg:'pg-tracker',tab:'income',name:'Income'}, say:[
     'how much did i make','how much have i made','what did i make','what did i gross',
     'my revenue','how much did i bring in','how much have i brought in','what did i take in',
     'how much money did i make','my income this year','what did i earn']},
-  {id:'spent', say:[
+  {id:'spent', home:{pg:'pg-tracker',tab:'expenses',name:'Expenses'}, say:[
     'what did i spend','how much did i spend','what have i spent','my expenses',
     'how much have i spent','what did i spend on','where is my money going',
     'what am i spending','my costs this year']},
-  {id:'out', say:[
+  {id:'out', home:{pg:'pg-proposals',name:'Proposals'}, say:[
     'whats out right now','what is out right now','what have i got out','open bids',
     'whats pending','what is pending','what am i waiting to hear on','whats still open',
     'what bids are open','what have i quoted','what is out there']},
-  {id:'winrate', say:[
+  {id:'winrate', home:{pg:'pg-proposals',name:'Proposals'}, say:[
     'how many did i win','how many did i lose','win rate','how many jobs did i win',
     'how many bids did i win','am i winning','how many have i won','what am i closing']},
-  {id:'best', say:[
+  {id:'best', home:{pg:'pg-checklist',name:'Top clients'}, say:[
     'best customer','who is my best customer','biggest customer','who gives me the most work',
     'who spends the most','my best client','top customer','who is worth the most']},
-  {id:'miles', say:[
+  {id:'miles', home:{pg:'pg-tracker',tab:'mileage',name:'Mileage'}, say:[
     'how many miles','my mileage','miles this year','how many miles did i drive',
     'whats my mileage','what is my mileage','miles driven','my miles']},
-  {id:'hours', say:[
+  {id:'hours', home:{pg:'pg-timelog',name:'Timesheet'}, say:[
     'how many hours','hours this week','how many hours did i work','hours worked',
     'how many hours have i put in','my hours this week','how long have i worked',
     'my hours','total my hours','total up my hours','add up my hours','hours last week',
@@ -90,7 +95,7 @@ const TIM_ASKS=[
   // I bill and to whom", and the second one pivots on the job site and comes
   // with a block of text to paste. Phrased the way the work is talked about on
   // a Friday afternoon, not the way a menu is labelled.
-  {id:'sheet', say:[
+  {id:'sheet', home:{pg:'pg-timelog',name:'Timesheet'}, say:[
     'breakdown of my week','breakdown of last week','break down my week',
     'breakdown by person','breakdown of my last week','give me a breakdown',
     'wrap up invoicing','wrap up my invoicing','ready to invoice','what do i invoice',
@@ -110,12 +115,12 @@ const TIM_ASKS=[
   // for it, which made him look stupid on the most forgiving question there is.
   // It is not small talk either: it means "tell me where I stand", and every
   // number needed to answer it is already computed by the families below.
-  {id:'brief', say:[
+  {id:'brief', home:{pg:'pg-dash',name:'Home'}, say:[
     'whats going on','what is going on','how are we doing','how am i doing',
     'where do i stand','give me the rundown','whats up','what should i know',
     'catch me up','how is business','hows business','state of things','brief me',
     'whats the damage','sum it up','where are we at']},
-  {id:'avg', say:[
+  {id:'avg', home:{pg:'pg-tracker',tab:'summary',name:'Summary'}, say:[
     'average job','whats my average job','average ticket','my average job size',
     'what is my average job','average job size','typical job']},
 ];
