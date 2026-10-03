@@ -11,6 +11,7 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="js/brand-look.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/num-public.js"></script>
 <script src="js/esign.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -414,8 +415,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    the same tdBootFill (js/brand-look.js). The contractor's logo on its own
    background, fade in, hold, fade out. Never "Powered by TradeDesk" here: the
    hub is the contractor's, full stop. */
-#boot-overlay{position:fixed;inset:0;background:#1B1612;z-index:9999;overflow:hidden}
-#boot-overlay.td-fadeout{opacity:0;transition:opacity .3s ease .3s}
+#boot-overlay{position:fixed;inset:0;background:#1B1612;z-index:9999}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
 
@@ -668,19 +668,16 @@ const MIN_BOOT_MS=2150; // the approved beat (owner 2026-09-24): fade in, hold, 
 // by CONTRACTOR (u), not client (c), so once ANY of their hubs has loaded here,
 // every other one paints their logo on its first frame.
 const _hubUid=new URLSearchParams(location.search).get('u')||'';
-let _bootShown={logo:'',name:''};
 function _hubBootPaint(logo,name,brand){
   const ov=document.getElementById('boot-overlay');
-  if(!ov||typeof tdBootFill!=='function')return;
-  if(_bootShown.logo===(logo||'')&&_bootShown.name===(name||''))return;
+  if(!ov||typeof tdBootPaint!=='function')return;
   // First visit on this device: the screen sat blank until the fetch told us
   // who the contractor is. His logo gets the whole beat from the moment it
   // appears, not what is left of it after a slow connection.
-  if(!_bootShown.logo&&!_bootShown.name)window._bootStart=Date.now();
-  _bootShown={logo:logo||'',name:name||''};
-  tdBootFill(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
+  const first=!ov._tdBootKey;
+  if(tdBootPaint(ov,{logo:logo||'',name:name||'',brand:brand||'',cacheKey:_hubUid?'td_hub_look_'+_hubUid:'',
     // A hub whose contractor never picked a colour takes it from the logo.
-    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',_adaBrand(lk.accent));}});
+    onLook:lk=>{if(lk.accent&&!(_hub&&_hub.brandColor))document.documentElement.style.setProperty('--denim',adaBrand(lk.accent));}})&&first)window._bootStart=Date.now();
 }
 (function(){
   try{
@@ -694,17 +691,7 @@ let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(lo
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-// Egress fix: route public gallery images through the Cloudflare edge cache
-// (/img/<path>) when served from Cloudflare, repeat hub views hit Cloudflare,
-// not Supabase. Localhost/dev and non-storage URLs pass through untouched.
-function _cdnPhoto(u){
-  try{
-    if(!u||u.startsWith('data:'))return u;
-    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
-    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
-    return m?'/img/'+m[1]:u;
-  }catch(_e){return u;}
-}
+// _cdnPhoto (the edge-cached gallery address) is shared from js/brand-look.js.
 // Image fallback: retry the direct URL once before hiding, an undeployed /img
 // route or edge failure degrades to the pre-fix direct load, never a blank tile.
 function _imgFallback(el,mode){
@@ -750,25 +737,6 @@ const _signHref=url=>url?((_isContractorPreview?(url+(url.includes('?')?'&':'?')
 // contractor logs a payment. Fetch the public object URL with cache:'no-store'
 // plus a cb= cache-buster (defeats CDN/edge caches too); fall back to
 // storage.download() on any failure so the existing error UI is unchanged.
-async function _fetchStorageJson(key){
-  try{
-    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
-    if(!pub)throw new Error('no public url');
-    // 10s abort, a hung request on a weak connection must fall through to the
-    // download() path instead of freezing the boot screen forever.
-    const ac=new AbortController();
-    const tm=setTimeout(()=>ac.abort(),10000);
-    let res;
-    try{res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store',signal:ac.signal});}
-    finally{clearTimeout(tm);}
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    return{data:await res.json(),error:null};
-  }catch(e){
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)return{data:null,error:error||e};
-    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
-  }
-}
 // The hub's signing state, through the token-checked RPC (20261049).
 // signed_proposals is closed to anon: the hub link (u, c, t) is the proof, the
 // server checks it and returns only this client's bids and only the fields the
@@ -782,15 +750,6 @@ async function _hubSigRows(u,bidIds){
     if(error||!Array.isArray(data))return [];
     return data.filter(r=>r&&typeof r==='object');
   }catch(_){return [];}
-}
-// Every write the hub makes to a signed proposal goes through proposal-sign
-// (20261049), which checks the hub link before touching the row.
-async function _hubSignCall(body){
-  const p=new URLSearchParams(location.search);
-  const{data,error}=await _supa.functions.invoke('proposal-sign',{body:Object.assign({u:p.get('u'),c:p.get('c'),t:p.get('t')},body)});
-  if(error)throw error;
-  if(data&&data.error)throw new Error(data.error);
-  return data||{};
 }
 // Merge authoritative signing state from signed_proposals over a hub snapshot.
 // Single merge path, used by init() and the live refresher (_refreshHub).
@@ -996,11 +955,7 @@ async function init(){
         const{data:{session}}=await _supaAuth.auth.getSession();
         if(!session||session?.user?.id!==u){
           (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
-            fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-              method:'POST',
-              headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-              body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
-            }).catch(()=>{});
+            _logProposalView({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'});
           });
         }
       }catch(_){}
@@ -1064,7 +1019,7 @@ async function initOnboard(t,u,c){
         '<div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px;margin-bottom:0">'+
           '<input id="onb-city" type="text" placeholder="City" autocomplete="address-level2" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)">'+
           '<input id="onb-state" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="width:100%;box-sizing:border-box;padding:13px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text);text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'+
-          '<input id="onb-zip" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)">'+
+          '<input id="onb-zip" type="text" data-num="zip" inputmode="numeric" placeholder="Zip" maxlength="5" autocomplete="postal-code" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)">'+
         '</div>'+
         '<div id="onb-addr-err" style="display:none;font-size:12px;color:var(--red);margin-top:4px">Please enter the street address and city.</div>'+
       '</div>'+
@@ -1275,17 +1230,8 @@ function showState(s){
 // darken toward black, hue preserved, until ≥4.6:1 vs white so no brand pick
 // can ever produce illegible text. Snapshots are clamped at upload too, this
 // covers legacy snapshots that stored a light color before the clamp existed.
-function _adaBrand(hex){
-  const h=String(hex||'').trim().replace('#','');
-  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
-  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
-  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
-  let guard=0;
-  while(1.05/(lum(rgb)+0.05)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
-  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-}
 function applyBranding(h){
-  if(h.brandColor)document.documentElement.style.setProperty('--denim',_adaBrand(h.brandColor));
+  if(h.brandColor)document.documentElement.style.setProperty('--denim',adaBrand(h.brandColor));
   document.title=(h.contractorName||'Project Hub')+', Your Hub';
   // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
   const _cnName=(h.contractorName||'').trim();
@@ -2207,15 +2153,22 @@ function _cancelShowStep2(){
   h+='</div>';
   _cancelSetContent(h);
 }
+// What the Notice of Cancellation says about this bid (audit 2026-10-01: the
+// notice and its submitted copy each worked it out). The window, the law it
+// comes from, the transaction date, the window in words, what is owed back,
+// and whether that refund goes back to a card.
+function _cancelCtx(bid){
+  const cancelDays=_bidCancelDays(bid);
+  return {cancelDays,
+    cancelStatute:_bidCancelStatute(bid),
+    txDate:bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'',
+    daysWord:cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase(),
+    refundDue:_bidRefundDue(bid),
+    isStripe:!!(bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check')};
+}
 function _cancelShowStep3(){
   const bid=_hub&&_hub.bids.find(b=>b.id===_cancelBidId);if(!bid)return;
-  const cancelDays=_bidCancelDays(bid);
-  const cancelStatute=_bidCancelStatute(bid);
-  const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
-  const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
-  const refundDue=_bidRefundDue(bid);
-  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  const {cancelStatute,txDate,daysWord,refundDue,isStripe}=_cancelCtx(bid);
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within <strong>5–7 business days</strong> to your original payment method.';
@@ -2251,12 +2204,7 @@ function _cancelShowStep3(){
 }
 function _cancelShowConfirmed(bid){
   const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const cancelDays=_bidCancelDays(bid);
-  const cancelStatute=_bidCancelStatute(bid);
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
-  const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
-  const refundDue=_bidRefundDue(bid);
-  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  const {cancelStatute,txDate,daysWord,refundDue,isStripe}=_cancelCtx(bid);
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within 5–7 business days to your original payment method.';
@@ -2319,19 +2267,6 @@ function _hubCOHistoryHTML(bid,thisCO){
   const first=prior[0].originalAmount||0;
   return '<div style="font-size:12px;color:#6b7280;line-height:1.7;margin-top:6px">Signed '+fmt(first)+
     prior.map(c=>' · CO #'+c.coNum+' '+((c.delta||0)<0?'-':'+')+fmt(Math.abs(c.delta||0))).join('')+'</div>';
-}
-function _hubCOLinesHTML(lines,color,type){
-  if(!lines||!lines.length)return '';
-  const sign=type==='sub'?'-':'+';
-  return '<div style="margin-bottom:10px">'+
-    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
-      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+esc(l.desc||'')+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt||0)+'</span>'+
-    '</div>').join('')+
-    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
-      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
-      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
-    '</div></div>';
 }
 function _hubCOPhotosHTML(urls){
   if(!urls||!urls.length)return '';
@@ -2396,7 +2331,7 @@ function _showCODoc(bidId,coNum){
   h+='<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+esc(co.desc||'')+'</div>';
   // Itemized when the contractor broke it out. A lump sum is what a homeowner
   // argues with; lines are what they read and accept.
-  h+=_hubCOLinesHTML(co.lines,deltaColor,co.type);
+  h+=tdCoLinesHTML(co.lines,deltaColor,co.type,esc,fmt);
   if(!(co.lines&&co.lines.length)){
     h+='<div style="display:flex;align-items:center;gap:8px">';
     h+='<span style="font-size:13px;color:#6b7280">Adjustment:</span>';
@@ -2464,7 +2399,7 @@ async function _declineCOHub(bidId,coNum){
   try{
     // proposal-sign re-reads the row, marks this change order declined and
     // writes it back, after checking the hub link.
-    try{await _hubSignCall({action:'co',decision:'decline',bidId:String(bidId),coNum,note});}
+    try{await _proposalSign({action:'co',decision:'decline',bidId:String(bidId),coNum,note},{hub:true});}
     catch(_e2){console.warn('CO decline DB write deferred:',_e2&&_e2.message);}
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum,declined:true}));}catch(_){}
     _hubNudgePeers();
@@ -2489,7 +2424,7 @@ async function _submitCOHubSign(bidId,coNum){
     // The DB row is authoritative: proposal-sign re-reads it (falling back to
     // this hub's CO list), signs the matching entry and writes it back, after
     // checking the hub link. Local state below updates either way.
-    try{await _hubSignCall({action:'co',decision:'sign',bidId:String(bidId),coNum,signerName:name,signatureData:sigData});}
+    try{await _proposalSign({action:'co',decision:'sign',bidId:String(bidId),coNum,signerName:name,signatureData:sigData},{hub:true});}
     catch(_e2){console.warn('CO sign DB write deferred:',_e2&&_e2.message);}
     // Instant contractor-tab refresh (same-browser): cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
@@ -2848,34 +2783,10 @@ async function _launchCheckout(bidId,amount,label){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    // Direct charge: PaymentIntent lives on the contractor's connected account, so
-    // Stripe.js must be initialised with that account or the client_secret won't resolve.
-    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
-    _stripeCheckoutInstance=stripeObj;
-    document.getElementById('checkout-embed-container').innerHTML='';
-    // cs_ = Checkout Session → initEmbeddedCheckout (deployed backend)
-    // pi_ = PaymentIntent   → Payment Element accordion (updated backend)
-    if(d.clientSecret.startsWith('cs_')){
-      const inst=await stripeObj.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);}
-      });
-      inst.mount('#checkout-embed-container');
-      _stripeCheckoutInstance={confirmPayment:null,destroy:()=>inst.destroy()};
-      _stripeCheckoutElements=null;
-      if(submitBtn)submitBtn.style.display='none';
-    }else{
-      _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-      const payEl=_stripeCheckoutElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      });
-      payEl.mount('#checkout-embed-container');
-      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
-      payEl.on('loaderror',()=>{
-        closePaymentModal();
-        alert('Could not load payment options. Please try again.');
-      });
-    }
+    const m=await _tdMountStripe(d,{container:'checkout-embed-container',submitBtn,
+      onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);},
+      onLoadError:()=>{closePaymentModal();alert('Could not load payment options. Please try again.');}});
+    _stripeCheckoutInstance=m.inst;_stripeCheckoutElements=m.elements;
   }catch(e){
     console.error('[_launchCheckout]',e);
     closePaymentModal();
@@ -2999,8 +2910,24 @@ function _hubBidPaid(bidId){
     .reduce((s,p)=>s+(p.amount||0),0);
   return (b.amount||0)>0&&((b.amount||0)-paid)<0.01;
 }
+// THE INVOICE THEY GET IS THE ONE HE PREVIEWED (audit 2026-10-01). A quick
+// invoice saves its document, built by the same _qiDocHtml his "See what they
+// get" shows, the way a proposal saves its own (proposalKey). This page shows
+// that saved copy and adds only what is live: what has been paid, the
+// balance, and the Pay button. An invoice with no saved copy (older ones, a
+// proposal billed in full) is drawn here as before.
+const _invDocs={};
 function openInvoice(bidId){
   const h=_hub,bid=h.bids.find(b=>b.id===bidId);if(!bid)return;
+  if(bid.invoiceDocKey&&!(bidId in _invDocs)&&typeof _fetchStorageJson==='function'){
+    _invDocs[bidId]=null;
+    _fetchStorageJson(bid.invoiceDocKey).then(r=>{
+      _invDocs[bidId]=r&&r.data&&typeof r.data.invoiceHtml==='string'?r.data.invoiceHtml:null;
+      openInvoice(bidId);
+    }).catch(()=>openInvoice(bidId));
+    return;
+  }
+  const _doc=_invDocs[bidId]||null;
   const job=(h.jobs||[]).find(j=>j.bid_id===bidId);
   const bidPayments=h.payments.filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1));
   const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
@@ -3109,6 +3036,9 @@ function openInvoice(bidId){
       (h.signerName?'<div style="margin-top:10px;font-size:14px;font-weight:700;color:#0b1220">'+esc(h.signerName)+'</div>':'')+
     '</div>';
   }
+  // His saved invoice in place of the redrawn top half: the stamp stays,
+  // because paid or past due is live and the saved copy cannot know it.
+  if(_doc)html=(isPaid?_stamp('PAID','#3B8C2A'):_late?_stamp('PAST DUE','#A32D2D'):'')+'<div class="inv-doc">'+sanitizeHtml(_doc)+'</div>';
   // TOTALS. Subtotal, tax when the contractor charges it, then payments applied,
   // then the balance. Tax gets its own line because a lump sum with tax baked in
   // is the other thing clients query.

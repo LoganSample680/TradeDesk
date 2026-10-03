@@ -325,7 +325,7 @@ test.describe('T&M in three steps', () => {
     expect(d.indexOf('Laundry room')).toBeLessThan(d.indexOf('Outside'));
     expect(d.indexOf('Crawlspace')).toBeLessThan(d.indexOf('Bathroom'));
     // Saved with the bid, so the rooms come back on the next open.
-    const saved = await page.evaluate(() => _tmSaved().find(x => x.label === 'Secure the tub spout').section);
+    const saved = await page.evaluate(() => _scopeRowsSaved(_tmItems()).find(x => x.label === 'Secure the tub spout').section);
     expect(saved).toBe('Bathroom');
   });
 

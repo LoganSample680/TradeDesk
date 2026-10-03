@@ -39,11 +39,8 @@ const SUP_MARKUP_MAX=100;
 function _supBlank(){
   return {items:[],markup:0,vendor:'',vendorEmail:'',quote:null,sentAt:null};
 }
-function _supCents(n){return Math.round((Number(n)||0)*100)/100;}
-function _supMoney(n){
-  const v=_supCents(n);
-  return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-}
+// Rounded to the cent first (_cents, js/utils.js), then the app's one money format.
+function _supFmt(n){return fmt(_cents(n));}
 function _supClampMarkup(v){
   const n=parseFloat(v);
   if(!isFinite(n)||n<0)return 0;
@@ -53,11 +50,11 @@ function _supClampMarkup(v){
 // Cost of the ticked lines. A line with no price yet (typed, not quoted)
 // counts as zero, so the card can say plainly that it is waiting on a quote.
 function _supCost(d){
-  return _supCents(((d&&d.items)||[]).filter(it=>it&&it.on!==false)
+  return _cents(((d&&d.items)||[]).filter(it=>it&&it.on!==false)
     .reduce((s,it)=>s+(Number(it.cost)||0),0));
 }
 function _supPrice(d){
-  return _supCents(_supCost(d)*(1+_supClampMarkup(d&&d.markup)/100));
+  return _cents(_supCost(d)*(1+_supClampMarkup(d&&d.markup)/100));
 }
 function _supPriced(d){
   return ((d&&d.items)||[]).some(it=>it&&it.on!==false&&Number(it.cost)>0);
@@ -174,7 +171,7 @@ function _supCardHTML(){
       // misheard): tap either and it opens as one line to retype.
       '<button type="button" class="sup-qty sup-edit" aria-label="Edit '+escHtml(it.desc)+'" onclick="_supEditItem('+i+')">'+escHtml(String(it.qty))+' '+escHtml(it.unit||'ea')+'</button>'+
       '<button type="button" class="sup-desc sup-edit" onclick="_supEditItem('+i+')">'+escHtml(it.desc)+flag+'</button>'+
-      '<button type="button" class="sup-cost" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supMoney(it.cost):'<span class="sup-cost-add">+ price</span>')+'</button>'+
+      '<button type="button" class="sup-cost" aria-label="Price" onclick="_supEditCost('+i+')">'+(Number(it.cost)>0?_supFmt(it.cost):'<span class="sup-cost-add">+ price</span>')+'</button>'+
       '<button type="button" class="sup-del" aria-label="Remove" onclick="_supDel('+i+')">'+svgIcon('✕',{size:12})+'</button>'+
     '</div>';
   }).join('');
@@ -196,12 +193,12 @@ function _supCardHTML(){
       '<div class="sup-markup">'+
         '<label for="sup-markup">Markup</label>'+
         '<div style="display:flex;align-items:center;gap:6px">'+
-          '<input id="sup-markup" type="number" inputmode="decimal" min="0" max="100" step="1" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)" style="width:72px;padding:7px 8px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);text-align:right">'+
+          '<input id="sup-markup" type="text" data-num="pct" inputmode="decimal" value="'+(d?_supClampMarkup(d.markup):0)+'" oninput="_supSetMarkup(this.value)" style="width:72px;padding:7px 8px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);text-align:right">'+
           '<span style="font-size:14px;color:var(--text2);font-weight:600">%</span>'+
         '</div>'+
       '</div>'+
       (priced
-        ?'<div class="sup-totals"><span>Your cost '+_supMoney(cost)+'</span><span><b>Client price '+_supMoney(price)+'</b></span></div>'
+        ?'<div class="sup-totals"><span>Your cost '+_supFmt(cost)+'</span><span><b>Client price '+_supFmt(price)+'</b></span></div>'
         :(items.length?'<div class="sup-totals"><span style="color:var(--text3)">Waiting on their quote for prices</span></div>':''))+
       (taxNote?'<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">'+escHtml(taxNote)+'</div>':'')+
       '<div class="sup-actions">'+
@@ -260,11 +257,11 @@ function _supEditCost(i){
   const apply=v=>{
     const n=_supNum(v);
     if(n===null||n<0)return;
-    it.cost=_supCents(n);it.flag='';
+    it.cost=_cents(n);it.flag='';
     _supSync();
   };
   if(typeof zPrompt==='function'){
-    zPrompt((it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',value:Number(it.cost)>0?String(it.cost):''});
+    zPrompt((it.qty+' '+(it.unit||'ea')+' '+it.desc),apply,{title:'Line total',placeholder:'0.00',num:'money',value:Number(it.cost)>0?String(it.cost):''});
   }
 }
 let _supMarkupTimer=null;
@@ -298,7 +295,7 @@ function _supCheckQuote(q){
   // that says "taxes not included", or shows no tax line at all, came in
   // untaxed, which is the case where the client is charged sales tax.
   out.taxCharged=q.tax_included===true&&isFinite(taxAmt)&&taxAmt>0;
-  out.subtotal=isFinite(Number(q.subtotal))&&q.subtotal!==null?_supCents(q.subtotal):null;
+  out.subtotal=isFinite(Number(q.subtotal))&&q.subtotal!==null?_cents(q.subtotal):null;
   const lines=Array.isArray(q.lines)?q.lines:[];
   lines.forEach(l=>{
     if(!l||typeof l!=='object')return;
@@ -310,7 +307,7 @@ function _supCheckQuote(q){
     let flag='';
     if(!(qty>0)){flag='Could not read the quantity. Check this line.';}
     if(!isFinite(ext)||ext<0){
-      if(qty>0&&unitPrice>=0){ext=_supCents(qty*unitPrice);}
+      if(qty>0&&unitPrice>=0){ext=_cents(qty*unitPrice);}
       else{ext=0;flag='Could not read the price. Check this line.';}
     }
     // Unit prices print to three places (32.579), lines to two: half a cent of
@@ -318,15 +315,15 @@ function _supCheckQuote(q){
     if(!flag&&qty>0&&isFinite(unitPrice)&&unitPrice>=0){
       const expect=qty*unitPrice;
       if(Math.abs(expect-ext)>Math.max(0.011,qty*0.0051)){
-        flag='Does not add up: '+qty+' x '+unitPrice+' is '+_supMoney(expect)+', the quote says '+_supMoney(ext)+'.';
+        flag='Does not add up: '+qty+' x '+unitPrice+' is '+_supFmt(expect)+', the quote says '+_supFmt(ext)+'.';
       }
     }
     if(flag)out.flagged++;
-    out.lines.push({qty:qty>0?qty:1,unit:String(l.unit||'ea').toLowerCase().slice(0,8)||'ea',part:String(l.part||'').trim(),desc,cost:_supCents(ext),on:true,flag});
+    out.lines.push({qty:qty>0?qty:1,unit:String(l.unit||'ea').toLowerCase().slice(0,8)||'ea',part:String(l.part||'').trim(),desc,cost:_cents(ext),on:true,flag});
   });
-  const sum=_supCents(out.lines.reduce((s,l)=>s+l.cost,0));
+  const sum=_cents(out.lines.reduce((s,l)=>s+l.cost,0));
   out.sum=sum;
-  out.total=isFinite(Number(q.total))&&q.total!==null?_supCents(q.total):null;
+  out.total=isFinite(Number(q.total))&&q.total!==null?_cents(q.total):null;
   // The subtotal is checked first. A quote with no tax and no freight also
   // prints the same number as its amount due, which is a second chance when
   // OCR misread one of the two (Neenan's "$" read as a "3": 3315.72).
@@ -344,7 +341,7 @@ function _supCheckQuote(q){
     let fixed=null;
     if(up>0){
       for(let k=1;k<=500&&!fixed;k++){
-        const ext=_supCents(k*up);
+        const ext=_cents(k*up);
         for(const t of targets){
           if(Math.abs(sum-b.cost+ext-t)<0.015){fixed={k,ext,t};break;}
         }
@@ -353,7 +350,7 @@ function _supCheckQuote(q){
     if(fixed){
       b.qty=fixed.k;b.cost=fixed.ext;b.flag='';out.flagged--;
       b.note='Price checked against the quote total';
-      out.sum=_supCents(out.lines.reduce((s2,l)=>s2+l.cost,0));
+      out.sum=_cents(out.lines.reduce((s2,l)=>s2+l.cost,0));
       out.sumOk=true;
       out.subtotal=fixed.t;
     }
@@ -599,8 +596,8 @@ function _supReview(checked){
   const sumLine=checked.subtotal===null
     ?'<div class="tip tip-w" style="margin:10px 0">Could not find the quote\'s subtotal to check the lines against.</div>'
     :(checked.sumOk
-      ?'<div style="font-size:12px;color:var(--green-dk,#15803d);margin:8px 0">Lines add up to their subtotal, '+_supMoney(checked.subtotal)+'.</div>'
-      :'<div class="tip tip-w" style="margin:10px 0">Lines add up to '+_supMoney(checked.sum)+' but the quote says '+_supMoney(checked.subtotal)+'. Check the amber lines.</div>');
+      ?'<div style="font-size:12px;color:var(--green-dk,#15803d);margin:8px 0">Lines add up to their subtotal, '+_supFmt(checked.subtotal)+'.</div>'
+      :'<div class="tip tip-w" style="margin:10px 0">Lines add up to '+_supFmt(checked.sum)+' but the quote says '+_supFmt(checked.subtotal)+'. Check the amber lines.</div>');
   const tax=checked.taxCharged
     ?'Tax was charged on this quote.'
     :'No tax on this quote.';
@@ -613,7 +610,7 @@ function _supReview(checked){
           '<button type="button" class="byo-check on" data-i="'+i+'" onclick="_supReviewToggle(this)">'+svgIcon('✓',{size:14})+'</button>'+
           '<div class="sup-qty">'+escHtml(String(l.qty))+' '+escHtml(l.unit)+'</div>'+
           '<div class="sup-desc">'+escHtml(l.desc)+(l.flag?'<div style="font-size:11px;color:var(--amber-dk,#b45309);margin-top:2px">'+escHtml(l.flag)+'</div>':'')+(l.note?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(l.note)+'</div>':'')+'</div>'+
-          '<div class="sup-cost">'+_supMoney(l.cost)+'</div>'+
+          '<div class="sup-cost">'+_supFmt(l.cost)+'</div>'+
         '</div>').join('')+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);margin:8px 0 12px">Untick anything you are not buying, like the other water heater on a quote that prices two.</div>'+

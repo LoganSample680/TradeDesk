@@ -23,6 +23,35 @@
       "from": "guard: a street named Holloway is not haul away",
       "said": "Met the customer on Holloway Street and looked at the water heater",
       "stepsContain": ["Holloway"]
+    },
+    {
+      "id": "electric-out-gas-in-narrated",
+      "added": "2026-10-02",
+      "from": "owner's BYO bid 2026-10-01: 'I typed up what I was doing', and it went out as 'Removing a electric water heater' and 'Replacing with gas'",
+      "said": "I am removing a electric water heater and replacing with gas",
+      "steps": ["Remove the electric water heater", "Install the new gas water heater"],
+      "notSteps": ["Removing", "Replacing with gas", "a electric"]
+    },
+    {
+      "id": "brand-goes-on-the-new-unit",
+      "added": "2026-10-02",
+      "from": "owner 2026-10-02: Bradford White is the NEW gas heater, not the old electric one",
+      "said": "Bradford White gas, I am removing a electric water heater and replacing with gas",
+      "steps": ["Remove the electric water heater", "Install the new Bradford White gas water heater"]
+    },
+    {
+      "id": "old-brand-stays-on-the-old-unit",
+      "added": "2026-10-02",
+      "from": "guard: 'the old Rheem' is the unit coming out",
+      "said": "pull the old Rheem and install a new gas water heater",
+      "steps": ["Pull the old Rheem", "Install a new gas water heater"]
+    },
+    {
+      "id": "plain-order-left-alone",
+      "added": "2026-10-02",
+      "from": "guard: a step already written as an order is not rewritten",
+      "said": "Replace the cold supply valve",
+      "steps": ["Replace the cold supply valve"]
     }
   ]
 }

@@ -70,6 +70,21 @@ test.describe('geo fences: the browser half of the equivalence', () => {
       .toEqual(norm(CASE.expect.map(f => ({ ...f, lat: +f.lat.toFixed(6), lng: +f.lng.toFixed(6) }))));
   });
 
+  // Owner 2026-10-02, Jack's Time Log: "why is Tagen saying rental, it should
+  // show the property address." Two of Tagen's properties are labelled
+  // Rental; a label-named fence called both houses by one name.
+  test('two properties labelled Rental are two fences, each named for its street', async () => {
+    const got = (await build()).filter(f => /^client-c8/.test(f.id))
+      .sort((a, b) => a.id.localeCompare(b.id)).map(f => [f.id, f.name]);
+    expect(got).toEqual([
+      ['client-c8', 'Tagen Lindstrom (1733 SW Burnett Rd)'],
+      ['client-c8-p0', 'Tagen Lindstrom (1238 SW Collins Ave)'],
+      ['client-c8-p1', 'Tagen Lindstrom (2437 SW 24th St)'],
+      ['client-c8-p2', 'Tagen Lindstrom (5713 SW 14th St)'],
+    ]);
+    expect(got.some(([, n]) => /Rental/.test(n)), 'a label is never the name').toBe(false);
+  });
+
   test('a client who moved has no fence: the coordinates belong to the old address', async () => {
     const got = await build();
     expect(got.find(f => f.id === 'client-c3'), 'geoAddr 12 OLD St against addr 12 NEW St').toBeUndefined();

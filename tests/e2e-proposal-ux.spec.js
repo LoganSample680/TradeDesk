@@ -392,8 +392,9 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
 
   // Owner: a branded boot moment ("Loading your proposal…", business name, then
   // waterfall) replaces chasing an instant reveal, the dwell absorbs fonts,
-  // layout, and raster so nothing ever flashes or chops. Same treatment as the
-  // client hub boot. This pins the full lifecycle.
+  // layout, and raster so nothing ever flashes or chops. It is the app's own
+  // boot screen (tdBootFill, owner 2026-10-02: "should be the same loading
+  // screen for client hub and tradedesk"). This pins the full lifecycle.
   test('sign boot: business name + loading copy shown, holds, then dismisses into the waterfall', async ({ page }) => {
     await mountSignRoutes(page, null);
     const key = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
@@ -406,8 +407,8 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
     // populates the name at parse time, before any network).
     await expect(page.locator('#sign-boot')).toBeVisible();
     const boot = await page.evaluate(() => ({
-      name: document.getElementById('sign-boot-name')?.textContent,
-      hint: document.querySelector('#sign-boot .cbo-hint')?.textContent,
+      name: document.querySelector('#sign-boot .bt-name')?.textContent,
+      hint: document.querySelector('#sign-boot .bt-foot')?.textContent,
     }));
     expect(boot.name).toBe('BOOT BRAND CO');
     expect(boot.hint).toContain('Loading your proposal');
@@ -424,7 +425,7 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
     if (alreadyElapsed < targetElapsedMs) await page.waitForTimeout(targetElapsedMs - alreadyElapsed);
     const held = await page.evaluate(() => {
       const ov = document.getElementById('sign-boot');
-      return getComputedStyle(ov).display !== 'none' && ov.style.opacity !== '0';
+      return getComputedStyle(ov).display !== 'none' && !ov.classList.contains('td-fadeout');
     });
     expect(held).toBe(true);
     // Then it dismisses (premium exit) and the waterfall arms (body.revealed).

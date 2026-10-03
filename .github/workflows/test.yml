@@ -309,6 +309,26 @@ jobs:
           fi
           echo "✅ No uat roll commits: this branch starts from main"
 
+  dup-check:
+    name: No copied code
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Copied blocks and known one-line copies
+        # A block of 5+ meaningful lines that also lives elsewhere in the app,
+        # or a line that redoes cents rounding, a 25% deposit or dollar
+        # formatting by hand. Judged against the base branch, so only what
+        # this PR adds can fail it. See scripts/ci/dup-check.mjs.
+        run: |
+          git fetch -q origin "${{ github.event.pull_request.base.ref }}"
+          node scripts/ci/dup-check.mjs "origin/${{ github.event.pull_request.base.ref }}"
+
   # ── The ship pipeline scripts, proven on throwaway repos ──────────────────
   # scripts/uat-roll.sh, scripts/pr-sync.sh and the migration step in
   # deploy-functions.yml decide what reaches UAT and production. A wrong
@@ -505,7 +525,10 @@ jobs:
     # 25, not 15 (2026-09-02): the heaviest shard runs 12 minutes of tests,
     # and on a slow Azure package mirror the browser dependency install alone
     # took 15. Two shards were cancelled before their first test that day.
-    timeout-minutes: 25
+    # 35, not 25 (2026-10-01): the heaviest shards now run 22 minutes of
+    # tests, and shard 3 on PR #139 was cancelled at 25 still passing, with
+    # no test failed.
+    timeout-minutes: 35
 
     strategy:
       fail-fast: false   # let all shards finish so we see ALL failures

@@ -35,7 +35,7 @@ function _showOdometerModal(tasks,hardBlock){
       </div>
       <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" value="${(()=>{const pv=isStart?(existing.start||_vehOdo(t.veh,t.year-1).end||0):existing.end||0;return pv||'';})()}" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
+        <input id="_odo-val" type="text" data-num="int" inputmode="numeric" placeholder="e.g. 48250" value="${(()=>{const pv=isStart?(existing.start||_vehOdo(t.veh,t.year-1).end||0):existing.end||0;return pv||'';})()}" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
         <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
       </div>
       <div id="_odo-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:10px"></div>
@@ -293,7 +293,7 @@ function showEndDrive(){
     '</div>'+
     '<div class="f" style="margin-bottom:6px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Miles driven <span style="color:#A32D2D">*</span></label>'+
-      '<input type="number" id="end-miles-modal" placeholder="e.g. 12.4" inputmode="decimal" step="0.1" min="0"'+
+      '<input type="text" data-num="dec" inputmode="decimal" id="end-miles-modal" placeholder="e.g. 12.4"'+
         ' style="font-size:26px;font-weight:800;padding:12px;border:2px solid var(--blue);background:var(--bg2);border-radius:var(--r);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center"'+
         ' value="'+(estMiles>0?estMiles:'')+'" oninput="updateMilesPreview()">'+
       '<div id="end-miles-preview" style="font-size:12px;color:var(--green-mid);font-weight:700;margin-top:6px;min-height:16px">'+(estMiles>0?estMiles.toFixed(1)+' mi · '+fmt(estMiles*IRS())+' deduction (estimated)':'')+'</div>'+
@@ -1390,8 +1390,9 @@ function _supplyRunClient(key){
     if(c.addr)names.push(nm(c.name,st(c.addr)));
     (Array.isArray(c.extraAddresses)?c.extraAddresses:[]).forEach(a=>{
       if(!a||!a.addr)return;
+      // The street, never the label: a property's fence is named for where it
+      // is (owner 2026-10-02, "always the address, no exceptions").
       names.push(nm(c.name,st(a.addr)));
-      if(a.label)names.push(nm(c.name,String(a.label).trim()));
     });
     if(names.some(n=>ends.has(n)))hits.add(c.id);
   });
@@ -2888,7 +2889,7 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
           '<div class="mil-odo">'+
             '<div class="td-micro">Odometer · year start</div>'+
             '<div class="mil-odo-input">'+
-              '<input type="number" value="'+(startOdo||'')+'" placeholder="0" min="0"'+
+              '<input type="text" data-num="int" inputmode="numeric" value="'+(startOdo||'')+'" placeholder="0"'+
                 ' onblur="_milSetOdo(\''+escHtml(pKey)+'\',\'start\',this.value)"'+
                 ' style="font-size:15px;font-weight:800">'+
               '<span class="mil-odo-suffix">mi</span>'+
@@ -2899,7 +2900,7 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
           '<div class="mil-odo">'+
             '<div class="td-micro">Odometer · year end</div>'+
             '<div class="mil-odo-input">'+
-              '<input type="number" value="'+(endOdo||'')+'" placeholder="0" min="0"'+
+              '<input type="text" data-num="int" inputmode="numeric" value="'+(endOdo||'')+'" placeholder="0"'+
                 ' onblur="_milSetOdo(\''+escHtml(pKey)+'\',\'end\',this.value)"'+
                 ' style="font-size:15px;font-weight:800">'+
               '<span class="mil-odo-suffix">mi</span>'+
