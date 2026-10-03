@@ -174,7 +174,7 @@ test.describe('20261049 security lockdown: edge functions', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', 'sign.html'), 'utf8');
     expect(html).not.toMatch(/from\('signed_proposals'\)\.(upsert|insert|update)/);
     expect(html).toMatch(/_earlySigSave=_saveSignature\('later'\)/);
-    expect(html).toMatch(/await _signCall\(\{action:'sign',key,signerName:name,method,/);
+    expect(html).toMatch(/await _proposalSign\(\{action:'sign',key,signerName:name,method,/);
   });
 
   test('create-checkout refuses a payment that names no proposal, and trusts only stored values', () => {

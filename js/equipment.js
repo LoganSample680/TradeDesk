@@ -104,8 +104,10 @@ function openEquipmentForm(clientId,jobId,prefill){
   const ov=document.createElement('div');ov.id='_equip-ov';ov.className='zmodal-overlay';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='420px';
-  const fld=(id,label,val,ph)=>'<div style="margin-top:12px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:5px">'+label+'</div>'+
-    '<input id="'+id+'" value="'+escHtml(val||'')+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit"></div>';
+  // attrs: extra input attributes, used to make Installed a number-only field
+  // (a year or MM/YYYY, data-num="ym" in js/utils.js).
+  const fld=(id,label,val,ph,attrs)=>'<div style="margin-top:12px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:5px">'+label+'</div>'+
+    '<input id="'+id+'"'+(attrs?' '+attrs:'')+' value="'+escHtml(val||'')+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit"></div>';
   m.innerHTML=
     '<div class="zmodal-title">Equipment</div>'+
     (c?'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(c.name||'')+'</div>':'')+
@@ -116,7 +118,7 @@ function openEquipmentForm(clientId,jobId,prefill){
     fld('_eq-brand','Brand',p.brand,'Carrier, Rheem...')+
     fld('_eq-model','Model',p.model,'58SC0A045')+
     fld('_eq-serial','Serial',p.serial,'1234A56789')+
-    fld('_eq-installed','Installed',p.installed,'2018 or 03/2018')+
+    fld('_eq-installed','Installed',p.installed,'2018 or 03/2018','type="text" data-num="ym" inputmode="numeric" maxlength="7"')+
     fld('_eq-location','Where',p.location,'Basement, attic, north side')+
     '<button id="_eq-save" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save equipment</button>';
   ov.appendChild(m);document.body.appendChild(ov);

@@ -2358,7 +2358,7 @@ function openScanViewer(id){
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Markers: no point over 6 ft from a receptacle (12 ft max apart), walls 2 ft+ count, doorways break the run. Heights: outlets 12" AFF typical, switches 48" typical (code max 6\'7"). Kitchen counters: 24" rule, planned separately. <strong>Estimate only, verify edition and amendments with your local AHJ.</strong></div>';
   }else if(lens==='hvac'){
     body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Load calc inputs</div>'+
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">ACH50 <input id="_scan-ach" type="number" step="0.1" value="'+(sc._ach50||7)+'" style="width:64px;padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)" onchange="_scanSetAch(\''+sc.id+'\',this.value)"> <span style="color:var(--text3)">from a blower door test; presets: leaky 10 · average 7 · tight 3</span></div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">ACH50 <input id="_scan-ach" type="text" data-num="dec" inputmode="decimal" value="'+(sc._ach50||7)+'" style="width:64px;padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)" onchange="_scanSetAch(\''+sc.id+'\',this.value)"> <span style="color:var(--text3)">from a blower door test; presets: leaky 10 · average 7 · tight 3</span></div>'+
       _scanRoomsOnFloor(sc,stories,story).map(({r,ri})=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
           _scanRoomNameHtml(sc.id,ri,r.label)+
@@ -2582,12 +2582,13 @@ function _scanSellSheet(id){
   const sc=getScans().find(x=>String(x.id)===String(id));
   if(!sc)return;
   const cur=sc.price!=null?sc.price:((typeof S!=='undefined'&&S.scanDefaultPrice)||99);
-  const v=prompt('Floor plan price for this client ($):',String(cur));
-  if(v==null)return;
-  sc.price=Math.max(0,Math.round(+v||0));
-  saveScan(sc);
-  if(typeof showToast==='function')showToast('Priced at $'+sc.price+'. It shows locked in their hub until signed and paid.','📐');
-  openScanViewer(id);
+  zPrompt('Floor plan price for this client ($):',v=>{
+    if(String(v||'').trim()==='')return;
+    sc.price=Math.max(0,Math.round(parseFloat(String(v).replace(/,/g,''))||0));
+    saveScan(sc);
+    if(typeof showToast==='function')showToast('Priced at $'+sc.price+'. It shows locked in their hub until signed and paid.','📐');
+    openScanViewer(id);
+  },{title:'Floor plan price',num:'money',value:String(cur)});
 }
 
 // ── Client detail section ────────────────────────────────────────────────────

@@ -701,7 +701,7 @@ function _svcEveryField(id,months){
   const m=_svcValidMonths(months)||12;
   return '<div class="td-svc-mchips" data-for="'+id+'">'+
     [3,6,12].map(n=>'<button type="button" class="td-svc-chip td-svc-mchip'+(n===m?' on':'')+'" data-m="'+n+'">'+n+' mo</button>').join('')+
-    '<label class="td-svc-mnum"><input id="'+id+'" type="number" inputmode="numeric" min="1" max="24" value="'+m+'" aria-label="Months"><span>mo</span></label>'+
+    '<label class="td-svc-mnum"><input id="'+id+'" type="text" data-num="int" inputmode="numeric" maxlength="2" value="'+m+'" aria-label="Months"><span>mo</span></label>'+
   '</div>';
 }
 function _svcWireEvery(root){
@@ -1095,7 +1095,7 @@ function openWhAdd(mode,keep){
       (kind===_SVC_CUSTOM?row('Service','<input id="_svc-custom-name" autocapitalize="sentences" placeholder="Dryer vent cleaning" value="'+v(k.custom)+'">'):'')+
       (md==='new'?
         row('Name','<input id="_wh-name" autocapitalize="words" placeholder="Jane Smith" value="'+v(k.name)+'">')+
-        row('Phone','<input id="_wh-phone" type="tel" inputmode="tel" placeholder="(555) 555-5555" value="'+v(k.phone)+'">')+
+        row('Phone','<input id="_wh-phone" type="tel" data-num="phone" inputmode="tel" placeholder="(555) 555-5555" value="'+v(k.phone)+'">')+
         row('Address','<input id="_wh-addr" placeholder="Optional" value="'+v(k.addr)+'">')
       :
         (()=>{

@@ -292,7 +292,10 @@ test.describe('supply list: on a BYO estimate', () => {
 
   test('the card is on the BYO page with its markup box and both buttons', async () => {
     await expect(page.locator('#sup-card')).toBeVisible();
-    await expect(page.locator('#sup-markup')).toHaveAttribute('type', 'number');
+    // Was type="number" (let e, + and - through). Now a number-only text field
+    // (owner 2026-10-01): data-num="pct" strips anything else as it is typed.
+    await expect(page.locator('#sup-markup')).toHaveAttribute('data-num', 'pct');
+    await expect(page.locator('#sup-markup')).toHaveAttribute('inputmode', 'decimal');
     await expect(page.locator('#sup-card button', { hasText: 'Send to supply house' })).toBeDisabled();
     // With no list typed: a quote he already has for the parts loads straight in.
     await expect(page.locator('#sup-card button', { hasText: 'Load a quote' })).toBeEnabled();

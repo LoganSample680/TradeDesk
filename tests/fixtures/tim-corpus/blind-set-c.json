@@ -185,7 +185,7 @@
     "trade": "electrical",
     "said": "Panel upgrade. We're upgrading the 100 amp Federal Pacific panel to a 200 amp square dee home line. New meter base. Two new ground rods. Bond the water and gas. The utility does the disconnect and reconnect. Permit and inspection included. Figure 3,400.",
     "expect": [
-      "Upgrading the 100 amp Federal Pacific panel to a 200 amp Square D Homeline",
+      "Upgrade the 100 amp Federal Pacific panel to a 200 amp Square D Homeline",
       "New meter base",
       "2 new ground rods",
       "Bond the water and gas",
@@ -1064,7 +1064,7 @@
     "trade": "windows",
     "said": "uh the 2 upstairs bedroom windows are fogged the frames are fine so we're just replacing the IGUs low e argon new glazing beads on both and check the balances on the kitchen window it drops",
     "expect": [
-      "Replacing the IGUs low e argon",
+      "Replace the IGUs low e argon",
       "New glazing beads on both",
       "Check the balances on the kitchen window"
     ],

@@ -278,11 +278,59 @@ const TK_LIB={
   ],
 };
 
+// ── A CONVERSION IS ITS OWN JOB (owner 2026-10-01) ──────────────────────────
+// "I am removing a electric water heater and replacing with gas". A water
+// heater swap is on the library above; a FUEL change is not a swap. The gas
+// has to reach the spot, the heater has to breathe out, the town wants to see
+// it, and the old 240V circuit is still live in the wall. None of that is on a
+// gas-for-gas job, so these are offered only when one line takes an electric
+// heater out and another puts a gas one in (or one line says both).
+//
+// Same shape as `missed` above and the same rules: offered, never added, and
+// the price book wins over `rate` the moment he has priced the line.
+// `covers`: a line already on the estimate that does this job (his own words
+// for it), so it is not offered twice. `replaces`: a library line it stands in
+// for on this job, so "Water heater permit & inspection" is not offered next to
+// "Permit and inspection".
+const _TK_WH=/\b(?:water heater|hot water heater|hot water tank|wh)\b/;
+const _TK_OUT=/\b(?:remov\w*|pull\w*|tear\w*\s+out|take\s+out|taking\s+out|disconnect\w*|haul\w*|demo|get\w*\s+rid|old|existing|replac\w*|swap\w*|chang\w*\s+out)\b/;
+const _TK_IN=/\b(?:install\w*|put\w*\s+in|set|setting|mount\w*|new|replac\w*|swap\w*\s+in)\b/;
+const TK_CONVERSIONS=[
+  {id:'wh_electric_to_gas',
+    when:(lines)=>{
+      const out=lines.some(l=>_TK_WH.test(l)&&/\belectric\b/.test(l)&&_TK_OUT.test(l)&&!/\bgas\b/.test(l));
+      const inn=lines.some(l=>_TK_WH.test(l)&&/\bgas\b/.test(l)&&_TK_IN.test(l)&&!/\belectric\b/.test(l));
+      const one=lines.some(l=>_TK_WH.test(l)&&/\belectric\b[^.]*\b(?:with|to|for)\b[^.]*\bgas\b/.test(l));
+      return (out&&inn)||one;
+    },
+    missed:[
+      {label:'Run a new gas line to the water heater (with shutoff and drip leg)',rate:650,
+        why:'An electric heater never had gas at it. The line, its shutoff and the drip leg are the conversion',
+        covers:/\bgas\s+(?:line|lines|pipe|piping|run)\b/},
+      {label:'Vent the new water heater to the outside (flue or power vent)',rate:450,
+        why:'An electric heater has no vent. A gas one cannot be lit until it has a flue or a power vent',
+        covers:/\b(?:vent|venting|flue|power vent)\b/},
+      {label:'Permit and inspection',rate:150,
+        why:'A gas appliance where there was none is a permit in almost every town, and the new gas line gets inspected',
+        covers:/\bpermit/,replaces:/\bpermit/},
+      {label:'Cap and label the old 240V water heater circuit at the panel',rate:125,
+        why:'The tank leaves, the 240V circuit stays live in the wall. It gets capped and the breaker labeled',
+        covers:/\b240\s*v?\b|\bcap\b[^.]*\bcircuit\b|\bcircuit\b[^.]*\b(?:capped|cap|label)\b/},
+    ]},
+];
+// The conversions this estimate is, from the lines on it.
+function tkConversionsFor(labels){
+  const lines=(labels||[]).map(_tkNorm).filter(Boolean);
+  if(!lines.length)return [];
+  return TK_CONVERSIONS.filter(c=>{try{return !!c.when(lines);}catch(_e){return false;}});
+}
+
 let _tkCompanionSet=null;
 function _tkCompanions(){
   if(_tkCompanionSet)return _tkCompanionSet;
   _tkCompanionSet=new Set();
   Object.keys(TK_LIB).forEach(t=>TK_LIB[t].forEach(j=>j.missed.forEach(m=>_tkCompanionSet.add(_tkNorm(m.label)))));
+  TK_CONVERSIONS.forEach(c=>c.missed.forEach(m=>_tkCompanionSet.add(_tkNorm(m.label))));
   return _tkCompanionSet;
 }
 function _tkNorm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();}
@@ -319,6 +367,19 @@ function tkMissedFor(current,trade,skip){
     return have.some(h=>h===n||(words.length&&words.filter(w=>h.indexOf(w)>=0).length/words.length>=0.6));
   };
   const out=[],seen=new Set();
+  // The conversion first: it is the bigger miss, and it decides which of the
+  // plain swap's lines it stands in for.
+  const labels=[...cur.values()];
+  const replaced=[];
+  tkConversionsFor(labels).forEach(c=>c.missed.forEach(m=>{
+    if(m.replaces)replaced.push(m.replaces);
+    const key=_tkNorm(m.label);
+    if(seen.has(key)||skipped.has(key)||cur.has(key)||onBid(m.label))return;
+    if(m.covers&&have.some(h=>m.covers.test(h)))return;
+    seen.add(key);
+    out.push({key,lib:true,why:m.why,anchorLabel:labels.find(l=>/\bgas\b/i.test(l))||labels[0],conversion:c.id,
+      line:{label:m.label,rate:m.rate,unit:m.unit||'ea',notes:m.notes||''}});
+  }));
   cur.forEach(anchorLabel=>{
     // A companion this library offered is not a job of its own: "Haul-away &
     // disposal of old unit" must never go looking for garbage disposal extras.
@@ -328,6 +389,7 @@ function tkMissedFor(current,trade,skip){
     j.missed.forEach(m=>{
       const key=_tkNorm(m.label);
       if(seen.has(key)||skipped.has(key)||cur.has(key)||onBid(m.label))return;
+      if(replaced.some(r=>r.test(key)))return;
       seen.add(key);
       out.push({key,lib:true,why:m.why,anchorLabel,
         line:{label:m.label,rate:m.rate,unit:m.unit||'ea',notes:m.notes||''}});

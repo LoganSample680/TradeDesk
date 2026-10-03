@@ -442,8 +442,10 @@ test.describe('geo-derive wiring', () => {
         // The primary used to be a bare 'Landlord', indistinguishable on the
         // rail from the two labelled cards below it. It says which house now.
         ['client-601', 'Landlord (1 First St)', '1 First St', 39.01, 601],
-        ['client-601-p0', 'Landlord (Duplex)', '2 Second St', 39.02, 601],
-        ['client-601-p1', 'Landlord (Rental)', '3 Third St', 39.03, 601],
+        // A property is named for its street, never its label (owner
+        // 2026-10-02): "Duplex" and "Rental" are categories, not places.
+        ['client-601-p0', 'Landlord (2 Second St)', '2 Second St', 39.02, 601],
+        ['client-601-p1', 'Landlord (3 Third St)', '3 Third St', 39.03, 601],
       ]);
     });
 

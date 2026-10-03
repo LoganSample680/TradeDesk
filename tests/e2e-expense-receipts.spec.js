@@ -186,9 +186,11 @@ test.describe('Receipts: the four answers', () => {
       S.priceBook = { plumbing: [{ desc: 'Fill valve', rate: 45, n: 3 }] };
       partCostLearn('Fill valve', 11.2, 'Menards', '2026-09-26', 1);
       partCostLearn('Wax ring', 3.5, 'Menards', '2026-09-26', 5);
-      return _qiPriceBook().map(p => [p.desc, Number(p.rate)]);
+      // One price book list now (audit 2026-10-01): the invoice reads _pbList.
+      return { list: _pbList(null, { everyTrade: true, parts: true }).map(p => [p.desc, Number(p.rate)]), old: typeof _qiPriceBook };
     });
-    expect(r, 'his price for a fill valve stands; the wax ring comes from the receipt').toEqual([['Fill valve', 45], ['Wax ring', 3.5]]);
+    expect(r.list, 'his price for a fill valve stands; the wax ring comes from the receipt').toEqual([['Fill valve', 45], ['Wax ring', 3.5]]);
+    expect(r.old, 'the invoice\'s own copy of the list is gone').toBe('undefined');
   });
 
   test('a material with no price in his book is listed at what he last paid for it', async ({ page }) => {

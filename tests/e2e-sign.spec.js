@@ -1084,6 +1084,24 @@ test.describe('sign.html: portfolio discount offer', () => {
     }
   });
 
+  // One portfolio price and one due-today rule (audit 2026-10-01): the offer
+  // card and the accept step shared their math by copy, and two pay paths
+  // took a hardcoded 25% of the discounted price instead of the deposit's share.
+  test('_portfolioPrices and _signPayAmts: one rule, the deposit\'s own share', async () => {
+    const r = await page.evaluate(() => {
+      const p = _portfolioPrices();
+      const was = window._portfolioAccepted;
+      window._portfolioAccepted = true;
+      const a = _signPayAmts();
+      window._portfolioAccepted = was;
+      return { p, a, src: document.documentElement.innerHTML };
+    });
+    expect(r.p).toEqual({ pct: 15, fullP: 2375, discP: 2018.75, savings: 356.25 });
+    expect(r.a.full).toBe(2018.75);
+    expect(r.a.dep).toBe(Math.round(2018.75 * (594 / 2375) * 100) / 100);   // 504.9, not 25%'s 504.69
+    expect(r.src).not.toMatch(/discountedPrice\*0\.25/);
+  });
+
   test('portfolio decline, _portfolioAccepted stays false', async () => {
     const accepted = await page.evaluate(() => {
       window._portfolioAccepted = false;

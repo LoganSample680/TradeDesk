@@ -1348,7 +1348,13 @@ test.describe('dashboard.js: exhaustive coverage', () => {
 
   // ── Nearby banner (dash-nearby): kind-driven action (owner decision 2026-07-10) ──
   test.describe('renderDash: nearby banner', () => {
-    test('active job today, Clock in targets it directly, Collect is absent (no balance owed)', async () => {
+    // Owner 2026-10-02: "the on site card has like 3 different views, I only
+    // want to see the arrival one with the proposal button". A GPS fix next to
+    // a customer before the deriver publishes the stop used to draw its own
+    // card (Clock in, Proposal, Collect and the balance owed). It is the
+    // arrival card now, so these assertions changed from "offers Clock in" to
+    // "is the arrival card" (10.4): name, address, the arrival line, Proposal.
+    test('at a customer before the deriver catches up: the arrival card with Proposal, nothing else', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1362,13 +1368,15 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.display).toBe('block');
-      expect(r.html).toContain('_nearbyClockIn(555001,555011)');
-      expect(r.html).toContain('Clock in');
-      expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Proposal');   // on-site card: "Proposal" (renamed from Estimate)
-      // No dead controls: nothing owed means no Collect button at all, not a
-      // disabled ghost, a permanently-inert button reads as broken.
+      // The deleted controls are GONE, not hidden (CLAUDE.md 7.1).
+      expect(r.html).not.toContain('_nearbyClockIn');
+      expect(r.html).not.toContain('Clock in');
       expect(r.html).not.toContain('Collect');
+      expect(r.html).toContain("_nearbyStartWork(555001)");
+      expect(r.html).toContain('Proposal');
+      // Nothing measured the arrival yet, so it says so rather than inventing a time.
+      expect(r.html).toContain('On site now');
+      expect(r.html).not.toContain('data-onsite-since');
       expect(r.html).toContain('Banner Clockin');
       expect(r.html).toContain("You're here");
       // Redesigned on-site card: live ON SITE badge + radar-ping geofence animation.
@@ -1380,8 +1388,8 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     // click in button since it already shows when I arrived and how long im
     // on site for". The AUTO-DETECTED dwell card (the deriver already owns
     // this dwell and writes its time row, CLAUDE.md 17) must not offer a
-    // manual clock on top of it. The pre-arrival _nearbyJob card above
-    // KEEPS its Clock in: that is time the deriver cannot see yet.
+    // manual clock on top of it. Since 2026-10-02 the pre-arrival card is
+    // this same card, so neither offers one.
     test('the auto-detected on-site card has no Clock in button, the arrival stamp is the clock', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer, origDwell = window._geoOpenDwell;
@@ -1449,82 +1457,57 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.clientCounted).toContain('data-onsite-since');
     });
 
-    test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {
+    // The live engine's own crossing into this customer's fence is a measured
+    // arrival, so the card shows it and counts from it. A crossing at some
+    // OTHER customer is not this arrival and is never borrowed.
+    test('at a customer the live engine saw arrive: Arrived and the running time, from its crossing', async () => {
       const r = await page.evaluate(() => {
-        const origNb = _nearbyJob, origTimer = _activeTimer;
-        _activeTimer = null;
+        const origNb = _nearbyJob, origTimer = _activeTimer, oc = _geoCurrentClient, oa = _geoClientArrivedAt, od = window._geoOpenDwell;
+        _activeTimer = null; window._geoOpenDwell = null;
+        const at = new Date(Date.now() - 52 * 60000).toISOString();
+        const paint = (cur) => { _geoCurrentClient = cur; _geoClientArrivedAt = at; renderDash();
+          const el = document.getElementById('dash-nearby'); return el ? el.innerHTML : ''; };
         _nearbyJob = { clientId: 555002, jobId: null, fallbackJobId: 555012, bidId: null, balance: 0, clientName: 'Banner Fallback', addr: '2 Test St' };
-        try {
-          renderDash();
-          const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '' };
-        } catch (e) { return { ok: false, err: e.message }; }
-        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+        try { return { ok: true, here: paint(555002), other: paint(555999) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; _geoCurrentClient = oc; _geoClientArrivedAt = oa; window._geoOpenDwell = od; }
       });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('_nearbyClockIn(555002,555012)');
+      expect(r.ok, r.err).toBe(true);
+      expect(r.here).toContain('Arrived');
+      expect(r.here).toContain('data-onsite-since="' );
+      expect(r.here).toContain('52m');
+      expect(r.here).toContain('Proposal');
+      expect(r.other).toContain('On site now');
+      expect(r.other).not.toContain('data-onsite-since');
     });
 
-    test('no open job at all, Clock in still shows (being on site is reason enough), passes null target', async () => {
+    test('one card, not three: the open stop and the GPS fix draw the same layout and the same one button', async () => {
       const r = await page.evaluate(() => {
-        const origNb = _nearbyJob, origTimer = _activeTimer;
+        const origNb = _nearbyJob, origTimer = _activeTimer, od = window._geoOpenDwell, oc = _geoCurrentClient, oa = _geoClientArrivedAt;
         _activeTimer = null;
-        _nearbyJob = { clientId: 555003, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner NoJob', addr: '3 Test St' };
+        const since = Date.now() - 30 * 60000, iso = new Date(since).toISOString();
+        const shape = () => { const el = document.getElementById('dash-nearby');
+          return { buttons: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), owed: /owed/.test(el.innerHTML), arrived: el.innerHTML.includes('Arrived') }; };
         try {
-          renderDash();
-          const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '' };
+          window._geoOpenDwell = { id: 'd1', name: 'Banner Same', kind: 'client', sinceTs: since, sinceIso: iso,
+            fence: { id: 'f', kind: 'client', name: 'Banner Same', clientId: 555006, addr: '6 Test St' } };
+          _nearbyJob = null; renderDash(); const dwell = shape();
+          window._geoOpenDwell = null; _geoCurrentClient = 555006; _geoClientArrivedAt = iso;
+          _nearbyJob = { clientId: 555006, jobId: 555016, fallbackJobId: null, bidId: 555026, balance: 450, clientName: 'Banner Same', addr: '6 Test St' };
+          renderDash(); const gps = shape();
+          return { ok: true, dwell, gps };
         } catch (e) { return { ok: false, err: e.message }; }
-        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; window._geoOpenDwell = od; _geoCurrentClient = oc; _geoClientArrivedAt = oa; }
       });
-      expect(r.ok).toBe(true);
-      // Hiding Clock in here was the wrong call (owner correction 2026-07-11):
-      // physically being on site is reason enough to want to track time even
-      // with no job record yet. It always shows; _nearbyClockIn(js/jobs.js)
-      // handles the no-target case by creating a walk-up job on the fly
-      // instead of dead-ending on the client profile page.
-      expect(r.html).toContain('Clock in');
-      expect(r.html).toContain('_nearbyClockIn(555003,null)');
-      expect(r.html).not.toContain('openClientDetail');
-      expect(r.html).toContain('_nearbyStartWork(555003)');
+      expect(r.ok, r.err).toBe(true);
+      expect(r.dwell).toEqual({ buttons: ['Proposal'], owed: false, arrived: true });
+      // A balance owed no longer changes the card: the money lives in Collect.
+      expect(r.gps).toEqual(r.dwell);
     });
 
-    test('balance owed, Collect shows and opens the pay panel with autoType final', async () => {
-      const r = await page.evaluate(() => {
-        const origNb = _nearbyJob, origTimer = _activeTimer;
-        _activeTimer = null;
-        _nearbyJob = { clientId: 555004, jobId: null, fallbackJobId: null, bidId: 555002, balance: 450, clientName: 'Banner Collect', addr: '2 Test St' };
-        try {
-          renderDash();
-          const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '' };
-        } catch (e) { return { ok: false, err: e.message }; }
-        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain("openPayPanel(555002,'final')");
-      expect(r.html).toContain('$450.00 owed');
-      expect(r.html).toContain('Collect');   // on-site card redesign: "Collect" (was "Collect →")
-      expect(r.html).not.toContain('disabled');
-    });
-
-    test('cold walk-up, no job and no balance, Clock in + Estimate/Invoice show, Collect does not', async () => {
-      const r = await page.evaluate(() => {
-        const origNb = _nearbyJob, origTimer = _activeTimer;
-        _activeTimer = null;
-        _nearbyJob = { clientId: 555007, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner ColdWalkup', addr: '7 Test St' };
-        try {
-          renderDash();
-          const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('button').length : -1 };
-        } catch (e) { return { ok: false, err: e.message }; }
-        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.btnCount).toBe(2);
-      expect(r.html).toContain('_nearbyStartWork(555007)');
-      expect(r.html).toContain('_nearbyClockIn(555007,null)');
-      expect(r.html).not.toContain('Collect');
+    test('the walk-up clock-in behind the old card is deleted, not left uncalled (CLAUDE.md 7.1)', async () => {
+      const gone = await page.evaluate(() => typeof _nearbyClockIn);
+      expect(gone).toBe('undefined');
     });
 
     test('Estimate button always shows and opens the start-work picker', async () => {
@@ -2715,7 +2698,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       const card = i >= 0 ? html.slice(Math.max(0, i - 200), i + 1400) : '';
       const res = {
         err, hasCard: i >= 0,
-        hasResend: card.includes('resendProposalLink(' + bidId + ')'),
+        hasResend: card.includes('resendProposal(' + bidId + ')') && !card.includes('resendProposalLink('),
         // The removed button: discardInProgressBid on a sent proposal must be gone.
         hasDeleteBtn: card.includes('discardInProgressBid(' + bidId + ')'),
       };

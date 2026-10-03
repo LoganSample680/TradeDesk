@@ -1737,44 +1737,6 @@ test.describe('Generic estimate, trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmCalcDeposit: calculates deposit amount without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmCalcDeposit !== 'function') return { skip: true };
-      try { _tmCalcDeposit(); return { ok: true }; }
-      catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmCalcNte: updates NTE cap without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmCalcNte !== 'function') return { skip: true };
-      try { _tmCalcNte(); return { ok: true }; }
-      catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmSetCycle: sets billing cycle without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmSetCycle !== 'function') return { skip: true };
-      try {
-        ['weekly','biweekly','milestone','completion'].forEach(v => _tmSetCycle(v));
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('_tmSyncCycleButtons: syncs cycle button state without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _tmSyncCycleButtons !== 'function') return { skip: true };
-      try { _tmSyncCycleButtons(); return { ok: true }; }
-      catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
   test('_tmShowPage: renders T&M single-page layout without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmShowPage !== 'function') return { skip: true };

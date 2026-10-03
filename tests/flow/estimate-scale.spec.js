@@ -82,7 +82,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
     let tm = {};
     await step(page, {
       label: 'open T&M + set crew/rate/hours + NTE', page: 'gei-tm',
-      suspect: 'generic-estimate.js openTMEstimate / _tmRecalc / _tmCalcNte',
+      suspect: 'generic-estimate.js openTMEstimate / _tmRecalc',
       ruleText: 'a T&M job must price labor from crew×rate×hours and total > 0',
       expected: 'priced total > 0',
       act: async (p) => {
@@ -107,7 +107,6 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
           await wait(120);
           try {
             const nte = document.getElementById('tm-nte-on'); if (nte) { nte.checked = true; }
-            if (typeof _tmCalcNte === 'function') _tmCalcNte();
           } catch (e) { tr.e_nte = e.message; }
           // Labor line total = crew × rate × hours = 2 × 65 × 40 = 5200
           tr.lines = (typeof _geiLines !== 'undefined') ? _geiLines.length : -1;
