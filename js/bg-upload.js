@@ -31,6 +31,31 @@ function _bgUpCapable(){return !!_bgUpPlugin();}
 function _bgUpId(jobId,photoIdx,storagePath){
   return 'p:'+jobId+':'+photoIdx+':'+String(storagePath||'');
 }
+// A batch of new records handed to iOS the moment the app is pocketed
+// (js/cloud.js _pocketFlush). The same upsert supaSaveToCloud sends, so it is
+// harmless to land twice. Its ledger id never parses as a photo, so the
+// reconciler below just clears it once iOS reports back.
+async function _bgUpRows(tbl,rows,token){
+  const P=_bgUpPlugin();
+  if(!P||typeof P.upload!=='function')return false;
+  const base=(typeof SUPA_URL!=='undefined'&&SUPA_URL)?SUPA_URL:'';
+  const key=(typeof SUPA_KEY!=='undefined'&&SUPA_KEY)?SUPA_KEY:'';
+  if(!base||!key||!token||!tbl||!Array.isArray(rows)||!rows.length)return false;
+  let b64;
+  try{b64=btoa(unescape(encodeURIComponent(JSON.stringify(rows))));}catch(_e){return false;}
+  try{
+    await P.upload({
+      id:'r:'+tbl+':'+Date.now()+':'+Math.random().toString(36).slice(2,8),
+      url:base+'/rest/v1/'+tbl+'?on_conflict=id,user_id',method:'POST',b64,
+      headers:{
+        'Authorization':'Bearer '+token,'apikey':key,
+        'Content-Type':'application/json',
+        'Prefer':'resolution=merge-duplicates,return=minimal'
+      }
+    });
+    return true;
+  }catch(_e){return false;}
+}
 function _bgUpParseId(id){
   const m=String(id||'').match(/^p:([^:]+):(\d+):(.*)$/);
   if(!m)return null;
