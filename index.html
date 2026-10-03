@@ -284,6 +284,10 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .nb svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.85}
 .nb.active svg{opacity:1}
 .nb .bx{position:relative;display:inline-flex;flex-shrink:0}
+/* .nb is display:flex, which beats the hidden attribute on its own. */
+#nb-tim[hidden]{display:none}
+#nb-tim-mark{display:flex}
+#nb-tim-mark img{width:20px;height:20px;display:block;filter:invert(1)}
 .nbadge{position:absolute;top:-5px;right:-7px;background:var(--denim);color:#fff;font-size:9px;font-weight:800;min-width:16px;height:16px;padding:0 4px;border-radius:8px;display:none;align-items:center;justify-content:center;border:2px solid var(--ink);letter-spacing:0}
 #nav-spacer{flex:1;min-height:20px}
 #nav-user{position:relative;padding:14px 16px;border-top:1px solid var(--ink-line);display:flex;align-items:center;gap:10px;flex-shrink:0;cursor:pointer}
@@ -5631,6 +5635,15 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
     <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
     <span>Dashboard</span>
+  </button>
+
+  <!-- Tim on the side menu (owner 2026-10-03: "Tim is not on iPad view").
+       From 768px up the bottom bar, and #mtb-tim with it, gives way to this
+       menu, so an iPad or a laptop had no way to reach him at all. Same key,
+       same wall (timDockRender hides it for crew), same count on the badge. -->
+  <button class="nb" id="nb-tim" onclick="openTim()" aria-label="Tim" hidden>
+    <div class="bx"><span id="nb-tim-mark"></span><span class="nbadge" id="nb-tim-badge"></span></div>
+    <span>Tim</span>
   </button>
 
   <button class="nb" id="nb-leads" onclick="goPg('pg-leads')">
