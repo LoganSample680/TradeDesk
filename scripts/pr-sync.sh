@@ -70,12 +70,9 @@ else
   fi
 fi
 
-# One bump on top of whichever stamp won, so the merged code never ships
-# under a version a different build already used. --no-verify because the
-# hook would bump a second time. The repo's own bump script, not one next to
-# this file: CI runs this from a copy outside the checkout, and bump-version
-# finds the files it stamps from its own location.
-node "$(git rev-parse --show-toplevel)/scripts/bump-version.js" >/dev/null || { git merge --abort 2>/dev/null; restore; exit 1; }
+# No bump: Cloudflare stamps the version as it builds, from the commits the
+# build contains (scripts/stamp-version.js). --no-verify so a checkout whose
+# hook predates that does not stamp the merge.
 git commit -q --no-verify -m "Merge main into $BRANCH [CF-Pages-Skip]" \
   || { echo "pr-sync: merge commit failed." >&2; git merge --abort 2>/dev/null; restore; exit 1; }
 
@@ -83,6 +80,6 @@ if [ "$PUSH" = "1" ]; then
   # No --force: a branch that moved while this ran is rejected, not clobbered.
   git push -q origin "HEAD:refs/heads/$BRANCH" || { echo "pr-sync: push rejected." >&2; restore; exit 1; }
 fi
-echo "[pr-sync] $BRANCH now has main ($(node -p "require('./version.json').version" 2>/dev/null))"
+echo "[pr-sync] $BRANCH now has main"
 restore
 exit 0

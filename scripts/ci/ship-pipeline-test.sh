@@ -30,7 +30,7 @@ new_repo() {
   cd "$R/w" || exit 1
   git checkout -q -b main
   mkdir -p scripts/lib scripts/ci js supabase/migrations
-  cp "$SRC/scripts/lib/"*.sh scripts/lib/; cp "$SRC/scripts/pr-sync.sh" "$SRC/scripts/bump-version.js" scripts/
+  cp "$SRC/scripts/lib/"*.sh scripts/lib/; cp "$SRC/scripts/pr-sync.sh" scripts/
   echo '{"version":"10.01.26.1"}' > version.json
   echo "const CACHE = 'tradedesk-10.01.26.1';" > sw.js
   printf "const APP_VERSION='10.01.26.1';\n// 1\n// 2\n// 3\n// 4\nfunction shared(){return 1;}\n" > js/cloud.js
@@ -90,7 +90,7 @@ bash scripts/pr-sync.sh claude/feat --push --only-if-conflicted >/dev/null 2>&1;
 git fetch -q origin
 [ "$rc" = 0 ] && git merge-base --is-ancestor origin/main origin/claude/feat && ok "a stamp-only conflict is synced and pushed" || bad "a stamp-only conflict is synced and pushed (rc=$rc)"
 git show origin/claude/feat:js/cloud.js | grep -q 'return 3' && ok "main's code is in the synced branch" || bad "main's code is in the synced branch"
-v=$(git show origin/claude/feat:version.json); [ "$v" != '{"version":"10.01.26.9"}' ] && ok "the synced branch gets a fresh stamp ($v)" || bad "the synced branch gets a fresh stamp"
+v=$(git show origin/claude/feat:version.json); [ "$v" = '{"version":"10.01.26.9"}' ] && ok "the sync takes main's stamp and bumps nothing (the build stamps)" || bad "the sync takes main's stamp and bumps nothing: $v"
 git show -s --format=%s origin/claude/feat | grep -q 'CF-Pages-Skip' && ok "the sync commit does not build a preview" || bad "the sync commit does not build a preview"
 git checkout -q -B claude/two origin/main; sed -i 's/^b$/B-two/' js/app.js; git commit -qam two; git push -q origin claude/two
 git checkout -q main; git pull -q origin main; sed -i 's/^b$/B-main/' js/app.js; stamp 10.01.26.10 "main edits b"; git push -q origin main
@@ -115,7 +115,7 @@ done
 git fetch -q origin
 [ "$rcs" = "00" ] && git merge-base --is-ancestor origin/main origin/claude/one && git merge-base --is-ancestor origin/main origin/claude/two \
   && ok "two PRs in a row sync from a detached start, run from a copy" || bad "two PRs in a row sync from a detached start (rcs=$rcs)"
-v=$(git show origin/claude/two:version.json); [ "$v" != '{"version":"10.01.26.9"}' ] && [ "$v" != '{"version":"10.01.26.4"}' ] && ok "the copy still bumps the repo's own stamp ($v)" || bad "the copy still bumps the repo's own stamp ($v)"
+v=$(git show origin/claude/two:version.json); [ "$v" = '{"version":"10.01.26.9"}' ] && ok "the copy takes main's stamp and bumps nothing ($v)" || bad "the copy takes main's stamp and bumps nothing ($v)"
 
 echo "uat roll, end to end"
 new_repo

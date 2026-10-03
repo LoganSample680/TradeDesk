@@ -7,10 +7,15 @@ HOOK_FILE="$HOOKS_DIR/pre-commit"
 
 mkdir -p "$HOOKS_DIR"
 
+# The version is no longer bumped here: Cloudflare stamps it at build
+# (scripts/stamp-version.js). The bump line stays only for a branch cut
+# before that change, which still carries scripts/bump-version.js and still
+# needs its own stamp until it merges main; once it has, the file is gone and
+# the line does nothing.
 cat > "$HOOK_FILE" << 'HOOK'
 #!/usr/bin/env bash
 ROOT="$(git rev-parse --show-toplevel)"
-node "$ROOT/scripts/bump-version.js"
+[ -f "$ROOT/scripts/bump-version.js" ] && node "$ROOT/scripts/bump-version.js"
 node "$ROOT/scripts/sitemap-lastmod.js"
 HOOK
 

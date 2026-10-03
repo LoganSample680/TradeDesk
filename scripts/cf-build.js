@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cloudflare Pages build step, swaps hardcoded Supabase credentials with
+// Cloudflare Pages build step. Stamps the version, then swaps hardcoded Supabase credentials with
 // environment variables so preview deployments point at Supabase preview
 // branches instead of production.
 //
@@ -12,6 +12,20 @@
 // If neither var is set this script is a no-op (safe for local dev).
 
 const fs = require('fs');
+
+// The version is written into the build here, before anything else, and
+// never committed (scripts/stamp-version.js says why). A build that cannot
+// stamp must not publish: the placeholder would go live and the version
+// watchdog would never move a phone onto it.
+try {
+  const { computeVersion, stampFiles } = require('./stamp-version');
+  const info = computeVersion(process.cwd());
+  stampFiles(process.cwd(), info);
+  console.log(`[cf-build] Version ${info.version} (${info.from}, ${info.sha.slice(0, 7)})`);
+} catch (e) {
+  console.error(`[cf-build] Could not stamp the version: ${e.message}`);
+  process.exit(1);
+}
 
 const PROD_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const PROD_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';

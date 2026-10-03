@@ -166,7 +166,7 @@ Three things shorten it:
   crawler has to fetch those again to see the noindex and drop them.
   **Google does not participate in IndexNow** and still needs Search Console.
 - **`lastmod` in `sitemap.xml`** (`scripts/sitemap-lastmod.js`, run by the
-  pre-commit hook next to `bump-version.js`). Each date is the page's own last
+  pre-commit hook). Each date is the page's own last
   commit, or today when the commit in hand is what changes it. It is derived
   rather than typed on purpose: Google honours lastmod only while a site is
   consistently honest about it, and discounts it for good once a site is caught

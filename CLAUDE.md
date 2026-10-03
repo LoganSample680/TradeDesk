@@ -263,25 +263,30 @@ a quick check first. But this is never a reason to hold a ready push.
 
 ## 2. Version Bumps
 
-The pre-commit hook (`scripts/bump-version.js`) handles version bumps
-automatically. **Do not manually edit version files.** The hook stages them as
-part of every `git commit`.
+**The version is stamped when Cloudflare builds, never in a commit** (owner
+2026-10-02: "why are we getting all these conflicts"). The old pre-commit
+hook rewrote the same three lines on every branch, so every two branches
+clashed there on every roll and every sync. Now `scripts/cf-build.js` runs
+`scripts/stamp-version.js` first, and the committed copies (`version.json`,
+`CACHE` in `sw.js`, `APP_VERSION` in `js/cloud.js`) hold the placeholder
+`00.00.00.0` forever. **Never edit those lines and never commit a real
+version.** A build that cannot stamp fails rather than publishing the
+placeholder.
 
-**Version format:** `MM.DD.YY.NN`
-- Date in US Central Time (`TZ='America/Chicago'`).
-- `NN` resets to `1` at midnight CT and increments with each push on the same day.
+**Version format:** `MM.DD.YY.NN`, the same rules as always:
+- Date in US Central Time (`TZ='America/Chicago'`) of the commit being built.
+- `NN` resets to `1` at midnight CT and goes up by one per commit that day:
+  it is the count of that day's commits the build contains, read from git.
 
-**One-time setup after cloning:**
+The same commit gives the same version on any machine, so the preview smoke
+recomputes it to prove the deploy is live (`node scripts/stamp-version.js
+--print`). `version.json` as served also carries the commit `sha` (the UAT wake
+waits on it) and `from`: `git` normally, `clock` if the build could not see
+back to midnight and fell back to the commit's HHMM.
+
+**One-time setup after cloning** (the hook now only stamps sitemap lastmod):
 ```
 bash scripts/install-hooks.sh
-```
-
-**Fallback: only if the hook did not fire:**
-
-If `git commit` output does NOT include `[bump-version]`, the hook is missing.
-Run manually then re-commit:
-```
-node scripts/bump-version.js
 ```
 
 ---

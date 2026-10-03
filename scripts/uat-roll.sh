@@ -6,11 +6,14 @@
 #
 # The old roll reset uat to one branch and force-pushed, which deletes whatever
 # another session put there. This merges instead, so nothing can be lost, and
-# it handles the one piece of friction that makes a merge-roll annoying to do
-# by hand: version.json and sw.js are rewritten by the pre-commit hook on BOTH
-# branches, so they conflict on literally every roll. Their content does not
-# matter, because the empty deploy commit below regenerates them, so they are
-# resolved in favour of the branch being rolled rather than put to a person.
+# it handles the one piece of friction that made a merge-roll annoying to do
+# by hand: version.json and sw.js used to be rewritten by the pre-commit hook
+# on BOTH branches, so they conflicted on every roll. Since 2026-10-02 the
+# version is stamped by Cloudflare's build instead (scripts/stamp-version.js)
+# and the committed lines never change, but a branch cut before that still
+# carries old stamps. Their content does not matter, because the build
+# overwrites them, so they are resolved in favour of the branch being rolled
+# rather than put to a person.
 #
 #   bash scripts/uat-roll.sh [branch]     (default: the current branch)
 #
@@ -119,7 +122,7 @@ git commit -q --allow-empty -m "UAT deploy"
 # No --force. A stale push is REJECTED rather than clobbering, which is the
 # whole point; the pre-push guard checks containment on top of that.
 if git push -q origin uat; then
-  echo "[uat-roll] rolled uat to $BRANCH ($(node -p "require('./version.json').version" 2>/dev/null || echo '?'))"
+  echo "[uat-roll] rolled uat to $BRANCH (Cloudflare stamps the version as it builds)"
   restore
 else
   echo "" >&2
