@@ -21,11 +21,26 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 
 # `supabase migration list` prints "Local | Remote | Time" rows. A row with a
 # remote version and no local one is the case this handles.
+#
+# TWO SOURCES, BECAUSE THE TABLE'S SHAPE IS NOT OURS (2026-10-02). On #154's
+# merge this read the table, found nothing ("No live-only migrations"), and
+# db push refused main's deploy over 20261064 anyway. The table's columns
+# may be split by "|" or by "│" (U+2502), so both are read; and db push's own
+# refusal names the versions in a fixed sentence ("migration repair --status
+# reverted 20261064 ..."), which the workflow feeds in too (a dry run), so
+# the answer no longer depends on how a table is drawn.
 live_only() {
-  awk -F'|' 'NF >= 3 {
-    l = $1; r = $2; gsub(/[[:space:]]/, "", l); gsub(/[[:space:]]/, "", r);
-    if (l == "" && r ~ /^[0-9]+$/) print r
-  }'
+  local input; input="$(cat)"
+  {
+    printf '%s\n' "$input" | sed 's/│/|/g' | awk -F'|' 'NF >= 3 {
+      l = $1; r = $2; gsub(/[[:space:]]/, "", l); gsub(/[[:space:]]/, "", r);
+      if (l == "" && r ~ /^[0-9]+$/) print r
+    }'
+    printf '%s\n' "$input" | grep -oE 'repair --status reverted( [0-9]{8,})+' | grep -oE '[0-9]{8,}'
+  } | sort -u
+  # What came in, for the log, so a format nobody expected is visible the
+  # first time instead of the third.
+  printf '%s\n' "$input" | grep -E '[0-9]{8,}' | head -40 | sed 's/^/  in: /' >&2
 }
 
 VERSIONS="$(live_only)"

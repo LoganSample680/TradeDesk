@@ -154,5 +154,13 @@ echo "live migrations"
 got=$(printf '   Local | Remote | Time\n  ---|---|---\n   20261060 | 20261060 | x\n            | 20261061 | x\n   20261062 |          | x\n' \
   | bash "$SRC/scripts/ci/live-migrations-from-branches.sh" --list | tr '\n' ' ')
 [ "$got" = "20261061 " ] && ok "only the version live on the database and missing here is picked" || bad "live-only versions: got '$got'"
+# The table as the CLI really draws it: box characters, a header rule, and
+# the progress lines it prints around it (#154's deploy, 2026-10-02).
+got=$(printf 'Initialising login role...\nConnecting to remote database...\n\n        LOCAL      \xe2\x94\x82     REMOTE     \xe2\x94\x82     TIME (UTC)\n  \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\xbc\xe2\x94\x80\xe2\x94\x80\n    20261063 \xe2\x94\x82 20261063 \xe2\x94\x82 2026-10-01 00:00:00\n             \xe2\x94\x82 20261064 \xe2\x94\x82 2026-10-02 00:00:00\n' \
+  | bash "$SRC/scripts/ci/live-migrations-from-branches.sh" --list | tr '\n' ' ')
+[ "$got" = "20261064 " ] && ok "the CLI's box-drawn table is read too" || bad "box-drawn table: got '$got'"
+got=$(printf 'Connecting to remote database...\nRemote migration versions not found in local migrations directory.\n\nMake sure your local git repo is up-to-date. If the error persists, try repairing the migration history table:\nsupabase migration repair --status reverted 20261064 20261066\n' \
+  | bash "$SRC/scripts/ci/live-migrations-from-branches.sh" --list 2>/dev/null | tr '\n' ' ')
+[ "$got" = "20261064 20261066 " ] && ok "db push's own refusal names the versions" || bad "db push refusal: got '$got'"
 
 [ "$FAIL" = 0 ] && echo "ship pipeline: all checks pass" || { echo "ship pipeline: FAILED"; exit 1; }
