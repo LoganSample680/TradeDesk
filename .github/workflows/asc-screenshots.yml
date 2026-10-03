@@ -1,0 +1,28 @@
+# App Store screenshots -> App Store Connect
+#
+# Uploads docs/app-store/screenshots/<slot>/*.png for the store app
+# (scripts/asc-screenshots.mjs), replacing what each slot held. Exists because
+# uploading from a phone's browser resized the files and Apple refused them.
+# By hand, or on a push to this branch.
+name: App Store screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/asc-screenshots]
+    paths: ['docs/app-store/screenshots/**', 'scripts/asc-screenshots.mjs']
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Upload screenshots
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: node scripts/asc-screenshots.mjs

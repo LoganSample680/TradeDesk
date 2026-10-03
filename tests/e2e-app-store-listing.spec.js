@@ -57,3 +57,21 @@ test.describe('App Store listing', () => {
     expect(wf).toMatch(/contains\(github\.event\.head_commit\.message, '\[asc-listing\]'\)/);
   });
 });
+
+// Screenshots go up through the API at the exact size Apple asks for.
+test.describe('App Store screenshots', () => {
+  test('every committed iPad screenshot is a size Apple accepts for 13-inch', () => {
+    const dir = path.join(ROOT, 'docs/app-store/screenshots/ipad-13');
+    const ok = new Set(['2064x2752', '2752x2064', '2048x2732', '2732x2048']);
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.png'))) {
+      const b = fs.readFileSync(path.join(dir, f));
+      const size = `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`;   // PNG IHDR width/height
+      expect(ok.has(size), `${f} is ${size}`).toBe(true);
+    }
+  });
+  test('the uploader replaces a slot and never submits', () => {
+    const s = fs.readFileSync(path.join(ROOT, 'scripts/asc-screenshots.mjs'), 'utf8');
+    expect(s).toContain("'ipad-13': 'APP_IPAD_PRO_3GEN_129'");
+    expect(s).not.toMatch(/reviewSubmissions|appStoreVersionSubmissions/);
+  });
+});
