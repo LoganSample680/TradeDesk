@@ -222,9 +222,9 @@ function _timAskRate(){
     const r=parseFloat(String(v||'').replace(/[^0-9.]/g,''));
     if(!(r>0)){if(typeof showToast==='function')showToast('Nothing changed','ℹ️',2200);return;}
     _timSetRate(r);
-  },{title:'What would you like to change it to?',placeholder:'125'});
+  },{title:'What would you like to change it to?',placeholder:'125',num:'rate'});
   const inp=document.getElementById('zprompt-inp');
-  if(inp){inp.setAttribute('inputmode','decimal');inp.setAttribute('aria-label','Hourly rate');}
+  if(inp)inp.setAttribute('aria-label','Hourly rate');
 }
 
 // Where the photos live, walked the way he would: open More, tap Photos. He
@@ -738,6 +738,9 @@ function timDockRender(opts){
   // sheet still leads with the finding one tap later.
   const tab=document.getElementById('mtb-tim');
   if(!tab)return;
+  // The side menu's Tim (index.html #nb-tim) is the same key for an iPad or a
+  // laptop, where the bottom bar is not drawn. It follows every rule below.
+  const side=document.getElementById('nb-tim');
   // No page up yet means the boot screen or the sign-in gate still is. A crew
   // member gets no Tim at all: everything he can name is money or a contract,
   // and both sit behind the wall the nav already puts them behind.
@@ -748,13 +751,17 @@ function timDockRender(opts){
   const booted=!!document.querySelector('.pg.active');
   if(!booted||_timCrew()){
     tab.hidden=true;
+    if(side)side.hidden=true;
     try{document.querySelectorAll('.tim-atwork').forEach(el=>{el.hidden=true;});}catch(_e){}
     return;
   }
   tab.hidden=false;
+  if(side)side.hidden=false;
 
   const markEl=document.getElementById('mtb-tim-mark');
   if(markEl&&!markEl.firstChild)markEl.innerHTML=timMark(36);
+  const sideMark=document.getElementById('nb-tim-mark');
+  if(sideMark&&!sideMark.firstChild)sideMark.innerHTML=timMark(20);
   // The strips at the point of the work (Collect, the Timesheet). Same wall as
   // the key: a crew member gets no Tim anywhere, and a hidden control is not a
   // closed one, so this hides the markup rather than trusting the page it is on.
@@ -786,6 +793,11 @@ function timDockRender(opts){
     dot.classList.toggle('hint',hint);
     dot.textContent=finds.length?String(finds.length):(hint?'i':'');
     dot.hidden=!finds.length&&!hint;
+  }
+  const badge=document.getElementById('nb-tim-badge');
+  if(badge){
+    badge.textContent=finds.length?String(finds.length):'';
+    badge.style.display=finds.length?'flex':'none';
   }
   _timSaySomething(tab,finds);
   tab.setAttribute('aria-label',finds.length

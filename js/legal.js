@@ -134,6 +134,14 @@ function stateFromAddr(addr){
   while((m=anyRe.exec(up))!==null){if(_STATE_CODE_SET.has(m[1]))hit=m[1];}
   return hit;
 }
+// THE STATE A JOB IS IN (audit 2026-10-01: nine copies of this line). The
+// address's state, else his own business's, else Kansas. A caller with no
+// Kansas fallback passes {fallback:''} and gets '' when neither is known.
+function _stateOf(addr,o){
+  const own=(typeof S!=='undefined'&&S&&S.state)||'';
+  const dflt=(o&&typeof o.fallback==='string')?o.fallback:'KS';
+  return stateFromAddr(addr==null?'':addr)||own||dflt;
+}
 
 // ── Mechanic's Lien Rights ─────────────────────────────────────────────────
 // Contractor's right to lien property for unpaid amounts. All 50 states.

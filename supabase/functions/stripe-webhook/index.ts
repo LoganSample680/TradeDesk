@@ -23,6 +23,30 @@ async function getActualFee(stripe: Stripe, paymentIntentId: string, amountPaid:
   return +(amountPaid * 0.029 + 0.30).toFixed(2);
 }
 
+// THE LEDGER THE APP READS (2026-10-01). Payments and fees used to be written
+// into zj_data.payments / zj_data.expenses, JSON columns the app stopped reading
+// when every record moved to its own td_* table, so a card payment on the
+// customer's page never showed in the app as paid. Each one is now its own
+// td_payments / td_expenses row, keyed (id, user_id) like every row the app
+// writes, and stamped onto the sync cursor so open devices pull it.
+// Idempotent by the Stripe reference: a webhook that fires twice books once.
+async function bookRow(table: 'td_payments' | 'td_expenses', uid: string, row: Record<string, unknown>): Promise<boolean> {
+  const ref = String(row.ref || '');
+  if (ref) {
+    const { data: have } = await supabase.from(table).select('id')
+      .eq('user_id', uid).eq('data->>ref', ref).is('deleted_at', null).limit(1);
+    if (have && have.length) return false;
+  }
+  const { error } = await supabase.from(table).insert({ id: String(row.id), user_id: uid, data: row });
+  if (error) { console.error('bookRow ' + table, error.message); return false; }
+  return true;
+}
+async function touchCursor(uid: string) {
+  await supabase.from('zj_data').update({ updated_at: new Date().toISOString() }).eq('user_id', uid);
+}
+// The bid id the app keys payments by is a number (getBidPaid compares with ===).
+function bidKey(v: unknown): number | string { const n = Number(v); return Number.isFinite(n) && String(v).trim() !== '' ? n : String(v ?? ''); }
+
 // Book a refund into the contractor's ledger. The charge's payment_intent uniquely
 // identifies ONE signed proposal, so we resolve the exact bid + client + contractor it
 // belongs to — a refund can never land on the wrong client or the wrong contractor's
@@ -54,29 +78,23 @@ async function recordRefund(stripe: Stripe, charge: Stripe.Charge, connectedAcco
     .update({ stripe_refund_id: refunds[0].id, payment_status: fullyRefunded ? 'refunded' : 'partial_refund' })
     .eq('bid_id', sp.bid_id);
 
-  const { data: zjRow } = await supabase.from('zj_data').select('payments').eq('user_id', sp.contractor_user_id).maybeSingle();
-  if (!zjRow) return;
-  const payments = JSON.parse(zjRow.payments || '[]');
+  const uid = String(sp.contractor_user_id);
   let changed = false, i = 0;
   for (const rf of refunds) {
-    if (payments.some((p: any) => p.ref === rf.id)) continue;     // idempotent — never double-book
-    payments.push({
-      id: Date.now() + (i++),
-      bid_id: sp.bid_id,
+    const booked = await bookRow('td_payments', uid, {
+      id: Date.now() * 1000 + (i++),
+      bid_id: bidKey(sp.bid_id),
       client_name: sp.client_name,            // the RIGHT client (resolved from the payment intent)
       date: new Date().toISOString().slice(0, 10),
+      loggedAt: new Date().toISOString(),
       type: 'refund',
       amount: -(rf.amount / 100),             // negative + EXACT refunded amount
       method: 'Card',
-      ref: rf.id,
+      ref: rf.id,                             // idempotent: never double-book
     });
-    changed = true;
+    changed = changed || booked;
   }
-  if (changed) {
-    await supabase.from('zj_data')
-      .update({ payments: JSON.stringify(payments), updated_at: new Date().toISOString() })
-      .eq('user_id', sp.contractor_user_id);
-  }
+  if (changed) await touchCursor(uid);
 }
 
 // The one place that decides what "a payment completed" means. Both entry
@@ -110,42 +128,33 @@ async function recordPayment(stripe: Stripe, meta: Stripe.Metadata, amountPaid: 
     ...(meta.senior === '1' ? { buyer_senior: true } : {}),
   }, { onConflict: 'bid_id' });
 
-  const { data: zjRow } = await supabase
-    .from('zj_data')
-    .select('payments,expenses')
-    .eq('user_id', meta.contractorUserId)
-    .maybeSingle();
-
-  if (zjRow) {
-    const payments = JSON.parse(zjRow.payments || '[]');
-    const expenses = JSON.parse(zjRow.expenses || '[]');
-
-    // Idempotency guard — don't double-record if webhook fires twice
-    if (payments.some((p: any) => p.ref === piRef)) return;
-
-    payments.push({
-      id: Date.now(),
-      bid_id: meta.bidId,
-      client_name: meta.clientName,
-      date: ts.slice(0, 10),
-      type: 'deposit',
-      amount: amountPaid,
-      method: paymentMethod,
-      ref: piRef,
-    });
-    expenses.push({
-      id: Date.now() + 1,
-      date: ts.slice(0, 10),
-      desc: `Stripe fee — ${meta.clientName}`,
-      amount: stripeFee,
-      cat: 'fees',
-      deductible: true,
-    });
-    await supabase
-      .from('zj_data')
-      .update({ payments: JSON.stringify(payments), expenses: JSON.stringify(expenses), updated_at: ts })
-      .eq('user_id', meta.contractorUserId);
-  }
+  const uid = String(meta.contractorUserId || '');
+  if (!uid) return;
+  // Idempotent by the payment intent: a webhook that fires twice books once.
+  const booked = await bookRow('td_payments', uid, {
+    id: Date.now() * 1000,
+    bid_id: bidKey(meta.bidId),
+    client_name: meta.clientName,
+    date: ts.slice(0, 10),
+    loggedAt: ts,
+    // A proposal signed and paid is its deposit; a payment from the hub is
+    // toward the balance.
+    type: meta.proposalKey ? 'deposit' : 'payment',
+    amount: amountPaid,
+    method: paymentMethod,
+    ref: piRef,
+  });
+  if (!booked) return;
+  await bookRow('td_expenses', uid, {
+    id: Date.now() * 1000 + 1,
+    date: ts.slice(0, 10),
+    desc: `Stripe fee: ${meta.clientName}`,
+    amount: stripeFee,
+    cat: 'fees',
+    deductible: true,
+    ref: 'fee:' + piRef,
+  });
+  await touchCursor(uid);
 }
 
 // Hosted Checkout Session path (non-embedded: sign.html's "pay by link" style flow).

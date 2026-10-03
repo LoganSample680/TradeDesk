@@ -162,7 +162,7 @@ test.describe('Quick invoice', () => {
       window._fetchCrewLabor = async () => { await gate; return { name: { 'jack-uid': 'Jack Sample' }, entries: [
         row({ dest_place: 'John Doe (1418 Maple Ave)' }),
         row({ dest_place: 'John Doe (1418 Maple Ave)', employee_user_id: 'jack-uid', arrived_at: new Date(t + 24 * H).toISOString(), departed_at: new Date(t + 26 * H).toISOString(), minutes: 120 }),
-        row({ dest_place: 'John Doe (Rental)', arrived_at: new Date(t + 48 * H).toISOString(), departed_at: new Date(t + 49 * H).toISOString(), minutes: 60 }),
+        row({ dest_place: 'John Doe (9 Lake Rd)', arrived_at: new Date(t + 48 * H).toISOString(), departed_at: new Date(t + 49 * H).toISOString(), minutes: 60 }),
         row({ dest_place: 'John Doe (1418 Maple Ave)', source: 'drive', minutes: 30 }),
         row({ dest_place: 'John Doe (1418 Maple Ave)', source: 'dismissed', minutes: 90 }),
         row({ dest_place: 'Mary Smith (77 Lakeview Dr)', minutes: 500 }),
@@ -313,7 +313,7 @@ test.describe('Quick invoice', () => {
       window._supaUser = { id: 'boss-uid' }; window.supaEnabled = () => true; window._supa = window._supa || {};
       window._fetchCrewLabor = async () => ({ name: {}, entries: [
         row({ dest_place: 'John Doe (1418 Maple Ave)' }),
-        row({ dest_place: 'John Doe (Rental)', arrived_at: new Date(t + 24 * H).toISOString(), departed_at: new Date(t + 25 * H).toISOString(), minutes: 60 }),
+        row({ dest_place: 'John Doe (9 Lake Rd)', arrived_at: new Date(t + 24 * H).toISOString(), departed_at: new Date(t + 25 * H).toISOString(), minutes: 60 }),
       ] });
       openQuickInvoice(901);
       const asked = !!document.getElementById('_addrpick-ov');
@@ -339,6 +339,22 @@ test.describe('Quick invoice', () => {
     expect(r.addr).toBe('9 Lake Rd, Springfield, IL');
     expect(r.primary, 'the other house is still unbilled').toEqual([240]);
     expect(r.rentalAgain, 'the billed house starts after its invoice').toEqual([]);
+  });
+
+  // Owner 2026-10-02: "always the address, no exceptions." Tagen Lindstrom has
+  // two properties labelled Rental; a house's visits are matched by its street
+  // only, so one Rental's bill can never pick up the other Rental's time.
+  test('two houses labelled Rental: each bill matches its own street and never the shared label', async ({ page }) => {
+    await boot(page);
+    const r = await page.evaluate(() => {
+      const c = { id: 9077, name: 'Tagen Lindstrom', addr: '1733 SW Burnett Rd, Topeka, KS 66604',
+        extraAddresses: [{ addr: '2437 SW 24th St, Topeka, KS 66611', label: 'Rental' },
+                         { addr: '5713 SW 14th St, Topeka, KS 66604', label: 'Rental' }] };
+      return { a: [..._qiPlaceNames(c, '2437 SW 24th St, Topeka, KS 66611')],
+               b: [..._qiPlaceNames(c, '5713 SW 14th St, Topeka, KS 66604')] };
+    });
+    expect(r.a).toEqual(['Tagen Lindstrom (2437 SW 24th St)']);
+    expect(r.b).toEqual(['Tagen Lindstrom (5713 SW 14th St)']);
   });
 
   test('offline, or the load fails: the screen keeps what it had and says nothing tracked only when that is true', async ({ page }) => {
@@ -600,7 +616,8 @@ test.describe('Quick invoice', () => {
     expect(r.text).not.toContain('Jack Sample');
     expect(r.text).toContain('John has a');
     expect(r.text).toContain('$500 paid');
-    expect(r.text).toContain('Bill that one from the job');
+    expect(r.text).toContain('$1,500 left');
+    expect(r.text).toContain('Settle it up');
     expect(r.total).toBe('$300.00');                 // only the receipt is left
   });
 
@@ -613,7 +630,7 @@ test.describe('Quick invoice', () => {
       openQuickInvoice(901);
       return document.getElementById('qi-page').textContent;
     });
-    expect(t).not.toContain('Bill that one from the job');
+    expect(t).not.toContain('Settle it up');
   });
 
   test('See it opens the invoice in the proposal\'s own letterhead, before anything is saved', async ({ page }) => {

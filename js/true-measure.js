@@ -1601,9 +1601,9 @@ function _tmConfirmScreen(){
     <label style="font-size:11.5px;font-weight:700;color:var(--text3)">Description</label>
     <input id="tm-c-desc" value="${(defaultDesc||'').replace(/"/g,'&quot;')}" style="margin-bottom:12px">
     <label style="font-size:11.5px;font-weight:700;color:var(--text3)">Quantity (${m.unit})</label>
-    <input id="tm-c-qty" type="number" step="0.1" value="${m.value}" style="margin-bottom:12px">
+    <input id="tm-c-qty" type="text" data-num="dec" inputmode="decimal" value="${m.value}" style="margin-bottom:12px">
     <label style="font-size:11.5px;font-weight:700;color:var(--text3)">Rate ($ per ${m.unit})</label>
-    <input id="tm-c-rate" type="number" step="0.01" value="${defaultRate}" style="margin-bottom:16px">
+    <input id="tm-c-rate" type="text" data-num="rate" inputmode="decimal" value="${defaultRate}" style="margin-bottom:16px">
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('_tm-confirm-ov').remove()">Back</button>
       <button class="btn btn-p" style="flex:1" onclick="_tmAddToEstimate()">Add to estimate</button>
@@ -1615,12 +1615,12 @@ function _tmConfirmScreen(){
 function _tmAddToEstimate(){
   const c=_tmState.c;
   const desc=(document.getElementById('tm-c-desc')||{}).value||'Measured line';
-  const qty=Math.max(0,+(document.getElementById('tm-c-qty')||{}).value||0);
-  const rate=Math.max(0,+(document.getElementById('tm-c-rate')||{}).value||0);
+  const qty=Math.max(0,_numVal('tm-c-qty'));
+  const rate=Math.max(0,_numVal('tm-c-rate'));
   const m=_tmMeasure();
   window._trueMeasureSeed={
     clientId:c.id,
-    lines:[{desc,qty,unit:m.unit,rate,total:Math.round(qty*rate*100)/100,notes:'Measured with TrueMeasure',_byoSection:'Exterior'}]
+    lines:[{desc,qty,unit:m.unit,rate,total:_cents(qty*rate),notes:'Measured with TrueMeasure',_byoSection:'Exterior'}]
   };
   document.getElementById('_tm-confirm-ov')?.remove();
   _tmClose();

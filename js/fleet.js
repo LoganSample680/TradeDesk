@@ -824,10 +824,10 @@ function _renderOdometerReport() {
           <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Odometer readings (IRS Pub. 463)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div class="f"><label>Jan 1 reading (mi)</label>
-              <input type="number" id="odo-start" min="0" step="1" placeholder="Start of year" value="${rec.start||''}">
+              <input type="text" data-num="int" inputmode="numeric" id="odo-start" placeholder="Start of year" value="${rec.start||''}">
             </div>
             <div class="f"><label>Dec 31 reading (mi)</label>
-              <input type="number" id="odo-end" min="0" step="1" placeholder="End of year" value="${rec.end||''}">
+              <input type="text" data-num="int" inputmode="numeric" id="odo-end" placeholder="End of year" value="${rec.end||''}">
             </div>
           </div>
         </div>
@@ -945,7 +945,7 @@ function openAddVehicleModal(idx) {
           <div class="f"><label>Purchase price ($)</label><input type="text" inputmode="numeric" id="fv-pprice" placeholder="Optional" oninput="_fmtMoneyInput(this)" value="${v.purchasePrice>0?_moneyStr(v.purchasePrice).replace(/\.00$/,''):''}"></div>
         </div>
         <div class="f"><label>Odometer at purchase (mi)</label>
-          <input type="number" id="fv-podo" min="0" step="1" placeholder="Optional" value="${v.purchaseOdo>0?v.purchaseOdo:''}">
+          <input type="text" data-num="int" inputmode="numeric" id="fv-podo" placeholder="Optional" value="${v.purchaseOdo>0?v.purchaseOdo:''}">
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:4px">Purchase price is logged as a vehicle expense (actual expense method only).</div>
       </div>
@@ -1248,7 +1248,7 @@ function openFleetSaleModal(idx) {
         <div class="f"><label>Sale date</label><input type="date" id="fs-date" value="${todayKey()}"></div>
         <div class="f"><label>Sale price ($)</label><input type="text" inputmode="numeric" id="fs-price" placeholder="0" oninput="_fmtMoneyInput(this)"></div>
       </div>
-      <div class="f"><label>Odometer at sale (mi)</label><input type="number" id="fs-odo" min="0" step="100" placeholder="0"></div>
+      <div class="f"><label>Odometer at sale (mi)</label><input type="text" data-num="int" inputmode="numeric" id="fs-odo" placeholder="0"></div>
       ${v.purchasePrice?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text3)">Purchase price: $${v.purchasePrice.toLocaleString()}: enter sale price to see gain/loss</div>`:''}
       <div style="display:grid;gap:8px;margin-top:16px">
         <button class="btn btn-p" onclick="saveFleetSale(${idx})" style="padding:14px;font-size:16px;font-weight:700">Record sale</button>
@@ -1346,10 +1346,10 @@ function _renderMaintModal(savedType) {
         </div>
         <div class="fg fg2">
           <div class="f"><label>Date</label><input type="text" id="maint-date" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${_ymdToMdY((editRec&&editRec.date)||todayKey())}" oninput="_fmtExpDate(this)"></div>
-          <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="1" placeholder="Optional" value="${escHtml((editRec&&editRec.odo)||'')}"></div>
+          <div class="f"><label>Odometer (mi)</label><input type="text" data-num="int" inputmode="numeric" id="maint-odo" placeholder="Optional" value="${escHtml((editRec&&editRec.odo)||'')}"></div>
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Cost ($)</label><input type="number" id="maint-cost" min="0" step="1" placeholder="0.00" value="${escHtml((editRec&&editRec.cost)||'')}"></div>
+          <div class="f"><label>Cost ($)</label><input type="text" data-num="money" inputmode="decimal" id="maint-cost" placeholder="0.00" value="${escHtml((editRec&&editRec.cost)||'')}"></div>
           <div class="f"><label>Vendor / shop</label><input id="maint-vendor" placeholder="Jiffy Lube, AutoZone..." value="${escHtml((editRec&&editRec.vendor)||'')}"></div>
         </div>
       </div>
@@ -1469,7 +1469,7 @@ function _renderMaintTypeFields(type, rec) {
           <input id="m-oil-filter" placeholder="Part number" value="${(rec&&rec.oilFilterPart)||''}">
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Next change (mi) <span style="font-size:10px;font-weight:400;color:var(--text3)">optional</span></label><input type="number" id="m-next-mi" placeholder="e.g. 92000" value="${(rec&&rec.nextOilMiles)||''}"></div>
+          <div class="f"><label>Next change (mi) <span style="font-size:10px;font-weight:400;color:var(--text3)">optional</span></label><input type="text" data-num="int" inputmode="numeric" id="m-next-mi" placeholder="e.g. 92000" value="${(rec&&rec.nextOilMiles)||''}"></div>
           <div class="f"><label>Next change (date) <span style="font-size:10px;font-weight:400;color:var(--text3)">optional</span></label><input type="text" id="m-next-date" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${(rec&&rec.nextOilDate)?_ymdToMdY(rec.nextOilDate):''}" oninput="_fmtExpDate(this)"></div>
         </div>
       </div>`;
@@ -1536,7 +1536,7 @@ function saveMaintRecord() {
   const odoEl = document.getElementById('maint-odo');
   const odo = odoEl ? parseInt(odoEl.value)||0 : 0;
   const costEl = document.getElementById('maint-cost');
-  const cost = costEl ? parseFloat(costEl.value)||0 : 0;
+  const cost = costEl ? _numVal(costEl) : 0;
   const vendorEl = document.getElementById('maint-vendor');
   const vendor = vendorEl ? (vendorEl.value||'').trim() : '';
   const notesEl = document.getElementById('maint-notes');

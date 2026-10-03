@@ -103,12 +103,16 @@ test.describe('closing the gaps other estimate tools leave open', () => {
 
   test('exclusions survive a save and come back on resume', async () => {
     const r = await page.evaluate(() => {
+      // The fields an estimate saves are named once, in _geiContentFields;
+      // autosave and both branches of the deliberate save all call it.
       const src = String(_byoAutosave || '') + String(saveGenericEstimate || '') + String(openGenericEstimate || '');
       return {
-        saved: (src.match(/exclusions\s*[:=]/g) || []).length,
+        inFields: /exclusions\s*:/.test(String(_geiContentFields)),
+        saved: (src.match(/_geiContentFields\(\)/g) || []).length,
         restored: /Array\.isArray\((b|_b)\.exclusions\)/.test(src)
       };
     });
+    expect(r.inFields).toBe(true);
     expect(r.saved, 'autosave and both branches of the deliberate save').toBeGreaterThanOrEqual(3);
     expect(r.restored).toBe(true);
   });

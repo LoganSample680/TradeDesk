@@ -560,7 +560,13 @@ test.describe('Receipt-gated supply runs', () => {
         // one (owner: "Combine them"). The section itself carries no count.
         const shell = document.getElementById('dash-hold');
         const shown = { display: el.style.display, names: [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent),
-          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: /2 held/.test(document.getElementById('dash-hold-count').textContent),
+          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: (() => {
+            // The shell totals every section, and the supply and timesheet
+            // sections paint from their own async loads, so the expected total
+            // is this card's 2 plus whatever they hold right now.
+            const other = ['dash-supply-hold', 'dash-ts-hold'].reduce((n, id) => { const e = document.getElementById(id); return n + ((e && e.style.display !== 'none') ? (Number(e.dataset.n) || 0) : 0); }, 0);
+            return document.getElementById('dash-hold-count').textContent === (other + 2) + ' held';
+          })(),
           shellShown: shell.style.display !== 'none', noOwnCount: !/held/.test(el.textContent) };
         _paintDashVisitHold(el, []);
         return { shown, hidden: el.style.display === 'none' && el.innerHTML === '', shellHidden: document.getElementById('dash-supply-hold').style.display === 'none' ? shell.style.display === 'none' : true };
@@ -947,7 +953,9 @@ test.describe('Receipt-gated supply runs', () => {
         const shell = document.getElementById('dash-hold');
         const widgets = document.getElementById('dash-widget-root');
         const above = !!(widgets && (shell.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
-        const src = _dashApplySkeletons.toString();
+        // The targets moved into their own function (owner 2026-10-01, the
+        // placeholder became a copy of each target's own markup).
+        const src = _dashSkelTargets.toString();
         return { above, targetsShell: /#dash-hold\b/.test(src) && !/#dash-supply-hold/.test(src) && !/#dash-visit-hold/.test(src) };
       });
       expect(r.above).toBe(true);

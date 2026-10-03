@@ -237,7 +237,9 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     await expect(page.locator('#dash-dayend-no')).toHaveText('Still working');
     // Only one primary action on the card (CLAUDE.md 15.1), and it sits on the
     // right, "Still working" on the left (owner 2026-09-03).
-    expect(await card.locator('button').count()).toBe(2);
+    // The live card only: during a kind change the old card fades out on top
+    // as an aria-hidden .td-nb-ghost for 180ms (dashboard.js _nearbyPaint).
+    expect(await page.locator('#dash-nearby > :not(.td-nb-ghost) button').count()).toBe(2);
     // The card's reveal waits out the boot waterfall (dashboard.js _holdReveal)
     // AND runs an entrance animation, so a one-shot boundingBox right after
     // toBeVisible races it: webkit reported the element visible and then handed
@@ -256,7 +258,7 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
       return noBox.x + noBox.width <= yesBox.x;
     }, { message: 'Still working sits left of the clock-out button' }).toBe(true);
     await page.locator('#dash-dayend-no').click();
-    const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }));
+    const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: [...document.getElementById('dash-nearby').children].filter((c) => !c.classList.contains('td-nb-ghost')).map((c) => c.outerHTML).join('') }));
     expect(r.p).toBeNull();
     expect(r.timer).toBe(true);               // dismiss never touches the clock
     expect(r.html).not.toContain('YOUR DAY');
@@ -267,7 +269,7 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     const d0 = await seedOpenClock();
     await page.evaluate(({ dwell, res }) => { _dayEndOnDwell(dwell, res); goPg('pg-dash'); renderDash(); }, { dwell: homeDwell(d0.HOME), res: dayRes(d0.HOME) });
     await page.locator('#dash-dayend-yes').click();
-    const r = await page.evaluate(() => { const e = timeEntries.find((x) => x.id === 9001); return { open: e.open, end: e.end_time, timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }; });
+    const r = await page.evaluate(() => { const e = timeEntries.find((x) => x.id === 9001); return { open: e.open, end: e.end_time, timer: !!_activeTimer, html: [...document.getElementById('dash-nearby').children].filter((c) => !c.classList.contains('td-nb-ghost')).map((c) => c.outerHTML).join('') }; });
     expect(r.open).toBe(false);
     expect(r.end).toBe(new Date(d0.HOME).toISOString());
     expect(r.timer).toBe(false);

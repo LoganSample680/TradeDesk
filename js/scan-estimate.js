@@ -142,10 +142,10 @@ function _seRender(){
   const rateInputs=elec
     ?[['outlet','Per outlet'],['sw','Per switch'],['gfci','GFCI lot']].map(([k,l])=>
         '<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text3)">'+l+
-        '<span style="display:flex;align-items:center;gap:3px"><span style="color:var(--text2)">$</span><input type="number" min="0" step="1" value="'+(+rates[k]||0)+'" onchange="_seSetRate(\''+k+'\',this.value)" style="width:64px;padding:8px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;font-family:inherit"></span></label>').join('')
+        '<span style="display:flex;align-items:center;gap:3px"><span style="color:var(--text2)">$</span><input type="text" data-num="rate" inputmode="decimal" value="'+(+rates[k]||0)+'" onchange="_seSetRate(\''+k+'\',this.value)" style="width:64px;padding:8px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;font-family:inherit"></span></label>').join('')
     :[['wall','Walls /sq ft'],['ceiling','Ceiling /sq ft'],['trimLf','Trim /ln ft'],['door','Per door'],['window','Per window']].map(([k,l])=>
         '<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text3)">'+l+
-        '<span style="display:flex;align-items:center;gap:3px"><span style="color:var(--text2)">$</span><input type="number" min="0" step="0.05" value="'+(+rates[k]||0)+'" onchange="_seSetRate(\''+k+'\',this.value)" style="width:64px;padding:8px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;font-family:inherit"></span></label>').join('');
+        '<span style="display:flex;align-items:center;gap:3px"><span style="color:var(--text2)">$</span><input type="text" data-num="rate" inputmode="decimal" value="'+(+rates[k]||0)+'" onchange="_seSetRate(\''+k+'\',this.value)" style="width:64px;padding:8px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;font-family:inherit"></span></label>').join('');
   const roomCards=scan.rooms.map((r,i)=>{
     const st=_seState.rooms[i];
     const lines=st.on?_seRoomLines(r,st):[];
@@ -241,7 +241,7 @@ function _seRender(){
 }
 function _seSetRate(k,v){
   const r=_seIsElec()?_scanElecRates():_scanRates();
-  r[k]=Math.max(0,+v||0);
+  r[k]=Math.max(0,parseFloat(String(v==null?'':v).replace(/,/g,''))||0);
   if(typeof saveAll==='function')saveAll();
   _seRender();
 }
@@ -275,7 +275,7 @@ function _seEditQty(i,k){
   m.innerHTML=
     '<div class="zmodal-title">'+escHtml(r.label)+' · '+s.label.toLowerCase()+'</div>'+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Measured by scan: <strong>'+meas+' '+s.unit+'</strong>. Your number prices the line; the measured one stays a tap away.</div>'+
-    '<input id="_se-qty-inp" type="number" min="0" step="1" value="'+cur+'" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid var(--border2);border-radius:10px;background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
+    '<input id="_se-qty-inp" type="text" data-num="int" inputmode="numeric" value="'+cur+'" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid var(--border2);border-radius:10px;background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
     '<div style="display:flex;gap:8px">'+
       ((st.qtyOv&&st.qtyOv[k]!=null)?'<button class="btn" style="padding:11px 14px" onclick="_seRestoreQty('+i+',\''+k+'\')">Restore '+meas+'</button>':'')+
       '<button class="btn btn-p" style="flex:1;padding:11px" onclick="_seSaveQty('+i+',\''+k+'\')">Save</button>'+

@@ -471,3 +471,43 @@ test.describe('Client hub hero, stat tiles removed', () => {
     assertNoErrors(page, 'hub-mini tiles removed');
   });
 });
+
+// One setup for both cancellation notices (audit 2026-10-01): the signing
+// form and the submitted copy each worked out the window, the law, the date,
+// the refund and the card question by copy. _cancelCtx is the one place now.
+test.describe('Notice of Cancellation, one setup (_cancelCtx)', () => {
+  test('both notices read the same window, law and date from _cancelCtx', async ({ page }) => {
+    await bootHub(page, hubWith({ paymentMethod: 'card' }));
+    const r = await page.evaluate((id) => {
+      const bid = _hub.bids.find(b => b.id === id);
+      const ctx = _cancelCtx(bid);
+      const odd = _cancelCtx(Object.assign({}, bid, { paymentMethod: 'cash' }));
+      return { ctx, oddStripe: odd.isStripe, s3: String(_cancelShowStep3), sc: String(_cancelShowConfirmed) };
+    }, FAKE_BID_ID_1);
+    expect(r.ctx.cancelDays).toBeGreaterThan(0);
+    expect(['THREE', 'FIVE', String(r.ctx.cancelDays)]).toContain(r.ctx.daysWord);
+    expect(r.ctx.txDate).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
+    expect(r.ctx.isStripe).toBe(true);
+    expect(r.oddStripe).toBe(false);
+    for (const src of [r.s3, r.sc]) {
+      expect(src).toContain('_cancelCtx(bid)');
+      expect(src).not.toContain("cancelDays===3?'THREE'");
+    }
+    assertNoErrors(page, 'cancel ctx');
+  });
+
+  test('the submitted copy still shows the notice from the shared setup', async ({ page }) => {
+    await bootHub(page, hubWith({ cancelledAt: new Date().toISOString(), cancelledName: 'Logan Sample' }));
+    const txt = await page.evaluate((id) => {
+      document.getElementById('cancel-notice-ov')?.remove();
+      const ov = document.createElement('div'); ov.id = 'cancel-notice-ov'; document.body.appendChild(ov);
+      _cancelShowConfirmed(_hub.bids.find(b => b.id === id));
+      const t = ov.textContent; ov.remove();
+      return t;
+    }, FAKE_BID_ID_1);
+    expect(txt).toContain('NOTICE OF CANCELLATION');
+    expect(txt).toMatch(/WITHIN \w+ BUSINESS DAYS/);
+    expect(txt).toContain('Cancellation submitted');
+    assertNoErrors(page, 'cancel confirmed');
+  });
+});

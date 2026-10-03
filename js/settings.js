@@ -638,7 +638,7 @@ function openHepaLog(id){
       '</select>'+
       '<input id="_hepa-who" placeholder="Who (optional)" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<input id="_hepa-notes" placeholder="Notes (optional)" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
-      '<input id="_hepa-date" placeholder="MM/DD/YYYY" value="'+_licDateDisp(todayKey())+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
+      '<input type="text" data-num="date" inputmode="numeric" id="_hepa-date" placeholder="MM/DD/YYYY" value="'+_licDateDisp(todayKey())+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<button class="btn btn-p btn-full" onclick="_addHepaEntry('+id+')">+ Add Entry</button>'+
     '</div>'+
     '<button class="btn btn-sec btn-full" style="margin-top:10px" onclick="document.getElementById(\'_hepa-modal-ov\').remove()">Close</button>';
@@ -1066,7 +1066,7 @@ function saveSettings(){
   // the form guard, so it also happens for accounts that never open Settings.
   delete S.ccSurchargeEnabled;delete S.ccSurchargePct;
   if(!window._settingsFormFilled){saveAll();return;}
-  const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
+  const gf=id=>_numVal(id),gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
   const _smsD=_getSmsDefaults();
   S={...S,
@@ -1090,8 +1090,8 @@ function saveSettings(){
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
     venmoUser:document.getElementById('set-venmo')?_venmoClean(gs('set-venmo')):(S.venmoUser||''),
-    scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
-    scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
+    scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(_numVal('set-scan-price'))):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
+    scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,_numVal('set-scan-rate')):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
@@ -1143,7 +1143,7 @@ function loadTrueRatesForm(){
 // read, a blank field saves as 0 (never NaN/undefined), matching the
 // Math.max(0,...) guard those readers already apply to every field.
 function saveTrueRates(){
-  const gf=id=>{const el=document.getElementById(id);return Math.max(0,parseFloat(el&&el.value)||0);};
+  const gf=id=>Math.max(0,_numVal(id));
   S.trueMeasureRates={areaSqFt:gf('tr-tm-area'),roofSquare:gf('tr-tm-roof'),distanceLf:gf('tr-tm-dist')};
   S.scanRates={wall:gf('tr-scan-wall'),ceiling:gf('tr-scan-ceiling'),trimLf:gf('tr-scan-trim'),door:gf('tr-scan-door'),window:gf('tr-scan-window')};
   S.scanElecRates={outlet:gf('tr-scan-outlet'),sw:gf('tr-scan-sw'),gfci:gf('tr-scan-gfci')};
@@ -1172,48 +1172,82 @@ function _renderLogoPreview(){
 // the name, like an app icon; a transparent or white-backed one as a
 // wordmark. Measured here because the proposal is built synchronously and
 // cannot wait on an image to decode.
+// What the logo is (square or wide, its own solid square or not), measured
+// ONCE per logo by the same tdLogoLook the client hub and the boot screen use
+// (js/brand-look.js), so the header, the proposal cover and the hub cannot
+// disagree about one logo. v:2 marks a measurement made this way: one saved
+// by the old four-corner check is measured again, which repairs an account
+// whose saved answer was wrong (2026-10-01).
+const _LOGO_META_V=2;
 function _logoEnsureMeta(){
-  const src=(typeof S!=='undefined'&&S&&S.logoData)||'';
+  const src=(typeof S!=='undefined'&&S&&(S.logoData||S.logoUrl))||'';
   if(!src){if(S&&S.logoMeta)S.logoMeta=null;return Promise.resolve(null);}
   const h=String(typeof _hubHash==='function'?_hubHash(src):src.length);
-  if(S.logoMeta&&S.logoMeta.hash===h)return Promise.resolve(S.logoMeta);
+  if(S.logoMeta&&S.logoMeta.hash===h&&S.logoMeta.v===_LOGO_META_V)return Promise.resolve(S.logoMeta);
   return new Promise(res=>{
     const img=new Image();
+    if(!/^data:/.test(src))img.crossOrigin='anonymous';   // a stored logo: read its pixels
     img.onload=()=>{
-      try{
-        const w=img.naturalWidth||img.width||1,hh=img.naturalHeight||img.height||1;
-        const N=48,c=document.createElement('canvas');c.width=N;c.height=N;
-        const x=c.getContext('2d');x.drawImage(img,0,0,N,N);
-        const px=(a,b)=>x.getImageData(a,b,1,1).data;
-        const cs=[px(1,1),px(N-2,1),px(1,N-2),px(N-2,N-2)];
-        const avg=[0,1,2].map(i=>Math.round(cs.reduce((t,p)=>t+p[i],0)/4));
-        const solid=cs.every(p=>p[3]>235)&&cs.every(p=>[0,1,2].every(i=>Math.abs(p[i]-avg[i])<40));
-        const lum=(0.2126*avg[0]+0.7152*avg[1]+0.0722*avg[2])/255;
-        S.logoMeta={hash:h,ratio:Math.round(w/hh*100)/100,solid,light:lum>0.92,bg:'rgb('+avg.join(',')+')'};
-      }catch(_e){S.logoMeta={hash:h,ratio:1,solid:false,light:true,bg:''};}
+      const lk=typeof tdLogoLook==='function'?tdLogoLook(img):null;
+      // No reading (a blocked image): keep what was there rather than save a guess.
+      if(!lk){res(S.logoMeta||null);return;}
+      const hx=String(lk.bg||'#000000').replace('#','');
+      const rgb=[0,2,4].map(i=>parseInt(hx.slice(i,i+2),16)||0);
+      S.logoMeta={v:_LOGO_META_V,hash:h,ratio:lk.ratio,solid:!!lk.solid,light:!!lk.light,bg:'rgb('+rgb.join(',')+')'};
       try{if(typeof _settingsChanged==='function')_settingsChanged();}catch(_e){}
       res(S.logoMeta);
     };
-    img.onerror=()=>res(null);
+    img.onerror=()=>res(S.logoMeta||null);
     img.src=src;
   });
 }
+// THE BRAND IN THE TOP CORNER (owner 2026-10-01: "still got a TradeDesk logo
+// and a tiny logo for the business with no business name"). It is his app:
+// once he has a logo or a name, TradeDesk's own tile steps out of the header
+// and the corner is his, laid out by the shape of what he gave us:
+//   a square logo (an emblem, a badge)  -> the logo as a tile + his name
+//   a wide logo (a wordmark, the name in it) -> the logo alone, full height
+//   no logo, a name                      -> his initials on his colour + name
+//   neither                              -> TradeDesk, as before
+function _brandInitials(n){
+  const w=String(n||'').replace(/[^A-Za-z0-9 &]/g,' ').split(/\s+/).filter(x=>x&&!/^(by|the|and|of|&|llc|inc|co)$/i.test(x));
+  return (w.slice(0,2).map(x=>x[0]).join('')||'?').toUpperCase();
+}
+function _brandShape(){
+  const logo=(typeof S!=='undefined'&&S&&(S.logoData||S.logoUrl))||'';
+  const name=String((typeof S!=='undefined'&&S&&S.bname)||'').trim();
+  if(logo){
+    const m=S.logoMeta;
+    // Not measured yet: a square is the safe guess (the name still shows).
+    const wide=!!(m&&Number(m.ratio)>1.6);
+    return {kind:wide?'wide':'square',logo,name};
+  }
+  return {kind:name?'initials':'none',logo:'',name};
+}
 function applyBrandLogo(){
-  // Measure the logo once; the first time it lands, paint again so a square
-  // emblem gets its badge without waiting for the next render.
+  // Measure the logo once; the first time it lands, paint again so the
+  // shape decides the layout without waiting for the next render.
   try{const had=!!S.logoMeta;_logoEnsureMeta().then(m=>{if(m&&!had)applyBrandLogo();});}catch(_e){}
-  const tile=typeof tdLogoIsTile==='function'&&tdLogoIsTile(S.logoMeta);
+  const b=_brandShape();
+  const nm='<span class="brand-name" style="min-width:0;font-weight:800;letter-spacing:-.02em;line-height:1.12;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+escHtml(b.name)+'</span>';
+  const brand=(S.brandColor&&/^#[0-9a-f]{6}$/i.test(S.brandColor))?S.brandColor:'#2d5da8';
+  let html='';
+  // A logo that is its own solid square fills the tile; any other (a clear
+  // background) sits on a white tile so dark artwork never vanishes on the bar.
+  const own=!!(S.logoMeta&&S.logoMeta.solid&&!S.logoMeta.light);
+  if(b.kind==='square')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
+      '<img class="brand-tile" src="'+escHtml(b.logo)+'" style="height:40px;width:40px;'+(own?'object-fit:cover':'object-fit:contain;background:#fff;padding:3px;box-sizing:border-box')+';border-radius:10px;flex-shrink:0;display:block" alt="">'+
+      (b.name?nm:'')+'</span>';
+  else if(b.kind==='wide')html='<img class="brand-wide" src="'+escHtml(b.logo)+'" style="height:40px;max-width:min(60vw,240px);object-fit:contain;object-position:left center;display:block" alt="'+escHtml(b.name||'Logo')+'">';
+  else if(b.kind==='initials')html='<span class="brand-row" style="display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:100%">'+
+      '<span class="brand-tile brand-initials" style="height:40px;width:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:'+brand+';color:#fff;font-weight:900;font-size:15px;letter-spacing:-.3px">'+escHtml(_brandInitials(b.name))+'</span>'+
+      nm+'</span>';
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
-    if(S.logoData&&tile){
-      el.innerHTML='<span style="display:inline-flex;align-items:center;gap:9px;min-width:0;max-width:100%">'+
-        '<img src="'+S.logoData+'" style="height:34px;width:34px;object-fit:cover;border-radius:9px;flex-shrink:0;display:block;box-shadow:0 0 0 1px rgba(255,255,255,.18)" alt="">'+
-        '<span style="font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(S.bname||'')+'</span></span>';
-    } else if(S.logoData){
-      el.innerHTML='<img src="'+S.logoData+'" style="height:32px;max-width:140px;object-fit:contain;display:block" alt="'+escHtml(S.bname||'Logo')+'">';
-    } else {
-      el.textContent=S.bname||'TradeDesk';
-    }
+    if(b.kind==='none')el.textContent='TradeDesk';else el.innerHTML=html;
   });
+  // TradeDesk's own tile leaves the header once the corner is his.
+  const bar=document.getElementById('mobile-topbar-brand');
+  if(bar)bar.classList.toggle('is-branded',b.kind!=='none');
 }
 function _updateBootPreview(){
   // A thumbnail of the real boot screen (tdBootFill, js/brand-look.js): the

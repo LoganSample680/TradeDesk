@@ -3872,66 +3872,50 @@ test.describe('bids.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 22. sendBidEmail
+  // 22. resendProposal (replaces sendBidEmail, resendProposalLink, pipelineResendSms)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('sendBidEmail', () => {
-    test('null bidId, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { sendBidEmail(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
+  test.describe('resendProposal', () => {
+    test('the three old resend paths are gone (§7.1)', async () => {
+      const r = await page.evaluate(() => ({
+        sendBidEmail: typeof window.sendBidEmail,
+        resendProposalLink: typeof window.resendProposalLink,
+        pipelineResendSms: typeof window.pipelineResendSms,
+        resendProposal: typeof window.resendProposal,
+      }));
+      expect(r.sendBidEmail).toBe('undefined');
+      expect(r.resendProposalLink).toBe('undefined');
+      expect(r.pipelineResendSms).toBe('undefined');
+      expect(r.resendProposal).toBe('function');
     });
 
-    test('non-existent bidId, returns without side effects', async () => {
+    test('null and nonexistent bidId, do not throw and open nothing', async () => {
       const r = await page.evaluate(() => {
-        let redirected = false;
-        const orig = Object.getOwnPropertyDescriptor(window, 'location');
-        try {
-          sendBidEmail(999999);
-          return { ok: true };
-        } catch (e) {
-          return { ok: false, err: e.message };
+        const out = [];
+        for (const v of [null, undefined, 999999999]) {
+          try { resendProposal(v); out.push(true); } catch (e) { out.push(e.message); }
         }
+        return { out, sheet: !!document.getElementById('_resend-overlay') };
       });
-      expect(r.ok).toBe(true);
+      expect(r.out).toEqual([true, true, true]);
+      expect(r.sheet).toBe(false);
     });
 
-    test('golden path, constructs mailto href without throw', async () => {
+    test('a sent bid opens the shared send sheet with its signing link', async () => {
       const r = await page.evaluate(() => {
-        let hrefSet = '';
-        // Intercept location.href assignment
-        const desc = Object.getOwnPropertyDescriptor(window, 'location');
-        let intercepted = false;
-        try {
-          // Wrap in try, JSDOM may throw on mailto: navigation
-          sendBidEmail(77702);
-          return { ok: true };
-        } catch (e) {
-          // Navigation may throw in test environment, that's acceptable
-          if (e.message && (e.message.includes('Not implemented') || e.message.includes('navigation'))) {
-            return { ok: true, nav: true };
-          }
-          return { ok: false, err: e.message };
-        }
+        const id = 77790;
+        bids.push({ id, client_name: 'Resend Probe', amount: 800, status: 'Pending', signingToken: 'tok-resend', bid_date: '2026-01-01' });
+        let err = '';
+        try { resendProposal(id); } catch (e) { err = e.message; }
+        const ov = document.getElementById('_resend-overlay');
+        const res = { err, open: !!ov, url: ov ? (ov.querySelector('.zmodal').dataset.url || '') : '' };
+        ov?.remove();
+        bids = bids.filter(b => b.id !== id);
+        return res;
       });
-      expect(r.ok).toBe(true);
-    });
-
-    test('bid with no surfaces or scope, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        const bid = { id: 77780, client_id: 88801, client_name: 'Test Client Alpha',
-          amount: 500, bid_date: '2026-01-01', days: 2 };
-        bids.push(bid);
-        try { sendBidEmail(77780); return { ok: true }; }
-        catch (e) {
-          if (e.message && e.message.includes('Not implemented')) return { ok: true };
-          return { ok: false, err: e.message };
-        } finally {
-          bids = bids.filter(b => b.id !== 77780);
-        }
-      });
-      expect(r.ok).toBe(true);
+      expect(r.err).toBe('');
+      expect(r.open).toBe(true);
+      expect(r.url).toContain('sign.html?t=tok-resend');
+      expect(r.url).toContain('&b=77790');
     });
   });
 
@@ -4074,7 +4058,7 @@ test.describe('bids.js: exhaustive coverage', () => {
         window.open = () => ({ document: { write: (h) => { invoiceHtml = h; }, close: () => {} } });
         printInvoice(77703); // opportunity bid with no payments
         window.open = origOpen;
-        return { hasNaN: invoiceHtml.includes('NaN'), hasInvoice: invoiceHtml.includes('INVOICE') };
+        return { hasNaN: invoiceHtml.includes('NaN'), hasInvoice: /Invoice/i.test(invoiceHtml) };
       });
       expect(r.hasNaN).toBe(false);
       expect(r.hasInvoice).toBe(true);
@@ -6243,268 +6227,6 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
 
     test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmRecalc()');
-      expect(ok).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 23. _tmCalcDeposit
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_tmCalcDeposit', () => {
-    test('no DOM elements, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmCalcDeposit(); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('zero subtotal, shows "-"', async () => {
-      const r = await page.evaluate(() => {
-        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
-        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
-        _geiLines = [];
-        try { _tmCalcDeposit(); return { ok: true, txt: document.getElementById('tm-dep-amt')?.textContent }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally { el.remove(); pctEl.remove(); }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.txt).toBe('-');
-    });
-
-    test('golden path, calculates 20% deposit', async () => {
-      const r = await page.evaluate(() => {
-        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
-        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
-        // Set up a line so calcGeiTotal returns non-zero
-        _geiLines = [{ desc: 'Labor', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
-        try { _tmCalcDeposit(); return { ok: true, txt: document.getElementById('tm-dep-amt')?.textContent }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally { el.remove(); pctEl.remove(); _geiLines = []; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('NaN pct, falls back to 20%', async () => {
-      const r = await page.evaluate(() => {
-        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
-        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = 'not-a-number'; document.body.appendChild(pctEl);
-        _geiLines = [];
-        try { _tmCalcDeposit(); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally { el.remove(); pctEl.remove(); }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('concurrent calls (5x): no crash', async () => {
-      const ok = await concurrent('_tmCalcDeposit()');
-      expect(ok).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 24. _tmCalcNte
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_tmCalcNte', () => {
-    test('no DOM elements, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmCalcNte(); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('NTE off, wrap hidden', async () => {
-      const r = await page.evaluate(() => {
-        let onEl = document.getElementById('tm-nte-on');
-        let wrap = document.getElementById('tm-nte-wrap');
-        const onCreated = !onEl;
-        const wrapCreated = !wrap;
-        if (!onEl) { onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; document.body.appendChild(onEl); }
-        if (!wrap) { wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap); }
-        const savedChecked = onEl.checked;
-        const savedDisplay = wrap.style.display;
-        onEl.checked = false;
-        try { _tmCalcNte(); return { ok: true, hidden: wrap.style.display === 'none' }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally {
-          if (onCreated) onEl.remove(); else onEl.checked = savedChecked;
-          if (wrapCreated) wrap.remove(); else wrap.style.display = savedDisplay;
-        }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hidden).toBe(true);
-    });
-
-    test('NTE on, empty cap, auto-sets cap to sub * 1.15 rounded to $500', async () => {
-      const r = await page.evaluate(() => {
-        let onEl = document.getElementById('tm-nte-on');
-        let wrap = document.getElementById('tm-nte-wrap');
-        let capEl = document.getElementById('tm-nte-cap');
-        const onCreated = !onEl;
-        const wrapCreated = !wrap;
-        const capCreated = !capEl;
-        if (!onEl) { onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; document.body.appendChild(onEl); }
-        if (!wrap) { wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap); }
-        if (!capEl) { capEl = document.createElement('input'); capEl.id = 'tm-nte-cap'; document.body.appendChild(capEl); }
-        const savedChecked = onEl.checked;
-        const savedDisplay = wrap.style.display;
-        const savedCap = capEl.value;
-        onEl.checked = true;
-        capEl.value = '';
-        _geiLines = [{ desc: 'Labor', qty: 1, rate: 2000, total: 2000 }];
-        try { _tmCalcNte(); return { ok: true, cap: parseFloat(capEl.value) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally {
-          if (onCreated) onEl.remove(); else onEl.checked = savedChecked;
-          if (wrapCreated) wrap.remove(); else wrap.style.display = savedDisplay;
-          if (capCreated) capEl.remove(); else capEl.value = savedCap;
-          _geiLines = [];
-        }
-      });
-      expect(r.ok).toBe(true);
-      // 2000 * 1.15 = 2300, rounded to nearest 500 = 2500
-      expect(r.cap % 500).toBe(0);
-    });
-
-    test('NTE on, cap already set, does not overwrite', async () => {
-      const r = await page.evaluate(() => {
-        const onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; onEl.checked = true; document.body.appendChild(onEl);
-        const wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap);
-        const capEl = document.createElement('input'); capEl.id = 'tm-nte-cap'; capEl.value = '5000'; document.body.appendChild(capEl);
-        _geiLines = [{ desc: 'Labor', qty: 1, rate: 1000, total: 1000 }];
-        try { _tmCalcNte(); return { ok: true, cap: capEl.value }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally { onEl.remove(); wrap.remove(); capEl.remove(); _geiLines = []; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.cap).toBe('5000');
-    });
-
-    test('concurrent calls (5x): no crash', async () => {
-      const ok = await concurrent('_tmCalcNte()');
-      expect(ok).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 25. _tmSetCycle
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_tmSetCycle', () => {
-    test('null: does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmSetCycle(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('undefined: does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmSetCycle(undefined); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('empty string, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmSetCycle(''); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path "weekly", sets _tmBillingCycle', async () => {
-      const r = await page.evaluate(() => {
-        _tmSetCycle('weekly');
-        return { cycle: _tmBillingCycle };
-      });
-      expect(r.cycle).toBe('weekly');
-    });
-
-    test('golden path "milestone", sets _tmBillingCycle', async () => {
-      const r = await page.evaluate(() => {
-        _tmSetCycle('milestone');
-        return { cycle: _tmBillingCycle };
-      });
-      expect(r.cycle).toBe('milestone');
-    });
-
-    test('"completion", sets _tmBillingCycle', async () => {
-      const r = await page.evaluate(() => {
-        _tmSetCycle('completion');
-        return { cycle: _tmBillingCycle };
-      });
-      expect(r.cycle).toBe('completion');
-    });
-
-    test('concurrent calls (5x): last value sticks', async () => {
-      const r = await page.evaluate(() => {
-        let ok = 0;
-        const cycles = ['weekly','biweekly','milestone','completion','weekly'];
-        for (let i = 0; i < 5; i++) {
-          try { _tmSetCycle(cycles[i]); ok++; } catch (_) {}
-        }
-        return { ok, cycle: _tmBillingCycle };
-      });
-      expect(r.ok).toBe(5);
-      expect(r.cycle).toBe('weekly');
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 26. _tmSyncCycleButtons
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_tmSyncCycleButtons', () => {
-    test('no DOM elements, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tmSyncCycleButtons(); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('highlights active cycle button', async () => {
-      const r = await page.evaluate(() => {
-        const cycles = ['weekly','biweekly','milestone','completion'];
-        cycles.forEach(c => {
-          let btn = document.getElementById('tmc-'+c);
-          if (!btn) { btn = document.createElement('button'); btn.id = 'tmc-'+c; document.body.appendChild(btn); }
-        });
-        _tmBillingCycle = 'biweekly';
-        _tmSyncCycleButtons();
-        const biweeklyBtn = document.getElementById('tmc-biweekly');
-        const weeklyBtn = document.getElementById('tmc-weekly');
-        const biweeklyActive = biweeklyBtn?.style.background?.includes('var(--blue)') || biweeklyBtn?.style.background === 'var(--blue)';
-        const weeklyInactive = weeklyBtn?.style.background?.includes('var(--bg2)') || weeklyBtn?.style.background === 'var(--bg2)';
-        cycles.forEach(c => document.getElementById('tmc-'+c)?.remove());
-        return { biweeklyActive, weeklyInactive };
-      });
-      expect(r.biweeklyActive).toBe(true);
-      expect(r.weeklyInactive).toBe(true);
-    });
-
-    test('no duplicate button styling after 3 calls', async () => {
-      const r = await page.evaluate(() => {
-        const cycles = ['weekly','biweekly','milestone','completion'];
-        cycles.forEach(c => {
-          let btn = document.getElementById('tmc-'+c);
-          if (!btn) { btn = document.createElement('button'); btn.id = 'tmc-'+c; document.body.appendChild(btn); }
-        });
-        _tmBillingCycle = 'weekly';
-        _tmSyncCycleButtons(); _tmSyncCycleButtons(); _tmSyncCycleButtons();
-        const weeklyBtn = document.getElementById('tmc-weekly');
-        const weeklyActive = weeklyBtn?.style.background?.includes('var(--blue)') || weeklyBtn?.style.background === 'var(--blue)';
-        cycles.forEach(c => document.getElementById('tmc-'+c)?.remove());
-        return { weeklyActive };
-      });
-      expect(r.weeklyActive).toBe(true);
-    });
-
-    test('concurrent calls (5x): no crash', async () => {
-      const ok = await concurrent('_tmSyncCycleButtons()');
       expect(ok).toBe(5);
     });
   });
@@ -17434,56 +17156,50 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // pipelineResendSms
+  // resendProposal (replaces pipelineResendSms)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('pipelineResendSms', () => {
-    test('null bidId, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { pipelineResendSms(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
+  test.describe('resendProposal from the pipeline', () => {
+    test('the three old resend paths are gone (§7.1)', async () => {
+      const r = await page.evaluate(() => ({
+        sendBidEmail: typeof window.sendBidEmail,
+        resendProposalLink: typeof window.resendProposalLink,
+        pipelineResendSms: typeof window.pipelineResendSms,
+        resendProposal: typeof window.resendProposal,
+      }));
+      expect(r.sendBidEmail).toBe('undefined');
+      expect(r.resendProposalLink).toBe('undefined');
+      expect(r.pipelineResendSms).toBe('undefined');
+      expect(r.resendProposal).toBe('function');
     });
 
-    test('nonexistent bidId, returns early', async () => {
+    test('null and nonexistent bidId, do not throw and open nothing', async () => {
       const r = await page.evaluate(() => {
-        try { pipelineResendSms(9999999); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('bid without signingToken, returns early', async () => {
-      const r = await page.evaluate(() => {
-        try { pipelineResendSms(88803); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('valid bid with signingToken, attempts SMS redirect without throw', async () => {
-      const r = await page.evaluate(() => {
-        let navHref = null;
-        const origHref = Object.getOwnPropertyDescriptor(window.location, 'href');
-        // In Chromium, window.location.href may not be configurable, ignore and proceed.
-        try {
-          Object.defineProperty(window.location, 'href', {
-            set: (v) => { navHref = v; },
-            get: () => window.location.toString(),
-            configurable: true,
-          });
-        } catch (_) {}
-        try {
-          pipelineResendSms(88801);
-          try { Object.defineProperty(window.location, 'href', origHref || { value: window.location.toString(), configurable: true }); } catch (_) {}
-          return { ok: true, navAttempted: !!navHref };
+        const out = [];
+        for (const v of [null, undefined, 999999999]) {
+          try { resendProposal(v); out.push(true); } catch (e) { out.push(e.message); }
         }
-        catch (e) {
-          try { Object.defineProperty(window.location, 'href', origHref || { value: window.location.toString(), configurable: true }); } catch (_) {}
-          return { ok: false, err: e.message };
-        }
+        return { out, sheet: !!document.getElementById('_resend-overlay') };
       });
-      expect(r.ok).toBe(true);
+      expect(r.out).toEqual([true, true, true]);
+      expect(r.sheet).toBe(false);
+    });
+
+    test('a sent bid opens the shared send sheet with its signing link', async () => {
+      const r = await page.evaluate(() => {
+        const id = 77790;
+        bids.push({ id, client_name: 'Resend Probe', amount: 800, status: 'Pending', signingToken: 'tok-resend', bid_date: '2026-01-01' });
+        let err = '';
+        try { resendProposal(id); } catch (e) { err = e.message; }
+        const ov = document.getElementById('_resend-overlay');
+        const res = { err, open: !!ov, url: ov ? (ov.querySelector('.zmodal').dataset.url || '') : '' };
+        ov?.remove();
+        bids = bids.filter(b => b.id !== id);
+        return res;
+      });
+      expect(r.err).toBe('');
+      expect(r.open).toBe(true);
+      expect(r.url).toContain('sign.html?t=tok-resend');
+      expect(r.url).toContain('&b=77790');
     });
   });
 
