@@ -45,7 +45,7 @@ function openExpenseFlow(){
       '<div id="em-items"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
-        '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
+        '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="text" data-num="money" inputmode="decimal" placeholder="0.00" style="font-size:14px"></div>'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         // The phone's own date picker, on today (Earl audit 2026-09-27: typing
@@ -1074,7 +1074,7 @@ async function expSave(){
   const btn=document.getElementById('exp-save-btn');
   const err=document.getElementById('exp-save-err');
   const vendor=(document.getElementById('em-vendor')?.value||'').trim();
-  const amount=parseFloat(document.getElementById('em-amount')?.value||0);
+  const amount=_numVal('em-amount');
   // Parse date, handle both MM/DD/YYYY input and raw ISO YYYY-MM-DD (safety net)
   const _rawDate=document.getElementById('em-date')?.value||'';
   const _isoM=_rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2058,7 +2058,7 @@ function scheduleJob(){
       ej.name=name;ej.addr=v('s-addr');ej.start=start;ej.days=days;ej.buffer=parseInt(v('s-buf'))||0;
       ej.time=v('s-time')||'';ej.notes=v('s-notes');ej.allowWeekend=_allowWknd;
       const _sv=document.getElementById('s-value-row');
-      if(_sv&&_sv.style.display!=='none'&&_moneyVisible())ej.value=parseFloat(v('s-value'))||0;
+      if(_sv&&_sv.style.display!=='none'&&_moneyVisible())ej.value=_numVal('s-value');
       if(String(ej.assignedTo||'')!==String(_crewId||'')){
         ej.assignedTo=_crewId||null;
         if(_crewId){if(!Array.isArray(ej.crewHistory))ej.crewHistory=[];if(!ej.crewHistory.map(String).includes(String(_crewId)))ej.crewHistory.push(_crewId);}
@@ -2073,7 +2073,7 @@ function scheduleJob(){
   // opened the scheduler FOR that client (the water heater board, js/wh-board.js).
   const _pre=window._schedPrefill||null;
   const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:(_pre&&_pre.clientId!=null?_pre.clientId:null));
-  const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
+  const jobValue=schedType==='estimate'?0:(_numVal('s-value'));
   const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):(v('s-time')||'');
   const jobHours=schedType==='estimate'?parseFloat(v('s-hours')||'2'):null;
   // Crew assignment applies to estimates too now (whoever does the visit), not
@@ -3907,7 +3907,7 @@ function openManualIncomeModal(){
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Date <span style="color:#A32D2D">*</span></label>'+
         '<input id="_inc-date" type="text" inputmode="numeric" value="'+todayMDY+'" placeholder="MM/DD/YYYY" oninput="_incDateFmt(this)" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Amount <span style="color:#A32D2D">*</span></label>'+
-        '<input id="_inc-amt" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+        '<input id="_inc-amt" type="text" data-num="money" inputmode="decimal" placeholder="0.00" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
         '<select id="_inc-client" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"><option value="">No client / other</option>'+clientOpts+'</select></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Type</label>'+
@@ -3950,7 +3950,7 @@ function saveManualIncome(){
   if(mdy){const y=mdy[3].length===2?'20'+mdy[3]:mdy[3];date=y+'-'+mdy[1].padStart(2,'0')+'-'+mdy[2].padStart(2,'0');}
   else if(ymd)date=dateRaw;
   if(!date){errEl.textContent='Enter date as MM/DD/YYYY';errEl.style.display='block';return;}
-  const amtRaw=parseFloat(document.getElementById('_inc-amt')?.value||'');
+  const amtRaw=_numVal('_inc-amt');
   if(!amtRaw||amtRaw<=0){errEl.textContent='Please enter an amount greater than 0.';errEl.style.display='block';return;}
   errEl.style.display='none';
   const clientId=document.getElementById('_inc-client')?.value||'';

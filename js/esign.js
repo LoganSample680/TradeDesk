@@ -273,3 +273,100 @@ function esignSigBlockHTML(o){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' + grid + '</div>' +
   '</div>';
 }
+
+// THE ONE CENTS ROUNDING, for the app and every customer page (audit 2026-10-01: the estimate, the supply list and
+// a dozen inline Math.round(x*100)/100 each had their own). Round half UP at
+// the cent, the way money rounds. Math.round alone does not: 2.5 x 3.33 is
+// 8.325, which floats to 832.4999999999999 and rounds DOWN to $8.32, a penny
+// off on the client's line for no reason a human could explain. Junk is 0.
+function _cents(n){
+  const v=Number(n)||0;
+  return Math.round(v*100+(v>=0?1e-9:-1e-9))/100;
+}
+// A saved document by its link key (a proposal, the client hub, an invoice),
+// for the pages a customer opens. One copy for client.html and sign.html
+// (audit 2026-10-01: each had its own, and only one had the timeout).
+async function _fetchStorageJson(key){
+  try{
+    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
+    if(!pub)throw new Error('no public url');
+    // 10s abort, a hung request on a weak connection must fall through to the
+    // download() path instead of freezing the boot screen forever.
+    const ac=new AbortController();
+    const tm=setTimeout(()=>ac.abort(),10000);
+    let res;
+    try{res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store',signal:ac.signal});}
+    finally{clearTimeout(tm);}
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return{data:await res.json(),error:null};
+  }catch(e){
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)return{data:null,error:error||e};
+    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
+  }
+}
+
+// ── The customer pages' shared calls (audit 2026-10-01) ─────────────────────
+// client.html and sign.html each carried a copy of these three; index.html
+// loads this file too, so none of the names below may be reused by a page.
+
+// Every write a customer page makes to a proposal goes through proposal-sign
+// (20261049), which proves the link before touching the row. o.hub adds the
+// client hub's own link (u, c, t from the page address), which is what the
+// hub proves itself with; sign.html's body carries its proposal key instead.
+async function _proposalSign(body,o){
+  let b=Object.assign({},body||{});
+  if(o&&o.hub){
+    const p=new URLSearchParams(location.search);
+    b=Object.assign({u:p.get('u'),c:p.get('c'),t:p.get('t')},b);
+  }
+  const{data,error}=await _supa.functions.invoke('proposal-sign',{body:b});
+  if(error)throw error;
+  if(data&&data.error)throw new Error(data.error);
+  return data||{};
+}
+
+// One view (or one step) on a proposal, for the contractor's analytics.
+// Fire and forget: it never throws and never delays the page.
+function _logProposalView(body){
+  try{
+    fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify(body||{})
+    }).catch(()=>{});
+  }catch(_){}
+}
+
+// Stripe's payment form, mounted from a create-checkout answer `d`. A
+// Checkout Session (cs_) mounts Stripe's own embedded checkout, which has its
+// own pay button, so ours hides; a PaymentIntent mounts the Payment Element
+// accordion and our button shows once it is ready. Direct charge: the payment
+// lives on the contractor's connected account, so Stripe.js is started with
+// that account or the client secret will not resolve.
+//   o.container   the mount element's id
+//   o.submitBtn   our pay button, or null
+//   o.onComplete  the embedded checkout finished
+//   o.onLoadError the Payment Element could not load
+// Returns {inst, elements} for the page's confirm and close code.
+async function _tdMountStripe(d,o){
+  o=o||{};
+  const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
+  const box=document.getElementById(o.container);
+  if(box)box.innerHTML='';
+  const sel='#'+o.container,btn=o.submitBtn||null;
+  if(String(d.clientSecret||'').startsWith('cs_')){
+    const inst=await stripeObj.initEmbeddedCheckout({clientSecret:d.clientSecret,onComplete:()=>{if(o.onComplete)o.onComplete();}});
+    inst.mount(sel);
+    if(btn)btn.style.display='none';
+    return {inst:{confirmPayment:null,destroy:()=>inst.destroy()},elements:null};
+  }
+  const elements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
+  const payEl=elements.create('payment',{
+    layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
+  });
+  payEl.mount(sel);
+  payEl.on('ready',()=>{if(btn){btn.disabled=false;btn.style.display='block';}});
+  payEl.on('loaderror',()=>{if(o.onLoadError)o.onLoadError();});
+  return {inst:stripeObj,elements};
+}

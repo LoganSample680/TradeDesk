@@ -1,4 +1,8 @@
-const fmt=n=>'$'+(isNaN(+n)?0:+n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// THE MONEY FORMAT (audit 2026-10-01: the invoice, Build Your Own and the
+// supply list each had their own). "$1,234.56"; fmt(n,{whole:true}) gives
+// "$1,235". Only a real {whole:true} counts, so arr.map(fmt), which passes an
+// index second, still formats cents.
+const fmt=(n,o)=>{const v=isNaN(+n)?0:+n;const whole=o&&(o.whole===true||(o.short===true&&Math.round(v*100)%100===0));return whole?'$'+Math.round(v).toLocaleString('en-US',{maximumFractionDigits:0}):'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}; // dup-ok: this IS the shared money format
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 function formatPhoneDisplay(val){
   let d=(val||'').replace(/\D/g,'').slice(0,10);
@@ -8,6 +12,10 @@ function formatPhoneDisplay(val){
 }
 function fmtPhone(input){
   let d=input.value.replace(/\D/g,'');
+  // Autofill and contacts paste "+1 (316) 555-0101": that is 11 digits with
+  // the country code in front. Drop the 1 so the number lands as 316-555-0101
+  // instead of being cut off at the end.
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
   if(d.length>10)d=d.slice(0,10);
   if(d.length>=7)d=d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6);
   else if(d.length>=4)d=d.slice(0,3)+'-'+d.slice(3);
@@ -20,7 +28,9 @@ const todayKey=()=>dateKey(new Date());
 const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
-const nv=id=>parseFloat(v(id))||0;
+// Commas are stripped first: a money or rate field shows "1,200" and a bare
+// parseFloat would read that as 1.
+const nv=id=>parseFloat(v(id).replace(/,/g,''))||0;
 // Shared dollar-amount input formatter, native <input type="number"> rejects
 // commas outright (worst on iOS Safari, which blocks the keystroke before it's
 // even typed; other browsers fail more quietly by dropping the value on read).
@@ -37,7 +47,15 @@ function _fmtMoneyInput(el){
   const grouped=intPart?Number(intPart).toLocaleString('en-US'):'';
   el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
 }
-const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+// The read side of every data-num field (see _tdNumFormat below). Takes an id
+// or the element itself, strips the display commas, and gives 0 for blank or
+// junk so a reader never has to guard NaN.
+function _numVal(idOrEl){
+  const el=typeof idOrEl==='string'?document.getElementById(idOrEl):idOrEl;
+  return parseFloat(String((el&&el.value)||'').replace(/,/g,''))||0;
+}
+// The older name for the same read; money fields still call it by id.
+const _moneyVal=_numVal;
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -86,6 +104,17 @@ const IRS=(when)=>{
   if(!y||typeof _getIrsRateForYear!=='function')return S.irsRate||.725;
   return _getIrsRateForYear(y);
 };
+// _cents (rounding money to the cent) lives in js/esign.js, which the app
+// and every customer page load, so the signing page shares it too.
+// THE MIDDLE VALUE (audit 2026-10-01: the price book and the scope history
+// each had a copy). Anything that is not a finite number is skipped; an even
+// count averages the middle two. Nothing to go on is null.
+function _median(vals){
+  const v=(Array.isArray(vals)?vals:[]).filter(x=>typeof x==='number'&&isFinite(x)).sort((a,b)=>a-b);
+  if(!v.length)return null;
+  const m=Math.floor(v.length/2);
+  return v.length%2?v[m]:(v[m-1]+v[m])/2;
+}
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
@@ -112,23 +141,8 @@ function stageAvatar(stage){
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
 function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
-// WCAG clamp for the contractor's brand color. The brand color renders both as
-// colored TEXT on white surfaces (proposal section labels, hub links) and as a
-// BACKGROUND under white text (proposal header, TOTAL row, hub buttons), both
-// are the same white↔color pair, so one clamp covers both directions: darken
-// the pick toward black (hue preserved) until it clears AA 4.5:1 against
-// white, with a small margin for the near-white (#f8fafc) document surfaces.
-// Invalid/empty input passes through untouched so callers' fallbacks still run.
-function adaBrand(hex){
-  const h=String(hex||'').trim().replace('#','');
-  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
-  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
-  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
-  const ratioVsWhite=c=>1.05/(lum(c)+0.05);
-  let guard=0;
-  while(ratioVsWhite(rgb)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
-  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
-}
+// adaBrand (the WCAG clamp for his brand colour) lives in js/brand-look.js,
+// shared with the client hub.
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
 // Canonical date stamp for the whole app: MM/DD/YYYY (e.g. 01/01/1900), zero-padded.
@@ -253,6 +267,10 @@ function zPrompt(msg, onOk, opts={}){
   document.body.appendChild(overlay);
   const inp=overlay.querySelector('#zprompt-inp');
   inp.placeholder=placeholder;
+  // opts.num ('money', 'int', 'dec', ...) makes this a number-only prompt: the
+  // delegated data-num listener strips anything else, and the phone shows the
+  // number pad. Read the answer with parseFloat after stripping commas.
+  if(opts.num){inp.setAttribute('data-num',opts.num);inp.setAttribute('inputmode',_TD_NUM_INPUTMODE[opts.num]||'decimal');}
   if(opts.value)inp.value=opts.value;
   const ok=overlay.querySelector('#zprompt-ok');
   const cancel=overlay.querySelector('.zmodal-cancel');
@@ -450,6 +468,92 @@ function _applyAutoCapAttrs(root){
     });
   } catch (_e) {}
 }
+// NUMBER-ONLY FIELDS (owner 2026-10-01: "we don't want a number only field
+// like phones, dollars, percentages etc to ever allow a character").
+//
+// One delegated listener, the same shape as the auto-cap tagging above: a field
+// opts in with data-num="<kind>" plus the matching inputmode, and every
+// keystroke and paste is cleaned before any of the field's own oninput
+// handlers run (capture phase), so a handler never sees a letter.
+// type="number" is not used for these on purpose: iPhone WebKit blocks some
+// keys and lets others through, and e, + and - get past it everywhere.
+//   money, rate  digits, one dot, 2 decimals, live commas (_fmtMoneyInput)
+//   pct          digits, one dot, never above 100
+//   dec          digits, one dot
+//   int          digits only
+//   phone        XXX-XXX-XXXX (fmtPhone, drops a leading 1 from autofill)
+//   zip          5 digits
+//   ein          XX-XXXXXXX
+//   date         MM/DD/YYYY
+//   ym           a year or MM/YYYY, digits and one slash, no auto slash
+// No kind allows a minus sign. Read these fields with _numVal / _moneyVal,
+// which strip the commas back out.
+const _TD_NUM_INPUTMODE={money:'decimal',rate:'decimal',pct:'decimal',dec:'decimal',int:'numeric',zip:'numeric',ein:'numeric',date:'numeric',ym:'numeric',phone:'tel'};
+function _tdOneDot(raw){
+  raw=String(raw||'').replace(/[^\d.]/g,'');
+  const dot=raw.indexOf('.');
+  return dot===-1?raw:raw.slice(0,dot+1)+raw.slice(dot+1).replace(/\./g,'');
+}
+// Rewrites el.value for its kind. The caret is the listener's job.
+function _tdNumFormat(el,kind){
+  if(!el)return;
+  const val=String(el.value||'');
+  if(kind==='money'||kind==='rate'){_fmtMoneyInput(el);return;}
+  if(kind==='phone'){fmtPhone(el);return;}
+  let out;
+  if(kind==='pct'){
+    out=_tdOneDot(val);
+    if(parseFloat(out)>100)out='100';
+  }else if(kind==='dec'){
+    out=_tdOneDot(val);
+  }else if(kind==='zip'){
+    out=val.replace(/\D/g,'').slice(0,5);
+  }else if(kind==='ein'){
+    const d=val.replace(/\D/g,'').slice(0,9);
+    out=d.length>2?d.slice(0,2)+'-'+d.slice(2):d;
+  }else if(kind==='date'){
+    const d=val.replace(/\D/g,'').slice(0,8);
+    out=d.length>4?d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4):d.length>2?d.slice(0,2)+'/'+d.slice(2):d;
+  }else if(kind==='ym'){
+    out=val.replace(/[^\d/]/g,'');
+    const sl=out.indexOf('/');
+    if(sl!==-1)out=out.slice(0,sl+1)+out.slice(sl+1).replace(/\//g,'');
+    out=out.slice(0,7);
+  }else{
+    out=val.replace(/\D/g,'');
+  }
+  if(out!==val)el.value=out;
+}
+// Characters that carry meaning for a kind. The caret is restored by counting
+// these before it, so "1,2|00" stays between the 2 and the 0 after a comma is
+// added or a letter is stripped.
+function _tdNumSig(kind,ch){
+  if(kind==='money'||kind==='rate'||kind==='pct'||kind==='dec')return /[\d.]/.test(ch);
+  if(kind==='ym')return /[\d/]/.test(ch);
+  return /\d/.test(ch);
+}
+function _tdNumOnInput(e){
+  const el=e&&e.target;
+  if(!el||!el.getAttribute||e.isComposing)return;
+  const kind=el.getAttribute('data-num');
+  if(!kind)return;
+  const before=String(el.value||'');
+  let caret=null;
+  try{caret=el.selectionStart;}catch(_e){}
+  let n=0;
+  if(caret!=null)for(let i=0;i<caret&&i<before.length;i++)if(_tdNumSig(kind,before[i]))n++;
+  _tdNumFormat(el,kind);
+  const after=String(el.value||'');
+  if(after===before||caret==null)return;
+  // fmtPhone dropped a leading country-code 1 that sat before the caret.
+  if(kind==='phone'&&before.replace(/\D/g,'').length===11&&after.replace(/\D/g,'').length===10&&n>0)n--;
+  let pos=0,seen=0;
+  while(pos<after.length&&seen<n){if(_tdNumSig(kind,after[pos]))seen++;pos++;}
+  try{if(document.activeElement===el)el.setSelectionRange(pos,pos);}catch(_e){}
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('input', _tdNumOnInput, true);
+}
 if (typeof document !== 'undefined' && document.addEventListener) {
   // Tag static fields once the DOM is ready, and expose a hook so code that
   // injects fields later (modals/sheets) can re-tag them.
@@ -646,6 +750,79 @@ function _tdSkelRows(n,h){
   return out;
 }
 
+// ── Redacted placeholder: the real layout, with the words taken out ──────────
+// Owner 2026-10-01: "the skeleton shimmers don't match up the tiles, it should
+// be like shuffling from the top down like iOS does." iOS does it with
+// .redacted(reason: .placeholder): the real view, laid out for real, with each
+// run of text drawn as a rounded bar. A hand-drawn skeleton can only ever
+// approximate the screen it stands in for; this one IS that screen, so the
+// swap to content moves nothing by construction.
+//
+// src is the live markup (measured, never changed), dst is the copy that
+// becomes the placeholder (src itself to redact in place). Same tree shape,
+// node for node. Rules, in order:
+//   - icons and pictures keep their box and go invisible;
+//   - something animating with no words in it (a ping ring, a live dot) goes;
+//   - a coloured shape with no words (the pin badge) becomes a shimmer blob;
+//   - a small coloured shape with words (a pill) becomes one shimmer blob;
+//   - a big coloured surface (a green card, a dark button) turns neutral;
+//   - every run of text becomes a shimmer bar exactly the width it takes.
+function _tdRedactColored(c){
+  const m=/rgba?\(([^)]+)\)/.exec(String(c||''));
+  if(!m)return false;
+  const p=m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+  if(p.length>3&&!(p[3]>0.05))return false;
+  const [r,g,b]=p;
+  if(!(r>=0&&g>=0&&b>=0))return false;
+  if(Math.max(r,g,b)-Math.min(r,g,b)>24)return true;          // a hue
+  return (0.2126*r+0.7152*g+0.0722*b)/255<0.6;                // a dark surface
+}
+function _tdRedact(src,dst){
+  try{
+    if(!src||!dst||src.nodeType!==1||dst.nodeType!==1)return dst;
+    const se=[src,...src.querySelectorAll('*')],de=[dst,...dst.querySelectorAll('*')];
+    if(se.length!==de.length)return dst;
+    // Measure everything first: redacting in place must not read its own writes.
+    const plan=se.map((s,i)=>{
+      const tag=s.tagName.toLowerCase();
+      if(s.closest('svg')&&tag!=='svg')return '';
+      if(tag==='svg'||tag==='img'||tag==='canvas'||tag==='video'||tag==='picture')return 'hide';
+      const cs=getComputedStyle(s);
+      const words=/\S/.test(s.textContent||'');
+      // (A shimmer bar animates too, and is exactly what must stay.)
+      if(!words&&!s.classList.contains('td-skel')&&cs.animationName&&cs.animationName!=='none')return 'hide';
+      const colored=(cs.backgroundImage&&cs.backgroundImage!=='none')||_tdRedactColored(cs.backgroundColor);
+      if(!colored)return '';
+      if(i===0)return 'plain';
+      if(!words)return 'blob';
+      return s.offsetHeight&&s.offsetHeight<=30?'pill':'plain';
+    });
+    de.forEach((d,i)=>{
+      const p=plan[i];
+      if(!p)return;
+      if(p==='hide'){d.style.visibility='hidden';return;}
+      d.style.boxShadow='none';
+      if(p==='plain'){d.style.background='var(--bg-card,#fff)';d.style.borderColor='var(--border)';return;}
+      d.style.background='';d.style.borderColor='transparent';
+      d.classList.add('td-skel');
+      if(p==='pill')d.classList.add('td-rx-pill');
+    });
+    // Then the words. A pill is already one bar, its text just goes clear.
+    const texts=[];
+    const w=document.createTreeWalker(dst,NodeFilter.SHOW_TEXT);
+    for(let n=w.nextNode();n;n=w.nextNode())if(/\S/.test(n.nodeValue))texts.push(n);
+    texts.forEach(n=>{
+      const par=n.parentElement;
+      if(!par||par.closest('svg')||par.classList.contains('td-rx'))return;
+      const span=document.createElement('span');
+      span.className=par.closest('.td-rx-pill')?'td-rx':'td-skel td-rx';
+      par.insertBefore(span,n);
+      span.appendChild(n);
+    });
+  }catch(_e){}
+  return dst;
+}
+
 // ── The business's clock (owner rule 2026-08-24) ──────────────────────────────
 // "It needs fixed to contractor time zone when setup off the shop business
 // address, that should solve it permanently."
@@ -741,4 +918,27 @@ function bizTime(iso){
   if(isNaN(d.getTime()))return '';
   try{return d.toLocaleTimeString('en-US',{timeZone:bizTz(),hour:'numeric',minute:'2-digit'});}
   catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+}
+
+// SAVE A DOCUMENT FOR A LINK (audit 2026-10-01: ten copies of this upload).
+// Proposals, the client hub, agreements, invoices and photo shares are JSON
+// files in the proposals bucket that a link opens. data is an object or an
+// already-built string. Resolves to {error}, never throws.
+//
+// An async function that awaits the upload, the shape every one of the ten
+// copies had. It was first written as a returned Promise.resolve().then()
+// .catch() chain, and a photo's background hub refresh runs through it in the
+// same task the shot finishes in. With the chain, Chromium reported the shot's
+// own pending promise as "Promise was collected" about 1 shot in 25 (Playwright
+// shows that as "Execution context was destroyed"; no navigation happened and
+// the photo had saved). Measured 2026-10-02, first shot after boot: chain 18
+// in 420, chain with the hub refresh stubbed 0 in 180, this shape 0 in 180.
+async function _tdStoreDoc(key,data,o){
+  o=o||{};
+  try{
+    if(typeof _supa==='undefined'||!_supa||!key)return {error:new Error('not signed in')};
+    const body=typeof data==='string'?data:JSON.stringify(data);
+    const r=await _supa.storage.from('proposals').upload(key,body,{contentType:'application/json',upsert:o.upsert!==false,cacheControl:o.cache||'0'});
+    return {error:(r&&r.error)||null};
+  }catch(e){return {error:e};}
 }

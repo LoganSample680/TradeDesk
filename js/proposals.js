@@ -1,14 +1,7 @@
 // ── RRP compliance ────────────────────────────────────────────────────────────
 let _rrpPaintAnswer=''; // 'yes' | 'no' | '' (unanswered)
 
-function _cdnPhoto(u){
-  try{
-    if(!u||u.startsWith('data:'))return u;
-    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
-    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
-    return m?'/img/'+m[1]:u;
-  }catch(_e){return u;}
-}
+// _cdnPhoto (the edge-cached gallery address) lives in js/brand-look.js.
 // onerror handler for CDN-routed images: retry the direct URL once (covers an
 // undeployed /img route or edge miss failure), THEN hide, never a broken tile.
 function _imgFallback(el){
@@ -18,34 +11,49 @@ function _imgFallback(el){
 }
 
 // ── Client Hub ──────────────────────────────────────────────────────────────
-// A bid's scope as plain description lines, the estimate's own words with no
-// numbers: paint estimates group surfaces by room, generic/BYO carry scope
-// chips and free text, a diagnostic carries desc. Used by the hub invoice's
-// "Work performed" and the property card's Past work rows.
-function _bidScopeLines(b){
-  const out=[];
-  const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
-  if(_surf.length){
+// THE WORK ON A BID, one reader for every screen that lists it: the hub's
+// "Work performed" and Past work rows, the invoice's work list and the job
+// clock's scopes all used to pick their own lines and disagreed. Order: T&M
+// steps, then BYO items he left on (no materials, no lead-safe insert), then
+// priced lines when neither exists, then paint rooms, scope chips and the
+// free-text scope. One row per price-book key. {priced:true} stops after the
+// chips: the job clock wants sold work, not the paragraph about it.
+function _bidWorkItems(b,o){
+  const out=[],seen=new Set();
+  if(!b||typeof b!=='object')return out;
+  const key=d=>(typeof _pbKey==='function')?_pbKey(d):String(d||'').trim().toLowerCase();
+  const add=(label,section,chip)=>{
+    const l=String(label||'').trim();
+    const k=l&&key(l);
+    if(!k||seen.has(k))return;
+    seen.add(k);
+    out.push({label:l,section:String(section||''),chip:!!chip});
+  };
+  (Array.isArray(b.scopeItems)?b.scopeItems:[]).forEach(x=>{if(x&&x.on!==false)add(x.label,x.section);});
+  (Array.isArray(b.byoItems)?b.byoItems:[]).forEach(x=>{if(x&&x.on!==false&&!x._supply&&!x._rrp)add(x.label,x.section);});
+  if(!out.length)(Array.isArray(b.geiLines)?b.geiLines:[]).forEach(l=>{if(l&&!l._tmLabor&&!l._supply)add(l.desc);});
+  if(!(o&&o.priced)){
     const byRoom={};
-    _surf.forEach(sf=>{
-      const _r=String(sf&&sf.room||'').trim()||'Work area';
-      const _t=String(sf&&sf.type||'').trim();
-      (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
+    (Array.isArray(b.surfaces)?b.surfaces:[]).forEach(sf=>{
+      const r=String(sf&&sf.room||'').trim()||'Work area';
+      (byRoom[r]=byRoom[r]||[]).push(String(sf&&sf.type||'').trim()||'surface');
     });
-    Object.keys(byRoom).forEach(r=>{
-      const kinds=[...new Set(byRoom[r])];
-      out.push(kinds.length?r+': '+kinds.join(', '):r);
-    });
+    Object.keys(byRoom).forEach(r=>add(r+': '+[...new Set(byRoom[r])].join(', ')));
   }
-  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
-    const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
-    if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
-  });
-  String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
-    const _l=l.trim().replace(/^[-•*]\s*/,'');
-    if(_l&&out.indexOf(_l)===-1)out.push(_l);
-  });
+  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>add(typeof c==='string'?c:(c&&(c.label||c.name)),'',true));
+  if(!(o&&o.priced))String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>add(l.trim().replace(/^[-•*]\s*/,'')));
   return out.slice(0,40);
+}
+// The same work as plain lines, for the places that print a list.
+function _bidScopeLines(b){return _bidWorkItems(b).map(x=>x.label);}
+// HIS LEAD-PAINT (EPA RRP) CERTIFICATES, as the proposal and the hub print
+// them (audit 2026-10-01: three copies). A certificate past its expiry date is
+// not one; blank when he has none on file.
+function _rrpCerts(){
+  const list=(typeof licenses!=='undefined'&&Array.isArray(licenses))?licenses:[];
+  const live=id=>list.find(x=>x&&x.typeId===id&&(!x.expiryDate||x.expiryDate>=todayKey()))||null;
+  const firm=live('epa_firm'),ren=live('epa_renovator');
+  return {rrpFirmCertNum:(firm&&firm.licenseNumber)||'',rrpRenovatorName:(ren&&ren.holderName)||'',rrpRenovatorCertNum:(ren&&ren.licenseNumber)||''};
 }
 function _buildClientHubSnapshot(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
@@ -65,14 +73,16 @@ function _buildClientHubSnapshot(clientId){
     const _fcDaysElapsed=typeof window._fcTestDays==="number"?window._fcTestDays:Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
     const _fcDaysOverdue=Math.max(0,_fcDaysElapsed-30);
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
-    const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
+    const financeCharge=balance>0.01&&_fcDaysOverdue>0?_cents(balance*_fcRate*_fcDaysOverdue):0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     // SCOPE for the invoice's "Work performed" list: the estimate's own scope, in
     // the estimate's own words, DESCRIPTIONS ONLY. No qty, no rate, no amount, the
     // same one-price rule the document follows (owner 2026-08-16). Shared with the
     // property card's Past work rows via _bidScopeLines below.
     const _hubScope=_bidScopeLines(b);
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
+    // A stored deposit, even 0 (nothing up front), is what their page shows;
+    // only a bid with none stored takes the shared default (_bidDepositDue).
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:_bidDepositDue(b),status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',buyerSenior:!!b.buyerSenior,scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -83,6 +93,8 @@ function _buildClientHubSnapshot(clientId){
       // A quick invoice's own rows (text and amount, head or sub), drawn on
       // their copy the way the preview draws them, and what he said he did.
       rows:b.kind==='quick_invoice'&&Array.isArray(b.qiRows)&&b.qiRows.length?b.qiRows:null,
+      // The saved invoice document, any bill's (_invoiceDocUpload).
+      invoiceDocKey:b.invoiceDocKey||null,
       work:b.kind==='quick_invoice'&&Array.isArray(b.qiWork)?b.qiWork.filter(w=>String(w||'').trim()):[],
       salesTax:Number(b.salesTax)>0?Number(b.salesTax):null,salesTaxRate:Number(b.salesTaxRate)>0?Number(b.salesTaxRate):null,
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
@@ -174,8 +186,8 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  // stateFromAddr (js/legal.js): the state, not the first state-shaped word.
-  const _snapState=(typeof stateFromAddr==='function'?stateFromAddr(c.addr||''):null)||S.state||'KS';
+  // _stateOf (js/legal.js): the state, not the first state-shaped word.
+  const _snapState=_stateOf(c.addr);
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
   // Cal. Civ. Code §1689.6: five business days when the buyer is 65 or older.
   const _snapSeniorDays=(STATE_CANCEL&&STATE_CANCEL[_snapState]&&STATE_CANCEL[_snapState].seniorDays)||0;
@@ -246,9 +258,7 @@ function _buildClientHubSnapshot(clientId){
     stripeEnabled:_snapStripeOn,
     yearBuilt:c.yearBuilt||null,
     epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&(c.rrpDisturb==='yes'||_rrpPaintAnswer==='yes')),
-    rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
-    rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
-    rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    ..._rrpCerts(),
     epaAck:c.epaAck||false,
     trade:getActiveTrade(),
     state:_snapState,
@@ -369,7 +379,7 @@ async function _uploadClientHub(clientId){
     const _hash=_hubHash(JSON.stringify(snapshot,(k,v)=>k==='generatedAt'?undefined:v));
     if(c.clientHubKey&&c.clientHubHash===_hash)return;
     const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
-    const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _tdStoreDoc(key,_json);
     if(error)throw error;
     // Stamp the LIVE array object, not the reference captured before the await: a
     // delta/realtime merge during the upload replaces row objects in `clients`, so
@@ -513,7 +523,7 @@ async function _refreshClientHub(clientId){
   snapshot.token=c.clientToken;
   const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
   try{
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _tdStoreDoc(key,snapshot);
     if(error)throw error;
     // Same live-object rule as _uploadClientHub, never stamp a pre-await reference.
     const live=clients.find(x=>x.id===clientId)||c;
@@ -624,6 +634,64 @@ function _showGeiSendOverlay(){
     phone:d.cphone,email:d.cemail,
     onText:()=>_doGeiSend('sms'),onEmail:()=>_doGeiSend('email'),onOther:()=>_doGeiSend('other'),
     onCopy:()=>{tdCopyLink(d.url);_commitProposalSent();}});
+}
+// ── RESEND A PROPOSAL THAT ALREADY WENT OUT (audit 2026-10-01) ──────────────
+// The ONE resend. The bid card and the dashboard's sent-proposals row both
+// land here, on the same send sheet Send uses. It used to be three paths: a
+// mailto that described a paint job with sanding and a 25/75 split on every
+// trade, a text-only resend on the dashboard, and an orphan. The link is the
+// client hub, the signing page when there is no hub; the text is his saved
+// follow-up template with the link last (iMessage only draws the preview card
+// when the link ends the message); the email says his trade, his total and
+// the deposit the bid actually stores, nothing invented.
+function _resendProposalUrl(b){
+  const hub=typeof _geiHubUrlFor==='function'?_geiHubUrlFor(b):null;
+  if(hub)return hub;
+  if(!b.signingToken)return null;
+  return _clientBaseUrl()+'sign.html?t='+b.signingToken+'&u='+((typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:'')+'&b='+b.id;
+}
+function _resendProposalText(b,url){
+  const c=b.client_id?getClientById(b.client_id):null;
+  const first=((c&&c.name)||b.client_name||'there').split(/[\s,&]+/)[0];
+  const msg=_smsApply(S.smsFollowup||_getSmsDefaults().followup,{name:first,business:S.bname||'TradeDesk',url});
+  if(msg.trim().endsWith(url))return msg.trim();
+  return (msg.split(url).join('').replace(/\n{3,}/g,'\n\n').trim()+'\n\n'+url);
+}
+function _resendProposalEmail(b,url){
+  const c=b.client_id?getClientById(b.client_id):null;
+  const first=((c&&c.name)||b.client_name||'there').split(/[\s,&]+/)[0];
+  const word=(typeof _tradeProposalLabel==='function'?_tradeProposalLabel(b.trade_type,{lower:true}):'Proposal').toLowerCase();
+  const bname=S.bname||'TradeDesk';
+  const NL='\n';
+  let body='Hi '+first+','+NL+NL+'Just following up on your '+word+'. Everything we went over is at the link below, and you can sign there when you are ready.'+NL+NL;
+  if(Number(b.amount)>0)body+='Total: '+fmt(b.amount)+NL;
+  const dep=Number(b.deposit)>0&&typeof _bidDepositDue==='function'?_bidDepositDue(b):0;
+  if(dep>0)body+='Deposit to start: '+fmt(dep)+NL;
+  body+=NL+url+NL+NL+'Any questions, just reply.'+NL+NL+bname+(S.bphone?NL+S.bphone:'');
+  const subject='Your '+word+' from '+bname;
+  return 'mailto:'+encodeURIComponent((c&&c.email)||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
+function resendProposal(bidId){
+  const b=bids.find(x=>String(x.id)===String(bidId));
+  if(!b)return;
+  const c=b.client_id?getClientById(b.client_id):null;
+  const url=_resendProposalUrl(b);
+  // Nothing has gone out yet, so there is nothing to resend: open it the way
+  // Revise does and let the normal Send take it from there.
+  if(!url){
+    if(typeof openGenericEstimate==='function')openGenericEstimate(c,b.id,b.trade_type||'general');
+    return;
+  }
+  const phone=((c&&c.phone)||b.phone||'').replace(/\D/g,'');
+  const text=_resendProposalText(b,url);
+  const log=()=>{if(b.client_id&&typeof autoLogContact==='function')autoLogContact(b.client_id,'followup_sent');};
+  tdSendSheet({id:'_resend-overlay',url,who:(c&&c.name)||b.client_name||'',amount:Number(b.amount)>0?fmt(b.amount):'',
+    sub:'Send it again. Same link, nothing changes on their copy.',
+    phone,email:(c&&c.email)||'',textBody:text,
+    onText:()=>{window.location.href='sms:'+phone+'?body='+encodeURIComponent(text);setTimeout(log,400);},
+    onEmail:()=>{window.location.href=_resendProposalEmail(b,url);setTimeout(log,400);},
+    onOther:()=>{log();pwaShare({title:(S.bname||'TradeDesk')+' Proposal',text:text.split(url).join('').trim(),url});},
+    onCopy:()=>{tdCopyLink(url);log();}});
 }
 function _doGeiSend(type){
   document.getElementById('_gei-send-overlay')?.remove();
@@ -1424,7 +1492,7 @@ function _coRenderLines(bidId){
     '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'+
       '<input value="'+escHtml(l.desc||'')+'" placeholder="What it is" oninput="_coLines['+i+'].desc=this.value" '+
         'style="flex:1;min-width:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
-      '<input value="'+escHtml(l.amt==null?'':String(l.amt))+'" placeholder="0" inputmode="decimal" '+
+      '<input type="text" data-num="money" inputmode="decimal" value="'+escHtml(l.amt==null?'':String(l.amt))+'" placeholder="0" '+
         'oninput="_coLines['+i+'].amt=parseFloat(this.value.replace(/,/g,\'\'))||0;_coSyncLines('+bidId+')" '+
         'style="width:92px;flex-shrink:0;font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;text-align:right">'+
       '<button onclick="_coRmLine('+i+','+bidId+')" aria-label="Remove line" '+
@@ -1626,22 +1694,6 @@ function _coHistoryHTML(h){
     h.cos.map(c=>' · CO #'+c.coNum+' '+(c.delta<0?'-':'+')+fmt(Math.abs(c.delta))).join('')+
   '</div>';
 }
-// Itemized change, when he broke it out. Rows carry the sign of the change
-// itself, so a removal reads as money coming off, not as a second charge.
-function _coLinesHTML(lines,color,type){
-  if(!lines||!lines.length)return '';
-  const sign=type==='sub'?'-':'+';
-  return '<div style="margin-bottom:10px">'+
-    lines.map(l=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f3f4f6">'+
-      '<span style="font-size:13px;color:#374151;flex:1;min-width:0">'+escHtml(l.desc)+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:#111;white-space:nowrap">'+sign+fmt(l.amt)+'</span>'+
-    '</div>').join('')+
-    '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0 0">'+
-      '<span style="font-size:13px;font-weight:800;color:#111">Adjustment</span>'+
-      '<span style="font-size:16px;font-weight:800;color:'+color+'">'+sign+fmt(lines.reduce((s,l)=>s+(Number(l.amt)||0),0))+'</span>'+
-    '</div>'+
-  '</div>';
-}
 function _coPhotosHTML(urls){
   if(!urls||!urls.length)return '';
   return '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
@@ -1722,7 +1774,7 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+escHtml(desc)+'</div>'+
         // The breakdown, when he gave one. A lump sum is what a homeowner
         // argues with; itemized lines are what they read and accept.
-        _coLinesHTML(lines,deltaColor,type)+
+        tdCoLinesHTML(lines,deltaColor,type,escHtml,fmt)+
         (lines&&lines.length?'':
           '<div style="display:flex;align-items:center;gap:8px">'+
             '<span style="font-size:13px;color:#6b7280">Adjustment:</span>'+

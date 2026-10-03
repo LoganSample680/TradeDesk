@@ -584,7 +584,8 @@ function materialsBook(){
 // customer is agreeing to; an invoice shows the hours and one total, and
 // never parts cost unless he turns it on ("for a pissed off old man, I doubt
 // it"). A state that requires the rate overrides both (statePriceRule).
-const _COPY_DEFAULTS={proposal:{rate:true,parts:true},invoice:{rate:false,parts:false}};
+// invoice.hours (owner 2026-10-01): on by default, the way bills always were.
+const _COPY_DEFAULTS={proposal:{rate:true,parts:true},invoice:{rate:false,parts:false,hours:true}};
 function copyShows(doc,what){
   const d=(_COPY_DEFAULTS[doc]||{})[what];
   if(typeof S==='undefined'||!S)return !!d;

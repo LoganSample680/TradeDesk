@@ -177,7 +177,7 @@ async function tdPhotoLinkCreate(ids,addr){
   const token=_phgToken();
   const key='photo-share/'+uid+'/'+token+'.json';
   try{
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snap),{contentType:'application/json',upsert:false,cacheControl:'3600'});
+    const{error}=await _tdStoreDoc(key,snap,{upsert:false,cache:'3600'});
     if(error)return {error:'upload'};
   }catch(_e){return {error:'upload'};}
   const base=(typeof _clientBaseUrl==='function')?_clientBaseUrl():(location.origin+'/');

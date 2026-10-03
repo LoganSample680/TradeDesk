@@ -163,9 +163,23 @@ test.describe('Proposal journey card', () => {
       cardCode: CARD(CID + 7, 982270),
     });
     expect(r).toMatch(/Resend to client/);
-    expect(r).toMatch(/sendBidEmail\(982270\)/);
+    expect(r).toMatch(/resendProposal\(982270\)/);   // the one resend (js/proposals.js)
+    expect(r).not.toMatch(/sendBidEmail/);
     expect(r).toMatch(/markBidHandshake\(982270\)/);   // in More
     expect(r).toMatch(/markBidAbandoned\(982270\)/);   // in More
+  });
+
+  test('a proposal never sent: Send to client opens the estimate the way Revise does', async () => {
+    const r = await page.evaluate(({ seedCode, cardCode }) => {
+      eval(seedCode); eval(cardCode);
+      return window.__cardHtml;
+    }, {
+      seedCode: seed(CID + 17, `{ id: 982271, client_id: ${CID + 17}, name: 'T', type: 'Repipe', trade_type: 'plumbing', amount: 900, status: 'Draft', bid_date: '2026-08-10' }`, null, null),
+      cardCode: CARD(CID + 17, 982271),
+    });
+    expect(r).toMatch(/Send to client/);
+    expect(r).not.toMatch(/resendProposal\(982271\)/);
+    expect(r).toMatch(/openGenericEstimate\(getClientById\(982117\),982271,'plumbing'\)/);
   });
 
   test('a diagnostic charge never grows a journey strip', async () => {
